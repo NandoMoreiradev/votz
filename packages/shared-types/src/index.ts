@@ -1,4 +1,4 @@
 export * from './enums'
-export * from './relato'
-export * from './usuario'
+export * from './report'
+export * from './user'
 export * from './pagination'

@@ -9,291 +9,292 @@ datasource db {
 
 // ==================== ENUMS ====================
 
-enum TipoUsuario {
-  CIDADAO
-  ENTIDADE
-  POLITICO
-  IMPRENSA
-  ONG
-  PESQUISADOR
-  MODERADOR
+enum UserType {
+  CITIZEN
+  ENTITY
+  POLITICIAN
+  PRESS
+  NGO
+  RESEARCHER
+  MODERATOR
   ADMIN
 }
 
-enum StatusRelato {
-  ABERTO
-  EM_ANALISE
-  EM_ANDAMENTO
-  RESOLVIDO
-  CONTESTADO
-  ARQUIVADO
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  IN_PROGRESS
+  RESOLVED
+  DISPUTED
+  ARCHIVED
 }
 
-enum TipoEvento {
-  CRIADO
-  RESPONDIDO
-  STATUS_ALTERADO
-  CONTESTADO
-  RESOLVIDO
-  ARQUIVADO
+enum EventType {
+  CREATED
+  RESPONDED
+  STATUS_CHANGED
+  DISPUTED
+  RESOLVED
+  ARCHIVED
 }
 
-enum Categoria {
-  SAUDE
-  MOBILIDADE
-  SEGURANCA
-  EDUCACAO
-  SANEAMENTO
-  HABITACAO
-  OUTROS
+enum Category {
+  HEALTH
+  MOBILITY
+  SAFETY
+  EDUCATION
+  SANITATION
+  HOUSING
+  OTHER
 }
 
-enum TipoEntidade {
-  PREFEITURA
+enum EntityType {
+  CITY_HALL
   HOSPITAL
-  CONCESSIONARIA
-  AUTARQUIA
-  SECRETARIA
-  OUTROS
+  CONCESSIONAIRE
+  AUTARCHY
+  SECRETARIAT
+  OTHER
 }
 
-enum SetorEmpresa {
+enum CompanySector {
   TELECOM
-  SAUDE_SUPLEMENTAR
-  FINANCEIRO
-  ENERGIA
-  TRANSPORTE
-  VAREJO
-  ALIMENTACAO
-  CONDOMINIO
-  OUTROS
+  SUPPLEMENTAL_HEALTH
+  FINANCIAL
+  ENERGY
+  TRANSPORTATION
+  RETAIL
+  FOOD
+  CONDOMINIUM
+  OTHER
 }
 
-enum PorteEmpresa {
+enum CompanySize {
   MEI
-  PEQUENA
-  MEDIA
-  GRANDE
+  SMALL
+  MEDIUM
+  LARGE
 }
 
-enum PlanoEmpresa {
+enum CompanyPlan {
   STARTER
   BUSINESS
   ENTERPRISE
   WHITE_LABEL
 }
 
-enum DestinatarioTipo {
-  ENTIDADE
-  EMPRESA
-  FILIAL
-  POLITICO
+enum RecipientType {
+  ENTITY
+  COMPANY
+  BRANCH
+  POLITICIAN
 }
 
-enum TipoVoto {
-  APOIO
-  EU_TAMBEM
+enum VoteType {
+  SUPPORT
+  ME_TOO
 }
 
 // ==================== MODELS ====================
 
-model Usuario {
-  id               String      @id @default(uuid())
-  email            String      @unique
-  emailVerificado  Boolean     @default(false)
-  senha            String?
-  nome             String
-  tipo             TipoUsuario @default(CIDADAO)
-  verificado       Boolean     @default(false)
-  banido           Boolean     @default(false)
-  reputacao        Float       @default(0)
-  avatarUrl        String?
-  bio              String?
-  telefone         String?     // normalizado E.164 via libphonenumber-js
-  cpf              String?     // criptografado AES-256
-  googleId         String?     @unique
-  mfaAtivado       Boolean     @default(false)
-  mfaSecret        String?
-  mfaBackupCodes   String[]
-  contaCriada      DateTime    @default(now())
-  ultimoLogin      DateTime?
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
+  password        String?
+  name            String
+  type            UserType  @default(CITIZEN)
+  verified        Boolean   @default(false)
+  banned          Boolean   @default(false)
+  reputation      Float     @default(0)
+  avatarUrl       String?
+  bio             String?
+  phone           String?   // normalized E.164 via libphonenumber-js
+  cpf             String?   // AES-256 encrypted
+  googleId        String?   @unique
+  mfaEnabled      Boolean   @default(false)
+  mfaSecret       String?
+  mfaBackupCodes  String[]
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  relatos          Relato[]    @relation("RelatoAutor")
-  votos            Voto[]
-  comentarios      Comentario[]
-  timelineEventos  TimelineEvento[]
-  entidade         Entidade?
-  politico         Politico?
+  reports         Report[]  @relation("ReportAuthor")
+  votes           Vote[]
+  comments        Comment[]
+  timelineEvents  TimelineEvent[]
+  entity          Entity?
+  politician      Politician?
 
-  @@map("usuarios")
+  @@map("users")
 }
 
-model Relato {
-  id                  String            @id @default(uuid())
-  titulo              String
-  descricao           String
-  categoria           Categoria
-  status              StatusRelato      @default(ABERTO)
-  anonimo             Boolean           @default(false)
+model Report {
+  id               String         @id @default(uuid())
+  title            String
+  description      String
+  category         Category
+  status           ReportStatus   @default(OPEN)
+  anonymous        Boolean        @default(false)
 
-  // Localização
-  latitude            Float?
-  longitude           Float?
-  enderecoNormalizado String?
-  cidade              String?
-  estado              String?
-  bairro              String?
+  // Location
+  latitude         Float?
+  longitude        Float?
+  normalizedAddress String?
+  city             String?
+  state            String?
+  neighborhood     String?
 
-  // Mídia (URLs no Cloudflare R2)
-  midias              String[]
+  // Media (Cloudflare R2 URLs)
+  media            String[]
 
-  // Score de pressão (calculado por BullMQ job a cada hora)
-  scorePressao        Float             @default(0)
+  // Pressure score (calculated hourly by BullMQ job — section 8.3)
+  pressureScore    Float          @default(0)
 
-  // Destinatário polimórfico (seção 15.4)
-  destinatarioTipo    DestinatarioTipo?
-  destinatarioId      String?
+  // Polymorphic recipient (section 15.4)
+  recipientType    RecipientType?
+  recipientId      String?
 
-  // Autor (null se anônimo — o vínculo existe no banco mas nunca exposto em queries públicas)
-  autorId             String?
-  autor               Usuario?          @relation("RelatoAutor", fields: [autorId], references: [id])
+  // Author (null if anonymous — link exists in DB but never exposed in public queries)
+  authorId         String?
+  author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
 
-  // Agrupamento automático de relatos similares
-  grupoId             String?
-  grupo               GrupoRelato?      @relation(fields: [grupoId], references: [id])
+  // Auto-grouping of similar reports in the same region
+  groupId          String?
+  group            ReportGroup?   @relation(fields: [groupId], references: [id])
 
-  timeline            TimelineEvento[]
-  votos               Voto[]
-  comentarios         Comentario[]
+  timeline         TimelineEvent[]
+  votes            Vote[]
+  comments         Comment[]
 
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  @@map("relatos")
+  @@map("reports")
 }
 
-model GrupoRelato {
+model ReportGroup {
   id        String   @id @default(uuid())
-  relatos   Relato[]
+  reports   Report[]
   createdAt DateTime @default(now())
 
-  @@map("grupos_relatos")
+  @@map("report_groups")
 }
 
-// Timeline imutável — cada ação sobre o relato gera um evento permanente
-model TimelineEvento {
+// Immutable timeline — every action on a report generates a permanent event
+model TimelineEvent {
+  id        String    @id @default(uuid())
+  reportId  String
+  report    Report    @relation(fields: [reportId], references: [id])
+  type      EventType
+  content   String
+  authorId  String?
+  author    User?     @relation(fields: [authorId], references: [id])
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@map("timeline_events")
+}
+
+model Entity {
   id        String     @id @default(uuid())
-  relatoId  String
-  relato    Relato     @relation(fields: [relatoId], references: [id])
-  tipo      TipoEvento
-  descricao String
-  autorId   String?
-  autor     Usuario?   @relation(fields: [autorId], references: [id])
-  metadados Json?
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id])
+  legalName String
+  cnpj      String     @unique
+  type      EntityType
+  verified  Boolean    @default(false)
+  votzScore Float      @default(0)
+  slaHours  Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
+  city      String?
+  state     String?
+  logoUrl   String?
+  website   String?
   createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
-  @@map("timeline_eventos")
+  @@map("entities")
 }
 
-model Entidade {
-  id          String       @id @default(uuid())
-  usuarioId   String       @unique
-  usuario     Usuario      @relation(fields: [usuarioId], references: [id])
-  razaoSocial String
-  cnpj        String       @unique
-  tipo        TipoEntidade
-  verificada  Boolean      @default(false)
-  votzScore   Float        @default(0)
-  slaHoras    Json?        // { "SAUDE": 48, "MOBILIDADE": 72, ... }
-  cidade      String?
-  estado      String?
-  logoUrl     String?
-  site        String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+model Politician {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  party         String
+  office        String
+  termStart     DateTime
+  termEnd       DateTime
+  electoralZone String
+  state         String
+  city          String?
+  verified      Boolean  @default(false)
+  mandatometer  Json?    // snapshot: { resolved, ignored, advocated }
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  @@map("entidades")
+  @@map("politicians")
 }
 
-model Politico {
-  id             String   @id @default(uuid())
-  usuarioId      String   @unique
-  usuario        Usuario  @relation(fields: [usuarioId], references: [id])
-  partido        String
-  cargo          String
-  mandatoInicio  DateTime
-  mandatoFim     DateTime
-  zonaEleitoral  String
-  estado         String
-  municipio      String?
-  verificado     Boolean  @default(false)
-  mandatometro   Json?    // snapshot de métricas { resolvidos, ignorados, avocados }
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+model Company {
+  id        String        @id @default(uuid())
+  legalName String
+  tradeName String
+  cnpj      String        @unique
+  sector    CompanySector
+  size      CompanySize
+  verified  Boolean       @default(false)
+  plan      CompanyPlan   @default(STARTER)
+  votzScore Float         @default(0)
+  slaHours  Int           @default(48)
+  logoUrl   String?
+  website   String?
+  branches  Branch[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
-  @@map("politicos")
+  @@map("companies")
 }
 
-model Empresa {
-  id           String       @id @default(uuid())
-  razaoSocial  String
-  nomeFantasia String
-  cnpj         String       @unique
-  setor        SetorEmpresa
-  porte        PorteEmpresa
-  verificada   Boolean      @default(false)
-  plano        PlanoEmpresa @default(STARTER)
-  votzScore    Float        @default(0)
-  slaHoras     Int          @default(48)
-  logoUrl      String?
-  site         String?
-  filiais      Filial[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+model Branch {
+  id           String   @id @default(uuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  name         String
+  address      String
+  city         String
+  state        String
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime @default(now())
 
-  @@map("empresas")
+  @@map("branches")
 }
 
-model Filial {
+model Vote {
   id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  nome      String
-  endereco  String
-  cidade    String
-  estado    String
-  latitude  Float?
-  longitude Float?
+  reportId  String
+  report    Report   @relation(fields: [reportId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      VoteType @default(SUPPORT)
   createdAt DateTime @default(now())
 
-  @@map("filiais")
+  @@unique([reportId, userId, type])
+  @@map("votes")
 }
 
-model Voto {
-  id        String   @id @default(uuid())
-  relatoId  String
-  relato    Relato   @relation(fields: [relatoId], references: [id])
-  usuarioId String
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
-  tipo      TipoVoto @default(APOIO)
-  createdAt DateTime @default(now())
-
-  @@unique([relatoId, usuarioId, tipo])
-  @@map("votos")
-}
-
-model Comentario {
-  id        String       @id @default(uuid())
-  relatoId  String
-  relato    Relato       @relation(fields: [relatoId], references: [id])
-  autorId   String
-  autor     Usuario      @relation(fields: [autorId], references: [id])
-  conteudo  String
+model Comment {
+  id        String    @id @default(uuid())
+  reportId  String
+  report    Report    @relation(fields: [reportId], references: [id])
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id])
+  content   String
   parentId  String?
-  parent    Comentario?  @relation("ComentarioResposta", fields: [parentId], references: [id])
-  respostas Comentario[] @relation("ComentarioResposta")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  parent    Comment?  @relation("CommentReply", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReply")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  @@map("comentarios")
+  @@map("comments")
 }

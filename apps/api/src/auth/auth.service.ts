@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-} from '@nestjs/common'
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
@@ -19,74 +15,40 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const existe = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
+    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    if (existing) throw new ConflictException('Email already registered')
+
+    const passwordHash = await bcrypt.hash(dto.password, 12)
+
+    const user = await this.prisma.user.create({
+      data: { name: dto.name, email: dto.email, password: passwordHash },
+      select: { id: true, name: true, email: true, type: true, createdAt: true },
     })
 
-    if (existe) {
-      throw new ConflictException('Email já cadastrado')
-    }
-
-    const senhaHash = await bcrypt.hash(dto.senha, 12)
-
-    const usuario = await this.prisma.usuario.create({
-      data: {
-        nome: dto.nome,
-        email: dto.email,
-        senha: senhaHash,
-      },
-      select: {
-        id: true,
-        nome: true,
-        email: true,
-        tipo: true,
-        contaCriada: true,
-      },
-    })
-
-    const tokens = await this.gerarTokens(usuario.id, usuario.email, usuario.tipo)
-
-    return { usuario, ...tokens }
+    const tokens = await this.generateTokens(user.id, user.email, user.type)
+    return { user, ...tokens }
   }
 
   async login(dto: LoginDto) {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
+
+    if (!user || !user.password) throw new UnauthorizedException('Invalid credentials')
+    if (user.banned) throw new UnauthorizedException('Account suspended')
+
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password)
+    if (!isPasswordValid) throw new UnauthorizedException('Invalid credentials')
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
     })
 
-    if (!usuario || !usuario.senha) {
-      throw new UnauthorizedException('Credenciais inválidas')
-    }
-
-    if (usuario.banido) {
-      throw new UnauthorizedException('Conta suspensa')
-    }
-
-    const senhaValida = await bcrypt.compare(dto.senha, usuario.senha)
-    if (!senhaValida) {
-      throw new UnauthorizedException('Credenciais inválidas')
-    }
-
-    await this.prisma.usuario.update({
-      where: { id: usuario.id },
-      data: { ultimoLogin: new Date() },
-    })
-
-    const tokens = await this.gerarTokens(usuario.id, usuario.email, usuario.tipo)
-
-    return {
-      usuario: {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-        tipo: usuario.tipo,
-      },
-      ...tokens,
-    }
+    const tokens = await this.generateTokens(user.id, user.email, user.type)
+    return { user: { id: user.id, name: user.name, email: user.email, type: user.type }, ...tokens }
   }
 
-  private async gerarTokens(usuarioId: string, email: string, tipo: string) {
-    const payload = { sub: usuarioId, email, tipo }
+  private async generateTokens(userId: string, email: string, type: string) {
+    const payload = { sub: userId, email, type }
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {

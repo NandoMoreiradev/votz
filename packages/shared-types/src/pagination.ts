@@ -1,16 +1,16 @@
-export interface PaginacaoQuery {
+export interface PaginationQuery {
   page?: number
   limit?: number
 }
 
-export interface PaginacaoMeta {
+export interface PaginationMeta {
   page: number
   limit: number
   total: number
   totalPages: number
 }
 
-export interface PaginacaoResposta<T> {
+export interface PaginatedResponse<T> {
   data: T[]
-  meta: PaginacaoMeta
+  meta: PaginationMeta
 }

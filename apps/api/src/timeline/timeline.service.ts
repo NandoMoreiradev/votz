@@ -1,42 +1,42 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import { TipoEvento } from '@votz/shared-types'
+import { EventType } from '@votz/shared-types'
 
-interface RegistrarEventoParams {
-  relatoId: string
-  tipo: TipoEvento
-  descricao: string
-  autorId?: string | null
-  metadados?: Record<string, unknown>
+interface RecordEventParams {
+  reportId: string
+  type: EventType
+  content: string
+  authorId?: string | null
+  metadata?: Record<string, unknown>
 }
 
 @Injectable()
 export class TimelineService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async registrar(params: RegistrarEventoParams) {
-    return this.prisma.timelineEvento.create({
+  async record(params: RecordEventParams) {
+    return this.prisma.timelineEvent.create({
       data: {
-        relatoId: params.relatoId,
-        tipo: params.tipo,
-        descricao: params.descricao,
-        autorId: params.autorId ?? null,
-        metadados: params.metadados ?? undefined,
+        reportId: params.reportId,
+        type: params.type,
+        content: params.content,
+        authorId: params.authorId ?? null,
+        metadata: params.metadata ?? undefined,
       },
     })
   }
 
-  async buscarPorRelato(relatoId: string) {
-    return this.prisma.timelineEvento.findMany({
-      where: { relatoId },
+  async findByReport(reportId: string) {
+    return this.prisma.timelineEvent.findMany({
+      where: { reportId },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true,
-        tipo: true,
-        descricao: true,
-        metadados: true,
+        type: true,
+        content: true,
+        metadata: true,
         createdAt: true,
-        autor: { select: { id: true, nome: true } },
+        author: { select: { id: true, name: true } },
       },
     })
   }

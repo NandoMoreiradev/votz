@@ -10,14 +10,14 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Registrar novo cidadão' })
+  @ApiOperation({ summary: 'Register new citizen' })
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto)
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login com email e senha' })
+  @ApiOperation({ summary: 'Login with email and password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto)
   }

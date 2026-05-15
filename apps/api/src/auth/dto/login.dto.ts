@@ -3,7 +3,7 @@ import { IsEmail, IsString, MinLength } from 'class-validator'
 import { Transform } from 'class-transformer'
 
 export class LoginDto {
-  @ApiProperty({ example: 'joao@email.com' })
+  @ApiProperty({ example: 'john@email.com' })
   @IsEmail()
   @Transform(({ value }) => value?.trim().toLowerCase())
   email: string
@@ -11,5 +11,5 @@ export class LoginDto {
   @ApiProperty()
   @IsString()
   @MinLength(1)
-  senha: string
+  password: string
 }

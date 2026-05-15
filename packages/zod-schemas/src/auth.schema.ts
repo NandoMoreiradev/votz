@@ -1,18 +1,18 @@
 import { z } from 'zod'
 
 export const RegisterSchema = z.object({
-  nome: z.string().min(2).max(100).trim(),
+  name: z.string().min(2).max(100).trim(),
   email: z.string().email().toLowerCase().trim(),
-  senha: z
+  password: z
     .string()
     .min(8)
-    .regex(/[A-Z]/, 'Deve conter ao menos uma letra maiúscula')
-    .regex(/[0-9]/, 'Deve conter ao menos um número'),
+    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Must contain at least one number'),
 })
 
 export const LoginSchema = z.object({
   email: z.string().email().toLowerCase().trim(),
-  senha: z.string().min(1),
+  password: z.string().min(1),
 })
 
 export const RefreshTokenSchema = z.object({

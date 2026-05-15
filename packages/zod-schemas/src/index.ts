@@ -1,3 +1,3 @@
 export * from './auth.schema'
-export * from './relato.schema'
-export * from './usuario.schema'
+export * from './report.schema'
+export * from './user.schema'
