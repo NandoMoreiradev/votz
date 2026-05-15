@@ -6,6 +6,10 @@ import { theme } from './theme'
 import { GlobalStyle } from './theme/GlobalStyle'
 import { queryClient } from './lib/query-client'
 import { Home } from './pages/Home'
+import { ReportDetail } from './pages/ReportDetail'
+import { CreateReport } from './pages/CreateReport'
+import { Login } from './pages/Login'
+import { Register } from './pages/Register'
 
 function App() {
   return (
@@ -15,6 +19,10 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/relatos/:id" element={<ReportDetail />} />
+            <Route path="/novo" element={<CreateReport />} />
+            <Route path="/entrar" element={<Login />} />
+            <Route path="/cadastro" element={<Register />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
