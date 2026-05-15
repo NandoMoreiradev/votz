@@ -1,0 +1,35 @@
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common'
+import { PrismaService } from '../prisma/prisma.service'
+import { VotesRepository } from './votes.repository'
+import { VoteType } from '@votz/shared-types'
+
+@Injectable()
+export class VotesService {
+  constructor(
+    private readonly repo: VotesRepository,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async toggle(reportId: string, userId: string, type: VoteType) {
+    const report = await this.prisma.report.findUnique({ where: { id: reportId }, select: { id: true } })
+    if (!report) throw new NotFoundException('Report not found')
+
+    const existing = await this.repo.findExisting(reportId, userId, type)
+
+    if (existing) {
+      await this.repo.delete(reportId, userId, type)
+      return { voted: false, type }
+    }
+
+    await this.repo.create(reportId, userId, type)
+    return { voted: true, type }
+  }
+
+  async countsByReport(reportId: string) {
+    const groups = await this.repo.countByReport(reportId)
+    return groups.reduce(
+      (acc, g) => ({ ...acc, [g.type]: g._count }),
+      { SUPPORT: 0, ME_TOO: 0 } as Record<VoteType, number>,
+    )
+  }
+}

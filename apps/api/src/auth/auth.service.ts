@@ -6,6 +6,18 @@ import { PrismaService } from '../prisma/prisma.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 
+const USER_PUBLIC_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  type: true,
+  verified: true,
+  reputation: true,
+  avatarUrl: true,
+  emailVerified: true,
+  createdAt: true,
+} as const
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -22,11 +34,13 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: { name: dto.name, email: dto.email, password: passwordHash },
-      select: { id: true, name: true, email: true, type: true, createdAt: true },
+      select: USER_PUBLIC_SELECT,
     })
 
-    const tokens = await this.generateTokens(user.id, user.email, user.type)
-    return { user, ...tokens }
+    const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
+    await this.storeRefreshHash(user.id, refreshToken)
+
+    return { user, accessToken, refreshToken }
   }
 
   async login(dto: LoginDto) {
@@ -43,8 +57,42 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     })
 
-    const tokens = await this.generateTokens(user.id, user.email, user.type)
-    return { user: { id: user.id, name: user.name, email: user.email, type: user.type }, ...tokens }
+    const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
+    await this.storeRefreshHash(user.id, refreshToken)
+
+    const publicUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      type: user.type,
+      verified: user.verified,
+      reputation: user.reputation,
+      avatarUrl: user.avatarUrl,
+      emailVerified: user.emailVerified,
+      createdAt: user.createdAt,
+    }
+
+    return { user: publicUser, accessToken, refreshToken }
+  }
+
+  async refresh(userId: string, email: string, type: string) {
+    const { accessToken, refreshToken } = await this.generateTokens(userId, email, type)
+    await this.storeRefreshHash(userId, refreshToken)
+    return { accessToken, refreshToken }
+  }
+
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    })
+  }
+
+  async me(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: USER_PUBLIC_SELECT,
+    })
   }
 
   private async generateTokens(userId: string, email: string, type: string) {
@@ -62,5 +110,13 @@ export class AuthService {
     ])
 
     return { accessToken, refreshToken }
+  }
+
+  private async storeRefreshHash(userId: string, refreshToken: string) {
+    const hash = await bcrypt.hash(refreshToken, 10)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: hash },
+    })
   }
 }

@@ -71,7 +71,7 @@ export class ReportsService {
       throw new ForbiddenException('Not authorized to update report status')
     }
 
-    const updated = await this.repository.updateStatus(reportId, dto.status as ReportStatus)
+    const updated = await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
 
     await this.timeline.record({
       reportId,

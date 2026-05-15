@@ -7,7 +7,7 @@ interface RecordEventParams {
   type: EventType
   content: string
   authorId?: string | null
-  metadata?: Record<string, unknown>
+  metadata?: object
 }
 
 @Injectable()
@@ -21,7 +21,8 @@ export class TimelineService {
         type: params.type,
         content: params.content,
         authorId: params.authorId ?? null,
-        metadata: params.metadata ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata: params.metadata ? (params.metadata as any) : undefined,
       },
     })
   }
