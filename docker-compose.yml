@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: votz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: votz
+      POSTGRES_PASSWORD: votz
+      POSTGRES_DB: votz
+    ports:
+      - "5432:5432"
+    volumes:
+      - votz_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U votz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: votz-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - votz_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  votz_postgres_data:
+  votz_redis_data:
