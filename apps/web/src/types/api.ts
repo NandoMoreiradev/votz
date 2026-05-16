@@ -1,4 +1,4 @@
-import { Category, ReportStatus, RecipientType, EventType } from '@votz/shared-types'
+import { Category, ReportStatus, RecipientType, EventType, UserType } from '@votz/shared-types'
 
 export interface Author {
   id: string
@@ -68,7 +68,7 @@ export interface AuthUser {
   id: string
   name: string
   email: string
-  type: string
+  type: UserType
   verified: boolean
   reputation: number
   avatarUrl: string | null

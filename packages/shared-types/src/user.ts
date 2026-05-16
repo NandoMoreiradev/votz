@@ -6,7 +6,7 @@ export interface PublicUser {
   type: UserType
   verified: boolean
   reputation: number
-  avatarUrl?: string
+  avatarUrl: string | null
   bio?: string
   createdAt: string
 }
