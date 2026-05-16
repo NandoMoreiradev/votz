@@ -1,12 +1,16 @@
+import { useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { Category } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { useCreateReport } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
+import { api } from '../lib/api'
+import { EntitiesResponse, EntityListItem } from '../types/api'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -149,6 +153,151 @@ const ErrorMsg = styled.span`
   color: ${({ theme }) => theme.colors.action};
 `
 
+// ── Entity search ──────────────────────────────────────────────────────────
+
+const SearchWrapper = styled.div`
+  position: relative;
+`
+
+const SearchInput = styled.input`
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-family: ${({ theme }) => theme.fonts.body};
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
+  outline: none;
+  transition: border-color 0.15s;
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
+  &::placeholder { color: ${({ theme }) => theme.colors.muted}; }
+`
+
+const Dropdown = styled.ul`
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  list-style: none;
+  padding: 4px 0;
+  z-index: 50;
+  max-height: 220px;
+  overflow-y: auto;
+`
+
+const DropdownItem = styled.li`
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
+  transition: background 0.1s;
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+`
+
+const DropdownSub = styled.span`
+  display: block;
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-top: 2px;
+`
+
+const SelectedEntity = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1.5px solid ${({ theme }) => theme.colors.primary};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.primary}0a;
+`
+
+const SelectedName = styled.span`
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ theme }) => theme.colors.primary};
+`
+
+const ClearBtn = styled.button`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  &:hover { color: ${({ theme }) => theme.colors.text}; }
+`
+
+function EntitySearch({
+  onSelect,
+}: {
+  onSelect: (entity: EntityListItem | null) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<EntityListItem | null>(null)
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const { data } = useQuery({
+    queryKey: ['entities-search', search],
+    queryFn: () =>
+      api
+        .get<EntitiesResponse>('/entities', { params: { search, limit: 8 } })
+        .then((r) => r.data),
+    enabled: search.length >= 2,
+    staleTime: 30_000,
+  })
+
+  function select(entity: EntityListItem) {
+    setSelected(entity)
+    setSearch('')
+    setOpen(false)
+    onSelect(entity)
+  }
+
+  function clear() {
+    setSelected(null)
+    onSelect(null)
+  }
+
+  if (selected) {
+    return (
+      <SelectedEntity>
+        <SelectedName>{selected.legalName}</SelectedName>
+        <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
+      </SelectedEntity>
+    )
+  }
+
+  return (
+    <SearchWrapper ref={wrapperRef}>
+      <SearchInput
+        type="text"
+        placeholder="Buscar por nome (ex: Prefeitura de…)"
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && data && data.data.length > 0 && (
+        <Dropdown>
+          {data.data.map((e) => (
+            <DropdownItem key={e.id} onMouseDown={() => select(e)}>
+              {e.legalName}
+              <DropdownSub>
+                {[e.city, e.state].filter(Boolean).join(', ')}
+              </DropdownSub>
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      )}
+    </SearchWrapper>
+  )
+}
+
 const CharCount = styled.span<{ $warn: boolean }>`
   font-size: 0.75rem;
   color: ${({ $warn, theme }) => $warn ? theme.colors.action : theme.colors.muted};
@@ -167,6 +316,7 @@ export function CreateReport() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { mutate: createReport, isPending, error } = useCreateReport()
+  const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(null)
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     defaultValues: { anonymous: false },
@@ -195,9 +345,13 @@ export function CreateReport() {
   }
 
   function onSubmit(data: FormValues) {
-    createReport(data as any, {
-      onSuccess: (report: any) => navigate(`/relatos/${report.id}`),
-    })
+    createReport(
+      {
+        ...data,
+        ...(selectedEntity && { recipientType: 'ENTITY', recipientId: selectedEntity.id }),
+      } as any,
+      { onSuccess: (report: any) => navigate(`/relatos/${report.id}`) },
+    )
   }
 
   return (
@@ -250,6 +404,12 @@ export function CreateReport() {
                 ))}
               </CategoryGrid>
               <input type="hidden" {...register('category', { required: true })} />
+            </Field>
+
+            <Field>
+              <Label>Direcionar para entidade <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
+              <Hint>Prefeitura, hospital, concessionária — quem deve responder por isso.</Hint>
+              <EntitySearch onSelect={setSelectedEntity} />
             </Field>
 
             <Field>

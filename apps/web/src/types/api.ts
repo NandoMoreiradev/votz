@@ -1,4 +1,4 @@
-import { Category, ReportStatus, RecipientType, EventType, UserType } from '@votz/shared-types'
+import { Category, EntityType, ReportStatus, RecipientType, EventType, UserType } from '@votz/shared-types'
 
 export interface Author {
   id: string
@@ -113,6 +113,34 @@ export interface UserReportsResponse {
     total: number
     totalPages: number
   }
+}
+
+export interface Entity {
+  id: string
+  legalName: string
+  cnpj: string
+  type: EntityType
+  verified: boolean
+  votzScore: number
+  slaHours: Record<string, number> | null
+  city: string | null
+  state: string | null
+  logoUrl: string | null
+  website: string | null
+  createdAt: string
+  user: { id: string; name: string; avatarUrl: string | null }
+  stats?: {
+    total: number
+    resolved: number
+    byStatus: Record<string, number>
+  }
+}
+
+export interface EntityListItem extends Omit<Entity, 'stats'> {}
+
+export interface EntitiesResponse {
+  data: EntityListItem[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
 }
 
 export type LoginResponse =
