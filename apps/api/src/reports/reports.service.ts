@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
 import DOMPurify from 'isomorphic-dompurify'
 import { ReportsRepository } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
@@ -13,7 +13,9 @@ export class ReportsService {
     private readonly timeline: TimelineService,
   ) {}
 
-  async create(dto: CreateReportDto, user: { id: string; type: string }) {
+  async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
+    if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
+
     const sanitizedDescription = DOMPurify.sanitize(dto.description)
     const cleanTitle = dto.title.trim().replace(/\s+/g, ' ')
 

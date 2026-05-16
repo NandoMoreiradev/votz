@@ -14,6 +14,8 @@ import { Response } from 'express'
 import { AuthService } from './auth.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
+import { VerifyEmailDto } from './dto/verify-email.dto'
+import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
@@ -47,9 +49,65 @@ export class AuthController {
   @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { user, accessToken, refreshToken } = await this.authService.login(dto)
+    const result = await this.authService.login(dto)
+    if (result.requiresMfa) return { requiresMfa: true, mfaToken: result.mfaToken }
+    res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
+    return { requiresMfa: false, user: result.user, accessToken: result.accessToken }
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Verify email with token from verification link' })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.token)
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 2, ttl: 1_000 }, medium: { limit: 3, ttl: 60_000 }, long: { limit: 5, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Resend email verification link' })
+  resendVerification(@CurrentUser() user: { id: string }) {
+    return this.authService.resendVerification(user.id)
+  }
+
+  @Post('mfa/setup')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Generate TOTP secret and QR code for MFA setup' })
+  mfaSetup(@CurrentUser() user: { id: string }) {
+    return this.authService.mfaSetup(user.id)
+  }
+
+  @Post('mfa/enable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Confirm MFA setup with first TOTP code' })
+  mfaEnable(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
+    return this.authService.mfaEnable(user.id, dto.code)
+  }
+
+  @Post('mfa/verify')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Complete login by verifying TOTP code after password step' })
+  async mfaVerifyLogin(@Body() dto: MfaVerifyLoginDto, @Res({ passthrough: true }) res: Response) {
+    const { user, accessToken, refreshToken } = await this.authService.mfaVerifyLogin(dto.mfaToken, dto.code)
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
     return { user, accessToken }
+  }
+
+  @Post('mfa/disable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Disable MFA (requires current TOTP code)' })
+  mfaDisable(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
+    return this.authService.mfaDisable(user.id, dto.code)
   }
 
   @Post('refresh')

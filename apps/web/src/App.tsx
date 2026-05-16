@@ -15,6 +15,7 @@ import { ReportDetail } from './pages/ReportDetail'
 import { CreateReport } from './pages/CreateReport'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { VerifyEmail } from './pages/VerifyEmail'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -62,6 +63,7 @@ function App() {
             <Route path="/novo" element={<CreateReport />} />
             <Route path="/entrar" element={<Login />} />
             <Route path="/cadastro" element={<Register />} />
+            <Route path="/verificar-email" element={<VerifyEmail />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>

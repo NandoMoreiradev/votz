@@ -18,7 +18,7 @@ export class ReportsController {
   @ApiOperation({ summary: 'Create a new report' })
   create(
     @Body() dto: CreateReportDto,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: { id: string; type: string; emailVerified: boolean },
   ) {
     return this.reportsService.create(dto, user)
   }

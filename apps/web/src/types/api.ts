@@ -64,17 +64,23 @@ export interface VoteCounts {
   ME_TOO: number
 }
 
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  type: string
+  verified: boolean
+  reputation: number
+  avatarUrl: string | null
+  emailVerified: boolean
+  createdAt: string
+}
+
 export interface AuthResponse {
-  user: {
-    id: string
-    name: string
-    email: string
-    type: string
-    verified: boolean
-    reputation: number
-    avatarUrl: string | null
-    emailVerified: boolean
-    createdAt: string
-  }
+  user: AuthUser
   accessToken: string
 }
+
+export type LoginResponse =
+  | { requiresMfa: false; user: AuthUser; accessToken: string }
+  | { requiresMfa: true; mfaToken: string }

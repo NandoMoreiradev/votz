@@ -9,6 +9,9 @@ import { AppModule } from './app.module'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true })
 
+  // Confiar no primeiro proxy reverso (Render, Nginx) para obter IP real do cliente
+  app.getHttpAdapter().getInstance().set('trust proxy', 1)
+
   app.useLogger(app.get(Logger))
 
   app.use(

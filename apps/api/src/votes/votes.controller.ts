@@ -18,9 +18,9 @@ export class VotesController {
   toggle(
     @Param('reportId') reportId: string,
     @Body() dto: CastVoteDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; emailVerified: boolean },
   ) {
-    return this.votesService.toggle(reportId, user.id, dto.type)
+    return this.votesService.toggle(reportId, user.id, dto.type, user.emailVerified)
   }
 
   @Get()

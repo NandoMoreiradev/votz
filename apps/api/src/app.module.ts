@@ -6,6 +6,8 @@ import { ScheduleModule } from '@nestjs/schedule'
 import { BullModule } from '@nestjs/bullmq'
 import { LoggerModule } from 'nestjs-pino'
 import { PrismaModule } from './prisma/prisma.module'
+import { MailModule } from './mail/mail.module'
+import { CryptoModule } from './crypto/crypto.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { ReportsModule } from './reports/reports.module'
@@ -60,6 +62,8 @@ import { HealthModule } from './health/health.module'
     }),
 
     PrismaModule,
+    MailModule,
+    CryptoModule,
     AuthModule,
     UsersModule,
     ReportsModule,

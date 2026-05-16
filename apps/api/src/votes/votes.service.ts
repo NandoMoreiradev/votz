@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { VotesRepository } from './votes.repository'
 import { VoteType } from '@votz/shared-types'
@@ -10,7 +10,9 @@ export class VotesService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async toggle(reportId: string, userId: string, type: VoteType) {
+  async toggle(reportId: string, userId: string, type: VoteType, emailVerified: boolean) {
+    if (!emailVerified) throw new BadRequestException('Email verification required to vote')
+
     const report = await this.prisma.report.findUnique({ where: { id: reportId }, select: { id: true } })
     if (!report) throw new NotFoundException('Report not found')
 
