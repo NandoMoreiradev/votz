@@ -10,7 +10,7 @@ import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { useCreateReport } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
-import { EntitiesResponse, EntityListItem } from '../types/api'
+import { EntitiesResponse, EntityListItem, PoliticiansResponse, Politician } from '../types/api'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -298,6 +298,92 @@ function EntitySearch({
   )
 }
 
+// ── Politician search ──────────────────────────────────────────────────────
+
+function PoliticianSearch({
+  onSelect,
+}: {
+  onSelect: (p: Politician | null) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Politician | null>(null)
+  const [open, setOpen] = useState(false)
+
+  const { data } = useQuery({
+    queryKey: ['politicians-search', search],
+    queryFn: () =>
+      api
+        .get<PoliticiansResponse>('/politicians', { params: { search, limit: 8 } })
+        .then((r) => r.data),
+    enabled: search.length >= 2,
+    staleTime: 30_000,
+  })
+
+  function select(p: Politician) {
+    setSelected(p)
+    setSearch('')
+    setOpen(false)
+    onSelect(p)
+  }
+
+  function clear() {
+    setSelected(null)
+    onSelect(null)
+  }
+
+  if (selected) {
+    return (
+      <SelectedEntity>
+        <SelectedName>{selected.user.name} — {selected.party}</SelectedName>
+        <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
+      </SelectedEntity>
+    )
+  }
+
+  return (
+    <SearchWrapper>
+      <SearchInput
+        type="text"
+        placeholder="Buscar por nome do político..."
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && data && data.data.length > 0 && (
+        <Dropdown>
+          {data.data.map((p) => (
+            <DropdownItem key={p.id} onMouseDown={() => select(p)}>
+              {p.user.name}
+              <DropdownSub>{p.office} — {p.party} — {p.state}</DropdownSub>
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      )}
+    </SearchWrapper>
+  )
+}
+
+// ── Seletor de destinatário ────────────────────────────────────────────────
+
+const RecipientTabs = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+`
+
+const RecipientTab = styled.button<{ $active: boolean }>`
+  padding: 6px 14px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1.5px solid ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.border};
+  background: ${({ $active, theme }) => $active ? theme.colors.primary + '12' : 'transparent'};
+  color: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.muted};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  cursor: pointer;
+  transition: all 0.15s;
+`
+
 const CharCount = styled.span<{ $warn: boolean }>`
   font-size: 0.75rem;
   color: ${({ $warn, theme }) => $warn ? theme.colors.action : theme.colors.muted};
@@ -316,7 +402,9 @@ export function CreateReport() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { mutate: createReport, isPending, error } = useCreateReport()
+  const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>('entity')
   const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(null)
+  const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(null)
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     defaultValues: { anonymous: false },
@@ -345,11 +433,15 @@ export function CreateReport() {
   }
 
   function onSubmit(data: FormValues) {
+    const recipient =
+      recipientTab === 'entity' && selectedEntity
+        ? { recipientType: 'ENTITY', recipientId: selectedEntity.id }
+        : recipientTab === 'politician' && selectedPolitician
+          ? { recipientType: 'POLITICIAN', recipientId: selectedPolitician.id }
+          : {}
+
     createReport(
-      {
-        ...data,
-        ...(selectedEntity && { recipientType: 'ENTITY', recipientId: selectedEntity.id }),
-      } as any,
+      { ...data, ...recipient } as any,
       { onSuccess: (report: any) => navigate(`/relatos/${report.id}`) },
     )
   }
@@ -407,9 +499,28 @@ export function CreateReport() {
             </Field>
 
             <Field>
-              <Label>Direcionar para entidade <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
-              <Hint>Prefeitura, hospital, concessionária — quem deve responder por isso.</Hint>
-              <EntitySearch onSelect={setSelectedEntity} />
+              <Label>Direcionar para <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
+              <Hint>Quem deve responder por isso.</Hint>
+              <RecipientTabs>
+                <RecipientTab
+                  type="button"
+                  $active={recipientTab === 'entity'}
+                  onClick={() => { setRecipientTab('entity'); setSelectedPolitician(null) }}
+                >
+                  Entidade pública
+                </RecipientTab>
+                <RecipientTab
+                  type="button"
+                  $active={recipientTab === 'politician'}
+                  onClick={() => { setRecipientTab('politician'); setSelectedEntity(null) }}
+                >
+                  Político
+                </RecipientTab>
+              </RecipientTabs>
+              {recipientTab === 'entity'
+                ? <EntitySearch onSelect={setSelectedEntity} />
+                : <PoliticianSearch onSelect={setSelectedPolitician} />
+              }
             </Field>
 
             <Field>

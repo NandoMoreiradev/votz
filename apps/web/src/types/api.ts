@@ -143,6 +143,34 @@ export interface EntitiesResponse {
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
 
+export interface Mandatometer {
+  total: number
+  resolved: number
+  inProgress: number
+  open: number
+  ignored: number
+}
+
+export interface Politician {
+  id: string
+  party: string
+  office: string
+  termStart: string
+  termEnd: string
+  electoralZone: string
+  state: string
+  city: string | null
+  verified: boolean
+  mandatometer: Mandatometer | null
+  createdAt: string
+  user: { id: string; name: string; avatarUrl: string | null }
+}
+
+export interface PoliticiansResponse {
+  data: Politician[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}
+
 export type LoginResponse =
   | { requiresMfa: false; user: AuthUser; accessToken: string }
   | { requiresMfa: true; mfaToken: string }

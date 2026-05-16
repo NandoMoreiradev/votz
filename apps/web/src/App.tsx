@@ -19,6 +19,7 @@ import { VerifyEmail } from './pages/VerifyEmail'
 import { UserProfile } from './pages/UserProfile'
 import { MyProfile } from './pages/MyProfile'
 import { EntityProfile } from './pages/EntityProfile'
+import { PoliticianProfile } from './pages/PoliticianProfile'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -71,6 +72,7 @@ function App() {
             <Route path="/perfil/:id" element={<UserProfile />} />
             <Route path="/meu-perfil" element={<MyProfile />} />
             <Route path="/entidade/:id" element={<EntityProfile />} />
+            <Route path="/politico/:id" element={<PoliticianProfile />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
