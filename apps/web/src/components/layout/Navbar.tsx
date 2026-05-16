@@ -177,6 +177,7 @@ export function Navbar() {
 
         <NavLinks>
           <NavLink to="/">Explorar</NavLink>
+          <NavLink to="/mapa">Mapa</NavLink>
         </NavLinks>
 
         <Actions>

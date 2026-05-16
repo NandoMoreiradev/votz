@@ -20,6 +20,7 @@ import { UserProfile } from './pages/UserProfile'
 import { MyProfile } from './pages/MyProfile'
 import { EntityProfile } from './pages/EntityProfile'
 import { PoliticianProfile } from './pages/PoliticianProfile'
+import { MapView } from './pages/MapView'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -73,6 +74,7 @@ function App() {
             <Route path="/meu-perfil" element={<MyProfile />} />
             <Route path="/entidade/:id" element={<EntityProfile />} />
             <Route path="/politico/:id" element={<PoliticianProfile />} />
+            <Route path="/mapa" element={<MapView />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
