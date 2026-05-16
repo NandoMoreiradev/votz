@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
@@ -68,11 +69,16 @@ const Actions = styled.div`
   margin-left: auto;
 `
 
-const Avatar = styled.button`
+const AvatarWrapper = styled.div`
+  position: relative;
+`
+
+const Avatar = styled.button<{ $src?: string | null }>`
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: ${({ theme }) => theme.colors.action};
+  background: ${({ $src, theme }) =>
+    $src ? `url(${$src}) center/cover` : theme.colors.action};
   color: #fff;
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
@@ -83,6 +89,49 @@ const Avatar = styled.button`
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+`
+
+const Dropdown = styled.div`
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  min-width: 168px;
+  overflow: hidden;
+  z-index: 200;
+`
+
+const DropdownItem = styled(Link)`
+  display: block;
+  padding: 10px 16px;
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
+  transition: background 0.1s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const DropdownButton = styled.button`
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.action};
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+  transition: background 0.1s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
 `
 
 const ReportButton = styled(Button)`
@@ -100,9 +149,22 @@ const ReportButton = styled(Button)`
 export function Navbar() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
   function handleLogout() {
     logout()
+    setOpen(false)
     navigate('/')
   }
 
@@ -123,9 +185,26 @@ export function Navbar() {
               <ReportButton as={Link as any} to="/novo">
                 + Relatar
               </ReportButton>
-              <Avatar onClick={handleLogout} title="Sair">
-                {user.name.charAt(0).toUpperCase()}
-              </Avatar>
+              <AvatarWrapper ref={wrapperRef}>
+                <Avatar
+                  $src={user.avatarUrl}
+                  onClick={() => setOpen((o) => !o)}
+                  title={user.name}
+                >
+                  {!user.avatarUrl && user.name.charAt(0).toUpperCase()}
+                </Avatar>
+                {open && (
+                  <Dropdown>
+                    <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
+                      Meu perfil
+                    </DropdownItem>
+                    <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
+                      Editar perfil
+                    </DropdownItem>
+                    <DropdownButton onClick={handleLogout}>Sair</DropdownButton>
+                  </Dropdown>
+                )}
+              </AvatarWrapper>
             </>
           ) : (
             <>

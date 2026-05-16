@@ -12,6 +12,18 @@ export class UsersService {
     return user
   }
 
+  async findMe(id: string) {
+    const user = await this.repo.findMe(id)
+    if (!user) throw new NotFoundException('User not found')
+    return user
+  }
+
+  async findUserReports(userId: string, page: number, limit: number) {
+    const user = await this.repo.findById(userId)
+    if (!user) throw new NotFoundException('User not found')
+    return this.repo.findUserReports(userId, page, limit)
+  }
+
   async updateProfile(id: string, requesterId: string, dto: UpdateProfileDto) {
     if (id !== requesterId) throw new ForbiddenException()
     const user = await this.repo.findById(id)

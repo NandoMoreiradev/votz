@@ -81,6 +81,40 @@ export interface AuthResponse {
   accessToken: string
 }
 
+export interface UserProfile {
+  id: string
+  name: string
+  type: UserType
+  verified: boolean
+  reputation: number
+  avatarUrl: string | null
+  bio?: string
+  createdAt: string
+  _count: { reports: number; votes: number; comments: number }
+}
+
+export interface UserReport {
+  id: string
+  title: string
+  category: Category
+  status: ReportStatus
+  city: string | null
+  state: string | null
+  pressureScore: number
+  createdAt: string
+  _count: { votes: number; comments: number }
+}
+
+export interface UserReportsResponse {
+  data: UserReport[]
+  meta: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
 export type LoginResponse =
   | { requiresMfa: false; user: AuthUser; accessToken: string }
   | { requiresMfa: true; mfaToken: string }

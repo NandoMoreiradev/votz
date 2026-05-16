@@ -120,6 +120,33 @@ const VoteBtn = styled(Button)<{ $active?: boolean }>`
   ${({ $active, theme }) => $active && `border-color: ${theme.colors.action}; background: ${theme.colors.action}18;`}
 `
 
+const AuthorCard = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+`
+
+const AuthorAvatar = styled.div<{ $src: string | null }>`
+  width: 40px;
+  height: 40px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.border)};
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const AuthorLink = styled(Link)`
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: 0.9375rem;
+  &:hover { color: ${({ theme }) => theme.colors.primary}; }
+`
+
 const TimelineList = styled.div`
   display: flex;
   flex-direction: column;
@@ -272,6 +299,20 @@ export function ReportDetail() {
           </Main>
 
           <Sidebar>
+            {report.author && (
+              <SideCard>
+                <SideTitle>Autor</SideTitle>
+                <AuthorCard>
+                  <AuthorAvatar $src={report.author.avatarUrl}>
+                    {!report.author.avatarUrl && report.author.name.charAt(0).toUpperCase()}
+                  </AuthorAvatar>
+                  <AuthorLink to={`/perfil/${report.author.id}`}>
+                    {report.author.name}
+                  </AuthorLink>
+                </AuthorCard>
+              </SideCard>
+            )}
+
             <SideCard>
               <SideTitle>Pressão coletiva</SideTitle>
               <VoteButtons>

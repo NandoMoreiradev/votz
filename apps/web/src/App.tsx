@@ -16,6 +16,8 @@ import { CreateReport } from './pages/CreateReport'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { VerifyEmail } from './pages/VerifyEmail'
+import { UserProfile } from './pages/UserProfile'
+import { MyProfile } from './pages/MyProfile'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -65,6 +67,8 @@ function App() {
             <Route path="/entrar" element={<Login />} />
             <Route path="/cadastro" element={<Register />} />
             <Route path="/verificar-email" element={<VerifyEmail />} />
+            <Route path="/perfil/:id" element={<UserProfile />} />
+            <Route path="/meu-perfil" element={<MyProfile />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>

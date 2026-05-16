@@ -12,6 +12,18 @@ const PUBLIC_USER_SELECT = {
   createdAt: true,
 } as const
 
+const REPORT_LIST_SELECT = {
+  id: true,
+  title: true,
+  category: true,
+  status: true,
+  city: true,
+  state: true,
+  pressureScore: true,
+  createdAt: true,
+  _count: { select: { votes: true, comments: true } },
+} as const
+
 @Injectable()
 export class UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -33,6 +45,36 @@ export class UsersRepository {
         },
       },
     })
+  }
+
+  findMe(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        ...PUBLIC_USER_SELECT,
+        email: true,
+        emailVerified: true,
+        mfaEnabled: true,
+        _count: {
+          select: { reports: true, votes: true, comments: true },
+        },
+      },
+    })
+  }
+
+  async findUserReports(authorId: string, page: number, limit: number) {
+    const where = { authorId, anonymous: false }
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.report.findMany({
+        where,
+        select: REPORT_LIST_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.report.count({ where }),
+    ])
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   updateProfile(id: string, data: { name?: string; bio?: string; avatarUrl?: string }) {
