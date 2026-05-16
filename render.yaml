@@ -1,0 +1,82 @@
+﻿# render.yaml — Votz infrastructure blueprint
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ─── Backend (NestJS API) ────────────────────────────────────────────────
+  - type: web
+    name: votz-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: >
+      npm ci
+      && npx prisma generate --schema=packages/database/prisma/schema.prisma
+      && npm run build --workspace=apps/api
+    startCommand: >
+      npx prisma migrate deploy --schema=packages/database/prisma/schema.prisma
+      && node apps/api/dist/main.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false            # Preencher no dashboard com a URL do Neon
+      - key: REDIS_URL
+        fromService:
+          name: votz-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false            # node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: CPF_ENCRYPTION_KEY
+        sync: false            # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: "Votz <noreply@votz.app>"
+      - key: FRONTEND_URL
+        sync: false            # Ex: https://votz-web.onrender.com
+      - key: APP_URL
+        sync: false            # Mesmo que FRONTEND_URL
+      - key: API_PORT
+        value: "10000"         # Render usa porta 10000 por padrão
+
+  # ─── Frontend (React + Vite) ─────────────────────────────────────────────
+  - type: static
+    name: votz-web
+    buildCommand: npm ci && npm run build --workspace=apps/web
+    staticPublishPath: apps/web/dist
+    pullRequestPreviewsEnabled: false
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false            # Ex: https://votz-api.onrender.com/api/v1
+
+  # ─── Redis (BullMQ) ──────────────────────────────────────────────────────
+  - type: redis
+    name: votz-redis
+    region: frankfurt
+    plan: free
+    ipAllowList: []            # Só permite acesso interno (outros serviços Render)

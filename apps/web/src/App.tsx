@@ -29,9 +29,10 @@ function AuthInit() {
     }
     window.addEventListener('votz:logout', handleForceLogout)
 
+    const apiBase = import.meta.env.VITE_API_URL ?? '/api/v1'
     // Restaura sessão do cookie httpOnly — sem tocar em localStorage
     axios
-      .post<{ accessToken: string }>('/api/v1/auth/refresh', {}, { withCredentials: true })
+      .post<{ accessToken: string }>(`${apiBase}/auth/refresh`, {}, { withCredentials: true })
       .then(({ data }) => {
         setToken(data.accessToken)
         return api.get('/auth/me')

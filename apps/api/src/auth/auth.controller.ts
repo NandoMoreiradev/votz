@@ -22,12 +22,14 @@ import { CurrentUser } from './decorators/current-user.decorator'
 
 const REFRESH_COOKIE = 'votz:refresh_token'
 
+const isProd = process.env.NODE_ENV === 'production'
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: isProd,
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/api/v1/auth',
+  path: '/',
 }
 
 @ApiTags('auth')
@@ -133,7 +135,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.authService.logout(user.id)
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' })
+    res.clearCookie(REFRESH_COOKIE, { path: '/', secure: isProd, sameSite: isProd ? 'none' : 'lax' })
   }
 
   @Get('me')
