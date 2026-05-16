@@ -5,6 +5,7 @@ import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
+import { CommentsSection } from '../components/comments/CommentsSection'
 import { useReport } from '../hooks/useReport'
 import { useVote } from '../hooks/useVote'
 import { useAuthStore } from '../store/auth.store'
@@ -295,6 +296,10 @@ export function ReportDetail() {
               <Description style={{ marginTop: 24 }}>
                 {report.description}
               </Description>
+            </Card>
+
+            <Card>
+              <CommentsSection reportId={report.id} />
             </Card>
           </Main>
 
