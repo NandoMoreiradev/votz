@@ -9,7 +9,7 @@ services:
     region: frankfurt
     plan: free
     buildCommand: >
-      npm ci
+      npm ci --include=dev
       && npx prisma generate --schema=packages/database/prisma/schema.prisma
       && npm run build --workspace=apps/api
     startCommand: >

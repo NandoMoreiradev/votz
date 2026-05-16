@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json",
     "start:dev": "dotenv -e ../../.env -- nest start --watch",
     "start:prod": "node dist/main",
     "start": "node dist/main",
