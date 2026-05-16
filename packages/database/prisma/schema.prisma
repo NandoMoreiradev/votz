@@ -112,11 +112,13 @@ model User {
   phone           String?   // normalized E.164 via libphonenumber-js
   cpf             String?   // AES-256 encrypted
   googleId        String?   @unique
-  mfaEnabled        Boolean   @default(false)
-  mfaSecret         String?
-  mfaBackupCodes    String[]
-  lastLoginAt       DateTime?
-  refreshTokenHash  String?
+  mfaEnabled           Boolean   @default(false)
+  mfaSecret            String?
+  mfaBackupCodes       String[]
+  lastLoginAt          DateTime?
+  refreshTokenHash     String?
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

@@ -10,7 +10,7 @@ export function useLogin() {
     mutationFn: (data: { email: string; password: string }) =>
       api.post<AuthResponse>('/auth/login', data).then((r) => r.data),
     onSuccess: ({ user, accessToken }) => {
-      setAuth(user as any, accessToken)
+      setAuth(user, accessToken)
     },
   })
 }
@@ -22,7 +22,7 @@ export function useRegister() {
     mutationFn: (data: { name: string; email: string; password: string }) =>
       api.post<AuthResponse>('/auth/register', data).then((r) => r.data),
     onSuccess: ({ user, accessToken }) => {
-      setAuth(user as any, accessToken)
+      setAuth(user, accessToken)
     },
   })
 }

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common'
+import { Injectable, UnauthorizedException, ConflictException, HttpException, HttpStatus } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
@@ -49,12 +49,36 @@ export class AuthService {
     if (!user || !user.password) throw new UnauthorizedException('Invalid credentials')
     if (user.banned) throw new UnauthorizedException('Account suspended')
 
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000)
+      throw new HttpException(
+        `Account locked. Try again in ${minutesLeft} minute(s).`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.password)
-    if (!isPasswordValid) throw new UnauthorizedException('Invalid credentials')
+
+    if (!isPasswordValid) {
+      const attempts = user.failedLoginAttempts + 1
+      const shouldLock = attempts >= 5
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: attempts,
+          lockedUntil: shouldLock ? new Date(Date.now() + 15 * 60_000) : null,
+        },
+      })
+      throw new UnauthorizedException(
+        shouldLock
+          ? 'Too many failed attempts. Account locked for 15 minutes.'
+          : 'Invalid credentials',
+      )
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
     })
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)

@@ -11,7 +11,24 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger))
 
-  app.use(helmet())
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'"],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    }),
+  )
   app.use(cookieParser())
 
   app.enableCors({
@@ -31,15 +48,16 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1')
 
-  const config = new DocumentBuilder()
-    .setTitle('Votz API')
-    .setDescription('Infraestrutura de accountability cívico do Brasil')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build()
-
-  const document = SwaggerModule.createDocument(app, config)
-  SwaggerModule.setup('api/docs', app, document)
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Votz API')
+      .setDescription('Infraestrutura de accountability cívico do Brasil')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build()
+    const document = SwaggerModule.createDocument(app, config)
+    SwaggerModule.setup('api/docs', app, document)
+  }
 
   const port = process.env.API_PORT ?? 3000
   await app.listen(port)

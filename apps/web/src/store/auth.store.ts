@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { setToken } from '../lib/token'
 import { AuthenticatedUser } from '@votz/shared-types'
 
 interface AuthState {
   user: AuthenticatedUser | null
-  accessToken: string | null
-  setAuth: (user: AuthenticatedUser, token: string) => void
+  setAuth: (user: AuthenticatedUser, accessToken: string) => void
+  setUser: (user: AuthenticatedUser) => void
   logout: () => void
 }
 
@@ -13,14 +14,14 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      accessToken: null,
       setAuth: (user, accessToken) => {
-        localStorage.setItem('votz:access_token', accessToken)
-        set({ user, accessToken })
+        setToken(accessToken)
+        set({ user })
       },
+      setUser: (user) => set({ user }),
       logout: () => {
-        localStorage.removeItem('votz:access_token')
-        set({ user: null, accessToken: null })
+        setToken(null)
+        set({ user: null })
       },
     }),
     {

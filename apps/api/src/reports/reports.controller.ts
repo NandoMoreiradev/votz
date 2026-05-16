@@ -3,9 +3,9 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ReportsService } from './reports.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
+import { ListReportsQueryDto } from './dto/list-reports-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
-import { Category, ReportStatus } from '@votz/shared-types'
 
 @ApiTags('reports')
 @Controller('reports')
@@ -25,15 +25,15 @@ export class ReportsController {
 
   @Get()
   @ApiOperation({ summary: 'List reports with filters and pagination' })
-  findAll(
-    @Query('category') category?: Category,
-    @Query('status') status?: ReportStatus,
-    @Query('city') city?: string,
-    @Query('state') state?: string,
-    @Query('page') page = 1,
-    @Query('limit') limit = 20,
-  ) {
-    return this.reportsService.findAll({ category, status, city, state, page: +page, limit: +limit })
+  findAll(@Query() query: ListReportsQueryDto) {
+    return this.reportsService.findAll({
+      category: query.category,
+      status: query.status,
+      city: query.city,
+      state: query.state,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    })
   }
 
   @Get(':id')

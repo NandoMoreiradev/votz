@@ -1,0 +1,41 @@
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { Type } from 'class-transformer'
+import { ApiPropertyOptional } from '@nestjs/swagger'
+import { Category, ReportStatus } from '@votz/shared-types'
+
+export class ListReportsQueryDto {
+  @ApiPropertyOptional({ enum: Category })
+  @IsOptional()
+  @IsEnum(Category)
+  category?: Category
+
+  @ApiPropertyOptional({ enum: ReportStatus })
+  @IsOptional()
+  @IsEnum(ReportStatus)
+  status?: ReportStatus
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  city?: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  state?: string
+
+  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page?: number = 1
+
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  limit?: number = 20
+}
