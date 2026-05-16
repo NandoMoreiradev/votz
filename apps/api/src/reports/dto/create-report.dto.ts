@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsEnum, IsString, MinLength, MaxLength, IsBoolean, IsOptional, IsNumber, IsUUID } from 'class-validator'
+import { IsArray, IsEnum, IsString, IsUrl, MinLength, MaxLength, IsBoolean, IsOptional, IsNumber, IsUUID, ArrayMaxSize } from 'class-validator'
 import { Category, RecipientType } from '@votz/shared-types'
 
 export class CreateReportDto {
@@ -49,4 +49,11 @@ export class CreateReportDto {
   @IsUUID()
   @IsOptional()
   recipientId?: string
+
+  @ApiPropertyOptional({ type: [String], description: 'URLs de mídia já enviadas via /storage/upload/report-media (máx. 5)' })
+  @IsArray()
+  @IsUrl({}, { each: true })
+  @ArrayMaxSize(5)
+  @IsOptional()
+  media?: string[]
 }

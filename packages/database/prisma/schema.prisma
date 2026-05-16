@@ -95,6 +95,11 @@ enum VoteType {
   ME_TOO
 }
 
+enum NotificationType {
+  NEW_COMMENT
+  STATUS_CHANGED
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -128,6 +133,7 @@ model User {
   votes           Vote[]
   comments        Comment[]
   timelineEvents  TimelineEvent[]
+  notifications   Notification[]
   entity          Entity?
   politician      Politician?
 
@@ -171,6 +177,7 @@ model Report {
   timeline         TimelineEvent[]
   votes            Vote[]
   comments         Comment[]
+  notifications    Notification[]
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -286,6 +293,20 @@ model Vote {
 
   @@unique([reportId, userId, type])
   @@map("votes")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  read      Boolean          @default(false)
+  reportId  String
+  report    Report           @relation(fields: [reportId], references: [id])
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  @@map("notifications")
 }
 
 model Comment {

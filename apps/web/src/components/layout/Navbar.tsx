@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
 import { useAuthStore } from '../../store/auth.store'
+import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
 
 const Nav = styled.nav`
   position: sticky;
@@ -134,6 +135,208 @@ const DropdownButton = styled.button`
   }
 `
 
+// ── Notificações ──────────────────────────────────────────────────────────
+
+const BellWrapper = styled.div`
+  position: relative;
+`
+
+const BellBtn = styled.button`
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: background 0.15s;
+  flex-shrink: 0;
+
+  &:hover { background: rgba(255,255,255,0.18); color: #fff; }
+`
+
+const UnreadBadge = styled.span`
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 99px;
+  background: ${({ theme }) => theme.colors.action};
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+  pointer-events: none;
+`
+
+const NotifDropdown = styled.div`
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -8px;
+  width: 320px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  z-index: 200;
+  overflow: hidden;
+`
+
+const NotifHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const NotifTitle = styled.span`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const MarkAllBtn = styled.button`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.primary};
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  &:hover { text-decoration: underline; }
+`
+
+const NotifList = styled.div`
+  max-height: 360px;
+  overflow-y: auto;
+`
+
+const NotifItem = styled(Link)<{ $unread: boolean }>`
+  display: block;
+  padding: 12px 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ $unread, theme }) => $unread ? theme.colors.primary + '06' : 'transparent'};
+  transition: background 0.1s;
+
+  &:last-child { border-bottom: none; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+`
+
+const NotifText = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0 0 2px;
+  line-height: 1.4;
+`
+
+const NotifSub = styled.span`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const NotifDot = styled.span`
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.action};
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+`
+
+const NotifEmpty = styled.p`
+  text-align: center;
+  padding: 32px 16px;
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0;
+`
+
+function notifLabel(n: AppNotification): string {
+  if (n.type === 'NEW_COMMENT') return `Novo comentário em "${n.report.title}"`
+  if (n.type === 'STATUS_CHANGED') {
+    const s = (n.metadata?.newStatus as string) ?? ''
+    const labels: Record<string, string> = {
+      OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento',
+      RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado',
+    }
+    return `Relato "${n.report.title}" → ${labels[s] ?? s}`
+  }
+  return n.report.title
+}
+
+function timeAgo(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000
+  if (diff < 60) return 'agora'
+  if (diff < 3600) return `${Math.floor(diff / 60)}min`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  return `${Math.floor(diff / 86400)}d`
+}
+
+function NotificationsPanel() {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const { data: count = 0 } = useUnreadCount()
+  const { data } = useNotifications()
+  const { mutate: markRead } = useMarkRead()
+  const { mutate: markAll } = useMarkAllRead()
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  return (
+    <BellWrapper ref={wrapperRef}>
+      <BellBtn onClick={() => setOpen((o) => !o)} title="Notificações">🔔</BellBtn>
+      {count > 0 && <UnreadBadge>{count > 99 ? '99+' : count}</UnreadBadge>}
+
+      {open && (
+        <NotifDropdown>
+          <NotifHeader>
+            <NotifTitle>Notificações</NotifTitle>
+            {count > 0 && <MarkAllBtn onClick={() => markAll()}>Marcar todas como lidas</MarkAllBtn>}
+          </NotifHeader>
+          <NotifList>
+            {!data || data.data.length === 0 ? (
+              <NotifEmpty>Nenhuma notificação ainda.</NotifEmpty>
+            ) : (
+              data.data.map((n) => (
+                <NotifItem
+                  key={n.id}
+                  to={`/relatos/${n.report.id}`}
+                  $unread={!n.read}
+                  onClick={() => { if (!n.read) markRead(n.id); setOpen(false) }}
+                >
+                  <NotifText>
+                    {!n.read && <NotifDot />}
+                    {notifLabel(n)}
+                  </NotifText>
+                  <NotifSub>{timeAgo(n.createdAt)}</NotifSub>
+                </NotifItem>
+              ))
+            )}
+          </NotifList>
+        </NotifDropdown>
+      )}
+    </BellWrapper>
+  )
+}
+
 const ReportButton = styled(Button)`
   background: ${({ theme }) => theme.colors.action};
   color: #fff;
@@ -168,6 +371,8 @@ export function Navbar() {
     navigate('/')
   }
 
+  const isStaff = user?.type === 'MODERATOR' || user?.type === 'ADMIN'
+
   return (
     <Nav>
       <Inner>
@@ -177,7 +382,10 @@ export function Navbar() {
 
         <NavLinks>
           <NavLink to="/">Explorar</NavLink>
+          <NavLink to="/entidades">Entidades</NavLink>
+          <NavLink to="/politicos">Políticos</NavLink>
           <NavLink to="/mapa">Mapa</NavLink>
+          {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
         </NavLinks>
 
         <Actions>
@@ -186,6 +394,7 @@ export function Navbar() {
               <ReportButton as={Link as any} to="/novo">
                 + Relatar
               </ReportButton>
+              <NotificationsPanel />
               <AvatarWrapper ref={wrapperRef}>
                 <Avatar
                   $src={user.avatarUrl}

@@ -323,6 +323,46 @@ export class AuthService {
   }
 
   // ─────────────────────────────────────────────
+  // GOOGLE OAUTH
+  // ─────────────────────────────────────────────
+
+  async googleLogin(profile: { googleId: string; email: string; name: string; avatarUrl: string | null }) {
+    let user = await this.prisma.user.findFirst({
+      where: { OR: [{ googleId: profile.googleId }, { email: profile.email }] },
+      select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
+    })
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          googleId: profile.googleId,
+          email: profile.email,
+          name: profile.name,
+          avatarUrl: profile.avatarUrl,
+          emailVerified: true,
+        },
+        select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
+      })
+    } else if (!user.googleId) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { googleId: profile.googleId, emailVerified: true },
+        select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
+      })
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    })
+
+    const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
+    await this.storeRefreshHash(user.id, refreshToken)
+
+    return { user, accessToken, refreshToken }
+  }
+
+  // ─────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────
 

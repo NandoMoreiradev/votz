@@ -19,7 +19,8 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
 ])
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
+const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
 
 export interface UploadedFile {
   key: string
@@ -57,8 +58,12 @@ export class StorageService {
       throw new BadRequestException(`Tipo de arquivo não permitido: ${mimeType}`)
     }
 
-    if (buffer.byteLength > MAX_FILE_SIZE) {
-      throw new BadRequestException('Arquivo excede o limite de 10 MB')
+    const isVideo = mimeType.startsWith('video/')
+    const maxSize = isVideo ? VIDEO_MAX_SIZE : IMAGE_MAX_SIZE
+    if (buffer.byteLength > maxSize) {
+      throw new BadRequestException(
+        isVideo ? 'Vídeo excede o limite de 100 MB' : 'Imagem excede o limite de 10 MB',
+      )
     }
 
     const ext = mimeType.split('/')[1].replace('quicktime', 'mov')

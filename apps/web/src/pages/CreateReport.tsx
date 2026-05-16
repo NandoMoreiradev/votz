@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -11,6 +11,249 @@ import { useCreateReport } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
 import { EntitiesResponse, EntityListItem, PoliticiansResponse, Politician } from '../types/api'
+
+// ── Media upload ───────────────────────────────────────────────────────────
+
+const MediaZone = styled.div<{ $dragging: boolean }>`
+  border: 2px dashed ${({ $dragging, theme }) => $dragging ? theme.colors.primary : theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: ${({ $dragging, theme }) => $dragging ? theme.colors.primary + '08' : 'transparent'};
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.primary};
+    background: ${({ theme }) => theme.colors.primary}08;
+  }
+`
+
+const MediaZoneText = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0;
+
+  strong { color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const MediaGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+`
+
+const MediaThumb = styled.div`
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: ${({ theme }) => theme.radii.md};
+  overflow: hidden;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.neutral};
+`
+
+const ThumbImg = styled.img`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+`
+
+const ThumbVideo = styled.video`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+`
+
+const ThumbLabel = styled.div`
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+`
+
+const RemoveThumb = styled.button`
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 0.625rem;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+`
+
+const UploadingOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime'])
+const ACCEPTED_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES]
+const IMAGE_MAX = 10 * 1024 * 1024   // 10 MB
+const VIDEO_MAX = 100 * 1024 * 1024  // 100 MB
+const MAX_FILES = 5
+
+interface MediaFile {
+  id: string
+  file: File
+  previewUrl: string
+  uploadedUrl?: string
+  uploading: boolean
+  error?: string
+}
+
+function validateFile(f: File): string | null {
+  if (!ACCEPTED_TYPES.includes(f.type)) return 'Tipo não suportado'
+  if (IMAGE_TYPES.has(f.type) && f.size > IMAGE_MAX) return 'Imagem acima de 10 MB'
+  if (VIDEO_TYPES.has(f.type) && f.size > VIDEO_MAX) return 'Vídeo acima de 100 MB'
+  return null
+}
+
+function useMediaUpload() {
+  const [files, setFiles] = useState<MediaFile[]>([])
+
+  function addFiles(incoming: File[]) {
+    const slots = MAX_FILES - files.length
+    if (slots <= 0) return
+
+    const toAdd = incoming.slice(0, slots).map((f) => {
+      const validationError = validateFile(f)
+      return {
+        id: crypto.randomUUID(),
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        uploading: !validationError,
+        error: validationError ?? undefined,
+      } satisfies MediaFile
+    })
+
+    if (!toAdd.length) return
+
+    setFiles((prev) => [...prev, ...toAdd])
+
+    toAdd.filter((e) => !e.error).forEach((entry) => {
+      const form = new FormData()
+      form.append('file', entry.file)
+      api
+        .post<{ url: string }>('/storage/upload/report-media', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        .then(({ data }) => {
+          setFiles((prev) =>
+            prev.map((f) => f.id === entry.id ? { ...f, uploading: false, uploadedUrl: data.url } : f),
+          )
+        })
+        .catch(() => {
+          setFiles((prev) =>
+            prev.map((f) => f.id === entry.id ? { ...f, uploading: false, error: 'Falha no upload' } : f),
+          )
+        })
+    })
+  }
+
+  function remove(id: string) {
+    setFiles((prev) => {
+      const target = prev.find((f) => f.id === id)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((f) => f.id !== id)
+    })
+  }
+
+  const uploadedUrls = files
+    .filter((f) => !f.uploading && !f.error && f.uploadedUrl)
+    .map((f) => f.uploadedUrl!)
+
+  const isUploading = files.some((f) => f.uploading)
+
+  return { files, addFiles, remove, uploadedUrls, isUploading }
+}
+
+function MediaUploader({ onChange }: { onChange: (urls: string[]) => void }) {
+  const { files, addFiles, remove, uploadedUrls, isUploading } = useMediaUpload()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    if (!isUploading) onChange(uploadedUrls)
+  }, [isUploading, uploadedUrls.join(',')])
+
+  function handleFiles(incoming: FileList | null) {
+    if (!incoming) return
+    addFiles(Array.from(incoming))
+  }
+
+  return (
+    <div>
+      <MediaZone
+        $dragging={dragging}
+        onClick={() => files.length < MAX_FILES && inputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          handleFiles(e.dataTransfer.files)
+        }}
+      >
+        <MediaZoneText>
+          <strong>Clique ou arraste</strong> fotos/vídeos aqui<br />
+          Imagens (JPEG, PNG, WebP, GIF) até 10 MB · Vídeos (MP4, MOV) até 100 MB · máx. {MAX_FILES} arquivos
+        </MediaZoneText>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+      </MediaZone>
+
+      {files.length > 0 && (
+        <MediaGrid>
+          {files.map((f) => (
+            <MediaThumb key={f.id}>
+              {f.file.type.startsWith('image/') ? (
+                <ThumbImg src={f.previewUrl} alt="" />
+              ) : f.file.type.startsWith('video/') ? (
+                <ThumbVideo src={f.previewUrl} muted />
+              ) : (
+                <ThumbLabel>📄</ThumbLabel>
+              )}
+              {f.uploading && <UploadingOverlay>enviando…</UploadingOverlay>}
+              {f.error && (
+                <UploadingOverlay
+                  style={{ color: '#E63946', fontSize: '0.65rem', textAlign: 'center', padding: '4px' }}
+                  title={f.error}
+                >
+                  {f.error}
+                </UploadingOverlay>
+              )}
+              <RemoveThumb type="button" onClick={() => remove(f.id)}>✕</RemoveThumb>
+            </MediaThumb>
+          ))}
+        </MediaGrid>
+      )}
+    </div>
+  )
+}
 
 const Page = styled.div`
   min-height: 100vh;
@@ -405,6 +648,7 @@ export function CreateReport() {
   const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>('entity')
   const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(null)
   const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(null)
+  const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     defaultValues: { anonymous: false },
@@ -441,7 +685,7 @@ export function CreateReport() {
           : {}
 
     createReport(
-      { ...data, ...recipient } as any,
+      { ...data, ...recipient, media: mediaUrls } as any,
       { onSuccess: (report: any) => navigate(`/relatos/${report.id}`) },
     )
   }
@@ -542,6 +786,12 @@ export function CreateReport() {
                 }
                 <CharCount $warn={description.length > 1900}>{description.length}/2000</CharCount>
               </div>
+            </Field>
+
+            <Field>
+              <Label>Fotos ou vídeos <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
+              <Hint>Evidências visuais aumentam a credibilidade do relato.</Hint>
+              <MediaUploader onChange={setMediaUrls} />
             </Field>
 
             <Field>

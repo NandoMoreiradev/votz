@@ -18,7 +18,9 @@ import { VerifyEmailDto } from './dto/verify-email.dto'
 import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard'
+import { GoogleAuthGuard } from './guards/google-auth.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
+import { ConfigService } from '@nestjs/config'
 
 const REFRESH_COOKIE = 'votz:refresh_token'
 
@@ -35,7 +37,10 @@ const COOKIE_OPTIONS = {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Post('register')
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
@@ -144,5 +149,28 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user' })
   me(@CurrentUser() user: { id: string }) {
     return this.authService.me(user.id)
+  }
+
+  // ── Google OAuth ────────────────────────────────────────────────────────
+
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Redirect to Google OAuth' })
+  googleRedirect() {
+    // Passport redireciona automaticamente
+  }
+
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Google OAuth callback' })
+  async googleCallback(
+    @CurrentUser() profile: { googleId: string; email: string; name: string; avatarUrl: string | null },
+    @Res() res: Response,
+  ) {
+    const { accessToken, refreshToken } = await this.authService.googleLogin(profile)
+    const appUrl = this.config.get('APP_URL', 'http://localhost:5173')
+
+    res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
+    res.redirect(`${appUrl}/auth/google/callback?token=${encodeURIComponent(accessToken)}`)
   }
 }

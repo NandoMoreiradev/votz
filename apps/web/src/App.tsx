@@ -21,6 +21,10 @@ import { MyProfile } from './pages/MyProfile'
 import { EntityProfile } from './pages/EntityProfile'
 import { PoliticianProfile } from './pages/PoliticianProfile'
 import { MapView } from './pages/MapView'
+import { EntitiesList } from './pages/EntitiesList'
+import { PoliticiansList } from './pages/PoliticiansList'
+import { GoogleCallback } from './pages/GoogleCallback'
+import { Admin } from './pages/Admin'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -75,6 +79,10 @@ function App() {
             <Route path="/entidade/:id" element={<EntityProfile />} />
             <Route path="/politico/:id" element={<PoliticianProfile />} />
             <Route path="/mapa" element={<MapView />} />
+            <Route path="/entidades" element={<EntitiesList />} />
+            <Route path="/politicos" element={<PoliticiansList />} />
+            <Route path="/auth/google/callback" element={<GoogleCallback />} />
+            <Route path="/admin" element={<Admin />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import DOMPurify from 'isomorphic-dompurify'
 import { ReportsRepository } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
+import { NotificationsService } from '../notifications/notifications.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { Category, EventType, ReportStatus, UserType } from '@votz/shared-types'
@@ -11,6 +12,7 @@ export class ReportsService {
   constructor(
     private readonly repository: ReportsRepository,
     private readonly timeline: TimelineService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
@@ -82,6 +84,15 @@ export class ReportsService {
       authorId: user.id,
       metadata: { previousStatus: report.status, newStatus: dto.status },
     })
+
+    if (report.authorId && report.authorId !== user.id) {
+      this.notifications.notify({
+        userId: report.authorId,
+        type: 'STATUS_CHANGED',
+        reportId,
+        metadata: { previousStatus: report.status, newStatus: dto.status },
+      }).catch(() => null)
+    }
 
     return updated
   }

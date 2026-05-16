@@ -42,6 +42,7 @@ export class ReportsRepository {
         recipientType: dto.recipientType,
         recipientId: dto.recipientId,
         authorId: dto.anonymous ? null : authorId,
+        media: dto.media ?? [],
       },
       select: PUBLIC_REPORT_SELECT,
     })

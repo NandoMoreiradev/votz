@@ -79,6 +79,29 @@ const Location = styled.p`
   margin-bottom: 20px;
 `
 
+const MediaGallery = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 20px;
+`
+
+const MediaItem = styled.a`
+  display: block;
+  aspect-ratio: 1;
+  border-radius: ${({ theme }) => theme.radii.md};
+  overflow: hidden;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.neutral};
+
+  img, video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`
+
 const Description = styled.p`
   font-size: ${({ theme }) => theme.fontSizes.md};
   line-height: 1.75;
@@ -297,6 +320,20 @@ export function ReportDetail() {
               <Description style={{ marginTop: 24 }}>
                 {report.description}
               </Description>
+
+              {report.media && report.media.length > 0 && (
+                <MediaGallery>
+                  {report.media.map((url) => (
+                    <MediaItem key={url} href={url} target="_blank" rel="noopener noreferrer">
+                      {/\.(mp4|mov|webm)$/i.test(url) ? (
+                        <video src={url} muted playsInline />
+                      ) : (
+                        <img src={url} alt="" loading="lazy" />
+                      )}
+                    </MediaItem>
+                  ))}
+                </MediaGallery>
+              )}
             </Card>
 
             <Card>

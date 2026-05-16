@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
 import { CommentsRepository } from './comments.repository'
+import { NotificationsService } from '../notifications/notifications.service'
 import { CreateCommentDto } from './dto/create-comment.dto'
 import { UserType } from '@votz/shared-types'
 
@@ -10,15 +11,29 @@ export class CommentsService {
   constructor(
     private readonly repo: CommentsRepository,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(reportId: string, authorId: string, dto: CreateCommentDto) {
-    const report = await this.prisma.report.findUnique({ where: { id: reportId }, select: { id: true } })
+    const report = await this.prisma.report.findUnique({
+      where: { id: reportId },
+      select: { id: true, authorId: true, title: true },
+    })
     if (!report) throw new NotFoundException('Report not found')
 
     const content = DOMPurify.sanitize(dto.content)
+    const comment = await this.repo.create({ reportId, authorId, content, parentId: dto.parentId })
 
-    return this.repo.create({ reportId, authorId, content, parentId: dto.parentId })
+    if (report.authorId && report.authorId !== authorId) {
+      this.notifications.notify({
+        userId: report.authorId,
+        type: 'NEW_COMMENT',
+        reportId,
+        metadata: { commentId: comment.id, actorId: authorId },
+      }).catch(() => null)
+    }
+
+    return comment
   }
 
   findByReport(reportId: string) {

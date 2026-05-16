@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
+import { GoogleButton } from '../components/ui/GoogleButton'
 import { useLogin, useMfaVerify } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 
@@ -213,6 +214,14 @@ export function Login() {
             {loginPending ? 'Entrando...' : 'Entrar'}
           </Button>
         </Form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
+          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #E5E5E5' }} />
+          <span style={{ fontSize: '0.8125rem', color: '#9CA3AF' }}>ou</span>
+          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #E5E5E5' }} />
+        </div>
+
+        <GoogleButton />
 
         <Footer>
           Não tem conta?{' '}
