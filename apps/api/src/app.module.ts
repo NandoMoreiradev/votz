@@ -22,6 +22,7 @@ import { MapModule } from './map/map.module'
 import { PressModule } from './press/press.module'
 import { AdminModule } from './admin/admin.module'
 import { PublicApiModule } from './public-api/public-api.module'
+import { StorageModule } from './storage/storage.module'
 import { HealthModule } from './health/health.module'
 
 @Module({
@@ -64,6 +65,7 @@ import { HealthModule } from './health/health.module'
     PrismaModule,
     MailModule,
     CryptoModule,
+    StorageModule,
     AuthModule,
     UsersModule,
     ReportsModule,

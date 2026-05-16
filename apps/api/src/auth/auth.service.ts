@@ -11,14 +11,14 @@ import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
 import { randomBytes, randomUUID } from 'crypto'
-import { authenticator } from 'otplib'
+import { generateSecret, generateURI, verify as otpVerify } from 'otplib'
 import * as QRCode from 'qrcode'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 
-authenticator.options = { window: 1 }
+const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock skew)
 
 const USER_PUBLIC_SELECT = {
   id: true,
@@ -210,8 +210,8 @@ export class AuthService {
     if (!user) throw new NotFoundException('User not found')
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled')
 
-    const secret = authenticator.generateSecret(20)
-    const otpauthUrl = authenticator.keyuri(user.email, 'Votz', secret)
+    const secret = generateSecret({ length: 20 })
+    const otpauthUrl = generateURI({ issuer: 'Votz', label: user.email, secret })
     const qrCode = await QRCode.toDataURL(otpauthUrl)
 
     // Salva secret temporariamente (ainda não está habilitado)
@@ -233,8 +233,8 @@ export class AuthService {
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled')
     if (!user.mfaSecret) throw new BadRequestException('Run MFA setup first')
 
-    const isValid = authenticator.verify({ token: code, secret: user.mfaSecret })
-    if (!isValid) throw new UnauthorizedException('Invalid TOTP code')
+    const { valid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    if (!valid) throw new UnauthorizedException('Invalid TOTP code')
 
     // Gera 8 backup codes
     const plainCodes = Array.from({ length: 8 }, () =>
@@ -279,7 +279,7 @@ export class AuthService {
     if (!user || !user.mfaEnabled || !user.mfaSecret) throw new UnauthorizedException()
 
     // Tenta TOTP primeiro; se falhar, tenta backup codes
-    const totpValid = authenticator.verify({ token: code, secret: user.mfaSecret })
+    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
 
     if (!totpValid) {
       const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
@@ -311,7 +311,7 @@ export class AuthService {
       throw new BadRequestException('MFA is not enabled')
     }
 
-    const isValid = authenticator.verify({ token: code, secret: user.mfaSecret })
+    const { valid: isValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
     if (!isValid) throw new UnauthorizedException('Invalid TOTP code')
 
     await this.prisma.user.update({
