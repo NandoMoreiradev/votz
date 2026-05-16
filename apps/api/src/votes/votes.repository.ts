@@ -24,6 +24,13 @@ export class VotesRepository {
     })
   }
 
+  findByUser(reportId: string, userId: string) {
+    return this.prisma.vote.findMany({
+      where: { reportId, userId },
+      select: { type: true },
+    })
+  }
+
   countByReport(reportId: string) {
     return this.prisma.vote.groupBy({
       by: ['type'],

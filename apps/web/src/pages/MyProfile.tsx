@@ -182,10 +182,37 @@ export function MyProfile() {
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; bio?: string; avatarUrl?: string }) =>
       api.patch<AuthenticatedUser>(`/users/${user!.id}`, data).then((r) => r.data),
+
+    onMutate: async (data) => {
+      if (!user) return
+      await queryClient.cancelQueries({ queryKey: ['user', user.id] })
+      const prevCache = queryClient.getQueryData(['user', user.id])
+      const prevStore = { ...user }
+
+      // Optimistic: atualiza store e cache antes de ouvir o servidor
+      setUser({ ...user, ...data })
+      queryClient.setQueryData(['user', user.id], (old: unknown) =>
+        old && typeof old === 'object' ? { ...old, ...data } : old,
+      )
+
+      return { prevCache, prevStore }
+    },
+
+    onError: (_err, _data, ctx) => {
+      if (ctx?.prevStore) setUser(ctx.prevStore)
+      if (ctx?.prevCache !== undefined) {
+        queryClient.setQueryData(['user', user!.id], ctx.prevCache)
+      }
+    },
+
     onSuccess: (updated) => {
       setUser(updated)
+      queryClient.setQueryData(['user', updated.id], updated)
+      navigate(`/perfil/${updated.id}`)
+    },
+
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['user', user!.id] })
-      navigate(`/perfil/${user!.id}`)
     },
   })
 

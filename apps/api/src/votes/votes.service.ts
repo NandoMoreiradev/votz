@@ -27,6 +27,14 @@ export class VotesService {
     return { voted: true, type }
   }
 
+  async myVotes(reportId: string, userId: string) {
+    const votes = await this.repo.findByUser(reportId, userId)
+    return {
+      SUPPORT: votes.some((v) => v.type === VoteType.SUPPORT),
+      ME_TOO: votes.some((v) => v.type === VoteType.ME_TOO),
+    }
+  }
+
   async countsByReport(reportId: string) {
     const groups = await this.repo.countByReport(reportId)
     return groups.reduce(

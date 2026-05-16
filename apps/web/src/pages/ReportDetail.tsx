@@ -7,7 +7,7 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { useReport } from '../hooks/useReport'
-import { useVote } from '../hooks/useVote'
+import { useVote, useMyVotes } from '../hooks/useVote'
 import { useAuthStore } from '../store/auth.store'
 import { TimelineEvent } from '../types/api'
 
@@ -245,6 +245,7 @@ export function ReportDetail() {
   const { id } = useParams<{ id: string }>()
   const { data: report, isLoading } = useReport(id!)
   const { mutate: vote } = useVote(id!)
+  const { data: myVotes } = useMyVotes(id!)
   const user = useAuthStore((s) => s.user)
 
   if (isLoading) {
@@ -323,6 +324,7 @@ export function ReportDetail() {
               <VoteButtons>
                 <VoteBtn
                   variant="outline"
+                  $active={myVotes?.SUPPORT}
                   onClick={() => handleVote(VoteType.SUPPORT)}
                 >
                   <span>▲ Apoio</span>
@@ -332,8 +334,9 @@ export function ReportDetail() {
                 </VoteBtn>
                 <VoteBtn
                   variant="outline"
+                  $active={myVotes?.ME_TOO}
                   onClick={() => handleVote(VoteType.ME_TOO)}
-                  style={{ fontSize: '0.875rem', color: '#6B7280' }}
+                  style={{ fontSize: '0.875rem' }}
                 >
                   <span>⚠ Também sofro isso</span>
                 </VoteBtn>

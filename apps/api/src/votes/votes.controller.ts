@@ -23,6 +23,17 @@ export class VotesController {
     return this.votesService.toggle(reportId, user.id, dto.type, user.emailVerified)
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get authenticated user's vote state for a report" })
+  myVotes(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.votesService.myVotes(reportId, user.id)
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get vote counts for a report' })
   counts(@Param('reportId') reportId: string) {
