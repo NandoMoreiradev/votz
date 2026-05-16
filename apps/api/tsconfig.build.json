@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "incremental": false
+    "incremental": false,
+    "ignoreDeprecations": "5.0"
   },
   "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }
