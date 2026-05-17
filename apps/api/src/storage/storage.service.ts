@@ -22,6 +22,31 @@ const ALLOWED_MIME_TYPES = new Set([
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
 
+function detectMimeFromBuffer(buf: Buffer): string {
+  if (buf.length < 12) return ''
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png'
+  // GIF: 47 49 46 38 (GIF8)
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif'
+  // WebP: RIFF....WEBP
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
+  // PDF: %PDF
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return 'application/pdf'
+  // MP4 / MOV: ftyp box at offset 4
+  if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buf.slice(8, 12).toString('ascii').trim()
+    const mp4Brands = ['isom', 'iso2', 'avc1', 'mp41', 'mp42', 'M4V ', 'M4A ', 'f4v ']
+    if (mp4Brands.includes(brand)) return 'video/mp4'
+    if (brand === 'qt  ') return 'video/quicktime'
+    // treat unknown ftyp brands as mp4 (e.g. HEVC recorded on iPhone)
+    return 'video/mp4'
+  }
+  return ''
+}
+
 export interface UploadedFile {
   key: string
   url: string
@@ -57,11 +82,13 @@ export class StorageService {
 
   async upload(
     buffer: Buffer,
-    mimeType: string,
+    _claimedMimeType: string,
     folder: 'reports' | 'avatars' | 'entities',
   ): Promise<UploadedFile> {
+    const mimeType = detectMimeFromBuffer(buffer)
+
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      throw new BadRequestException(`Tipo de arquivo não permitido: ${mimeType}`)
+      throw new BadRequestException('Tipo de arquivo não permitido ou não reconhecido')
     }
 
     const isVideo = mimeType.startsWith('video/')

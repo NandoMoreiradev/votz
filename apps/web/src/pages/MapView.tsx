@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import maplibregl from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Navbar } from '../components/layout/Navbar'
@@ -224,13 +224,12 @@ function useMapReports(category?: Category, status?: ReportStatus) {
 
 // ── Componente ─────────────────────────────────────────────────────────────
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
+const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined
 
 export function MapView() {
-  const mapRef = useRef<mapboxgl.Map | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const popupRef = useRef<mapboxgl.Popup | null>(null)
-  const popupContainerRef = useRef<HTMLDivElement | null>(null)
+  const popupRef = useRef<maplibregl.Popup | null>(null)
 
   const [categoryFilter, setCategoryFilter] = useState<Category | undefined>()
   const [statusFilter, setStatusFilter] = useState<ReportStatus | undefined>()
@@ -239,19 +238,17 @@ export function MapView() {
 
   // Inicializa o mapa
   useEffect(() => {
-    if (!MAPBOX_TOKEN || !containerRef.current || mapRef.current) return
+    if (!MAPTILER_KEY || !containerRef.current || mapRef.current) return
 
-    mapboxgl.accessToken = MAPBOX_TOKEN
-
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: `https://api.maptiler.com/maps/positron/style.json?key=${MAPTILER_KEY}`,
       center: [-47.9292, -15.7801], // Brasília
       zoom: 4,
     })
 
-    map.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
-    map.addControl(new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'bottom-right')
+    map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
+    map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'bottom-right')
 
     mapRef.current = map
 
@@ -305,7 +302,7 @@ export function MapView() {
       filter: ['has', 'point_count'],
       layout: {
         'text-field': '{point_count_abbreviated}',
-        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
         'text-size': 13,
       },
       paint: { 'text-color': '#fff' },
@@ -338,13 +335,13 @@ export function MapView() {
     // Clique em cluster → zoom
     map.on('click', 'reports-clusters', (e) => {
       const features = map.queryRenderedFeatures(e.point, { layers: ['reports-clusters'] })
-      const clusterId = features[0]?.properties?.cluster_id
+      const clusterId = features[0]?.properties?.cluster_id as number | undefined
       if (!clusterId) return
-      ;(map.getSource('reports') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err || !zoom) return
-        const coords = (features[0].geometry as GeoJSON.Point).coordinates as [number, number]
-        map.easeTo({ center: coords, zoom })
-      })
+      const coords = (features[0].geometry as GeoJSON.Point).coordinates as [number, number]
+      ;(map.getSource('reports') as maplibregl.GeoJSONSource)
+        .getClusterExpansionZoom(clusterId)
+        .then((zoom) => map.easeTo({ center: coords, zoom }))
+        .catch(() => {})
     })
 
     // Clique em pin individual → popup
@@ -378,7 +375,7 @@ export function MapView() {
       `
 
       if (popupRef.current) popupRef.current.remove()
-      popupRef.current = new mapboxgl.Popup({ closeButton: true, maxWidth: '300px' })
+      popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: '300px' })
         .setLngLat(coords)
         .setHTML(html)
         .addTo(map)
@@ -403,17 +400,17 @@ export function MapView() {
       <MapContainer>
         <MapEl ref={containerRef} />
 
-        {!MAPBOX_TOKEN && (
+        {!MAPTILER_KEY && (
           <TokenWarning>
-            <WarningTitle>Token do Mapbox não configurado</WarningTitle>
+            <WarningTitle>Chave do Maptiler não configurada</WarningTitle>
             <p style={{ color: '#6B7280', fontSize: '0.9375rem' }}>
               Adicione ao arquivo <code>.env</code>:
             </p>
-            <WarningCode>VITE_MAPBOX_TOKEN=pk.eyJ1Ij...</WarningCode>
+            <WarningCode>VITE_MAPTILER_KEY=sua_chave_aqui</WarningCode>
           </TokenWarning>
         )}
 
-        {MAPBOX_TOKEN && (
+        {MAPTILER_KEY && (
           <>
             <FilterBar>
               {categories.map((cat) => {

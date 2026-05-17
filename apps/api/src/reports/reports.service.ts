@@ -19,7 +19,7 @@ export class ReportsService {
     if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
 
     const sanitizedDescription = DOMPurify.sanitize(dto.description)
-    const cleanTitle = dto.title.trim().replace(/\s+/g, ' ')
+    const cleanTitle = DOMPurify.sanitize(dto.title).trim().replace(/\s+/g, ' ')
 
     const report = await this.repository.create(
       { ...dto, title: cleanTitle, description: sanitizedDescription },
