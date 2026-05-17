@@ -73,6 +73,8 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false            # Ex: https://votz-api.onrender.com/api/v1
+      - key: VITE_MAPTILER_KEY
+        sync: false            # cloud.maptiler.com → API Keys
 
   # ─── Redis (BullMQ) ──────────────────────────────────────────────────────
   - type: redis
