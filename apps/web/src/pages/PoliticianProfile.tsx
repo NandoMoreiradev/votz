@@ -5,6 +5,8 @@ import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
+import { useAuthStore } from '../store/auth.store'
+import { TeamPanel } from '../components/org/TeamPanel'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -270,6 +272,7 @@ export function PoliticianProfile() {
   const [page, setPage] = useState(1)
   const { data: politician, isLoading } = usePolitician(id!)
   const { data: reports, isLoading: loadingReports } = usePoliticianReports(id!, page)
+  const currentUser = useAuthStore((s) => s.user)
 
   const m = politician?.mandatometer
   const resolutionPct = m && m.total > 0 ? Math.round((m.resolved / m.total) * 100) : 0
@@ -343,6 +346,10 @@ export function PoliticianProfile() {
           </HeaderCard>
         ) : (
           <Empty>Político não encontrado.</Empty>
+        )}
+
+        {currentUser && politician && (
+          <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
         )}
 
         <SectionTitle>Relatos direcionados</SectionTitle>

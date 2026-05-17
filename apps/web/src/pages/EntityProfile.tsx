@@ -5,6 +5,8 @@ import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useEntity, useEntityReports } from '../hooks/useEntities'
+import { useAuthStore } from '../store/auth.store'
+import { TeamPanel } from '../components/org/TeamPanel'
 import { EntityType, ReportStatus } from '@votz/shared-types'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ export function EntityProfile() {
   const [page, setPage] = useState(1)
   const { data: entity, isLoading } = useEntity(id!)
   const { data: reports, isLoading: loadingReports } = useEntityReports(id!, page)
+  const currentUser = useAuthStore((s) => s.user)
 
   const resolutionRate =
     entity?.stats && entity.stats.total > 0
@@ -390,6 +393,10 @@ export function EntityProfile() {
           </HeaderCard>
         ) : (
           <Empty>Entidade não encontrada.</Empty>
+        )}
+
+        {currentUser && entity && (
+          <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
         )}
 
         <SectionTitle>Relatos direcionados</SectionTitle>

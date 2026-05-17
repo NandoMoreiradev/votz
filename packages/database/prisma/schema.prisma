@@ -102,6 +102,27 @@ enum VoteType {
   ME_TOO
 }
 
+enum OrgType {
+  ENTITY
+  POLITICIAN
+  COMPANY
+}
+
+enum OrgPermission {
+  RESPOND_REPORTS
+  MANAGE_MEMBERS
+  MANAGE_PROFILE
+  VIEW_ANALYTICS
+  EXPORT_DATA
+  MANAGE_BRANCHES
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
 enum RegistrationRequestType {
   ENTITY
   POLITICIAN
@@ -169,6 +190,7 @@ model User {
   politician            Politician?
   registrationRequests  RegistrationRequest[] @relation("RegistrationRequester")
   reviewedRequests      RegistrationRequest[] @relation("RegistrationReviewer")
+  memberships           OrgMembership[]
 
   @@map("users")
 }
@@ -387,4 +409,54 @@ model Comment {
   updatedAt DateTime  @updatedAt
 
   @@map("comments")
+}
+
+// ==================== RBAC / ORG MEMBERSHIP ====================
+
+// Role template owned by an org — permissions is a bitmask stored as a list
+model OrgRole {
+  id          String          @id @default(uuid())
+  orgType     OrgType
+  orgId       String
+  name        String          // e.g. "Atendente", "Gestor"
+  permissions OrgPermission[]
+  isDefault   Boolean         @default(false) // pre-built role (OWNER, MANAGER, AGENT, VIEWER)
+  memberships OrgMembership[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([orgType, orgId, name])
+  @@map("org_roles")
+}
+
+// Ties a User to an org via a Role
+model OrgMembership {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  orgType   OrgType
+  orgId     String
+  roleId    String
+  role      OrgRole          @relation(fields: [roleId], references: [id])
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([userId, orgType, orgId])
+  @@map("org_memberships")
+}
+
+// Pending invite — resolved when the invitee clicks the link
+model MemberInvite {
+  id          String    @id @default(uuid())
+  orgType     OrgType
+  orgId       String
+  email       String
+  roleId      String
+  token       String    @unique @default(uuid())
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("member_invites")
 }

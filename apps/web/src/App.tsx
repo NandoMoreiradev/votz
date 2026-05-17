@@ -26,6 +26,7 @@ import { PoliticiansList } from './pages/PoliticiansList'
 import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
+import { AcceptInvite } from './pages/AcceptInvite'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -86,6 +87,7 @@ function App() {
             <Route path="/auth/google/callback" element={<GoogleCallback />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
+            <Route path="/convite/:token" element={<AcceptInvite />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>

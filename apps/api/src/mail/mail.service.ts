@@ -37,6 +37,24 @@ export class MailService {
     }).catch((err) => this.logger.error('Failed to send verification email', err))
   }
 
+  async sendMemberInvite(email: string, orgName: string, roleName: string, token: string): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/convite/${token}`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: `Você foi convidado para a equipe de ${orgName} — Votz`,
+      html: `
+        <h2>Você recebeu um convite!</h2>
+        <p><strong>${orgName}</strong> convidou você para fazer parte da equipe no Votz com o cargo de <strong>${roleName}</strong>.</p>
+        <p><a href="${link}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Aceitar convite</a></p>
+        <p>O convite expira em 7 dias.</p>
+        <p>Se você não esperava este convite, pode ignorar este e-mail.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send member invite email', err))
+  }
+
   async sendMfaBackupCodes(email: string, name: string, codes: string[]): Promise<void> {
     const formattedCodes = codes.map((c) => `<li><code>${c}</code></li>`).join('')
 

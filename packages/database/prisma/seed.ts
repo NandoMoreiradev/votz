@@ -1,4 +1,4 @@
-import { PrismaClient, UserType, Category, ReportStatus, EntityType, EventType } from '@prisma/client'
+import { PrismaClient, UserType, Category, ReportStatus, EntityType, EventType, OrgType, OrgPermission, MembershipStatus } from '@prisma/client'
 import * as bcrypt from 'bcrypt'
 
 const prisma = new PrismaClient()
@@ -417,6 +417,74 @@ async function main() {
     })
   }
   console.log('✅ Comentários criados')
+
+  // ── Roles padrão e memberships ─────────────────────────────────────────────
+
+  const DEFAULT_ROLES = [
+    {
+      name: 'Proprietário',
+      permissions: [
+        OrgPermission.RESPOND_REPORTS,
+        OrgPermission.MANAGE_MEMBERS,
+        OrgPermission.MANAGE_PROFILE,
+        OrgPermission.VIEW_ANALYTICS,
+        OrgPermission.EXPORT_DATA,
+        OrgPermission.MANAGE_BRANCHES,
+      ],
+      isDefault: true,
+    },
+    {
+      name: 'Gestor',
+      permissions: [
+        OrgPermission.RESPOND_REPORTS,
+        OrgPermission.MANAGE_PROFILE,
+        OrgPermission.VIEW_ANALYTICS,
+        OrgPermission.EXPORT_DATA,
+        OrgPermission.MANAGE_BRANCHES,
+      ],
+      isDefault: true,
+    },
+    {
+      name: 'Atendente',
+      permissions: [OrgPermission.RESPOND_REPORTS, OrgPermission.VIEW_ANALYTICS],
+      isDefault: true,
+    },
+    {
+      name: 'Visualizador',
+      permissions: [OrgPermission.VIEW_ANALYTICS],
+      isDefault: true,
+    },
+  ]
+
+  // Helper: seed roles for an org and add owner membership
+  async function seedOrgRoles(orgType: OrgType, orgId: string, ownerUserId: string) {
+    const roleMap: Record<string, string> = {}
+    for (const r of DEFAULT_ROLES) {
+      const existing = await prisma.orgRole.findFirst({ where: { orgType, orgId, name: r.name } })
+      if (existing) {
+        roleMap[r.name] = existing.id
+        continue
+      }
+      const created = await prisma.orgRole.create({
+        data: { orgType, orgId, name: r.name, permissions: r.permissions, isDefault: r.isDefault },
+      })
+      roleMap[r.name] = created.id
+    }
+
+    // Add owner membership
+    const ownerRoleId = roleMap['Proprietário']
+    await prisma.orgMembership.upsert({
+      where: { userId_orgType_orgId: { userId: ownerUserId, orgType, orgId } },
+      update: {},
+      create: { userId: ownerUserId, orgType, orgId, roleId: ownerRoleId, status: MembershipStatus.ACTIVE },
+    })
+  }
+
+  await seedOrgRoles(OrgType.ENTITY, prefeitura.id, uPref.id)
+  await seedOrgRoles(OrgType.ENTITY, hospital.id, uHosp.id)
+  await seedOrgRoles(OrgType.POLITICIAN, pol1.id, uVer.id)
+  await seedOrgRoles(OrgType.POLITICIAN, pol2.id, uDep.id)
+  console.log('✅ Roles e memberships criados')
 
   // ── Resumo ──────────────────────────────────────────────────────────────────
 
