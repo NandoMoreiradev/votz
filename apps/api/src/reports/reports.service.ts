@@ -85,9 +85,9 @@ export class ReportsService {
       metadata: { previousStatus: report.status, newStatus: dto.status },
     })
 
-    if (report.authorId && report.authorId !== user.id) {
+    if (report.author?.id && report.author.id !== user.id) {
       this.notifications.notify({
-        userId: report.authorId,
+        userId: report.author.id,
         type: 'STATUS_CHANGED',
         reportId,
         metadata: { previousStatus: report.status, newStatus: dto.status },

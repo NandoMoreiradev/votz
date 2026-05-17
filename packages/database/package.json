@@ -2,6 +2,9 @@
   "name": "@votz/database",
   "version": "1.0.0",
   "private": true,
+  "prisma": {
+    "seed": "dotenv -e ../../.env -- ts-node prisma/seed.ts"
+  },
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
@@ -14,6 +17,8 @@
     "@prisma/client": "^5.19.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "bcrypt": "^5.1.1",
     "dotenv-cli": "^7.4.2",
     "prisma": "^5.19.1",
     "ts-node": "^10.9.2",

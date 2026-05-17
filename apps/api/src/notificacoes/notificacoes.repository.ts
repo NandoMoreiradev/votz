@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import { NotificationType } from '@prisma/client'
+import { NotificationType, Prisma } from '@prisma/client'
 
 const NOTIF_SELECT = {
   id: true,
@@ -21,7 +21,9 @@ export class NotificacoesRepository {
     reportId: string
     metadata?: Record<string, unknown>
   }) {
-    return this.prisma.notification.create({ data })
+    return this.prisma.notification.create({
+      data: { ...data, metadata: data.metadata as Prisma.InputJsonValue | undefined },
+    })
   }
 
   async findByUser(userId: string, page: number, limit: number) {
