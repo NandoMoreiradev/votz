@@ -74,7 +74,7 @@ const TypeDesc = styled.div`
 const Card = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.xl};
+  border-radius: ${({ theme }) => theme.radii.lg};
   padding: 32px;
 `
 

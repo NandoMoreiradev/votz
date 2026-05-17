@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
-import { RegistrationRequestStatus, RegistrationRequestType, CompanySector, CompanySize } from '@prisma/client'
+import { RegistrationRequestStatus, RegistrationRequestType, CompanySector, CompanySize, Prisma } from '@prisma/client'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
 import { RegistrationRequestsRepository } from './registration-requests.repository'
@@ -13,7 +13,7 @@ export class RegistrationRequestsService {
   ) {}
 
   create(requesterId: string, dto: CreateRegistrationRequestDto) {
-    const sanitizedPayload = this.sanitizePayload(dto.payload)
+    const sanitizedPayload = this.sanitizePayload(dto.payload) as unknown as Prisma.InputJsonValue
     return this.repo.create(requesterId, {
       type: dto.type as unknown as RegistrationRequestType,
       payload: sanitizedPayload,
