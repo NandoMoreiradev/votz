@@ -39,7 +39,7 @@ export interface Report {
   recipientId: string | null
   createdAt: string
   updatedAt: string
-  _count: { votes: number; comments: number }
+  _count: { votes: number; comments: number; meTooVotes: number }
   author: Author | null
   timeline?: TimelineEvent[]
   advocacy?: ReportAdvocacy | null

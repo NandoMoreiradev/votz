@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { VotesRepository } from './votes.repository'
+import { PressureService } from '../press/pressure.service'
 import { VoteType } from '@votz/shared-types'
 
 @Injectable()
@@ -8,6 +9,7 @@ export class VotesService {
   constructor(
     private readonly repo: VotesRepository,
     private readonly prisma: PrismaService,
+    private readonly pressure: PressureService,
   ) {}
 
   async toggle(reportId: string, userId: string, type: VoteType, emailVerified: boolean) {
@@ -20,11 +22,14 @@ export class VotesService {
 
     if (existing) {
       await this.repo.delete(reportId, userId, type)
-      return { voted: false, type }
+    } else {
+      await this.repo.create(reportId, userId, type)
     }
 
-    await this.repo.create(reportId, userId, type)
-    return { voted: true, type }
+    // Enfileira recálculo imediato — fire-and-forget, não bloqueia a resposta
+    this.pressure.enqueueReport(reportId).catch(() => null)
+
+    return { voted: !existing, type }
   }
 
   async myVotes(reportId: string, userId: string) {

@@ -561,15 +561,15 @@ const Actions = styled.div`
   padding-top: 10px;
   border-top: 1px dashed #E5E5E0;
 `
-const ActBtn = styled.button`
+const ActBtn = styled.button<{ $active?: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
   border-radius: 6px;
   border: none;
-  background: transparent;
-  color: #6B6B7A;
+  background: ${({ $active, theme }) => $active ? `${theme.colors.primary}12` : 'transparent'};
+  color: ${({ $active, theme }) => $active ? theme.colors.primary : '#6B6B7A'};
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
@@ -831,10 +831,44 @@ const ImprensaBtn = styled(Link)`
 function FeedCard({ report }: { report: Report }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [voted, setVoted] = useState({ support: false, meToo: false })
+  const [meTooCount, setMeTooCount] = useState(report._count.meTooVotes)
 
   const vote = useMutation({
     mutationFn: (type: VoteType) =>
       api.post(`/reports/${report.id}/votes`, { type }).then(r => r.data),
+    onMutate: async (type) => {
+      await qc.cancelQueries({ queryKey: ['reports'] })
+      const prevData = qc.getQueriesData<{ data: Report[] }>({ queryKey: ['reports'] })
+      const prevVoted = { ...voted }
+      const prevMeToo = meTooCount
+
+      if (type === VoteType.SUPPORT) {
+        const delta = voted.support ? -1 : 1
+        qc.setQueriesData<{ data: Report[]; meta: unknown }>({ queryKey: ['reports'] }, (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            data: old.data.map(r =>
+              r.id === report.id
+                ? { ...r, _count: { ...r._count, votes: Math.max(0, r._count.votes + delta) } }
+                : r
+            ),
+          }
+        })
+        setVoted(v => ({ ...v, support: !v.support }))
+      } else {
+        const delta = voted.meToo ? -1 : 1
+        setMeTooCount(c => Math.max(0, c + delta))
+        setVoted(v => ({ ...v, meToo: !v.meToo }))
+      }
+
+      return { prevData, prevVoted, prevMeToo }
+    },
+    onError: (_, __, ctx) => {
+      ctx?.prevData.forEach(([key, data]) => qc.setQueryData(key, data))
+      if (ctx) { setVoted(ctx.prevVoted); setMeTooCount(ctx.prevMeToo) }
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ['reports'] }),
   })
 
@@ -913,18 +947,18 @@ function FeedCard({ report }: { report: Report }) {
         )}
 
         <Actions>
-          <ActBtn onClick={e => handleVote(e, VoteType.SUPPORT)}>
+          <ActBtn $active={voted.support} onClick={e => handleVote(e, VoteType.SUPPORT)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 22h10V11l-5-9-1.5 2.5L8 9H4l3 13z" />
             </svg>
             Apoiar <span className="ct">{fmtCount(report._count.votes)}</span>
           </ActBtn>
 
-          <ActBtn onClick={e => handleVote(e, VoteType.ME_TOO)}>
+          <ActBtn $active={voted.meToo} onClick={e => handleVote(e, VoteType.ME_TOO)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="7" r="3" /><path d="M5 20c0-4 3-7 7-7s7 3 7 7" />
             </svg>
-            Eu também
+            Eu também <span className="ct">{fmtCount(meTooCount)}</span>
           </ActBtn>
 
           <ActBtn onClick={handleComment}>

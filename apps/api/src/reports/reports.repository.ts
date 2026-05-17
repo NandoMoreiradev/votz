@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateReportDto } from './dto/create-report.dto'
-import { Category, ReportStatus } from '@votz/shared-types'
+import { Category, ReportStatus, VoteType } from '@votz/shared-types'
 
 const ADVOCACY_SELECT = {
   where: { type: 'RESPONDED' as const },
@@ -36,9 +36,25 @@ const PUBLIC_REPORT_SELECT = {
   author: { select: { id: true, name: true, avatarUrl: true } },
 } as const
 
+type WithMeToo<T extends { id: string; _count: { votes: number; comments: number } }> =
+  T & { _count: T['_count'] & { meTooVotes: number } }
+
 @Injectable()
 export class ReportsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async mergeMeToo<T extends { id: string; _count: { votes: number; comments: number } }>(
+    items: T[],
+  ): Promise<WithMeToo<T>[]> {
+    if (items.length === 0) return []
+    const groups = await this.prisma.vote.groupBy({
+      by: ['reportId'],
+      where: { reportId: { in: items.map(r => r.id) }, type: VoteType.ME_TOO },
+      _count: { _all: true },
+    })
+    const map = new Map(groups.map(g => [g.reportId, g._count._all]))
+    return items.map(r => ({ ...r, _count: { ...r._count, meTooVotes: map.get(r.id) ?? 0 } }))
+  }
 
   async create(dto: CreateReportDto, authorId: string | null) {
     return this.prisma.report.create({
@@ -59,7 +75,7 @@ export class ReportsRepository {
   }
 
   async findById(id: string) {
-    return this.prisma.report.findUnique({
+    const report = await this.prisma.report.findUnique({
       where: { id },
       select: {
         ...PUBLIC_REPORT_SELECT,
@@ -76,6 +92,9 @@ export class ReportsRepository {
         },
       },
     })
+    if (!report) return null
+    const [enriched] = await this.mergeMeToo([report])
+    return enriched
   }
 
   async findAll(filters: {
@@ -93,7 +112,7 @@ export class ReportsRepository {
       ...(filters.state && { state: filters.state }),
     }
 
-    const [reports, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
         select: {
@@ -107,6 +126,7 @@ export class ReportsRepository {
       this.prisma.report.count({ where }),
     ])
 
+    const reports = await this.mergeMeToo(raw)
     return { reports, total }
   }
 

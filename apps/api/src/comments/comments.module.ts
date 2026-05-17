@@ -3,9 +3,10 @@ import { CommentsController } from './comments.controller'
 import { CommentsService } from './comments.service'
 import { CommentsRepository } from './comments.repository'
 import { NotificationsModule } from '../notifications/notifications.module'
+import { PressModule } from '../press/press.module'
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, PressModule],
   controllers: [CommentsController],
   providers: [CommentsService, CommentsRepository],
 })

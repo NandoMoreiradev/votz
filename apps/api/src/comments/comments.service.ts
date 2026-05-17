@@ -3,6 +3,7 @@ import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
 import { CommentsRepository } from './comments.repository'
 import { NotificationsService } from '../notifications/notifications.service'
+import { PressureService } from '../press/pressure.service'
 import { CreateCommentDto } from './dto/create-comment.dto'
 import { UserType } from '@votz/shared-types'
 
@@ -12,6 +13,7 @@ export class CommentsService {
     private readonly repo: CommentsRepository,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly pressure: PressureService,
   ) {}
 
   async create(reportId: string, authorId: string, dto: CreateCommentDto) {
@@ -32,6 +34,9 @@ export class CommentsService {
         metadata: { commentId: comment.id, actorId: authorId },
       }).catch(() => null)
     }
+
+    // Enfileira recálculo imediato — fire-and-forget
+    this.pressure.enqueueReport(reportId).catch(() => null)
 
     return comment
   }
