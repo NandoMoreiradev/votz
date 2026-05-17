@@ -102,6 +102,18 @@ enum VoteType {
   ME_TOO
 }
 
+enum RegistrationRequestType {
+  ENTITY
+  POLITICIAN
+  COMPANY
+}
+
+enum RegistrationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum NotificationType {
   NEW_COMMENT
   STATUS_CHANGED
@@ -153,8 +165,10 @@ model User {
   comments        Comment[]
   timelineEvents  TimelineEvent[]
   notifications   Notification[]
-  entity          Entity?
-  politician      Politician?
+  entity                Entity?
+  politician            Politician?
+  registrationRequests  RegistrationRequest[] @relation("RegistrationRequester")
+  reviewedRequests      RegistrationRequest[] @relation("RegistrationReviewer")
 
   @@map("users")
 }
@@ -341,6 +355,22 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@map("notifications")
+}
+
+model RegistrationRequest {
+  id          String                    @id @default(uuid())
+  type        RegistrationRequestType
+  status      RegistrationRequestStatus @default(PENDING)
+  requesterId String
+  requester   User                      @relation("RegistrationRequester", fields: [requesterId], references: [id])
+  payload     Json
+  reviewerId  String?
+  reviewer    User?                     @relation("RegistrationReviewer", fields: [reviewerId], references: [id])
+  reviewNote  String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@map("registration_requests")
 }
 
 model Comment {

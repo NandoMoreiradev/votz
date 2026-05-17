@@ -15,6 +15,7 @@ import { TimelineModule } from './timeline/timeline.module'
 import { EntitiesModule } from './entities/entities.module'
 import { PoliticiansModule } from './politicians/politicians.module'
 import { PartiesModule } from './parties/parties.module'
+import { RegistrationRequestsModule } from './registration-requests/registration-requests.module'
 import { VotesModule } from './votes/votes.module'
 import { CommentsModule } from './comments/comments.module'
 import { NotificationsModule } from './notifications/notifications.module'
@@ -74,6 +75,7 @@ import { HealthModule } from './health/health.module'
     EntitiesModule,
     PoliticiansModule,
     PartiesModule,
+    RegistrationRequestsModule,
     VotesModule,
     CommentsModule,
     NotificationsModule,

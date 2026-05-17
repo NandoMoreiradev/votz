@@ -437,11 +437,75 @@ function PoliticiansTab() {
 
 // ── Página principal ───────────────────────────────────────────────────────
 
-type TabId = 'users' | 'reports' | 'entities' | 'politicians'
+function RequestsTab() {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['admin-requests'],
+    queryFn: () => api.get('/registration-requests?status=PENDING&limit=50').then(r => r.data),
+  })
+
+  const approve = useMutation({
+    mutationFn: (id: string) => api.post(`/registration-requests/${id}/approve`).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-requests'] }),
+  })
+  const reject = useMutation({
+    mutationFn: (id: string) => api.post(`/registration-requests/${id}/reject`, { reviewNote: 'Informações insuficientes.' }).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-requests'] }),
+  })
+
+  const requests = data?.data ?? []
+
+  return (
+    <div>
+      {requests.length === 0 && (
+        <p style={{ color: '#6B7280', fontSize: '0.9375rem' }}>Nenhuma solicitação pendente.</p>
+      )}
+      {requests.map((req: any) => (
+        <div key={req.id} style={{
+          background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12,
+          padding: 20, marginBottom: 12,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div>
+              <span style={{
+                fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
+                background: req.type === 'ENTITY' ? '#dbeafe' : req.type === 'POLITICIAN' ? '#ede9fe' : '#dcfce7',
+                color: req.type === 'ENTITY' ? '#1e40af' : req.type === 'POLITICIAN' ? '#5b21b6' : '#166534',
+                padding: '2px 8px', borderRadius: 99, marginRight: 8,
+              }}>{req.type}</span>
+              <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
+                por {req.requester?.name} · {new Date(req.createdAt).toLocaleDateString('pt-BR')}
+              </span>
+              <div style={{ marginTop: 8 }}>
+                {Object.entries(req.payload as Record<string, unknown>).slice(0, 5).map(([k, v]) => (
+                  <span key={k} style={{ fontSize: '0.8125rem', marginRight: 16, color: '#374151' }}>
+                    <b>{k}:</b> {String(v)}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button onClick={() => approve.mutate(req.id)} disabled={approve.isPending}
+                style={{ padding: '7px 16px', background: '#2DC653', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                Aprovar
+              </button>
+              <button onClick={() => reject.mutate(req.id)} disabled={reject.isPending}
+                style={{ padding: '7px 16px', background: '#EF4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                Rejeitar
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type TabId = 'users' | 'reports' | 'entities' | 'politicians' | 'requests'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
-  const [tab, setTab] = useState<TabId>('entities')
+  const [tab, setTab] = useState<TabId>('requests')
   const { data: stats } = useAdminStats()
 
   if (!user || !ALLOWED.has(user.type)) return <Navigate to="/" replace />
@@ -480,16 +544,18 @@ export function Admin() {
         )}
 
         <Tabs>
+          <Tab $active={tab === 'requests'} onClick={() => setTab('requests')}>Solicitações</Tab>
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
           {isAdmin && <Tab $active={tab === 'users'} onClick={() => setTab('users')}>Usuários</Tab>}
         </Tabs>
 
-        {tab === 'entities' && <EntitiesTab />}
+        {tab === 'requests'   && <RequestsTab />}
+        {tab === 'entities'   && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
-        {tab === 'reports' && <ReportsTab isAdmin={isAdmin} />}
-        {tab === 'users' && isAdmin && <UsersTab />}
+        {tab === 'reports'    && <ReportsTab isAdmin={isAdmin} />}
+        {tab === 'users'      && isAdmin && <UsersTab />}
       </Content>
     </Page>
   )
