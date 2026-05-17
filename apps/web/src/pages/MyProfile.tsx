@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react'
 import styled from 'styled-components'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
+import { useUser } from '../hooks/useUser'
 import { AuthenticatedUser } from '@votz/shared-types'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -22,6 +23,25 @@ const Content = styled.div`
   padding: 32px 24px 80px;
 
   @media (max-width: 640px) { padding: 16px 16px 64px; }
+`
+
+const InstitutionalBanner = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: ${({ theme }) => theme.colors.primary}0D;
+  border: 1px solid ${({ theme }) => theme.colors.primary}30;
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 20px;
+
+  a {
+    font-weight: 600;
+    color: ${({ theme }) => theme.colors.primary};
+    &:hover { text-decoration: underline; }
+  }
 `
 
 const PageTitle = styled.h1`
@@ -314,12 +334,26 @@ export function MyProfile() {
   }
 
   const hasAddress = !!address?.city
+  const { data: profile } = useUser(user.id)
 
   return (
     <Page>
       <Navbar />
       <Content>
         <PageTitle>Editar perfil</PageTitle>
+
+        {profile?.entity && (
+          <InstitutionalBanner>
+            <span>Gerencie sua equipe e relatos no</span>
+            <Link to={`/entidade/${profile.entity.id}`}>perfil da entidade →</Link>
+          </InstitutionalBanner>
+        )}
+        {profile?.politician && (
+          <InstitutionalBanner>
+            <span>Gerencie sua equipe e relatos no</span>
+            <Link to={`/politico/${profile.politician.id}`}>perfil do político →</Link>
+          </InstitutionalBanner>
+        )}
 
         <Card>
           {/* Avatar */}

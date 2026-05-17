@@ -96,6 +96,8 @@ export interface UserProfile {
   avatarUrl: string | null
   bio?: string
   createdAt: string
+  entity?: { id: string } | null
+  politician?: { id: string } | null
   _count: { reports: number; votes: number; comments: number }
 }
 

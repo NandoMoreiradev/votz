@@ -214,6 +214,25 @@ const Dot = styled.span`
   color: ${({ theme }) => theme.colors.border};
 `
 
+const InstitutionalLink = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 7px 14px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.primary};
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.primary};
+  transition: all 0.15s;
+  width: fit-content;
+  &:hover {
+    background: ${({ theme }) => theme.colors.primary};
+    color: #fff;
+  }
+`
+
 const ReportAgo = styled.span`
   margin-left: auto;
   font-size: 0.8125rem;
@@ -345,6 +364,17 @@ export function UserProfile() {
                   <StatLabel>Reputação</StatLabel>
                 </Stat>
               </StatsRow>
+
+              {user.entity && (
+                <InstitutionalLink to={`/entidade/${user.entity.id}`}>
+                  Ver perfil da entidade →
+                </InstitutionalLink>
+              )}
+              {user.politician && (
+                <InstitutionalLink to={`/politico/${user.politician.id}`}>
+                  Ver perfil do político →
+                </InstitutionalLink>
+              )}
             </ProfileInfo>
           </ProfileCard>
         ) : (
