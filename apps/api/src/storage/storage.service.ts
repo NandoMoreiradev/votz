@@ -34,10 +34,16 @@ export class StorageService {
   private readonly client: S3Client
   private readonly bucket: string
   private readonly endpoint: string
+  private readonly publicBase: string
 
   constructor(private readonly config: ConfigService) {
     this.bucket = this.config.getOrThrow<string>('CLOUDFLARE_R2_BUCKET')
     this.endpoint = this.config.getOrThrow<string>('CLOUDFLARE_R2_ENDPOINT')
+
+    // CLOUDFLARE_R2_PUBLIC_URL → URL pública do bucket (ex: https://pub-XXX.r2.dev)
+    // Se não configurada, usa o endpoint S3 + bucket como fallback (não acessível publicamente)
+    const pub = this.config.get<string>('CLOUDFLARE_R2_PUBLIC_URL', '')
+    this.publicBase = pub ? pub.replace(/\/$/, '') : `${this.endpoint}/${this.bucket}`
 
     this.client = new S3Client({
       region: 'auto',
@@ -81,7 +87,7 @@ export class StorageService {
 
     return {
       key,
-      url: `${this.endpoint}/${this.bucket}/${key}`,
+      url: `${this.publicBase}/${key}`,
       mimeType,
       size: buffer.byteLength,
     }

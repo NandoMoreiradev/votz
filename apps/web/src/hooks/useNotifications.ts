@@ -18,10 +18,11 @@ interface NotificationsResponse {
 
 export function useNotifications() {
   const user = useAuthStore((s) => s.user)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
   return useQuery({
     queryKey: ['notifications'],
     queryFn: () => api.get<NotificationsResponse>('/notifications?limit=20').then((r) => r.data),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
     refetchInterval: 30_000,
     staleTime: 20_000,
   })
@@ -29,10 +30,11 @@ export function useNotifications() {
 
 export function useUnreadCount() {
   const user = useAuthStore((s) => s.user)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
   return useQuery({
     queryKey: ['notifications-unread'],
     queryFn: () => api.get<{ count: number }>('/notifications/unread-count').then((r) => r.data.count),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
     refetchInterval: 30_000,
     staleTime: 20_000,
   })

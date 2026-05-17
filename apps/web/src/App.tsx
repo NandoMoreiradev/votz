@@ -30,6 +30,7 @@ function AuthInit() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const logout = useAuthStore((s) => s.logout)
+  const setSessionReady = useAuthStore((s) => s.setSessionReady)
 
   useEffect(() => {
     const handleForceLogout = () => {
@@ -39,7 +40,6 @@ function AuthInit() {
     window.addEventListener('votz:logout', handleForceLogout)
 
     const apiBase = import.meta.env.VITE_API_URL ?? '/api/v1'
-    // Restaura sessão do cookie httpOnly — sem tocar em localStorage
     axios
       .post<{ accessToken: string }>(`${apiBase}/auth/refresh`, {}, { withCredentials: true })
       .then(({ data }) => {
@@ -51,7 +51,8 @@ function AuthInit() {
         if (token) setAuth(user, token)
       })
       .catch(() => {
-        // Sem sessão válida, usuário precisa fazer login
+        // Sem sessão válida — marca pronto assim mesmo para desbloquear as queries
+        setSessionReady()
       })
 
     return () => window.removeEventListener('votz:logout', handleForceLogout)

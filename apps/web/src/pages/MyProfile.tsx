@@ -170,9 +170,9 @@ export function MyProfile() {
       return api.post<UploadResult>('/storage/upload/avatar', form).then((r) => r.data)
     },
     onSuccess: (result) => {
-      setAvatarPreview(result.url)
       setPendingAvatarUrl(result.url)
       setUploadStatus({ msg: 'Imagem enviada com sucesso.', error: false })
+      // Mantém o blob URL como preview local; avatarPreview já foi setado em handleFileChange
     },
     onError: () => {
       setUploadStatus({ msg: 'Falha ao enviar imagem. Tente novamente.', error: true })
