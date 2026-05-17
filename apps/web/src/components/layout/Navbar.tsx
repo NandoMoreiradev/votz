@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
 import { useAuthStore } from '../../store/auth.store'
 import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
+import { api } from '../../lib/api'
 
 const Nav = styled.nav`
   position: sticky;
@@ -365,7 +366,12 @@ export function Navbar() {
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // falha de rede não impede o logout local
+    }
     logout()
     setOpen(false)
     navigate('/')
