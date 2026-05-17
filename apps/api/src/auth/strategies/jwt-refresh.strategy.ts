@@ -7,7 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import * as bcrypt from 'bcrypt'
 
 function extractRefreshFromCookie(req: Request): string | null {
-  return req.cookies?.['votz:refresh_token'] ?? null
+  return req.cookies?.['votz_refresh_token'] ?? null
 }
 
 @Injectable()

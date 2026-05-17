@@ -22,7 +22,7 @@ import { GoogleAuthGuard } from './guards/google-auth.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
 import { ConfigService } from '@nestjs/config'
 
-const REFRESH_COOKIE = 'votz:refresh_token'
+const REFRESH_COOKIE = 'votz_refresh_token'
 
 const isProd = process.env.NODE_ENV === 'production'
 
