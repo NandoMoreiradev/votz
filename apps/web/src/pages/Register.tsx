@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import styled from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
@@ -131,6 +131,8 @@ interface FormValues {
 
 export function Register() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect') ?? '/'
   const user = useAuthStore((s) => s.user)
   const { mutate: register_, isPending, error } = useRegister()
 
@@ -145,8 +147,8 @@ export function Register() {
   const [neighborhood, setNeighborhood] = useState('')
 
   useEffect(() => {
-    if (user) navigate('/')
-  }, [user, navigate])
+    if (user) navigate(redirect, { replace: true })
+  }, [user, navigate, redirect])
 
   function handleCepChange(digits: string) {
     setZipCode(digits)
@@ -183,7 +185,7 @@ export function Register() {
       longitude: address.longitude,
     }
 
-    register_(payload, { onSuccess: () => navigate('/') })
+    register_(payload, { onSuccess: () => navigate(redirect, { replace: true }) })
   }
 
   return (

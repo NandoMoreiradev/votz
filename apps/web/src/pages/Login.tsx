@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import styled from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
@@ -109,6 +109,8 @@ interface MfaForm {
 
 export function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect') ?? '/'
   const user = useAuthStore((s) => s.user)
   const setAuth = useAuthStore((s) => s.setAuth)
   const { mutate: login, isPending: loginPending, error: loginError } = useLogin()
@@ -120,8 +122,8 @@ export function Login() {
   const { register: regMfa, handleSubmit: handleMfa, formState: { errors: mfaErrors } } = useForm<MfaForm>()
 
   useEffect(() => {
-    if (user) navigate('/')
-  }, [user, navigate])
+    if (user) navigate(redirect, { replace: true })
+  }, [user, navigate, redirect])
 
   function onCredentials(data: CredentialsForm) {
     login(data, {
@@ -130,7 +132,7 @@ export function Login() {
           setMfaToken(result.mfaToken)
         } else {
           setAuth(result.user, result.accessToken)
-          navigate('/')
+          navigate(redirect, { replace: true })
         }
       },
     })
@@ -138,7 +140,7 @@ export function Login() {
 
   function onMfa(data: MfaForm) {
     if (!mfaToken) return
-    verifyMfa({ mfaToken, code: data.code }, { onSuccess: () => navigate('/') })
+    verifyMfa({ mfaToken, code: data.code }, { onSuccess: () => navigate(redirect, { replace: true }) })
   }
 
   if (mfaToken) {
