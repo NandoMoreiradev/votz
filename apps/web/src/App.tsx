@@ -32,7 +32,6 @@ function AuthInit() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const logout = useAuthStore((s) => s.logout)
-  const setSessionReady = useAuthStore((s) => s.setSessionReady)
 
   useEffect(() => {
     const handleForceLogout = () => {
@@ -53,8 +52,7 @@ function AuthInit() {
         if (token) setAuth(user, token)
       })
       .catch(() => {
-        // Sem sessão válida — marca pronto assim mesmo para desbloquear as queries
-        setSessionReady()
+        logout()
       })
 
     return () => window.removeEventListener('votz:logout', handleForceLogout)
