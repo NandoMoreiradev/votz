@@ -10,17 +10,17 @@ const Nav = styled.nav`
   top: 0;
   z-index: 100;
   background: ${({ theme }) => theme.colors.primary};
-  height: 56px;
+  height: 64px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 `
 
 const Inner = styled.div`
   width: 100%;
-  max-width: 1120px;
+  max-width: 1480px;
   margin: 0 auto;
+  padding: 0 32px;
   display: flex;
   align-items: center;
   gap: 32px;
