@@ -19,9 +19,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 1040px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 16px 80px;
+  padding: 24px 32px 64px;
+
+  @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
 
 const BackLink = styled(Link)`
@@ -116,7 +118,7 @@ const Sidebar = styled.div`
   flex-direction: column;
   gap: 16px;
   position: sticky;
-  top: 76px;
+  top: 80px;
 `
 
 const SideCard = styled(Card)`

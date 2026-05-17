@@ -15,9 +15,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 16px 80px;
+  padding: 24px 32px 64px;
+
+  @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
 
 const BackLink = styled(Link)`
