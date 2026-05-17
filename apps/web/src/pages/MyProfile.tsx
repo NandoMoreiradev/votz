@@ -207,7 +207,6 @@ export function MyProfile() {
 
     onSuccess: (updated) => {
       setUser(updated)
-      queryClient.setQueryData(['user', updated.id], updated)
       navigate(`/perfil/${updated.id}`)
     },
 
