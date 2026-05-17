@@ -7,11 +7,11 @@ import { ReportStatus, VoteType } from '@votz/shared-types'
 
 export const PRESSURE_QUEUE = 'pressure'
 
-const ACTIVE_STATUSES = [
+const ACTIVE_STATUSES: ReportStatus[] = [
   ReportStatus.OPEN,
   ReportStatus.UNDER_REVIEW,
   ReportStatus.IN_PROGRESS,
-] as const
+]
 
 // Seção 8.3 — pesos calibrados por tipo de sinal
 const W = {
@@ -114,7 +114,7 @@ export class PressureService {
     })
 
     if (!report) return
-    if (!(ACTIVE_STATUSES as readonly string[]).includes(report.status)) return
+    if (!ACTIVE_STATUSES.includes(report.status as ReportStatus)) return
 
     const [voteGroups, similarCount] = await Promise.all([
       this.prisma.vote.groupBy({
