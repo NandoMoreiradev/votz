@@ -120,6 +120,53 @@ async function main() {
   })
   console.log('✅ Entidades criadas')
 
+  // ── Partidos (TSE) ─────────────────────────────────────────────────────────
+
+  const partiesData = [
+    { abbreviation: 'PT',            number: 13,  name: 'Partido dos Trabalhadores' },
+    { abbreviation: 'PL',            number: 22,  name: 'Partido Liberal' },
+    { abbreviation: 'PSD',           number: 55,  name: 'Partido Social Democrático' },
+    { abbreviation: 'UNIÃO',         number: 44,  name: 'União Brasil' },
+    { abbreviation: 'PP',            number: 11,  name: 'Progressistas' },
+    { abbreviation: 'REPUBLICANOS',  number: 10,  name: 'Republicanos' },
+    { abbreviation: 'MDB',           number: 15,  name: 'Movimento Democrático Brasileiro' },
+    { abbreviation: 'PDT',           number: 12,  name: 'Partido Democrático Trabalhista' },
+    { abbreviation: 'PSB',           number: 40,  name: 'Partido Socialista Brasileiro' },
+    { abbreviation: 'PSOL',          number: 50,  name: 'Partido Socialismo e Liberdade' },
+    { abbreviation: 'NOVO',          number: 30,  name: 'Partido Novo' },
+    { abbreviation: 'PODE',          number: 20,  name: 'Podemos' },
+    { abbreviation: 'SOLIDARIEDADE', number: 77,  name: 'Solidariedade' },
+    { abbreviation: 'PRD',           number: 25,  name: 'Partido Renovação Democrática' },
+    { abbreviation: 'AVANTE',        number: 70,  name: 'Avante' },
+    { abbreviation: 'DC',            number: 27,  name: 'Democracia Cristã' },
+    { abbreviation: 'AGIR',          number: 36,  name: 'Agir' },
+    { abbreviation: 'PRTB',          number: 28,  name: 'Partido Renovador Trabalhista Brasileiro' },
+    { abbreviation: 'PMB',           number: 35,  name: 'Partido da Mulher Brasileira' },
+    { abbreviation: 'UP',            number: 80,  name: 'Unidade Popular' },
+    { abbreviation: 'PCdoB',         number: 65,  name: 'Partido Comunista do Brasil' },
+    { abbreviation: 'PMN',           number: 33,  name: 'Partido da Mobilização Nacional' },
+    { abbreviation: 'CIDADANIA',     number: 23,  name: 'Cidadania' },
+    { abbreviation: 'REDE',          number: 18,  name: 'Rede Sustentabilidade' },
+    { abbreviation: 'PV',            number: 43,  name: 'Partido Verde' },
+    { abbreviation: 'PSDB',          number: 45,  name: 'Partido da Social Democracia Brasileira' },
+    { abbreviation: 'PATRIOTA',      number: 51,  name: 'Patriota' },
+    { abbreviation: 'PROS',          number: 90,  name: 'Partido Republicano da Ordem Social' },
+    { abbreviation: 'PSTU',          number: 16,  name: 'Partido Socialista dos Trabalhadores Unificado' },
+    { abbreviation: 'PCB',           number: 21,  name: 'Partido Comunista Brasileiro' },
+    { abbreviation: 'PCO',           number: 29,  name: 'Partido da Causa Operária' },
+  ]
+
+  const partyMap: Record<string, string> = {}
+  for (const p of partiesData) {
+    const party = await prisma.party.upsert({
+      where: { abbreviation: p.abbreviation },
+      update: {},
+      create: p,
+    })
+    partyMap[p.abbreviation] = party.id
+  }
+  console.log(`✅ ${partiesData.length} partidos criados`)
+
   // ── Usuários vinculados aos políticos ──────────────────────────────────────
 
   const [uVer, uDep] = await Promise.all([
@@ -143,7 +190,7 @@ async function main() {
       update: {},
       create: {
         userId: uVer.id,
-        party: 'MDB',
+        partyId: partyMap['MDB'],
         office: 'Vereador',
         termStart: new Date('2025-01-01'),
         termEnd: new Date('2028-12-31'),
@@ -159,7 +206,7 @@ async function main() {
       update: {},
       create: {
         userId: uDep.id,
-        party: 'PT',
+        partyId: partyMap['PT'],
         office: 'Deputada Estadual',
         termStart: new Date('2023-02-01'),
         termEnd: new Date('2027-01-31'),

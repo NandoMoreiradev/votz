@@ -24,13 +24,19 @@ const STATUS_CFG: Record<ReportStatus, { label: string; bg: string; color: strin
 }
 
 const CAT_CFG: Record<Category, { label: string; gradient: string }> = {
-  HEALTH:     { label: 'Saúde',      gradient: 'linear-gradient(135deg,#3a2530,#6a3540)' },
-  MOBILITY:   { label: 'Mobilidade', gradient: 'linear-gradient(135deg,#1f2a3a,#324a6b)' },
-  SAFETY:     { label: 'Segurança',  gradient: 'linear-gradient(135deg,#2a1f1f,#5a3232)' },
-  EDUCATION:  { label: 'Educação',   gradient: 'linear-gradient(135deg,#1f2a25,#325a4a)' },
-  SANITATION: { label: 'Saneamento', gradient: 'linear-gradient(135deg,#2a2a1f,#4a4a32)' },
-  HOUSING:    { label: 'Habitação',  gradient: 'linear-gradient(135deg,#2a251f,#5a4a32)' },
-  OTHER:      { label: 'Outra',      gradient: 'linear-gradient(135deg,#2a2a44,#45456b)' },
+  HEALTH:         { label: 'Saúde',              gradient: 'linear-gradient(135deg,#3a2530,#6a3540)' },
+  MOBILITY:       { label: 'Mobilidade',         gradient: 'linear-gradient(135deg,#1f2a3a,#324a6b)' },
+  SAFETY:         { label: 'Segurança',          gradient: 'linear-gradient(135deg,#2a1f1f,#5a3232)' },
+  EDUCATION:      { label: 'Educação',           gradient: 'linear-gradient(135deg,#1f2a25,#325a4a)' },
+  SANITATION:     { label: 'Saneamento',         gradient: 'linear-gradient(135deg,#2a2a1f,#4a4a32)' },
+  HOUSING:        { label: 'Habitação',          gradient: 'linear-gradient(135deg,#2a251f,#5a4a32)' },
+  ENVIRONMENT:    { label: 'Meio Ambiente',      gradient: 'linear-gradient(135deg,#1a2e1f,#2d5a38)' },
+  INFRASTRUCTURE: { label: 'Infraestrutura',     gradient: 'linear-gradient(135deg,#2a2520,#4a4038)' },
+  URBAN_SERVICES: { label: 'Serviços Urbanos',   gradient: 'linear-gradient(135deg,#1a2a30,#2a4a5a)' },
+  CORRUPTION:     { label: 'Corrupção',          gradient: 'linear-gradient(135deg,#2a1020,#5a1030)' },
+  ACCESSIBILITY:  { label: 'Acessibilidade',     gradient: 'linear-gradient(135deg,#20152a,#3a2560)' },
+  SOCIAL_WELFARE: { label: 'Assistência Social', gradient: 'linear-gradient(135deg,#2a1525,#5a2050)' },
+  OTHER:          { label: 'Outra',              gradient: 'linear-gradient(135deg,#2a2a44,#45456b)' },
 }
 
 const STATUS_LIST = [

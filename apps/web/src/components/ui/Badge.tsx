@@ -2,13 +2,19 @@ import styled from 'styled-components'
 import { Category, ReportStatus } from '@votz/shared-types'
 
 export const CATEGORY_CONFIG: Record<Category, { label: string; color: string }> = {
-  [Category.HEALTH]:     { label: 'Saúde',      color: '#F59E0B' },
-  [Category.MOBILITY]:   { label: 'Mobilidade',  color: '#3B82F6' },
-  [Category.SAFETY]:     { label: 'Segurança',   color: '#EF4444' },
-  [Category.EDUCATION]:  { label: 'Educação',    color: '#8B5CF6' },
-  [Category.SANITATION]: { label: 'Saneamento',  color: '#10B981' },
-  [Category.HOUSING]:    { label: 'Habitação',   color: '#F97316' },
-  [Category.OTHER]:      { label: 'Outros',      color: '#6B7280' },
+  [Category.HEALTH]:        { label: 'Saúde',              color: '#F59E0B' },
+  [Category.MOBILITY]:      { label: 'Mobilidade',         color: '#3B82F6' },
+  [Category.SAFETY]:        { label: 'Segurança',          color: '#EF4444' },
+  [Category.EDUCATION]:     { label: 'Educação',           color: '#8B5CF6' },
+  [Category.SANITATION]:    { label: 'Saneamento',         color: '#10B981' },
+  [Category.HOUSING]:       { label: 'Habitação',          color: '#F97316' },
+  [Category.ENVIRONMENT]:   { label: 'Meio Ambiente',      color: '#16A34A' },
+  [Category.INFRASTRUCTURE]:{ label: 'Infraestrutura',     color: '#78716C' },
+  [Category.URBAN_SERVICES]:{ label: 'Serviços Urbanos',   color: '#0891B2' },
+  [Category.CORRUPTION]:    { label: 'Corrupção',          color: '#9F1239' },
+  [Category.ACCESSIBILITY]: { label: 'Acessibilidade',     color: '#7C3AED' },
+  [Category.SOCIAL_WELFARE]:{ label: 'Assistência Social', color: '#DB2777' },
+  [Category.OTHER]:         { label: 'Outros',             color: '#6B7280' },
 }
 
 export const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string }> = {

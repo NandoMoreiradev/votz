@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma/prisma.service'
 
 const POLITICIAN_PUBLIC_SELECT = {
   id: true,
-  party: true,
   office: true,
   termStart: true,
   termEnd: true,
@@ -14,6 +13,7 @@ const POLITICIAN_PUBLIC_SELECT = {
   verified: true,
   mandatometer: true,
   createdAt: true,
+  party: { select: { id: true, name: true, abbreviation: true, number: true, logoUrl: true } },
   user: { select: { id: true, name: true, avatarUrl: true } },
 } as const
 
@@ -34,7 +34,7 @@ export class PoliticiansRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   create(userId: string, data: {
-    party: string
+    partyId: string
     office: string
     termStart: Date
     termEnd: Date
@@ -71,7 +71,7 @@ export class PoliticiansRepository {
     const where: Prisma.PoliticianWhereInput = {
       ...(params.state && { state: params.state }),
       ...(params.city && { city: { contains: params.city, mode: 'insensitive' } }),
-      ...(params.party && { party: { contains: params.party, mode: 'insensitive' } }),
+      ...(params.party && { party: { abbreviation: { contains: params.party, mode: 'insensitive' } } }),
       ...(params.office && { office: { contains: params.office, mode: 'insensitive' } }),
       ...(params.search && {
         user: { name: { contains: params.search, mode: 'insensitive' } },

@@ -46,6 +46,12 @@ enum Category {
   EDUCATION
   SANITATION
   HOUSING
+  ENVIRONMENT
+  INFRASTRUCTURE
+  URBAN_SERVICES
+  CORRUPTION
+  ACCESSIBILITY
+  SOCIAL_WELFARE
   OTHER
 }
 
@@ -241,11 +247,26 @@ model Entity {
   @@map("entities")
 }
 
+model Party {
+  id           String       @id @default(uuid())
+  name         String
+  abbreviation String       @unique
+  number       Int          @unique
+  active       Boolean      @default(true)
+  logoUrl      String?
+  politicians  Politician[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("parties")
+}
+
 model Politician {
   id            String   @id @default(uuid())
   userId        String   @unique
   user          User     @relation(fields: [userId], references: [id])
-  party         String
+  partyId       String
+  party         Party    @relation(fields: [partyId], references: [id])
   office        String
   termStart     DateTime
   termEnd       DateTime

@@ -1,12 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { IsDateString, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator'
+import { IsDateString, IsOptional, IsString, IsUrl, IsUUID, MaxLength } from 'class-validator'
 
 export class UpdatePoliticianDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'ID do partido (GET /parties)' })
   @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  party?: string
+  @IsUUID()
+  partyId?: string
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -6,6 +6,9 @@
     "apps/*",
     "packages/*"
   ],
+  "prisma": {
+    "seed": "dotenv -e .env -- ts-node --project packages/database/tsconfig.json packages/database/prisma/seed.ts"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",

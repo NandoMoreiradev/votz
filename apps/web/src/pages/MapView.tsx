@@ -12,13 +12,19 @@ import { CATEGORY_CONFIG } from '../components/ui/Badge'
 // ── Cores por categoria (mesmas do Badge) ──────────────────────────────────
 
 const CATEGORY_COLORS: Record<Category, string> = {
-  [Category.HEALTH]:     '#E63946',
-  [Category.MOBILITY]:   '#3B82F6',
-  [Category.SAFETY]:     '#F59E0B',
-  [Category.EDUCATION]:  '#8B5CF6',
-  [Category.SANITATION]: '#10B981',
-  [Category.HOUSING]:    '#F97316',
-  [Category.OTHER]:      '#6B7280',
+  [Category.HEALTH]:         '#F59E0B',
+  [Category.MOBILITY]:       '#3B82F6',
+  [Category.SAFETY]:         '#EF4444',
+  [Category.EDUCATION]:      '#8B5CF6',
+  [Category.SANITATION]:     '#10B981',
+  [Category.HOUSING]:        '#F97316',
+  [Category.ENVIRONMENT]:    '#16A34A',
+  [Category.INFRASTRUCTURE]: '#78716C',
+  [Category.URBAN_SERVICES]: '#0891B2',
+  [Category.CORRUPTION]:     '#9F1239',
+  [Category.ACCESSIBILITY]:  '#7C3AED',
+  [Category.SOCIAL_WELFARE]: '#DB2777',
+  [Category.OTHER]:          '#6B7280',
 }
 
 const STATUS_LABELS: Record<ReportStatus, string> = {
@@ -245,7 +251,10 @@ export function MapView() {
       style: `https://api.maptiler.com/maps/positron/style.json?key=${MAPTILER_KEY}`,
       center: [-47.9292, -15.7801], // Brasília
       zoom: 4,
+      attributionControl: false,
     })
+
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right')
 
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
     map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'bottom-right')
@@ -318,12 +327,18 @@ export function MapView() {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 5, 14, 9],
         'circle-color': [
           'match', ['get', 'category'],
-          'HEALTH',     CATEGORY_COLORS[Category.HEALTH],
-          'MOBILITY',   CATEGORY_COLORS[Category.MOBILITY],
-          'SAFETY',     CATEGORY_COLORS[Category.SAFETY],
-          'EDUCATION',  CATEGORY_COLORS[Category.EDUCATION],
-          'SANITATION', CATEGORY_COLORS[Category.SANITATION],
-          'HOUSING',    CATEGORY_COLORS[Category.HOUSING],
+          'HEALTH',         CATEGORY_COLORS[Category.HEALTH],
+          'MOBILITY',       CATEGORY_COLORS[Category.MOBILITY],
+          'SAFETY',         CATEGORY_COLORS[Category.SAFETY],
+          'EDUCATION',      CATEGORY_COLORS[Category.EDUCATION],
+          'SANITATION',     CATEGORY_COLORS[Category.SANITATION],
+          'HOUSING',        CATEGORY_COLORS[Category.HOUSING],
+          'ENVIRONMENT',    CATEGORY_COLORS[Category.ENVIRONMENT],
+          'INFRASTRUCTURE', CATEGORY_COLORS[Category.INFRASTRUCTURE],
+          'URBAN_SERVICES', CATEGORY_COLORS[Category.URBAN_SERVICES],
+          'CORRUPTION',     CATEGORY_COLORS[Category.CORRUPTION],
+          'ACCESSIBILITY',  CATEGORY_COLORS[Category.ACCESSIBILITY],
+          'SOCIAL_WELFARE', CATEGORY_COLORS[Category.SOCIAL_WELFARE],
           CATEGORY_COLORS[Category.OTHER],
         ],
         'circle-stroke-width': 2,
