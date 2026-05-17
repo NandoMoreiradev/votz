@@ -100,13 +100,17 @@ export class EntitiesRepository {
     })
   }
 
-  async findReports(entityId: string, page: number, limit: number) {
-    const where = { recipientType: 'ENTITY' as const, recipientId: entityId }
+  async findReports(entityId: string, page: number, limit: number, status?: string) {
+    const where: Prisma.ReportWhereInput = {
+      recipientType: 'ENTITY',
+      recipientId: entityId,
+      ...(status && { status: status as any }),
+    }
     const [data, total] = await this.prisma.$transaction([
       this.prisma.report.findMany({
         where,
         select: REPORT_SELECT,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { pressureScore: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -116,17 +120,20 @@ export class EntitiesRepository {
   }
 
   async stats(entityId: string) {
-    const reports = await this.prisma.report.groupBy({
-      by: ['status'],
-      where: { recipientType: 'ENTITY', recipientId: entityId },
-      _count: true,
-    })
-    const byStatus = reports.reduce(
+    const where = { recipientType: 'ENTITY' as const, recipientId: entityId }
+    const [byStatusRaw, byCategoryRaw] = await Promise.all([
+      this.prisma.report.groupBy({ by: ['status'], where, _count: true }),
+      this.prisma.report.groupBy({ by: ['category'], where, _count: true }),
+    ])
+    const byStatus = byStatusRaw.reduce(
       (acc, r) => ({ ...acc, [r.status]: r._count }),
       {} as Record<ReportStatus, number>,
     )
-    const total = reports.reduce((s, r) => s + r._count, 0)
+    const byCategory = byCategoryRaw
+      .sort((a, b) => b._count - a._count)
+      .map((r) => ({ category: r.category, count: r._count }))
+    const total = byStatusRaw.reduce((s, r) => s + r._count, 0)
     const resolved = byStatus[ReportStatus.RESOLVED] ?? 0
-    return { total, resolved, byStatus }
+    return { total, resolved, byStatus, byCategory }
   }
 }

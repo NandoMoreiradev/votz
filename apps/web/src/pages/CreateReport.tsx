@@ -579,7 +579,7 @@ function PoliticianSearch({
   if (selected) {
     return (
       <SelectedEntity>
-        <SelectedName>{selected.user.name} — {selected.party}</SelectedName>
+        <SelectedName>{selected.user.name} — {selected.party.abbreviation}</SelectedName>
         <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
       </SelectedEntity>
     )
@@ -600,7 +600,7 @@ function PoliticianSearch({
           {data.data.map((p) => (
             <DropdownItem key={p.id} onMouseDown={() => select(p)}>
               {p.user.name}
-              <DropdownSub>{p.office} — {p.party} — {p.state}</DropdownSub>
+              <DropdownSub>{p.office} — {p.party.abbreviation} — {p.state}</DropdownSub>
             </DropdownItem>
           ))}
         </Dropdown>

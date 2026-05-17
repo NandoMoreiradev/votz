@@ -414,7 +414,7 @@ function PoliticiansTab() {
                   <Link to={`/politico/${p.id}`} style={{ color: 'inherit', textDecoration: 'underline' }}>{p.user.name}</Link>
                 </Td>
                 <Td style={{ color: '#6B7280' }}>{p.user.email}</Td>
-                <Td><Badge>{p.party}</Badge></Td>
+                <Td><Badge>{p.party.abbreviation}</Badge></Td>
                 <Td>{p.office}</Td>
                 <Td>{p.state}</Td>
                 <Td>{p.verified ? <Badge $color="#2DC653">Verificado</Badge> : <Badge $color="#F59E0B">Pendente</Badge>}</Td>

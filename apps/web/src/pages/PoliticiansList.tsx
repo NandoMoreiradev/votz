@@ -291,7 +291,7 @@ export function PoliticiansList() {
                       <CardInfo>
                         <CardName>{p.user.name}</CardName>
                         <CardMeta>
-                          <Badge>{p.party}</Badge>
+                          <Badge>{p.party.abbreviation}</Badge>
                           <Badge>{p.office}</Badge>
                           {p.verified && <VerifiedDot>✓</VerifiedDot>}
                         </CardMeta>

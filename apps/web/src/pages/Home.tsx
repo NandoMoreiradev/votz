@@ -1203,7 +1203,7 @@ export function Home() {
                       </MandAvatar>
                       <MandContent>
                         <MandName>{pol.user.name}</MandName>
-                        <MandRole>{pol.party} · {pol.office}</MandRole>
+                        <MandRole>{pol.party.abbreviation} · {pol.office}</MandRole>
                       </MandContent>
                       <div>
                         <MandPct $score={score}>{score}%</MandPct>

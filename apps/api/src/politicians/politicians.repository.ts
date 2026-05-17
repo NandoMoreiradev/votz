@@ -14,7 +14,7 @@ const POLITICIAN_PUBLIC_SELECT = {
   mandatometer: true,
   createdAt: true,
   party: { select: { id: true, name: true, abbreviation: true, number: true, logoUrl: true } },
-  user: { select: { id: true, name: true, avatarUrl: true } },
+  user: { select: { id: true, name: true, avatarUrl: true, bio: true } },
 } as const
 
 const REPORT_SELECT = {
@@ -103,13 +103,17 @@ export class PoliticiansRepository {
     })
   }
 
-  async findReports(politicianId: string, page: number, limit: number) {
-    const where = { recipientType: 'POLITICIAN' as const, recipientId: politicianId }
+  async findReports(politicianId: string, page: number, limit: number, status?: string) {
+    const where: Prisma.ReportWhereInput = {
+      recipientType: 'POLITICIAN',
+      recipientId: politicianId,
+      ...(status && { status: status as any }),
+    }
     const [data, total] = await this.prisma.$transaction([
       this.prisma.report.findMany({
         where,
         select: REPORT_SELECT,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { pressureScore: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -119,17 +123,22 @@ export class PoliticiansRepository {
   }
 
   async mandatometerStats(politicianId: string) {
-    const reports = await this.prisma.report.findMany({
-      where: { recipientType: 'POLITICIAN', recipientId: politicianId },
-      select: { status: true },
-    })
+    const where = { recipientType: 'POLITICIAN' as const, recipientId: politicianId }
+    const [byStatusRaw, byCategoryRaw] = await Promise.all([
+      this.prisma.report.groupBy({ by: ['status'], where, _count: true }),
+      this.prisma.report.groupBy({ by: ['category'], where, _count: true }),
+    ])
 
-    const total = reports.length
-    const resolved = reports.filter((r) => r.status === 'RESOLVED').length
-    const inProgress = reports.filter((r) => r.status === 'IN_PROGRESS').length
-    const open = reports.filter((r) => r.status === 'OPEN').length
+    const byStatus = byStatusRaw.reduce((acc, r) => ({ ...acc, [r.status]: r._count }), {} as Record<string, number>)
+    const byCategory = byCategoryRaw
+      .sort((a, b) => b._count - a._count)
+      .map((r) => ({ category: r.category, count: r._count }))
+    const total = byStatusRaw.reduce((s, r) => s + r._count, 0)
+    const resolved = byStatus['RESOLVED'] ?? 0
+    const inProgress = byStatus['IN_PROGRESS'] ?? 0
+    const open = byStatus['OPEN'] ?? 0
 
-    return { total, resolved, inProgress, open, ignored: open }
+    return { total, resolved, inProgress, open, ignored: open, byStatus, byCategory }
   }
 
   updateMandatometer(id: string, mandatometer: object) {

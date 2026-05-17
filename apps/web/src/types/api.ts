@@ -121,6 +121,11 @@ export interface UserReportsResponse {
   }
 }
 
+export interface CategoryStat {
+  category: Category
+  count: number
+}
+
 export interface Entity {
   id: string
   legalName: string
@@ -139,6 +144,7 @@ export interface Entity {
     total: number
     resolved: number
     byStatus: Record<string, number>
+    byCategory: CategoryStat[]
   }
 }
 
@@ -155,11 +161,21 @@ export interface Mandatometer {
   inProgress: number
   open: number
   ignored: number
+  byStatus: Record<string, number>
+  byCategory: CategoryStat[]
+}
+
+export interface PoliticianParty {
+  id: string
+  name: string
+  abbreviation: string
+  number: number
+  logoUrl: string | null
 }
 
 export interface Politician {
   id: string
-  party: string
+  party: PoliticianParty
   office: string
   termStart: string
   termEnd: string
@@ -169,7 +185,7 @@ export interface Politician {
   verified: boolean
   mandatometer: Mandatometer | null
   createdAt: string
-  user: { id: string; name: string; avatarUrl: string | null }
+  user: { id: string; name: string; avatarUrl: string | null; bio?: string | null }
 }
 
 export interface PoliticiansResponse {

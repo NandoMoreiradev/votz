@@ -29,12 +29,12 @@ export function useEntity(id: string) {
   })
 }
 
-export function useEntityReports(entityId: string, page = 1) {
+export function useEntityReports(entityId: string, page = 1, status?: string) {
   return useQuery({
-    queryKey: ['entity-reports', entityId, page],
+    queryKey: ['entity-reports', entityId, page, status],
     queryFn: () =>
       api
-        .get<UserReportsResponse>(`/entities/${entityId}/reports`, { params: { page, limit: 10 } })
+        .get<UserReportsResponse>(`/entities/${entityId}/reports`, { params: { page, limit: 10, status } })
         .then((r) => r.data),
     enabled: !!entityId,
     staleTime: 30_000,

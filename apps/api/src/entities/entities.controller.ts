@@ -48,12 +48,14 @@ export class EntitiesController {
   @ApiOperation({ summary: 'List reports directed at an entity' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'status', required: false })
   findReports(
     @Param('id') id: string,
     @Query('page') page = '1',
     @Query('limit') limit = '10',
+    @Query('status') status?: string,
   ) {
-    return this.entitiesService.findReports(id, Number(page), Math.min(Number(limit), 50))
+    return this.entitiesService.findReports(id, Number(page), Math.min(Number(limit), 50), status)
   }
 
   @Patch(':id')

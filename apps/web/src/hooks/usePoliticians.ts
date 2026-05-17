@@ -29,12 +29,12 @@ export function usePolitician(id: string) {
   })
 }
 
-export function usePoliticianReports(politicianId: string, page = 1) {
+export function usePoliticianReports(politicianId: string, page = 1, status?: string) {
   return useQuery({
-    queryKey: ['politician-reports', politicianId, page],
+    queryKey: ['politician-reports', politicianId, page, status],
     queryFn: () =>
       api
-        .get<UserReportsResponse>(`/politicians/${politicianId}/reports`, { params: { page, limit: 10 } })
+        .get<UserReportsResponse>(`/politicians/${politicianId}/reports`, { params: { page, limit: 10, status } })
         .then((r) => r.data),
     enabled: !!politicianId,
     staleTime: 30_000,
