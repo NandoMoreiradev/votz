@@ -27,6 +27,7 @@ import { AdminModule } from './admin/admin.module'
 import { PublicApiModule } from './public-api/public-api.module'
 import { StorageModule } from './storage/storage.module'
 import { HealthModule } from './health/health.module'
+import { CompaniesModule } from './companies/companies.module'
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { HealthModule } from './health/health.module'
     AdminModule,
     PublicApiModule,
     HealthModule,
+    CompaniesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

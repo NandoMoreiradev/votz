@@ -195,6 +195,43 @@ export interface PoliticiansResponse {
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
 
+export interface CompanyBranch {
+  id: string
+  name: string
+  city: string
+  state: string
+}
+
+export interface Company {
+  id: string
+  legalName: string
+  tradeName: string
+  cnpj: string
+  sector: string
+  size: string
+  verified: boolean
+  plan: string
+  votzScore: number
+  slaHours: number
+  logoUrl: string | null
+  website: string | null
+  createdAt: string
+  branches: CompanyBranch[]
+  stats?: {
+    total: number
+    resolved: number
+    byStatus: Record<string, number>
+    byCategory: CategoryStat[]
+  }
+}
+
+export interface CompanyListItem extends Omit<Company, 'stats'> {}
+
+export interface CompaniesResponse {
+  data: CompanyListItem[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}
+
 export type LoginResponse =
   | { requiresMfa: false; user: AuthUser; accessToken: string }
   | { requiresMfa: true; mfaToken: string }

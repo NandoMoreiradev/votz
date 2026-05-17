@@ -27,6 +27,8 @@ import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
 import { AcceptInvite } from './pages/AcceptInvite'
+import { CompanyProfile } from './pages/CompanyProfile'
+import { Footer } from './components/layout/Footer'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -86,7 +88,9 @@ function App() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
             <Route path="/convite/:token" element={<AcceptInvite />} />
+            <Route path="/empresa/:id" element={<CompanyProfile />} />
           </Routes>
+          <Footer />
         </BrowserRouter>
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />

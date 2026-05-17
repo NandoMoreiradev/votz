@@ -5,10 +5,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
-import { useEntity, useEntityReports } from '../hooks/useEntities'
+import { useCompany, useCompanyReports } from '../hooks/useCompanies'
 import { useAuthStore } from '../store/auth.store'
 import { TeamPanel } from '../components/org/TeamPanel'
-import { EntityType, ReportStatus } from '@votz/shared-types'
+import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 import { api } from '../lib/api'
 
@@ -41,10 +41,7 @@ const TwoCol = styled.div`
   grid-template-columns: 1fr 300px;
   gap: 20px;
   align-items: start;
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
+  @media (max-width: 768px) { grid-template-columns: 1fr; }
 `
 
 const MainCol = styled.div``
@@ -71,13 +68,19 @@ const HeaderTop = styled.div`
   margin-bottom: 20px;
 `
 
+const LogoWrapper = styled.div`
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+`
+
 const Logo = styled.div<{ $src: string | null }>`
   width: 72px;
   height: 72px;
   border-radius: ${({ theme }) => theme.radii.md};
   background: ${({ $src, theme }) =>
     $src ? `url(${$src}) center/cover` : theme.colors.primary + '14'};
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,13 +88,6 @@ const Logo = styled.div<{ $src: string | null }>`
   font-weight: 700;
   color: ${({ theme }) => theme.colors.primary};
   border: 1px solid ${({ theme }) => theme.colors.border};
-`
-
-const LogoWrapper = styled.div`
-  position: relative;
-  width: 72px;
-  height: 72px;
-  flex-shrink: 0;
 `
 
 const LogoOverlay = styled.button`
@@ -114,11 +110,17 @@ const LogoOverlay = styled.button`
 
 const HeaderInfo = styled.div` flex: 1; `
 
-const EntityName = styled.h1`
+const CompanyName = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 2px;
+`
+
+const TradeName = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.muted};
   margin-bottom: 8px;
 `
 
@@ -130,7 +132,7 @@ const MetaRow = styled.div`
   margin-bottom: 6px;
 `
 
-const Tag = styled.span<{ $variant?: 'type' | 'verified' | 'cnpj' }>`
+const Tag = styled.span<{ $variant?: 'verified' | 'cnpj' | 'plan' }>`
   font-size: 0.75rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   padding: 2px 9px;
@@ -138,19 +140,16 @@ const Tag = styled.span<{ $variant?: 'type' | 'verified' | 'cnpj' }>`
   background: ${({ $variant, theme }) =>
     $variant === 'verified' ? theme.colors.positive + '18' :
     $variant === 'cnpj' ? theme.colors.neutral :
+    $variant === 'plan' ? '#F59E0B18' :
     theme.colors.primary + '12'};
   color: ${({ $variant, theme }) =>
     $variant === 'verified' ? theme.colors.positive :
     $variant === 'cnpj' ? theme.colors.muted :
+    $variant === 'plan' ? '#B45309' :
     theme.colors.primary};
   ${({ $variant }) => $variant === 'cnpj' && 'font-family: "JetBrains Mono", monospace;'}
   text-transform: ${({ $variant }) => $variant === 'cnpj' ? 'none' : 'uppercase'};
   letter-spacing: ${({ $variant }) => $variant === 'cnpj' ? '0' : '0.04em'};
-`
-
-const Location = styled.span`
-  font-size: 0.875rem;
-  color: ${({ theme }) => theme.colors.muted};
 `
 
 const Website = styled.a`
@@ -186,7 +185,6 @@ const StatsRow = styled.div`
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid ${({ theme }) => theme.colors.border};
-
   @media (max-width: 480px) { grid-template-columns: repeat(2, 1fr); }
 `
 
@@ -227,6 +225,33 @@ const MiniBar = styled.div<{ $pct: number; $color: string }>`
   }
 `
 
+// ── Branches ──────────────────────────────────────────────────────────────────
+
+const BranchGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  @media (max-width: 480px) { grid-template-columns: 1fr; }
+`
+
+const BranchItem = styled.div`
+  padding: 8px 12px;
+  background: ${({ theme }) => theme.colors.neutral};
+  border-radius: ${({ theme }) => theme.radii.md};
+`
+
+const BranchName = styled.p`
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 2px;
+`
+
+const BranchLoc = styled.p`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
 // ── Sidebar cards ────────────────────────────────────────────────────────────
 
 const SideCard = styled.div`
@@ -246,7 +271,6 @@ const SideTitle = styled.h3`
   margin-bottom: 14px;
 `
 
-// Votz Score gauge
 const ScoreCircle = styled.div<{ $score: number }>`
   width: 80px;
   height: 80px;
@@ -263,7 +287,6 @@ const ScoreCircle = styled.div<{ $score: number }>`
   justify-content: center;
   margin: 0 auto 8px;
   position: relative;
-
   &::after {
     content: '';
     position: absolute;
@@ -291,7 +314,6 @@ const ScoreDesc = styled.p`
   line-height: 1.4;
 `
 
-// Category bars
 const CatRow = styled.div`
   display: flex;
   flex-direction: column;
@@ -331,30 +353,6 @@ const CatBar = styled.div<{ $pct: number }>`
     border-radius: 3px;
     transition: width 0.5s ease;
   }
-`
-
-// SLA table
-const SlaGrid = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-`
-
-const SlaRow = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.8125rem;
-`
-
-const SlaCategory = styled.span`
-  color: ${({ theme }) => theme.colors.text};
-`
-
-const SlaValue = styled.span`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  color: ${({ theme }) => theme.colors.muted};
-  font-size: 0.75rem;
 `
 
 // ── Reports section ──────────────────────────────────────────────────────────
@@ -477,9 +475,14 @@ function formatCnpj(cnpj: string) {
   return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
 }
 
-const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
-  CITY_HALL: 'Prefeitura', HOSPITAL: 'Hospital', CONCESSIONAIRE: 'Concessionária',
-  AUTARCHY: 'Autarquia', SECRETARIAT: 'Secretaria', OTHER: 'Órgão público',
+const SECTOR_LABELS: Record<string, string> = {
+  TELECOM: 'Telecom', SUPPLEMENTAL_HEALTH: 'Saúde Suplementar', FINANCIAL: 'Financeiro',
+  ENERGY: 'Energia', TRANSPORTATION: 'Transporte', RETAIL: 'Varejo',
+  FOOD: 'Alimentação', CONDOMINIUM: 'Condomínio', OTHER: 'Outro',
+}
+
+const SIZE_LABELS: Record<string, string> = {
+  MEI: 'MEI', SMALL: 'Pequena', MEDIUM: 'Média', LARGE: 'Grande',
 }
 
 const CAT_LABELS: Record<string, string> = {
@@ -487,11 +490,6 @@ const CAT_LABELS: Record<string, string> = {
   SANITATION: 'Saneamento', HOUSING: 'Habitação', ENVIRONMENT: 'Meio Ambiente',
   INFRASTRUCTURE: 'Infraestrutura', URBAN_SERVICES: 'Serviços Urbanos',
   CORRUPTION: 'Corrupção', ACCESSIBILITY: 'Acessibilidade', SOCIAL_WELFARE: 'Assistência Social', OTHER: 'Outro',
-}
-
-const SLA_CAT_LABELS: Record<string, string> = {
-  HEALTH: 'Saúde', MOBILITY: 'Mobilidade', SAFETY: 'Segurança',
-  EDUCATION: 'Educação', SANITATION: 'Saneamento', HOUSING: 'Habitação', OTHER: 'Outros',
 }
 
 const STATUS_TABS = [
@@ -504,7 +502,7 @@ const STATUS_TABS = [
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export function EntityProfile() {
+export function CompanyProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
@@ -512,21 +510,19 @@ export function EntityProfile() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
-  const { data: entity, isLoading } = useEntity(id!)
-  const { data: reports, isLoading: loadingReports } = useEntityReports(id!, page, statusFilter || undefined)
-
-  const isOwner = !!currentUser && !!entity && currentUser.id === entity.user.id
+  const { data: company, isLoading } = useCompany(id!)
+  const { data: reports, isLoading: loadingReports } = useCompanyReports(id!, page, statusFilter || undefined)
 
   const logoMutation = useMutation({
     mutationFn: async (file: File) => {
       const form = new FormData()
       form.append('file', file)
       const { data: upload } = await api.post<{ url: string }>('/storage/upload/avatar', form)
-      await api.patch(`/entities/${id}`, { logoUrl: upload.url })
+      await api.patch(`/companies/${id}`, { logoUrl: upload.url })
       return upload.url
     },
     onSuccess: (url) => {
-      qc.setQueryData(['entity', id], (old: typeof entity) =>
+      qc.setQueryData(['company', id], (old: typeof company) =>
         old ? { ...old, logoUrl: url } : old,
       )
     },
@@ -538,7 +534,7 @@ export function EntityProfile() {
     e.target.value = ''
   }
 
-  const stats = entity?.stats
+  const stats = company?.stats
   const resolutionRate = stats && stats.total > 0
     ? Math.round((stats.resolved / stats.total) * 100) : 0
   const openCount = stats?.byStatus?.[ReportStatus.OPEN] ?? 0
@@ -558,7 +554,6 @@ export function EntityProfile() {
       <Content>
         <BackLink to="/">← Início</BackLink>
 
-        {/* Header */}
         {isLoading ? (
           <HeaderCard>
             <div style={{ display: 'flex', gap: 18, marginBottom: 20 }}>
@@ -570,14 +565,14 @@ export function EntityProfile() {
             </div>
             <Skeleton style={{ height: 60 }} />
           </HeaderCard>
-        ) : entity ? (
+        ) : company ? (
           <HeaderCard>
             <HeaderTop>
               <LogoWrapper>
-                <Logo $src={logoMutation.isPending ? null : entity.logoUrl}>
-                  {!(logoMutation.isPending ? null : entity.logoUrl) && entity.legalName.charAt(0)}
+                <Logo $src={logoMutation.isPending ? null : company.logoUrl}>
+                  {!(logoMutation.isPending ? null : company.logoUrl) && company.tradeName.charAt(0)}
                 </Logo>
-                {isOwner && (
+                {currentUser && (
                   <LogoOverlay
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -594,25 +589,28 @@ export function EntityProfile() {
                   onChange={handleLogoFile}
                 />
               </LogoWrapper>
+
               <HeaderInfo>
-                <EntityName>{entity.legalName}</EntityName>
+                <CompanyName>{company.tradeName}</CompanyName>
+                {company.tradeName !== company.legalName && (
+                  <TradeName>{company.legalName}</TradeName>
+                )}
                 <MetaRow>
-                  <Tag>{ENTITY_TYPE_LABELS[entity.type] ?? entity.type}</Tag>
-                  {entity.verified && <Tag $variant="verified">✓ Verificada</Tag>}
-                  <Tag $variant="cnpj">{formatCnpj(entity.cnpj)}</Tag>
+                  <Tag>{SECTOR_LABELS[company.sector] ?? company.sector}</Tag>
+                  <Tag>{SIZE_LABELS[company.size] ?? company.size}</Tag>
+                  {company.verified && <Tag $variant="verified">✓ Verificada</Tag>}
+                  {company.plan !== 'STARTER' && <Tag $variant="plan">{company.plan}</Tag>}
+                  <Tag $variant="cnpj">{formatCnpj(company.cnpj)}</Tag>
                 </MetaRow>
-                <MetaRow>
-                  {entity.city && (
-                    <Location>📍 {[entity.city, entity.state].filter(Boolean).join(', ')}</Location>
-                  )}
-                  {entity.website && (
-                    <Website href={entity.website} target="_blank" rel="noopener noreferrer">
-                      {entity.website.replace(/^https?:\/\//, '')}
+                {company.website && (
+                  <MetaRow>
+                    <Website href={company.website} target="_blank" rel="noopener noreferrer">
+                      {company.website.replace(/^https?:\/\//, '')}
                     </Website>
-                  )}
-                </MetaRow>
+                  </MetaRow>
+                )}
                 <CtaRow>
-                  <ReportCta to={`/novo?recipientType=ENTITY&recipientId=${entity.id}&recipientName=${encodeURIComponent(entity.legalName)}`}>
+                  <ReportCta to={`/novo?recipientType=COMPANY&recipientId=${company.id}&recipientName=${encodeURIComponent(company.tradeName)}`}>
                     + Criar relato
                   </ReportCta>
                 </CtaRow>
@@ -642,18 +640,31 @@ export function EntityProfile() {
             </StatsRow>
           </HeaderCard>
         ) : (
-          <Empty>Entidade não encontrada.</Empty>
+          <Empty>Empresa não encontrada.</Empty>
         )}
 
-        {entity && (
+        {company && (
           <TwoCol>
-            {/* Main: relatos */}
             <MainCol>
               {currentUser && (
-                <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
+                <TeamPanel orgType="COMPANY" orgId={company.id} currentUserId={currentUser.id} />
               )}
 
-              <div style={{ marginTop: currentUser ? 20 : 0 }}>
+              {company.branches.length > 0 && (
+                <div style={{ marginTop: currentUser ? 20 : 0, marginBottom: 20 }}>
+                  <SectionTitle style={{ marginBottom: 12 }}>Unidades</SectionTitle>
+                  <BranchGrid>
+                    {company.branches.map((b) => (
+                      <BranchItem key={b.id}>
+                        <BranchName>{b.name}</BranchName>
+                        <BranchLoc>{[b.city, b.state].filter(Boolean).join(', ')}</BranchLoc>
+                      </BranchItem>
+                    ))}
+                  </BranchGrid>
+                </div>
+              )}
+
+              <div style={{ marginTop: company.branches.length === 0 && currentUser ? 20 : 0 }}>
                 <SectionHeader>
                   <SectionTitle>Relatos direcionados</SectionTitle>
                   <StatusTabs>
@@ -714,30 +725,27 @@ export function EntityProfile() {
                   <Empty>
                     {statusFilter
                       ? 'Nenhum relato com este status.'
-                      : 'Nenhum relato direcionado a esta entidade ainda.'}
+                      : 'Nenhum relato direcionado a esta empresa ainda.'}
                   </Empty>
                 )}
               </div>
             </MainCol>
 
-            {/* Sidebar */}
             <SideCol>
-              {/* Votz Score */}
               <SideCard>
                 <SideTitle>Votz Score</SideTitle>
-                <ScoreCircle $score={entity.votzScore}>
-                  <ScoreInner>{Math.round(entity.votzScore)}</ScoreInner>
+                <ScoreCircle $score={company.votzScore}>
+                  <ScoreInner>{Math.round(company.votzScore)}</ScoreInner>
                 </ScoreCircle>
                 <ScoreDesc>
-                  {entity.votzScore >= 70
-                    ? 'Desempenho excelente na resolução de relatos.'
-                    : entity.votzScore >= 40
+                  {company.votzScore >= 70
+                    ? 'Excelente desempenho no atendimento de reclamações.'
+                    : company.votzScore >= 40
                     ? 'Desempenho regular. Há espaço para melhorar.'
-                    : 'Desempenho abaixo do esperado. Muitos relatos sem resposta.'}
+                    : 'Muitas reclamações sem resposta adequada.'}
                 </ScoreDesc>
               </SideCard>
 
-              {/* Categorias mais reclamadas */}
               {topCategories.length > 0 && (
                 <SideCard>
                   <SideTitle>Mais reclamados</SideTitle>
@@ -755,20 +763,12 @@ export function EntityProfile() {
                 </SideCard>
               )}
 
-              {/* SLA por categoria */}
-              {entity.slaHours && Object.keys(entity.slaHours).length > 0 && (
-                <SideCard>
-                  <SideTitle>Prazo de resposta</SideTitle>
-                  <SlaGrid>
-                    {Object.entries(entity.slaHours).map(([cat, hours]) => (
-                      <SlaRow key={cat}>
-                        <SlaCategory>{SLA_CAT_LABELS[cat] ?? cat}</SlaCategory>
-                        <SlaValue>{hours}h</SlaValue>
-                      </SlaRow>
-                    ))}
-                  </SlaGrid>
-                </SideCard>
-              )}
+              <SideCard>
+                <SideTitle>SLA de resposta</SideTitle>
+                <p style={{ fontSize: '0.875rem', color: 'inherit' }}>
+                  Prazo máximo: <strong>{company.slaHours}h</strong>
+                </p>
+              </SideCard>
             </SideCol>
           </TwoCol>
         )}

@@ -5,6 +5,7 @@ import { Button } from '../ui/Button'
 import { useAuthStore } from '../../store/auth.store'
 import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
 import { api } from '../../lib/api'
+import { useUser } from '../../hooks/useUser'
 
 const Nav = styled.nav`
   position: sticky;
@@ -356,6 +357,10 @@ export function Navbar() {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  const isInstitutional = user?.type === 'ENTITY' || user?.type === 'POLITICIAN'
+  // Só busca o perfil completo (com entity/politician ID) se for conta institucional
+  const { data: profile } = useUser(isInstitutional ? (user?.id ?? '') : '')
+
   useEffect(() => {
     function close(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
@@ -414,6 +419,16 @@ export function Navbar() {
                     <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
                       Meu perfil
                     </DropdownItem>
+                    {profile?.entity && (
+                      <DropdownItem to={`/entidade/${profile.entity.id}`} onClick={() => setOpen(false)}>
+                        Perfil da entidade
+                      </DropdownItem>
+                    )}
+                    {profile?.politician && (
+                      <DropdownItem to={`/politico/${profile.politician.id}`} onClick={() => setOpen(false)}>
+                        Perfil do político
+                      </DropdownItem>
+                    )}
                     <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
                       Editar perfil
                     </DropdownItem>
