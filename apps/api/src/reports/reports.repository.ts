@@ -3,6 +3,16 @@ import { PrismaService } from '../prisma/prisma.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { Category, ReportStatus } from '@votz/shared-types'
 
+const ADVOCACY_SELECT = {
+  where: { type: 'RESPONDED' as const },
+  select: {
+    author: { select: { id: true, name: true } },
+    createdAt: true,
+  },
+  take: 1,
+  orderBy: { createdAt: 'asc' as const },
+} as const
+
 const PUBLIC_REPORT_SELECT = {
   id: true,
   title: true,
@@ -86,7 +96,10 @@ export class ReportsRepository {
     const [reports, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-        select: PUBLIC_REPORT_SELECT,
+        select: {
+          ...PUBLIC_REPORT_SELECT,
+          timeline: ADVOCACY_SELECT,
+        },
         orderBy: [{ pressureScore: 'desc' }, { createdAt: 'desc' }],
         skip: (filters.page - 1) * filters.limit,
         take: filters.limit,

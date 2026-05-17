@@ -573,6 +573,21 @@ const ActBtn = styled.button`
 `
 const ActSpacer = styled.div`flex: 1;`
 
+const FeedAvocBanner = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #1E40AF;
+  line-height: 1.4;
+  b { font-weight: 600; }
+`
+
 const SkeletonCard = styled.div`
   background: #fff;
   border: 1px solid #E5E5E0;
@@ -878,7 +893,18 @@ function FeedCard({ report }: { report: Report }) {
           <Pill $high={report.pressureScore >= 7}>
             Pressão <b>{report.pressureScore.toFixed(1)}</b>
           </Pill>
+          {report.advocacy && (
+            <Pill style={{ background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E40AF' }}>
+              🤝 Avocado
+            </Pill>
+          )}
         </StatusRow>
+
+        {report.advocacy && (
+          <FeedAvocBanner>
+            🤝 <span><b>{report.advocacy.author?.name ?? 'Político'}</b> avocou este relato</span>
+          </FeedAvocBanner>
+        )}
 
         <Actions>
           <ActBtn onClick={e => handleVote(e, VoteType.SUPPORT)}>

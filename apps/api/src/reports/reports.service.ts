@@ -51,8 +51,12 @@ export class ReportsService {
     limit: number
   }) {
     const { reports, total } = await this.repository.findAll(filters)
+    const data = reports.map(({ timeline, ...r }) => ({
+      ...r,
+      advocacy: timeline[0] ?? null,
+    }))
     return {
-      data: reports,
+      data,
       meta: {
         page: filters.page,
         limit: filters.limit,

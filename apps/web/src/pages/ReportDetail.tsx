@@ -1,6 +1,6 @@
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
-import { VoteType, EventType } from '@votz/shared-types'
+import { VoteType, EventType, ReportStatus, RecipientType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
@@ -9,6 +9,8 @@ import { CommentsSection } from '../components/comments/CommentsSection'
 import { useReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useAuthStore } from '../store/auth.store'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
+import { api } from '../lib/api'
 import { TimelineEvent } from '../types/api'
 
 const Page = styled.div`
@@ -235,6 +237,42 @@ const Skeleton = styled.div`
   }
 `
 
+const AvocBanner = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 12px 16px;
+  margin-top: 20px;
+`
+
+const AvocIcon = styled.span`
+  font-size: 1.25rem;
+  flex-shrink: 0;
+`
+
+const AvocText = styled.p`
+  font-size: 0.875rem;
+  color: #1E40AF;
+  line-height: 1.5;
+  margin: 0;
+  b { font-weight: ${({ theme }) => theme.fontWeights.semibold}; }
+`
+
+const AvocBtn = styled(Button)`
+  width: 100%;
+  background: #1E40AF;
+  color: #fff;
+  border-color: #1E40AF;
+  font-size: 0.9375rem;
+  margin-top: 4px;
+
+  &:hover:not(:disabled) { background: #1e3a8a; border-color: #1e3a8a; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+`
+
 const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
@@ -270,6 +308,13 @@ export function ReportDetail() {
   const { mutate: vote } = useVote(id!)
   const { data: myVotes } = useMyVotes(id!)
   const user = useAuthStore((s) => s.user)
+  const qc = useQueryClient()
+
+  const advocateMutation = useMutation({
+    mutationFn: ({ politicianId, reportId }: { politicianId: string; reportId: string }) =>
+      api.post(`/politicians/${politicianId}/advocate/${reportId}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['report', id] }),
+  })
 
   if (isLoading) {
     return (
@@ -320,6 +365,21 @@ export function ReportDetail() {
               <Description style={{ marginTop: 24 }}>
                 {report.description}
               </Description>
+
+              {(() => {
+                const avocEvent = report.timeline?.find(
+                  (e) => e.type === EventType.RESPONDED && (e.metadata as Record<string, unknown>)?.action === 'advocated',
+                )
+                if (!avocEvent) return null
+                return (
+                  <AvocBanner>
+                    <AvocIcon>🤝</AvocIcon>
+                    <AvocText>
+                      <b>{avocEvent.author?.name ?? 'Político'}</b> avocou este relato e assumiu a responsabilidade de resolvê-lo.
+                    </AvocText>
+                  </AvocBanner>
+                )
+              })()}
 
               {report.media && report.media.length > 0 && (
                 <MediaGallery>
@@ -379,6 +439,41 @@ export function ReportDetail() {
                 </VoteBtn>
               </VoteButtons>
             </SideCard>
+
+            {(() => {
+              const alreadyAdvocated = report.timeline?.some(
+                (e) => e.type === EventType.RESPONDED && (e.metadata as Record<string, unknown>)?.action === 'advocated',
+              )
+              const canAdvocate =
+                user?.type === 'POLITICIAN' &&
+                report.recipientType === RecipientType.POLITICIAN &&
+                (report.status === ReportStatus.OPEN || report.status === ReportStatus.UNDER_REVIEW) &&
+                !alreadyAdvocated
+
+              if (!canAdvocate) return null
+
+              return (
+                <SideCard>
+                  <SideTitle>Ação política</SideTitle>
+                  <AvocBtn
+                    disabled={advocateMutation.isPending}
+                    onClick={() =>
+                      advocateMutation.mutate({ politicianId: report.recipientId!, reportId: report.id })
+                    }
+                  >
+                    {advocateMutation.isPending ? 'Avocando…' : '🤝 Avocar este relato'}
+                  </AvocBtn>
+                  <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: 8, lineHeight: 1.5 }}>
+                    Ao avocar, você assume publicamente a responsabilidade de resolver este problema.
+                  </p>
+                  {advocateMutation.isError && (
+                    <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
+                      Não foi possível avocar. Verifique se este relato é direcionado ao seu perfil.
+                    </p>
+                  )}
+                </SideCard>
+              )
+            })()}
 
             {report.timeline && report.timeline.length > 0 && (
               <SideCard>

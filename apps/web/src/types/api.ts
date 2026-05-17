@@ -15,6 +15,11 @@ export interface TimelineEvent {
   author: { id: string; name: string } | null
 }
 
+export interface ReportAdvocacy {
+  author: { id: string; name: string } | null
+  createdAt: string
+}
+
 export interface Report {
   id: string
   title: string
@@ -37,6 +42,7 @@ export interface Report {
   _count: { votes: number; comments: number }
   author: Author | null
   timeline?: TimelineEvent[]
+  advocacy?: ReportAdvocacy | null
 }
 
 export interface ReportsResponse {
