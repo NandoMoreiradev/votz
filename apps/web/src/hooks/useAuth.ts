@@ -22,11 +22,27 @@ export function useMfaVerify() {
   })
 }
 
+export interface RegisterPayload {
+  name: string
+  email: string
+  password: string
+  phone: string
+  zipCode: string
+  streetNumber: string
+  complement?: string
+  street?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+  latitude?: number
+  longitude?: number
+}
+
 export function useRegister() {
   const setAuth = useAuthStore((s) => s.setAuth)
 
   return useMutation({
-    mutationFn: (data: { name: string; email: string; password: string }) =>
+    mutationFn: (data: RegisterPayload) =>
       api.post<AuthResponse>('/auth/register', data).then((r) => r.data),
     onSuccess: ({ user, accessToken }) => {
       setAuth(user, accessToken)

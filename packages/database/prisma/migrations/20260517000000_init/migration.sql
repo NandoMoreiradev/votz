@@ -28,6 +28,9 @@ CREATE TYPE "RecipientType" AS ENUM ('ENTITY', 'COMPANY', 'BRANCH', 'POLITICIAN'
 -- CreateEnum
 CREATE TYPE "VoteType" AS ENUM ('SUPPORT', 'ME_TOO');
 
+-- CreateEnum
+CREATE TYPE "NotificationType" AS ENUM ('NEW_COMMENT', 'STATUS_CHANGED');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -43,12 +46,26 @@ CREATE TABLE "users" (
     "bio" TEXT,
     "phone" TEXT,
     "cpf" TEXT,
+    "zipCode" TEXT,
+    "street" TEXT,
+    "streetNumber" TEXT,
+    "complement" TEXT,
+    "neighborhood" TEXT,
+    "city" TEXT,
+    "state" TEXT,
+    "country" TEXT NOT NULL DEFAULT 'BR',
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
     "googleId" TEXT,
     "mfaEnabled" BOOLEAN NOT NULL DEFAULT false,
     "mfaSecret" TEXT,
     "mfaBackupCodes" TEXT[],
     "lastLoginAt" TIMESTAMP(3),
     "refreshTokenHash" TEXT,
+    "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
+    "lockedUntil" TIMESTAMP(3),
+    "emailVerificationToken" TEXT,
+    "emailVerificationExpires" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -188,6 +205,19 @@ CREATE TABLE "votes" (
 );
 
 -- CreateTable
+CREATE TABLE "notifications" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "type" "NotificationType" NOT NULL,
+    "read" BOOLEAN NOT NULL DEFAULT false,
+    "reportId" TEXT NOT NULL,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "notifications_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "comments" (
     "id" TEXT NOT NULL,
     "reportId" TEXT NOT NULL,
@@ -205,6 +235,9 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_googleId_key" ON "users"("googleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_emailVerificationToken_key" ON "users"("emailVerificationToken");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "entities_userId_key" ON "entities"("userId");
@@ -247,6 +280,12 @@ ALTER TABLE "votes" ADD CONSTRAINT "votes_reportId_fkey" FOREIGN KEY ("reportId"
 
 -- AddForeignKey
 ALTER TABLE "votes" ADD CONSTRAINT "votes_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "notifications" ADD CONSTRAINT "notifications_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "notifications" ADD CONSTRAINT "notifications_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "comments" ADD CONSTRAINT "comments_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

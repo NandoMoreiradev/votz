@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
+import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
 import { AuthenticatedUser } from '@votz/shared-types'
@@ -39,6 +40,16 @@ const Card = styled.div`
   display: flex;
   flex-direction: column;
   gap: 24px;
+`
+
+const SectionTitle = styled.p`
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-top: 8px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 // ── Avatar ─────────────────────────────────────────────────────────────────
@@ -123,6 +134,12 @@ const Textarea = styled.textarea`
   }
 `
 
+const TwoCol = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+`
+
 const CharCount = styled.span`
   font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.muted};
@@ -165,6 +182,29 @@ export function MyProfile() {
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null)
   const [uploadStatus, setUploadStatus] = useState<{ msg: string; error: boolean } | null>(null)
 
+  // Phone
+  const [phone, setPhone] = useState(user?.phone ?? '')
+
+  // CEP / endereço
+  const [zipCode, setZipCode] = useState(user?.zipCode ?? '')
+  const [cepError, setCepError] = useState('')
+  const [address, setAddress] = useState<CepAddressResult | null>(
+    user?.city ? {
+      zipCode: user.zipCode ?? '',
+      street: user.street ?? '',
+      neighborhood: user.neighborhood ?? '',
+      city: user.city ?? '',
+      state: user.state ?? '',
+      latitude: user.latitude ?? undefined,
+      longitude: user.longitude ?? undefined,
+    } : null
+  )
+  const [showManual, setShowManual] = useState(false)
+  const [street, setStreet] = useState(user?.street ?? '')
+  const [neighborhood, setNeighborhood] = useState(user?.neighborhood ?? '')
+  const [streetNumber, setStreetNumber] = useState(user?.streetNumber ?? '')
+  const [complement, setComplement] = useState(user?.complement ?? '')
+
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
       const form = new FormData()
@@ -174,7 +214,6 @@ export function MyProfile() {
     onSuccess: (result) => {
       setPendingAvatarUrl(result.url)
       setUploadStatus({ msg: 'Imagem enviada com sucesso.', error: false })
-      // Mantém o blob URL como preview local; avatarPreview já foi setado em handleFileChange
     },
     onError: () => {
       setUploadStatus({ msg: 'Falha ao enviar imagem. Tente novamente.', error: true })
@@ -182,7 +221,7 @@ export function MyProfile() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name?: string; bio?: string; avatarUrl?: string }) =>
+    mutationFn: (data: Partial<AuthenticatedUser>) =>
       api.patch<AuthenticatedUser>(`/users/${user!.id}`, data).then((r) => r.data),
 
     onMutate: async (data) => {
@@ -190,13 +229,10 @@ export function MyProfile() {
       await queryClient.cancelQueries({ queryKey: ['user', user.id] })
       const prevCache = queryClient.getQueryData(['user', user.id])
       const prevStore = { ...user }
-
-      // Optimistic: atualiza store e cache antes de ouvir o servidor
       setUser({ ...user, ...data })
       queryClient.setQueryData(['user', user.id], (old: unknown) =>
         old && typeof old === 'object' ? { ...old, ...data } : old,
       )
-
       return { prevCache, prevStore }
     },
 
@@ -231,20 +267,53 @@ export function MyProfile() {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadStatus(null)
-    const preview = URL.createObjectURL(file)
-    setAvatarPreview(preview)
+    setAvatarPreview(URL.createObjectURL(file))
     uploadMutation.mutate(file)
+  }
+
+  function handleCepChange(digits: string) {
+    setZipCode(digits)
+    if (digits.length === 8) setCepError('')
+  }
+
+  function handleAddressFetched(data: CepAddressResult) {
+    setAddress(data)
+    setStreet(data.street)
+    setNeighborhood(data.neighborhood)
+    setCepError('')
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const data: { name?: string; bio?: string; avatarUrl?: string } = {}
+
+    const data: Record<string, unknown> = {}
+
     if (name.trim() && name.trim() !== currentUser.name) data.name = name.trim()
     if (bio.trim() !== (currentUser.bio ?? '')) data.bio = bio.trim()
     if (pendingAvatarUrl) data.avatarUrl = pendingAvatarUrl
+
+    // Telefone — envia mesmo que só dígitos mudem
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits && phone !== currentUser.phone) data.phone = phone
+
+    // Endereço — só envia se CEP preenchido
+    if (address) {
+      data.zipCode = address.zipCode
+      data.street = street || address.street
+      data.neighborhood = neighborhood || address.neighborhood
+      data.city = address.city
+      data.state = address.state
+      if (address.latitude != null) data.latitude = address.latitude
+      if (address.longitude != null) data.longitude = address.longitude
+    }
+    if (streetNumber) data.streetNumber = streetNumber
+    if (complement !== (currentUser.complement ?? '')) data.complement = complement
+
     if (Object.keys(data).length === 0) return navigate(`/perfil/${currentUser.id}`)
-    updateMutation.mutate(data)
+    updateMutation.mutate(data as Partial<AuthenticatedUser>)
   }
+
+  const hasAddress = !!address?.city
 
   return (
     <Page>
@@ -281,8 +350,8 @@ export function MyProfile() {
             </AvatarActions>
           </AvatarSection>
 
-          {/* Formulário */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* ── Dados pessoais ── */}
             <Field>
               <Label htmlFor="name">Nome</Label>
               <Input
@@ -307,6 +376,73 @@ export function MyProfile() {
               />
               <CharCount>{bio.length}/300</CharCount>
             </Field>
+
+            <Field>
+              <Label htmlFor="phone">Telefone</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(11) 99999-9999"
+                maxLength={15}
+              />
+            </Field>
+
+            {/* ── Localização ── */}
+            <SectionTitle>Localização</SectionTitle>
+
+            <Field>
+              <Label>CEP</Label>
+              <CepInput
+                value={zipCode}
+                onChange={handleCepChange}
+                onAddressFetched={handleAddressFetched}
+                error={cepError}
+              />
+              {hasAddress && !showManual && (
+                <EditLink type="button" onClick={() => setShowManual(true)}>
+                  Editar endereço manualmente
+                </EditLink>
+              )}
+            </Field>
+
+            {(showManual || (!address && user.street)) && (
+              <ManualAddressFields
+                street={street}
+                neighborhood={neighborhood}
+                onStreetChange={setStreet}
+                onNeighborhoodChange={setNeighborhood}
+                city={address?.city ?? user.city ?? ''}
+                state={address?.state ?? user.state ?? ''}
+              />
+            )}
+
+            <TwoCol>
+              <Field>
+                <Label htmlFor="streetNumber">Número</Label>
+                <Input
+                  id="streetNumber"
+                  type="text"
+                  value={streetNumber}
+                  onChange={(e) => setStreetNumber(e.target.value)}
+                  placeholder="1000"
+                  maxLength={20}
+                />
+              </Field>
+
+              <Field>
+                <Label htmlFor="complement">Complemento</Label>
+                <Input
+                  id="complement"
+                  type="text"
+                  value={complement}
+                  onChange={(e) => setComplement(e.target.value)}
+                  placeholder="Apto 42"
+                  maxLength={60}
+                />
+              </Field>
+            </TwoCol>
 
             {updateMutation.isError && (
               <ErrorMsg>Erro ao salvar. Tente novamente.</ErrorMsg>

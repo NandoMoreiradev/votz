@@ -55,6 +55,17 @@ export class UsersRepository {
         email: true,
         emailVerified: true,
         mfaEnabled: true,
+        phone: true,
+        zipCode: true,
+        street: true,
+        streetNumber: true,
+        complement: true,
+        neighborhood: true,
+        city: true,
+        state: true,
+        country: true,
+        latitude: true,
+        longitude: true,
         _count: {
           select: { reports: true, votes: true, comments: true },
         },
@@ -77,11 +88,40 @@ export class UsersRepository {
     return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
-  updateProfile(id: string, data: { name?: string; bio?: string; avatarUrl?: string }) {
+  updateProfile(id: string, data: {
+    name?: string
+    bio?: string
+    avatarUrl?: string
+    phone?: string
+    zipCode?: string
+    streetNumber?: string
+    complement?: string
+    street?: string
+    neighborhood?: string
+    city?: string
+    state?: string
+    latitude?: number
+    longitude?: number
+  }) {
     return this.prisma.user.update({
       where: { id },
       data,
-      select: PUBLIC_USER_SELECT,
+      select: {
+        ...PUBLIC_USER_SELECT,
+        email: true,
+        emailVerified: true,
+        phone: true,
+        zipCode: true,
+        street: true,
+        streetNumber: true,
+        complement: true,
+        neighborhood: true,
+        city: true,
+        state: true,
+        country: true,
+        latitude: true,
+        longitude: true,
+      },
     })
   }
 }

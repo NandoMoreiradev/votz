@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ==================== ENUMS ====================
@@ -114,8 +115,20 @@ model User {
   reputation      Float     @default(0)
   avatarUrl       String?
   bio             String?
-  phone           String?   // normalized E.164 via libphonenumber-js
+  phone           String?   // E.164, e.g. +5511999999999
   cpf             String?   // AES-256 encrypted
+
+  // Address (filled via CEP lookup — BrasilAPI v2)
+  zipCode         String?   // digits only, e.g. "01310100"
+  street          String?
+  streetNumber    String?
+  complement      String?
+  neighborhood    String?
+  city            String?
+  state           String?   // UF 2 chars, e.g. "SP"
+  country         String    @default("BR")
+  latitude        Float?
+  longitude       Float?
   googleId        String?   @unique
   mfaEnabled           Boolean   @default(false)
   mfaSecret            String?

@@ -1,11 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
-import { useRegister } from '../hooks/useAuth'
+import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
+import { useRegister, type RegisterPayload } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
+
+// ── Styled ─────────────────────────────────────────────────────────────────
 
 const Page = styled.div`
   min-height: 100vh;
@@ -18,7 +21,7 @@ const Page = styled.div`
 
 const Card = styled.div`
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
@@ -49,6 +52,15 @@ const Form = styled.form`
   gap: 16px;
 `
 
+const SectionLabel = styled.p`
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 8px;
+`
+
 const Field = styled.div`
   display: flex;
   flex-direction: column;
@@ -64,7 +76,7 @@ const Label = styled.label`
 const Input = styled.input<{ $error?: boolean }>`
   width: 100%;
   padding: 10px 14px;
-  border: 1.5px solid ${({ $error, theme }) => $error ? theme.colors.action : theme.colors.border};
+  border: 1.5px solid ${({ $error, theme }) => ($error ? theme.colors.action : theme.colors.border)};
   border-radius: ${({ theme }) => theme.radii.md};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.9375rem;
@@ -74,6 +86,12 @@ const Input = styled.input<{ $error?: boolean }>`
   transition: border-color 0.15s;
   &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
   &::placeholder { color: ${({ theme }) => theme.colors.muted}; }
+`
+
+const TwoCol = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 `
 
 const Hint = styled.span`
@@ -97,25 +115,75 @@ const Footer = styled.p`
   }
 `
 
+// ── Tipos ─────────────────────────────────────────────────────────────────
+
 interface FormValues {
   name: string
   email: string
   password: string
+  phone: string
+  zipCode: string
+  streetNumber: string
+  complement?: string
 }
+
+// ── Componente ─────────────────────────────────────────────────────────────
 
 export function Register() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { mutate: register_, isPending, error } = useRegister()
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>()
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>()
+
+  // CEP state — campos vindos do BrasilAPI
+  const [zipCode, setZipCode] = useState('')
+  const [cepError, setCepError] = useState('')
+  const [address, setAddress] = useState<CepAddressResult | null>(null)
+  const [showManual, setShowManual] = useState(false)
+  const [street, setStreet] = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
 
   useEffect(() => {
     if (user) navigate('/')
   }, [user, navigate])
 
+  function handleCepChange(digits: string) {
+    setZipCode(digits)
+    if (digits.length === 8) setCepError('')
+  }
+
+  function handleAddressFetched(data: CepAddressResult) {
+    setAddress(data)
+    setStreet(data.street)
+    setNeighborhood(data.neighborhood)
+    setCepError('')
+    setValue('zipCode', data.zipCode)
+  }
+
   function onSubmit(data: FormValues) {
-    register_(data, { onSuccess: () => navigate('/') })
+    if (!address) {
+      setCepError('Digite um CEP válido para continuar.')
+      return
+    }
+
+    const payload: RegisterPayload = {
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      phone: data.phone.replace(/\D/g, ''),
+      zipCode: address.zipCode,
+      streetNumber: data.streetNumber,
+      complement: data.complement,
+      street: street || address.street,
+      neighborhood: neighborhood || address.neighborhood,
+      city: address.city,
+      state: address.state,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    }
+
+    register_(payload, { onSuccess: () => navigate('/') })
   }
 
   return (
@@ -125,13 +193,19 @@ export function Register() {
         <Subtitle>Grátis para sempre. Sua voz importa.</Subtitle>
 
         <Form onSubmit={handleSubmit(onSubmit)}>
+          {/* ── Dados pessoais ── */}
+          <SectionLabel>Dados pessoais</SectionLabel>
+
           <Field>
             <Label>Nome completo</Label>
             <Input
               type="text"
               placeholder="João Silva"
               $error={!!errors.name}
-              {...register('name', { required: 'Obrigatório', minLength: { value: 2, message: 'Mínimo 2 caracteres' } })}
+              {...register('name', {
+                required: 'Obrigatório',
+                minLength: { value: 2, message: 'Mínimo 2 caracteres' },
+              })}
             />
             {errors.name && <ErrorMsg>{errors.name.message}</ErrorMsg>}
           </Field>
@@ -148,6 +222,23 @@ export function Register() {
           </Field>
 
           <Field>
+            <Label>Telefone</Label>
+            <Input
+              type="tel"
+              placeholder="(11) 99999-9999"
+              $error={!!errors.phone}
+              {...register('phone', {
+                required: 'Obrigatório',
+                validate: (v) => {
+                  const digits = v.replace(/\D/g, '')
+                  return (digits.length === 10 || digits.length === 11) || 'Número inválido. Use (11) 99999-9999'
+                },
+              })}
+            />
+            {errors.phone && <ErrorMsg>{errors.phone.message}</ErrorMsg>}
+          </Field>
+
+          <Field>
             <Label>Senha</Label>
             <Input
               type="password"
@@ -161,10 +252,67 @@ export function Register() {
             />
             {errors.password
               ? <ErrorMsg>{errors.password.message}</ErrorMsg>
-              : <Hint>Mínimo 8 caracteres, com uma maiúscula e um número.</Hint>
+              : <Hint>Mínimo 8 caracteres, com maiúscula e número.</Hint>
             }
           </Field>
 
+          {/* ── Localização ── */}
+          <SectionLabel>Localização</SectionLabel>
+
+          <Field>
+            <Label>CEP</Label>
+            <CepInput
+              value={zipCode}
+              onChange={handleCepChange}
+              onAddressFetched={handleAddressFetched}
+              error={cepError}
+            />
+            {address && !showManual && (
+              <EditLink type="button" onClick={() => setShowManual(true)}>
+                Editar endereço manualmente
+              </EditLink>
+            )}
+          </Field>
+
+          {showManual && address && (
+            <ManualAddressFields
+              street={street}
+              neighborhood={neighborhood}
+              onStreetChange={setStreet}
+              onNeighborhoodChange={setNeighborhood}
+              city={address.city}
+              state={address.state}
+            />
+          )}
+
+          <TwoCol>
+            <Field>
+              <Label>Número</Label>
+              <Input
+                type="text"
+                placeholder="1000"
+                $error={!!errors.streetNumber}
+                {...register('streetNumber', {
+                  required: 'Obrigatório',
+                  maxLength: { value: 20, message: 'Máximo 20 caracteres' },
+                })}
+              />
+              {errors.streetNumber && <ErrorMsg>{errors.streetNumber.message}</ErrorMsg>}
+            </Field>
+
+            <Field>
+              <Label>Complemento</Label>
+              <Input
+                type="text"
+                placeholder="Apto 42"
+                {...register('complement', {
+                  maxLength: { value: 60, message: 'Máximo 60 caracteres' },
+                })}
+              />
+            </Field>
+          </TwoCol>
+
+          {/* ── Erro geral ── */}
           {error && <ErrorMsg>Este e-mail já está cadastrado.</ErrorMsg>}
 
           <Button variant="action" fullWidth disabled={isPending}>

@@ -28,6 +28,20 @@ export class UsersService {
     if (id !== requesterId) throw new ForbiddenException()
     const user = await this.repo.findById(id)
     if (!user) throw new NotFoundException('User not found')
-    return this.repo.updateProfile(id, dto)
+    return this.repo.updateProfile(id, {
+      name: dto.name,
+      bio: dto.bio,
+      avatarUrl: dto.avatarUrl,
+      phone: dto.phone,
+      zipCode: dto.zipCode,
+      streetNumber: dto.streetNumber,
+      complement: dto.complement,
+      street: dto.street,
+      neighborhood: dto.neighborhood,
+      city: dto.city,
+      state: dto.state,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+    })
   }
 }
