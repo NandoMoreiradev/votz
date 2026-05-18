@@ -83,7 +83,7 @@ export class StorageService {
   async upload(
     buffer: Buffer,
     _claimedMimeType: string,
-    folder: 'reports' | 'avatars' | 'entities',
+    folder: 'reports' | 'avatars' | 'entities' | 'verification',
   ): Promise<UploadedFile> {
     const mimeType = detectMimeFromBuffer(buffer)
 
@@ -101,6 +101,7 @@ export class StorageService {
 
     const ext = mimeType.split('/')[1].replace('quicktime', 'mov')
     const key = `${folder}/${randomUUID()}.${ext}`
+    const isPrivate = folder === 'verification'
 
     await this.client.send(
       new PutObjectCommand({
@@ -108,7 +109,7 @@ export class StorageService {
         Key: key,
         Body: buffer,
         ContentType: mimeType,
-        CacheControl: 'public, max-age=31536000, immutable',
+        CacheControl: isPrivate ? 'private, no-cache' : 'public, max-age=31536000, immutable',
       }),
     )
 

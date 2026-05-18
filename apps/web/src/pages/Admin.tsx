@@ -437,6 +437,87 @@ function PoliticiansTab() {
 
 // ── Página principal ───────────────────────────────────────────────────────
 
+const DocGrid = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+`
+
+const DocThumb = styled.a`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
+`
+
+const DocImg = styled.img`
+  width: 120px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #E5E7EB;
+`
+
+const DocLabel = styled.span`
+  font-size: 0.6875rem;
+  color: #6B7280;
+  text-align: center;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+interface DocViewerProps { requestId: string }
+
+function DocViewer({ requestId }: DocViewerProps) {
+  const [open, setOpen] = useState(false)
+  const { data, isLoading } = useQuery<Record<string, string>>({
+    queryKey: ['doc-urls', requestId],
+    queryFn: () => api.get(`/registration-requests/${requestId}/document-urls`).then(r => r.data),
+    enabled: open,
+    staleTime: 55 * 60 * 1000,
+  })
+
+  const keys = Object.keys(data ?? {})
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        style={{ padding: '4px 10px', border: '1px solid #6B7280', borderRadius: 6, background: 'transparent', color: '#6B7280', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>
+        Ver docs
+      </button>
+    )
+  }
+
+  if (isLoading) return <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>Carregando…</span>
+  if (!keys.length) return <span style={{ fontSize: '0.8125rem', color: '#9CA3AF' }}>Sem documentos</span>
+
+  return (
+    <DocGrid>
+      {keys.map(field => {
+        const url = data![field]
+        const isPdf = url.includes('.pdf') || url.includes('%2Fpdf')
+        return (
+          <DocThumb key={field} href={url} target="_blank" rel="noopener noreferrer">
+            {isPdf ? (
+              <div style={{ width: 120, height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F3F4F6', borderRadius: 6, border: '1px solid #E5E7EB', fontSize: '1.5rem' }}>
+                📄
+              </div>
+            ) : (
+              <DocImg src={url} alt={field} />
+            )}
+            <DocLabel title={field}>{field}</DocLabel>
+          </DocThumb>
+        )
+      })}
+    </DocGrid>
+  )
+}
+
 function RequestsTab() {
   const qc = useQueryClient()
   const { data } = useQuery({
@@ -460,43 +541,52 @@ function RequestsTab() {
       {requests.length === 0 && (
         <p style={{ color: '#6B7280', fontSize: '0.9375rem' }}>Nenhuma solicitação pendente.</p>
       )}
-      {requests.map((req: any) => (
-        <div key={req.id} style={{
-          background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12,
-          padding: 20, marginBottom: 12,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div>
-              <span style={{
-                fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
-                background: req.type === 'ENTITY' ? '#dbeafe' : req.type === 'POLITICIAN' ? '#ede9fe' : '#dcfce7',
-                color: req.type === 'ENTITY' ? '#1e40af' : req.type === 'POLITICIAN' ? '#5b21b6' : '#166534',
-                padding: '2px 8px', borderRadius: 99, marginRight: 8,
-              }}>{req.type}</span>
-              <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
-                por {req.requester?.name} · {new Date(req.createdAt).toLocaleDateString('pt-BR')}
-              </span>
-              <div style={{ marginTop: 8 }}>
-                {Object.entries(req.payload as Record<string, unknown>).slice(0, 5).map(([k, v]) => (
-                  <span key={k} style={{ fontSize: '0.8125rem', marginRight: 16, color: '#374151' }}>
-                    <b>{k}:</b> {String(v)}
+      {requests.map((req: any) => {
+        const payload = req.payload as Record<string, unknown>
+        const hasDocs = !!(payload?.['documents'] && typeof payload['documents'] === 'object' && Object.keys(payload['documents'] as object).length > 0)
+        const displayPayload = Object.entries(payload).filter(([k]) => k !== 'documents').slice(0, 5)
+
+        return (
+          <div key={req.id} style={{
+            background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12,
+            padding: 20, marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
+                    background: req.type === 'ENTITY' ? '#dbeafe' : req.type === 'POLITICIAN' ? '#ede9fe' : '#dcfce7',
+                    color: req.type === 'ENTITY' ? '#1e40af' : req.type === 'POLITICIAN' ? '#5b21b6' : '#166534',
+                    padding: '2px 8px', borderRadius: 99, marginRight: 8,
+                  }}>{req.type}</span>
+                  <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
+                    por {req.requester?.name} · {new Date(req.createdAt).toLocaleDateString('pt-BR')}
                   </span>
-                ))}
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  {displayPayload.map(([k, v]) => (
+                    <span key={k} style={{ fontSize: '0.8125rem', marginRight: 16, color: '#374151' }}>
+                      <b>{k}:</b> {String(v)}
+                    </span>
+                  ))}
+                </div>
+                {hasDocs && <DocViewer requestId={req.id} />}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={() => approve.mutate(req.id)} disabled={approve.isPending}
+                  style={{ padding: '7px 16px', background: '#2DC653', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                  Aprovar
+                </button>
+                <button onClick={() => reject.mutate(req.id)} disabled={reject.isPending}
+                  style={{ padding: '7px 16px', background: '#EF4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
+                  Rejeitar
+                </button>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button onClick={() => approve.mutate(req.id)} disabled={approve.isPending}
-                style={{ padding: '7px 16px', background: '#2DC653', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
-                Aprovar
-              </button>
-              <button onClick={() => reject.mutate(req.id)} disabled={reject.isPending}
-                style={{ padding: '7px 16px', background: '#EF4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
-                Rejeitar
-              </button>
-            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

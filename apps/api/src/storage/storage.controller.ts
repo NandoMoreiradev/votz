@@ -59,4 +59,29 @@ export class StorageController {
 
     return this.storageService.upload(file.buffer, file.mimetype, 'avatars')
   }
+
+  @Post('upload/verification-doc')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 2, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 10, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload a verification document (selfie, ID, title voter). Stored privately.' })
+  async uploadVerificationDoc(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado')
+
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+    if (!allowed.has(file.mimetype)) {
+      throw new BadRequestException('Documento deve ser JPEG, PNG, WebP ou PDF')
+    }
+
+    const { key, mimeType, size } = await this.storageService.upload(file.buffer, file.mimetype, 'verification')
+    // Return only key — URL is private, accessible only via signed URLs
+    return { key, mimeType, size }
+  }
 }

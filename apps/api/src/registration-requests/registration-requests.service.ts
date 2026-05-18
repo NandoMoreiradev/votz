@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { RegistrationRequestStatus, RegistrationRequestType, CompanySector, CompanySize, Prisma } from '@prisma/client'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
+import { StorageService } from '../storage/storage.service'
 import { RegistrationRequestsRepository } from './registration-requests.repository'
 import { CreateRegistrationRequestDto } from './dto/create-registration-request.dto'
 
@@ -10,6 +11,7 @@ export class RegistrationRequestsService {
   constructor(
     private readonly repo: RegistrationRequestsRepository,
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
   ) {}
 
   create(requesterId: string, dto: CreateRegistrationRequestDto) {
@@ -55,10 +57,32 @@ export class RegistrationRequestsService {
     return this.repo.review(id, reviewerId, RegistrationRequestStatus.REJECTED, reviewNote)
   }
 
+  async getDocumentUrls(id: string): Promise<Record<string, string>> {
+    const request = await this.repo.findById(id)
+    if (!request) throw new NotFoundException('Request not found')
+
+    const docs = (request.payload as Record<string, unknown>)?.['documents'] as Record<string, string> | undefined
+    if (!docs || typeof docs !== 'object') return {}
+
+    const result: Record<string, string> = {}
+    for (const [field, key] of Object.entries(docs)) {
+      if (typeof key === 'string' && key.startsWith('verification/')) {
+        result[field] = await this.storage.getSignedDownloadUrl(key, 3600)
+      }
+    }
+    return result
+  }
+
   private sanitizePayload(payload: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(payload)) {
-      result[key] = typeof value === 'string' ? DOMPurify.sanitize(value) : value
+      if (typeof value === 'string') {
+        result[key] = DOMPurify.sanitize(value)
+      } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        result[key] = this.sanitizePayload(value as Record<string, unknown>)
+      } else {
+        result[key] = value
+      }
     }
     return result
   }

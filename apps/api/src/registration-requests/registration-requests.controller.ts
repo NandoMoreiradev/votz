@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards, DefaultValuePipe, ParseIntPipe } from '@nestjs/common'
+import { Body, Controller, Get, Param, Post, Query, UseGuards, DefaultValuePipe, ParseIntPipe, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -70,5 +70,14 @@ export class RegistrationRequestsController {
     @CurrentUser() user: { id: string } = { id: '' },
   ) {
     return this.service.reject(id, user.id, reviewNote)
+  }
+
+  @Get(':id/document-urls')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.MODERATOR, UserType.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[Admin] Get signed URLs for verification documents' })
+  getDocumentUrls(@Param('id') id: string) {
+    return this.service.getDocumentUrls(id)
   }
 }
