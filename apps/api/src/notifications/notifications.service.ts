@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import { NotificationType } from '@prisma/client'
 import { NotificationsRepository } from './notifications.repository'
+import { NotificationsGateway } from './notifications.gateway'
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly repo: NotificationsRepository) {}
+  constructor(
+    private readonly repo: NotificationsRepository,
+    @Optional() private readonly gateway: NotificationsGateway,
+  ) {}
 
   async notify(data: {
     userId: string
@@ -12,7 +16,15 @@ export class NotificationsService {
     reportId: string
     metadata?: Record<string, unknown>
   }) {
-    return this.repo.create(data)
+    const notification = await this.repo.create(data)
+    this.gateway?.emitToUser(data.userId, 'notification', {
+      id: notification.id,
+      type: notification.type,
+      reportId: notification.reportId,
+      metadata: notification.metadata,
+      createdAt: notification.createdAt,
+    })
+    return notification
   }
 
   async list(userId: string, page = 1, limit = 20) {

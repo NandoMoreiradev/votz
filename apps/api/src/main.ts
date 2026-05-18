@@ -5,6 +5,7 @@ import { Logger } from 'nestjs-pino'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import { AppModule } from './app.module'
+import { RedisIoAdapter } from './notifications/redis-io.adapter'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true })
@@ -23,7 +24,7 @@ async function bootstrap() {
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
           imgSrc: ["'self'", 'data:', 'https:'],
-          connectSrc: ["'self'"],
+          connectSrc: ["'self'", 'ws:', 'wss:'],
           frameSrc: ["'none'"],
           objectSrc: ["'none'"],
           upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
@@ -32,6 +33,9 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
     }),
   )
+  const redisIoAdapter = new RedisIoAdapter(app)
+  await redisIoAdapter.connectToRedis(process.env.REDIS_URL ?? 'redis://localhost:6379')
+  app.useWebSocketAdapter(redisIoAdapter)
   app.use(cookieParser())
 
   app.enableCors({

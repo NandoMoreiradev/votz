@@ -31,6 +31,7 @@ import { CompanyProfile } from './pages/CompanyProfile'
 import { SurtoDetail } from './pages/SurtoDetail'
 import { Imprensa } from './pages/Imprensa'
 import { Footer } from './components/layout/Footer'
+import { useSocket } from './hooks/useSocket'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -62,6 +63,7 @@ function AuthInit() {
     return () => window.removeEventListener('votz:logout', handleForceLogout)
   }, [])
 
+  useSocket()
   return null
 }
 
