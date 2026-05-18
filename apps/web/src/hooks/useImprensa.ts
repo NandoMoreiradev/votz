@@ -111,3 +111,24 @@ export function useSurtosAtivos() {
     staleTime: 2 * 60_000,
   })
 }
+
+export async function downloadCsv(days: number, state?: string, category?: string): Promise<void> {
+  const params = new URLSearchParams({ days: String(days) })
+  if (state) params.set('state', state)
+  if (category) params.set('category', category)
+
+  const response = await api.get(`/imprensa/export/csv?${params.toString()}`, {
+    responseType: 'blob',
+  })
+
+  const disposition = response.headers['content-disposition'] as string | undefined
+  const match = disposition?.match(/filename="([^"]+)"/)
+  const filename = match?.[1] ?? `votz-relatos-${new Date().toISOString().slice(0, 10)}.csv`
+
+  const url = URL.createObjectURL(response.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}

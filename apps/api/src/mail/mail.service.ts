@@ -55,6 +55,32 @@ export class MailService {
     }).catch((err) => this.logger.error('Failed to send member invite email', err))
   }
 
+  async sendSurtoAlert(
+    email: string,
+    name: string,
+    data: { category: string; city: string; state: string; count: number; surtoId: string },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/surtos/${data.surtoId}`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: `[SURTO] ${data.category} em ${data.city}/${data.state} — Votz Imprensa`,
+      html: `
+        <h2>Alerta de Surto Detectado — Votz</h2>
+        <p>Olá, ${name}. Um novo surto foi detectado na plataforma Votz:</p>
+        <table style="border-collapse:collapse;margin:16px 0;">
+          <tr><td style="padding:6px 16px 6px 0;font-weight:600">Categoria</td><td>${data.category}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:600">Local</td><td>${data.city} / ${data.state}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:600">Relatos (24h)</td><td>${data.count}</td></tr>
+        </table>
+        <p><a href="${link}" style="background:#E63946;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver surto completo</a></p>
+        <p style="color:#6B7280;font-size:13px">Você recebe este alerta por ser um jornalista verificado no Votz. <a href="${baseUrl}/meu-perfil">Gerenciar preferências</a></p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send surto alert email', err))
+  }
+
   async sendDataExportReady(email: string, name: string, downloadUrl: string): Promise<void> {
     await this.transporter.sendMail({
       from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),

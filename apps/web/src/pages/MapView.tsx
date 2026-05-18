@@ -193,6 +193,32 @@ const ReportCount = styled.div`
   box-shadow: ${({ theme }) => theme.shadows.sm};
 `
 
+// ── Toggle mapa ────────────────────────────────────────────────────────────
+
+const ViewToggle = styled.div`
+  position: absolute;
+  top: 16px;
+  right: 56px;
+  z-index: 10;
+  display: flex;
+  border-radius: ${({ theme }) => theme.radii.full};
+  overflow: hidden;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  box-shadow: ${({ theme }) => theme.shadows.sm};
+`
+
+const ToggleBtn = styled.button<{ $active: boolean }>`
+  padding: 6px 14px;
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  border: none;
+  cursor: pointer;
+  background: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.white)};
+  color: ${({ $active }) => ($active ? '#fff' : '#6B7280')};
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+`
+
 // ── Hook de dados ──────────────────────────────────────────────────────────
 
 interface MapFeature {
@@ -232,6 +258,11 @@ function useMapReports(category?: Category, status?: ReportStatus) {
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined
 
+type ViewMode = 'clusters' | 'heatmap'
+
+const CLUSTER_LAYERS = ['reports-clusters', 'reports-cluster-count', 'reports-pins'] as const
+const HEAT_LAYERS = ['reports-heatmap'] as const
+
 export function MapView() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -239,6 +270,8 @@ export function MapView() {
 
   const [categoryFilter, setCategoryFilter] = useState<Category | undefined>()
   const [statusFilter, setStatusFilter] = useState<ReportStatus | undefined>()
+  const [viewMode, setViewMode] = useState<ViewMode>('clusters')
+  const viewModeRef = useRef<ViewMode>('clusters')
 
   const { data } = useMapReports(categoryFilter, statusFilter)
 
@@ -255,7 +288,6 @@ export function MapView() {
     })
 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right')
-
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
     map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'bottom-right')
 
@@ -267,36 +299,50 @@ export function MapView() {
     }
   }, [])
 
-  // Atualiza pins quando os dados mudam
-  const updatePins = useCallback(() => {
+  // Atualiza camadas quando dados mudam
+  const updateLayers = useCallback(() => {
     const map = mapRef.current
     if (!map || !data) return
 
     if (!map.isStyleLoaded()) {
-      map.once('load', updatePins)
+      map.once('load', updateLayers)
       return
     }
 
-    // Remove camadas e source anteriores
-    if (map.getLayer('reports-pins')) map.removeLayer('reports-pins')
-    if (map.getLayer('reports-clusters')) map.removeLayer('reports-clusters')
-    if (map.getLayer('reports-cluster-count')) map.removeLayer('reports-cluster-count')
-    if (map.getSource('reports')) map.removeSource('reports')
+    // Remove camadas e sources anteriores
+    for (const id of [...CLUSTER_LAYERS, ...HEAT_LAYERS]) {
+      if (map.getLayer(id)) map.removeLayer(id)
+    }
+    if (map.getSource('reports-cl')) map.removeSource('reports-cl')
+    if (map.getSource('reports-raw')) map.removeSource('reports-raw')
 
-    map.addSource('reports', {
+    const geoData = data as unknown as GeoJSON.FeatureCollection
+
+    // Source para clusters
+    map.addSource('reports-cl', {
       type: 'geojson',
-      data: data as GeoJSON.FeatureCollection,
+      data: geoData,
       cluster: true,
       clusterMaxZoom: 13,
       clusterRadius: 50,
     })
 
-    // Clusters
+    // Source para heatmap (sem clustering)
+    map.addSource('reports-raw', {
+      type: 'geojson',
+      data: geoData,
+    })
+
+    const clusterVis = viewModeRef.current === 'clusters' ? 'visible' : 'none'
+    const heatVis = viewModeRef.current === 'heatmap' ? 'visible' : 'none'
+
+    // Camadas de cluster
     map.addLayer({
       id: 'reports-clusters',
       type: 'circle',
-      source: 'reports',
+      source: 'reports-cl',
       filter: ['has', 'point_count'],
+      layout: { visibility: clusterVis },
       paint: {
         'circle-color': ['step', ['get', 'point_count'], '#1A1A2E', 10, '#E63946', 30, '#9B0F18'],
         'circle-radius': ['step', ['get', 'point_count'], 18, 10, 24, 30, 30],
@@ -307,9 +353,10 @@ export function MapView() {
     map.addLayer({
       id: 'reports-cluster-count',
       type: 'symbol',
-      source: 'reports',
+      source: 'reports-cl',
       filter: ['has', 'point_count'],
       layout: {
+        visibility: clusterVis,
         'text-field': '{point_count_abbreviated}',
         'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
         'text-size': 13,
@@ -317,12 +364,12 @@ export function MapView() {
       paint: { 'text-color': '#fff' },
     })
 
-    // Pins individuais coloridos por categoria
     map.addLayer({
       id: 'reports-pins',
       type: 'circle',
-      source: 'reports',
+      source: 'reports-cl',
       filter: ['!', ['has', 'point_count']],
+      layout: { visibility: clusterVis },
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 5, 14, 9],
         'circle-color': [
@@ -347,19 +394,41 @@ export function MapView() {
       },
     })
 
-    // Clique em cluster → zoom
+    // Camada heatmap
+    map.addLayer({
+      id: 'reports-heatmap',
+      type: 'heatmap',
+      source: 'reports-raw',
+      layout: { visibility: heatVis },
+      paint: {
+        'heatmap-weight': ['interpolate', ['linear'], ['get', 'pressureScore'], 0, 0, 200, 1],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 3],
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0,   'rgba(33,102,172,0)',
+          0.2, '#67a9cf',
+          0.4, '#f7f7f7',
+          0.6, '#fdbf6f',
+          0.8, '#E63946',
+          1,   '#9B0F18',
+        ],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 16, 9, 32],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 1, 9, 0.85],
+      },
+    })
+
+    // Interações de cluster
     map.on('click', 'reports-clusters', (e) => {
       const features = map.queryRenderedFeatures(e.point, { layers: ['reports-clusters'] })
       const clusterId = features[0]?.properties?.cluster_id as number | undefined
       if (!clusterId) return
       const coords = (features[0].geometry as GeoJSON.Point).coordinates as [number, number]
-      ;(map.getSource('reports') as maplibregl.GeoJSONSource)
+      ;(map.getSource('reports-cl') as maplibregl.GeoJSONSource)
         .getClusterExpansionZoom(clusterId)
         .then((zoom) => map.easeTo({ center: coords, zoom }))
         .catch(() => {})
     })
 
-    // Clique em pin individual → popup
     map.on('click', 'reports-pins', (e) => {
       const feature = e.features?.[0]
       if (!feature) return
@@ -403,8 +472,30 @@ export function MapView() {
   }, [data])
 
   useEffect(() => {
-    updatePins()
-  }, [updatePins])
+    updateLayers()
+  }, [updateLayers])
+
+  // Alterna visibilidade das camadas quando viewMode muda
+  useEffect(() => {
+    viewModeRef.current = viewMode
+    const map = mapRef.current
+    if (!map || !map.isStyleLoaded()) return
+
+    const clusterVis = viewMode === 'clusters' ? 'visible' : 'none'
+    const heatVis = viewMode === 'heatmap' ? 'visible' : 'none'
+
+    for (const id of CLUSTER_LAYERS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', clusterVis)
+    }
+    for (const id of HEAT_LAYERS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', heatVis)
+    }
+
+    if (viewMode !== 'clusters' && popupRef.current) {
+      popupRef.current.remove()
+      popupRef.current = null
+    }
+  }, [viewMode])
 
   const categories = Object.values(Category)
   const featureCount = data?.features.length ?? 0
@@ -442,6 +533,15 @@ export function MapView() {
                 )
               })}
             </FilterBar>
+
+            <ViewToggle>
+              <ToggleBtn $active={viewMode === 'clusters'} onClick={() => setViewMode('clusters')}>
+                Clusters
+              </ToggleBtn>
+              <ToggleBtn $active={viewMode === 'heatmap'} onClick={() => setViewMode('heatmap')}>
+                Heatmap
+              </ToggleBtn>
+            </ViewToggle>
 
             {featureCount > 0 && (
               <ReportCount>

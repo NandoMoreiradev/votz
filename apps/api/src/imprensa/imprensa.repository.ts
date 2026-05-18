@@ -162,4 +162,31 @@ export class ImprensaRepository {
       orderBy: { count: 'desc' },
     })
   }
+
+  async getReportsForExport(days: number, state?: string, category?: string) {
+    const since = daysAgo(days)
+    return this.prisma.report.findMany({
+      where: {
+        anonymous: false,
+        status: { not: ReportStatus.ARCHIVED },
+        createdAt: { gte: since },
+        ...(state && { state: { equals: state.toUpperCase() } }),
+        ...(category && { category: category as Category }),
+      },
+      orderBy: { pressureScore: 'desc' },
+      take: 5000,
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        status: true,
+        city: true,
+        state: true,
+        neighborhood: true,
+        pressureScore: true,
+        createdAt: true,
+        _count: { select: { votes: true, comments: true } },
+      },
+    })
+  }
 }

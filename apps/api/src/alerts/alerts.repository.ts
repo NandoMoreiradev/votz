@@ -133,6 +133,13 @@ export class AlertsRepository {
     }
   }
 
+  findVerifiedPressUsers() {
+    return this.prisma.user.findMany({
+      where: { type: 'PRESS', verified: true },
+      select: { id: true, email: true, name: true },
+    })
+  }
+
   findActive() {
     return this.prisma.surto.findMany({
       where: { active: true },

@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { AlertsRepository } from './alerts.repository'
 import { NotificationsService } from '../notifications/notifications.service'
+import { MailService } from '../mail/mail.service'
 
 export const ALERTS_QUEUE = 'alerts'
 
@@ -22,6 +23,7 @@ export class AlertsService {
   constructor(
     private readonly repo: AlertsRepository,
     private readonly notifications: NotificationsService,
+    private readonly mail: MailService,
     @InjectQueue(ALERTS_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -71,7 +73,7 @@ export class AlertsService {
         `[surto] ${category} em ${city} — ${count} relatos em ${SURGE_WINDOW_HOURS}h (${linked} vinculados)`,
       )
 
-      // Notifica a entidade mais citada apenas na primeira ativação
+      // Notifica a entidade mais citada e jornalistas PRESS apenas na primeira ativação
       if (justActivated) {
         const entityUserId = await this.repo.findTopEntityUserForSurto(category, city, since)
         if (entityUserId) {
@@ -82,6 +84,14 @@ export class AlertsService {
             metadata: { category, city, state, count },
           }).catch(() => null)
         }
+
+        // E-mail para todos os jornalistas PRESS verificados (fire-and-forget)
+        this.repo.findVerifiedPressUsers().then((pressUsers) => {
+          for (const u of pressUsers) {
+            this.mail.sendSurtoAlert(u.email, u.name, { category, city, state, count, surtoId: surto.id })
+              .catch(() => null)
+          }
+        }).catch(() => null)
       }
     }
   }

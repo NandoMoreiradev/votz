@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -7,12 +8,14 @@ import {
   useRelatosDestaque,
   useEntidadesRanking,
   useSurtosAtivos,
+  downloadCsv,
   type CategoryTrend,
   type RelatoDestaque,
   type EntidadeRanking,
   type SurtoAtivo,
 } from '../hooks/useImprensa'
-import { Category, ReportStatus } from '@votz/shared-types'
+import { Category, ReportStatus, UserType } from '@votz/shared-types'
+import { useAuthStore } from '../store/auth.store'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -235,7 +238,138 @@ const Empty = styled.div`
   background:#fff;border:1px solid #E5E5E0;border-radius:10px;
 `
 
+// ── PRESS panel ───────────────────────────────────────────────────────────────
+const PressPanel = styled.div`
+  background:#0D0D0D;border-radius:12px;padding:24px 28px;margin-bottom:40px;
+  @media(max-width:640px){padding:18px 16px;}
+`
+const PressPanelTitle = styled.div`
+  font-family:${({ theme }) => theme.fonts.mono};font-size:10px;font-weight:700;
+  letter-spacing:0.1em;text-transform:uppercase;color:#E63946;margin-bottom:4px;
+`
+const PressPanelSub = styled.div`
+  font-family:${({ theme }) => theme.fonts.heading};font-size:16px;font-weight:700;
+  color:#fff;margin-bottom:18px;
+`
+const PressControls = styled.div`
+  display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;
+`
+const PressLabel = styled.label`
+  display:flex;flex-direction:column;gap:4px;
+  font-family:${({ theme }) => theme.fonts.mono};font-size:10px;
+  color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:0.06em;
+`
+const PressSelect = styled.select`
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);
+  border-radius:6px;padding:8px 12px;font-size:13px;color:#fff;
+  font-family:${({ theme }) => theme.fonts.mono};cursor:pointer;min-width:140px;
+  &:focus{outline:none;border-color:rgba(255,255,255,.4);}
+  option{background:#1A1A2E;color:#fff;}
+`
+const CsvButton = styled.button<{ $loading?: boolean }>`
+  padding:8px 18px;border-radius:6px;border:none;cursor:pointer;
+  background:${({ $loading }) => ($loading ? 'rgba(230,57,70,.6)' : '#E63946')};
+  color:#fff;font-family:${({ theme }) => theme.fonts.heading};
+  font-size:13px;font-weight:700;letter-spacing:-0.01em;
+  transition:opacity 0.15s;align-self:flex-end;
+  &:hover{opacity:0.88;}
+  &:disabled{cursor:not-allowed;}
+`
+const AlertBadge = styled.div`
+  display:flex;align-items:center;gap:6px;margin-top:14px;
+  font-family:${({ theme }) => theme.fonts.mono};font-size:11px;
+  color:rgba(255,255,255,.5);
+`
+const AlertDot = styled.span`
+  width:7px;height:7px;border-radius:50%;background:#2DC653;
+  box-shadow:0 0 0 3px rgba(45,198,83,.2);flex-shrink:0;
+`
+
+const UF_OPTIONS = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
+  'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
+]
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+const DAYS_OPTIONS = [
+  { value: 7, label: '7 dias' },
+  { value: 30, label: '30 dias' },
+  { value: 90, label: '90 dias' },
+  { value: 365, label: '1 ano' },
+]
+
+function PressSection({
+  days,
+  onDaysChange,
+}: {
+  days: number
+  onDaysChange: (d: number) => void
+}) {
+  const [state, setState] = useState('')
+  const [category, setCategory] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleDownload() {
+    setLoading(true)
+    setError('')
+    try {
+      await downloadCsv(days, state || undefined, category || undefined)
+    } catch {
+      setError('Falha ao gerar o CSV. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <PressPanel>
+      <PressPanelTitle>Acesso PRESS</PressPanelTitle>
+      <PressPanelSub>Exportar dados para jornalismo</PressPanelSub>
+      <PressControls>
+        <PressLabel>
+          Período
+          <PressSelect value={days} onChange={(e) => onDaysChange(Number(e.target.value))}>
+            {DAYS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </PressSelect>
+        </PressLabel>
+        <PressLabel>
+          Estado
+          <PressSelect value={state} onChange={(e) => setState(e.target.value)}>
+            <option value="">Todos os estados</option>
+            {UF_OPTIONS.map((uf) => (
+              <option key={uf} value={uf}>{uf}</option>
+            ))}
+          </PressSelect>
+        </PressLabel>
+        <PressLabel>
+          Categoria
+          <PressSelect value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">Todas as categorias</option>
+            {Object.entries(CAT_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </PressSelect>
+        </PressLabel>
+        <CsvButton onClick={handleDownload} disabled={loading} $loading={loading}>
+          {loading ? 'Gerando…' : 'Baixar CSV'}
+        </CsvButton>
+      </PressControls>
+      {error && (
+        <div style={{ marginTop: 10, fontFamily: 'monospace', fontSize: 12, color: '#E63946' }}>
+          {error}
+        </div>
+      )}
+      <AlertBadge>
+        <AlertDot />
+        Alertas de surto ativados automaticamente para sua conta
+      </AlertBadge>
+    </PressPanel>
+  )
+}
 
 function CategoryBar({ item }: { item: CategoryTrend }) {
   return (
@@ -315,8 +449,13 @@ function SurtoCard_({ surto }: { surto: SurtoAtivo }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function Imprensa() {
+  const user = useAuthStore((s) => s.user)
+  const isPress = user?.type === UserType.PRESS && user?.verified
+
+  const [days, setDays] = useState(30)
+
   const { data: resumo, isLoading: loadResumo } = useResumo()
-  const { data: tend, isLoading: loadTend } = useTendencias(30)
+  const { data: tend, isLoading: loadTend } = useTendencias(days)
   const { data: destaque, isLoading: loadDestaque } = useRelatosDestaque(20)
   const { data: entidades, isLoading: loadEntidades } = useEntidadesRanking(15)
   const { data: surtos, isLoading: loadSurtos } = useSurtosAtivos()
@@ -333,6 +472,8 @@ export function Imprensa() {
             Uso livre para fins jornalísticos — cite como fonte: <b>votz.com.br/imprensa</b>.
           </PageSub>
         </PageHeader>
+
+        {isPress && <PressSection days={days} onDaysChange={setDays} />}
 
         {/* ── Resumo ── */}
         <Section>
@@ -401,7 +542,7 @@ export function Imprensa() {
 
         {/* ── Tendências ── */}
         <Section>
-          <SectionTitle>Tendências — últimos 30 dias</SectionTitle>
+          <SectionTitle>Tendências — últimos {days} dias</SectionTitle>
           {loadTend ? (
             <TendGrid>
               <Skel $h={280} />
