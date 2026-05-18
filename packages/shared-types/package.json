@@ -2,10 +2,10 @@
   "name": "@votz/shared-types",
   "version": "1.0.0",
   "private": true,
-  "main": "src/index.js",
-  "types": "src/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
