@@ -104,6 +104,7 @@ export class PressureService {
         category: true,
         createdAt: true,
         groupId: true,
+        surtoId: true,
         _count: { select: { comments: true } },
         timeline: {
           where: { type: 'RESPONDED' },
@@ -122,15 +123,16 @@ export class PressureService {
         where: { reportId },
         _count: { _all: true },
       }),
-      report.groupId
+      // surtoId takes priority: surto links all same-category/city reports automatically
+      report.surtoId
         ? this.prisma.report.count({
-            where: {
-              groupId: report.groupId,
-              id: { not: reportId },
-              status: { in: ACTIVE_STATUSES },
-            },
+            where: { surtoId: report.surtoId, id: { not: reportId }, status: { in: ACTIVE_STATUSES } },
           })
-        : Promise.resolve(0),
+        : report.groupId
+          ? this.prisma.report.count({
+              where: { groupId: report.groupId, id: { not: reportId }, status: { in: ACTIVE_STATUSES } },
+            })
+          : Promise.resolve(0),
     ])
 
     const voteMap = Object.fromEntries(voteGroups.map(g => [g.type, g._count._all])) as Record<
@@ -165,6 +167,7 @@ export class PressureService {
         category: true,
         createdAt: true,
         groupId: true,
+        surtoId: true,
         _count: { select: { comments: true } },
         timeline: {
           where: { type: 'RESPONDED' },
@@ -197,17 +200,21 @@ export class PressureService {
       voteMap.set(v.reportId, entry)
     }
 
-    // Map: groupId → contagem de relatos ativos no grupo
+    // Map: groupId/surtoId → contagem de relatos ativos no grupo
     const groupMap = new Map<string, number>()
+    const surtoMap = new Map<string, number>()
     for (const r of reports) {
       if (r.groupId) groupMap.set(r.groupId, (groupMap.get(r.groupId) ?? 0) + 1)
+      if (r.surtoId) surtoMap.set(r.surtoId, (surtoMap.get(r.surtoId) ?? 0) + 1)
     }
 
     const now = Date.now()
 
     const scores = reports.map(r => {
       const votes = voteMap.get(r.id) ?? { SUPPORT: 0, ME_TOO: 0 }
-      const similarCount = r.groupId ? Math.max((groupMap.get(r.groupId) ?? 1) - 1, 0) : 0
+      const groupSimilar = r.groupId ? Math.max((groupMap.get(r.groupId) ?? 1) - 1, 0) : 0
+      const surtoSimilar = r.surtoId ? Math.max((surtoMap.get(r.surtoId) ?? 1) - 1, 0) : 0
+      const similarCount = Math.max(groupSimilar, surtoSimilar)
 
       return {
         id: r.id,

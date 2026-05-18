@@ -3,6 +3,7 @@ import DOMPurify from 'isomorphic-dompurify'
 import { ReportsRepository } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
+import { AlertsService } from '../alerts/alerts.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { DisputeDto } from './dto/dispute.dto'
@@ -15,6 +16,7 @@ export class ReportsService {
     private readonly repository: ReportsRepository,
     private readonly timeline: TimelineService,
     private readonly notifications: NotificationsService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
@@ -34,6 +36,11 @@ export class ReportsService {
       content: 'Report registered on the Votz platform.',
       authorId: dto.anonymous ? null : user.id,
     })
+
+    // Fire-and-forget: detecta surto após novo relato registrado
+    if (report.city) {
+      this.alerts.enqueueCheck(report.category, report.city, report.state ?? '').catch(() => null)
+    }
 
     return report
   }

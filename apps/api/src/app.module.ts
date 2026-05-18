@@ -23,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { MapModule } from './map/map.module'
 import { PressModule } from './press/press.module'
+import { ImprensaModule } from './imprensa/imprensa.module'
 import { AdminModule } from './admin/admin.module'
 import { PublicApiModule } from './public-api/public-api.module'
 import { StorageModule } from './storage/storage.module'
@@ -85,6 +86,7 @@ import { CompaniesModule } from './companies/companies.module'
     AlertsModule,
     MapModule,
     PressModule,
+    ImprensaModule,
     AdminModule,
     PublicApiModule,
     HealthModule,

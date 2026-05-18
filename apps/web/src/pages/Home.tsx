@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Category, ReportStatus, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useReports } from '../hooks/useReports'
+import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
 import { api } from '../lib/api'
 import type { Report, Politician } from '../types/api'
@@ -1001,6 +1002,7 @@ export function Home() {
 
   const { data, isLoading, isError } = useReports({ category, limit: 50 })
   const { data: polData }            = usePoliticians()
+  const { data: alerts }             = useAlerts()
 
   const cutoff   = periodCutoff(period)
   const filtered = (data?.data ?? [])
@@ -1016,7 +1018,7 @@ export function Home() {
     .sort((a, b) => b.pressureScore - a.pressureScore)
     .slice(0, 5)
   const politicians  = (polData?.data ?? []).slice(0, 3)
-  const showSurto    = topByPressure.length > 0 && topByPressure[0].pressureScore >= 8
+  const activeSurto  = alerts?.[0] ?? null
 
   function toggleStatus(s: ReportStatus) {
     setStatuses(prev => {
@@ -1144,16 +1146,18 @@ export function Home() {
             <LiveIndicator><LiveDot /> Atualizando</LiveIndicator>
           </FeedHead>
 
-          {showSurto && (
+          {activeSurto && (
             <SurtoBannerWrap>
               <SurtoTag>⚡ Surto</SurtoTag>
               <SurtoText>
-                <b>{topByPressure[0].city || 'Região'}</b> — relatos com pressão elevada detectados.{' '}
-                <b>Entidades notificadas.</b>
-                <small>Score de pressão: {topByPressure[0].pressureScore.toFixed(1)} · {timeAgo(topByPressure[0].createdAt)}</small>
+                <b>{activeSurto.city}{activeSurto.state ? ` · ${activeSurto.state}` : ''}</b>
+                {' '}— <b>{activeSurto.count} relatos</b> de{' '}
+                {CAT_CFG[activeSurto.category as keyof typeof CAT_CFG]?.label ?? activeSurto.category}{' '}
+                nas últimas 24h.
+                <small>Detectado {timeAgo(activeSurto.detectedAt)} · Entidades notificadas</small>
               </SurtoText>
-              <SurtoAnchor onClick={() => navigate(`/relatos/${topByPressure[0].id}`)}>
-                Ver relato →
+              <SurtoAnchor onClick={() => navigate(`/?categoria=${activeSurto.category}&cidade=${encodeURIComponent(activeSurto.city)}`)}>
+                Ver relatos →
               </SurtoAnchor>
             </SurtoBannerWrap>
           )}

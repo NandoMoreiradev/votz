@@ -28,6 +28,8 @@ import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
 import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
+import { SurtoDetail } from './pages/SurtoDetail'
+import { Imprensa } from './pages/Imprensa'
 import { Footer } from './components/layout/Footer'
 
 function AuthInit() {
@@ -89,6 +91,8 @@ function App() {
             <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
             <Route path="/convite/:token" element={<AcceptInvite />} />
             <Route path="/empresa/:id" element={<CompanyProfile />} />
+            <Route path="/surtos/:id" element={<SurtoDetail />} />
+            <Route path="/imprensa" element={<Imprensa />} />
           </Routes>
           <Footer />
         </BrowserRouter>

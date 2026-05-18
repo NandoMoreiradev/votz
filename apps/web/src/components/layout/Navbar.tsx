@@ -396,6 +396,7 @@ export function Navbar() {
           <NavLink to="/entidades">Entidades</NavLink>
           <NavLink to="/politicos">Políticos</NavLink>
           <NavLink to="/mapa">Mapa</NavLink>
+          <NavLink to="/imprensa">Imprensa</NavLink>
           {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
         </NavLinks>
 

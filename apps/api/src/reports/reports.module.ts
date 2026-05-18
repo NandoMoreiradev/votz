@@ -4,9 +4,10 @@ import { ReportsService } from './reports.service'
 import { ReportsRepository } from './reports.repository'
 import { TimelineModule } from '../timeline/timeline.module'
 import { NotificationsModule } from '../notifications/notifications.module'
+import { AlertsModule } from '../alerts/alerts.module'
 
 @Module({
-  imports: [TimelineModule, NotificationsModule],
+  imports: [TimelineModule, NotificationsModule, AlertsModule],
   controllers: [ReportsController],
   providers: [ReportsService, ReportsRepository],
   exports: [ReportsService],

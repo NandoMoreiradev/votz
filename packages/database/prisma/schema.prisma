@@ -138,6 +138,7 @@ enum RegistrationRequestStatus {
 enum NotificationType {
   NEW_COMMENT
   STATUS_CHANGED
+  SURTO_DETECTED
 }
 
 // ==================== MODELS ====================
@@ -225,9 +226,13 @@ model Report {
   authorId         String?
   author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
 
-  // Auto-grouping of similar reports in the same region
+  // Manual grouping of similar reports in the same region
   groupId          String?
   group            ReportGroup?   @relation(fields: [groupId], references: [id])
+
+  // Auto-grouping via surto detection (linked by alerts system)
+  surtoId          String?
+  surto            Surto?         @relation(fields: [surtoId], references: [id])
 
   timeline         TimelineEvent[]
   votes            Vote[]
@@ -444,6 +449,24 @@ model OrgMembership {
 
   @@unique([userId, orgType, orgId])
   @@map("org_memberships")
+}
+
+// ── Surto ────────────────────────────────────────────────────────────────────
+// Alerta de problema em escala: detectado quando N+ relatos da mesma categoria
+// aparecem na mesma cidade nas últimas 24 horas.
+model Surto {
+  id         String   @id @default(cuid())
+  category   Category
+  city       String
+  state      String
+  count      Int
+  active     Boolean  @default(true)
+  detectedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  reports    Report[]
+
+  @@unique([category, city])
+  @@map("surtos")
 }
 
 // Pending invite — resolved when the invitee clicks the link
