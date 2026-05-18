@@ -80,6 +80,19 @@ export class StorageService {
     })
   }
 
+  async uploadJson(key: string, data: unknown): Promise<void> {
+    const body = Buffer.from(JSON.stringify(data, null, 2), 'utf-8')
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: 'application/json',
+        CacheControl: 'private, no-cache',
+      }),
+    )
+  }
+
   async upload(
     buffer: Buffer,
     _claimedMimeType: string,

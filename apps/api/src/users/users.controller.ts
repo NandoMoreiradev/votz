@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { UsersService } from './users.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
@@ -16,6 +17,29 @@ export class UsersController {
   @ApiOperation({ summary: 'Get own profile (private data included)' })
   getMe(@CurrentUser() user: { id: string }) {
     return this.usersService.findMe(user.id)
+  }
+
+  @Post('me/data-export')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 1, ttl: 60_000 }, medium: { limit: 2, ttl: 3_600_000 }, long: { limit: 3, ttl: 86_400_000 } })
+  @ApiOperation({ summary: 'Request a full data export (LGPD portability). Delivers via e-mail.' })
+  requestDataExport(@CurrentUser() user: { id: string }) {
+    return this.usersService.requestDataExport(user.id)
+  }
+
+  @Delete('me')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 1, ttl: 10_000 }, medium: { limit: 3, ttl: 3_600_000 }, long: { limit: 5, ttl: 86_400_000 } })
+  @ApiOperation({ summary: 'Permanently delete own account (LGPD erasure). Requires password confirmation.' })
+  deleteAccount(
+    @CurrentUser() user: { id: string },
+    @Body('password') password: string,
+  ) {
+    return this.usersService.deleteAccount(user.id, password)
   }
 
   @Get(':id')

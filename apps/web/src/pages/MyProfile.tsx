@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import styled from 'styled-components'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
@@ -497,7 +497,270 @@ export function MyProfile() {
             </FormActions>
           </form>
         </Card>
+
+        <PrivacySection />
       </Content>
     </Page>
+  )
+}
+
+// ── Privacy section ────────────────────────────────────────────────────────
+
+const PrivacyCard = styled.div`
+  margin-top: 24px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 28px 32px;
+`
+
+const PrivacyTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 6px;
+`
+
+const PrivacyDesc = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 20px;
+  line-height: 1.5;
+`
+
+const PrivacyRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+
+  &:first-of-type { border-top: none; padding-top: 0; }
+`
+
+const PrivacyRowInfo = styled.div`
+  flex: 1;
+`
+
+const PrivacyRowLabel = styled.div`
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 4px;
+`
+
+const PrivacyRowHint = styled.div`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.4;
+`
+
+const PrivacyBtn = styled.button<{ $danger?: boolean }>`
+  padding: 9px 18px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1.5px solid ${({ $danger, theme }) => $danger ? theme.colors.action : theme.colors.primary};
+  color: ${({ $danger, theme }) => $danger ? theme.colors.action : theme.colors.primary};
+  background: transparent;
+  transition: all 0.15s;
+  flex-shrink: 0;
+
+  &:hover {
+    background: ${({ $danger, theme }) => $danger ? theme.colors.action : theme.colors.primary};
+    color: #fff;
+  }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+`
+
+const Modal = styled.div`
+  background: ${({ theme }) => theme.colors.white};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 32px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+`
+
+const ModalTitle = styled.h3`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 8px;
+`
+
+const ModalText = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.5;
+  margin-bottom: 20px;
+`
+
+const ModalInput = styled.input`
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.9375rem;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+  color: ${({ theme }) => theme.colors.text};
+  &:focus { outline: none; border-color: ${({ theme }) => theme.colors.action}; }
+`
+
+const ModalActions = styled.div`
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+`
+
+const ModalCancelBtn = styled.button`
+  padding: 9px 18px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  cursor: pointer;
+`
+
+const ModalConfirmBtn = styled.button`
+  padding: 9px 18px;
+  border: none;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.action};
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`
+
+const FeedbackMsg = styled.p<{ $error?: boolean }>`
+  font-size: 0.875rem;
+  color: ${({ $error, theme }) => $error ? theme.colors.action : theme.colors.positive};
+  margin-top: 8px;
+`
+
+function PrivacySection() {
+  const { logout } = useAuthStore()
+  const navigate = useNavigate()
+
+  const [exportStatus, setExportStatus] = useState<{ msg: string; error: boolean } | null>(null)
+  const [exportLoading, setExportLoading] = useState(false)
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [password, setPassword] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  const handleExport = useCallback(async () => {
+    setExportLoading(true)
+    setExportStatus(null)
+    try {
+      await api.post('/users/me/data-export')
+      setExportStatus({ msg: 'Solicitação enviada! Você receberá um e-mail em breve com o link de download.', error: false })
+    } catch {
+      setExportStatus({ msg: 'Erro ao solicitar exportação. Tente novamente.', error: true })
+    } finally {
+      setExportLoading(false)
+    }
+  }, [])
+
+  const handleDelete = useCallback(async () => {
+    if (!password) { setDeleteError('Digite sua senha para confirmar.'); return }
+    setDeleteLoading(true)
+    setDeleteError('')
+    try {
+      await api.delete('/users/me', { data: { password } })
+      logout()
+      navigate('/', { replace: true })
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setDeleteError(msg ?? 'Erro ao encerrar conta. Verifique sua senha e tente novamente.')
+    } finally {
+      setDeleteLoading(false)
+    }
+  }, [password, logout, navigate])
+
+  return (
+    <PrivacyCard>
+      <PrivacyTitle>Privacidade e dados</PrivacyTitle>
+      <PrivacyDesc>
+        Você tem o direito de acessar, portar e apagar seus dados pessoais conforme a LGPD (Lei nº 13.709/2018).
+      </PrivacyDesc>
+
+      <PrivacyRow>
+        <PrivacyRowInfo>
+          <PrivacyRowLabel>Exportar meus dados</PrivacyRowLabel>
+          <PrivacyRowHint>
+            Receba um arquivo JSON com todos os seus dados: perfil, relatos, comentários, votos e notificações. O link chega por e-mail em até 5 minutos.
+          </PrivacyRowHint>
+          {exportStatus && <FeedbackMsg $error={exportStatus.error}>{exportStatus.msg}</FeedbackMsg>}
+        </PrivacyRowInfo>
+        <PrivacyBtn onClick={handleExport} disabled={exportLoading}>
+          {exportLoading ? 'Aguarde…' : 'Solicitar exportação'}
+        </PrivacyBtn>
+      </PrivacyRow>
+
+      <PrivacyRow>
+        <PrivacyRowInfo>
+          <PrivacyRowLabel>Encerrar minha conta</PrivacyRowLabel>
+          <PrivacyRowHint>
+            Remove seus dados pessoais permanentemente. Seus relatos públicos serão anonimizados — o registro cívico é preservado, sua identidade não. Essa ação não pode ser desfeita.
+          </PrivacyRowHint>
+        </PrivacyRowInfo>
+        <PrivacyBtn $danger onClick={() => setDeleteOpen(true)}>
+          Encerrar conta
+        </PrivacyBtn>
+      </PrivacyRow>
+
+      {deleteOpen && (
+        <ModalOverlay onClick={() => { setDeleteOpen(false); setPassword(''); setDeleteError('') }}>
+          <Modal onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>Encerrar conta</ModalTitle>
+            <ModalText>
+              Esta ação é permanente e irreversível. Seus dados pessoais serão removidos e seus relatos serão anonimizados.
+              <br /><br />
+              Digite sua senha para confirmar.
+            </ModalText>
+            <ModalInput
+              type="password"
+              placeholder="Sua senha atual"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleDelete()}
+              autoFocus
+            />
+            {deleteError && <FeedbackMsg $error>{deleteError}</FeedbackMsg>}
+            <ModalActions>
+              <ModalCancelBtn onClick={() => { setDeleteOpen(false); setPassword(''); setDeleteError('') }}>
+                Cancelar
+              </ModalCancelBtn>
+              <ModalConfirmBtn onClick={handleDelete} disabled={deleteLoading || !password}>
+                {deleteLoading ? 'Encerrando…' : 'Confirmar encerramento'}
+              </ModalConfirmBtn>
+            </ModalActions>
+          </Modal>
+        </ModalOverlay>
+      )}
+    </PrivacyCard>
   )
 }

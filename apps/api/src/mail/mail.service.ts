@@ -55,6 +55,36 @@ export class MailService {
     }).catch((err) => this.logger.error('Failed to send member invite email', err))
   }
 
+  async sendDataExportReady(email: string, name: string, downloadUrl: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: 'Seus dados estão prontos para download — Votz',
+      html: `
+        <h2>Olá, ${name}!</h2>
+        <p>Sua exportação de dados está pronta. Clique no botão abaixo para baixar o arquivo JSON com todos os seus dados no Votz.</p>
+        <p><a href="${downloadUrl}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Baixar meus dados</a></p>
+        <p><strong>O link expira em 24 horas.</strong></p>
+        <p>Se você não solicitou esta exportação, ignore este e-mail.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send data export email', err))
+  }
+
+  async sendAccountDeleted(email: string, name: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: 'Sua conta foi encerrada — Votz',
+      html: `
+        <h2>Olá, ${name}!</h2>
+        <p>Confirmamos o encerramento da sua conta no Votz. Seus dados pessoais foram removidos conforme solicitado.</p>
+        <p>Os relatos que você publicou foram anonimizados e permanecem como registros públicos de interesse coletivo, sem nenhuma informação que permita sua identificação.</p>
+        <p>Se você mudar de ideia no futuro, pode criar uma nova conta a qualquer momento.</p>
+        <p>Obrigado por fazer parte do Votz.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send account deleted email', err))
+  }
+
   async sendMfaBackupCodes(email: string, name: string, codes: string[]): Promise<void> {
     const formattedCodes = codes.map((c) => `<li><code>${c}</code></li>`).join('')
 

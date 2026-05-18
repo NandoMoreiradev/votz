@@ -35,6 +35,13 @@ export class UsersRepository {
     })
   }
 
+  findWithPassword(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true, type: true, password: true, avatarUrl: true },
+    })
+  }
+
   findByIdWithStats(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
