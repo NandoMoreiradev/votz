@@ -233,5 +233,18 @@ export interface CompaniesResponse {
 }
 
 export type LoginResponse =
-  | { requiresMfa: false; user: AuthUser; accessToken: string }
-  | { requiresMfa: true; mfaToken: string }
+  | { requiresMfa: false; requiresMfaSetup: false; user: AuthUser; accessToken: string }
+  | { requiresMfa: true; requiresMfaSetup: false; mfaToken: string }
+  | { requiresMfa: false; requiresMfaSetup: true; mfaSetupToken: string }
+
+export interface MfaSetupResponse {
+  secret: string
+  otpauthUrl: string
+  qrCode: string
+}
+
+export interface MfaEnableForcedResponse {
+  backupCodes: string[]
+  accessToken: string
+  user: AuthUser
+}

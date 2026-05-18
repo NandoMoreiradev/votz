@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
-import { useLogin, useMfaVerify } from '../hooks/useAuth'
+import { useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 
 const Page = styled.div`
@@ -117,6 +117,13 @@ export function Login() {
   const { mutate: verifyMfa, isPending: mfaPending, error: mfaError } = useMfaVerify()
 
   const [mfaToken, setMfaToken] = useState<string | null>(null)
+  const [mfaSetupToken, setMfaSetupToken] = useState<string | null>(null)
+  const [mfaSetupStep, setMfaSetupStep] = useState<'intro' | 'qr' | 'code' | 'backup'>('intro')
+  const [qrData, setQrData] = useState<{ qrCode: string; secret: string } | null>(null)
+  const [backupCodes, setBackupCodes] = useState<string[]>([])
+
+  const { mutate: startSetup, isPending: setupPending } = useMfaSetupForced(mfaSetupToken ?? '')
+  const { mutate: enableForced, isPending: enablePending, error: enableError } = useMfaEnableForced(mfaSetupToken ?? '')
 
   const { register: regCreds, handleSubmit: handleCreds, formState: { errors: credErrors } } = useForm<CredentialsForm>()
   const { register: regMfa, handleSubmit: handleMfa, formState: { errors: mfaErrors } } = useForm<MfaForm>()
@@ -130,6 +137,9 @@ export function Login() {
       onSuccess: (result) => {
         if (result.requiresMfa) {
           setMfaToken(result.mfaToken)
+        } else if (result.requiresMfaSetup) {
+          setMfaSetupToken(result.mfaSetupToken)
+          setMfaSetupStep('intro')
         } else {
           setAuth(result.user, result.accessToken)
           navigate(redirect, { replace: true })
@@ -138,9 +148,130 @@ export function Login() {
     })
   }
 
+  function onStartMfaSetup() {
+    startSetup(undefined, {
+      onSuccess: (data) => {
+        setQrData({ qrCode: data.qrCode, secret: data.secret })
+        setMfaSetupStep('qr')
+      },
+    })
+  }
+
+  function onConfirmMfaSetup(data: MfaForm) {
+    enableForced(data.code, {
+      onSuccess: (result) => {
+        setBackupCodes(result.backupCodes)
+        setMfaSetupStep('backup')
+      },
+    })
+  }
+
   function onMfa(data: MfaForm) {
     if (!mfaToken) return
     verifyMfa({ mfaToken, code: data.code }, { onSuccess: () => navigate(redirect, { replace: true }) })
+  }
+
+  if (mfaSetupToken) {
+    if (mfaSetupStep === 'intro') {
+      return (
+        <Page>
+          <Card>
+            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Subtitle>Segurança obrigatória</Subtitle>
+            <p style={{ fontSize: '0.9375rem', color: '#374151', marginBottom: 24, lineHeight: 1.6 }}>
+              Sua conta exige autenticação em dois fatores (MFA). Configure agora para continuar.
+            </p>
+            <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: 24 }}>
+              Você vai precisar de um app autenticador como <strong>Google Authenticator</strong> ou <strong>Authy</strong>.
+            </p>
+            <Button variant="primary" fullWidth disabled={setupPending} onClick={onStartMfaSetup}>
+              {setupPending ? 'Gerando QR code...' : 'Configurar agora'}
+            </Button>
+          </Card>
+        </Page>
+      )
+    }
+
+    if (mfaSetupStep === 'qr' && qrData) {
+      return (
+        <Page>
+          <Card>
+            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Subtitle>Escaneie o QR code</Subtitle>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <img src={qrData.qrCode} alt="QR Code MFA" style={{ width: 200, height: 200 }} />
+            </div>
+            <p style={{ fontSize: '0.8125rem', color: '#6B7280', textAlign: 'center', marginBottom: 8 }}>
+              Ou insira o código manualmente:
+            </p>
+            <code style={{ display: 'block', background: '#F3F4F6', padding: '8px 12px', borderRadius: 6, fontSize: '0.875rem', textAlign: 'center', letterSpacing: 2, marginBottom: 24 }}>
+              {qrData.secret}
+            </code>
+            <Button variant="primary" fullWidth onClick={() => setMfaSetupStep('code')}>
+              Já escaneei — inserir código
+            </Button>
+          </Card>
+        </Page>
+      )
+    }
+
+    if (mfaSetupStep === 'code') {
+      return (
+        <Page>
+          <Card>
+            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Subtitle>Confirme o código</Subtitle>
+            <Form onSubmit={handleMfa(onConfirmMfaSetup)}>
+              <Field>
+                <Label>Código do autenticador (6 dígitos)</Label>
+                <Input
+                  type="text"
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  $error={!!mfaErrors.code}
+                  {...regMfa('code', { required: 'Obrigatório' })}
+                />
+                {mfaErrors.code && <ErrorMsg>{mfaErrors.code.message}</ErrorMsg>}
+              </Field>
+              {enableError && <ErrorMsg>Código inválido. Tente novamente.</ErrorMsg>}
+              <Button variant="primary" fullWidth disabled={enablePending}>
+                {enablePending ? 'Verificando...' : 'Confirmar e entrar'}
+              </Button>
+            </Form>
+            <Footer>
+              <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMfaSetupStep('qr')}>
+                ← Voltar
+              </button>
+            </Footer>
+          </Card>
+        </Page>
+      )
+    }
+
+    if (mfaSetupStep === 'backup') {
+      return (
+        <Page>
+          <Card>
+            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Subtitle>Guarde seus códigos de backup</Subtitle>
+            <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: 16, lineHeight: 1.5 }}>
+              Se perder acesso ao autenticador, use um destes códigos. Cada um funciona uma única vez.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 24 }}>
+              {backupCodes.map((code) => (
+                <code key={code} style={{ background: '#F3F4F6', padding: '6px 10px', borderRadius: 4, fontSize: '0.8125rem', textAlign: 'center' }}>
+                  {code}
+                </code>
+              ))}
+            </div>
+            <Button variant="primary" fullWidth onClick={() => navigate(redirect, { replace: true })}>
+              Entendi, já guardei
+            </Button>
+          </Card>
+        </Page>
+      )
+    }
   }
 
   if (mfaToken) {

@@ -4,6 +4,7 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common'
@@ -19,6 +20,14 @@ import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 
 const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock skew)
+
+// Perfis que exigem MFA obrigatório conforme escopo (seção 16.2)
+const MFA_REQUIRED_TYPES = ['ENTITY', 'POLITICIAN', 'COMPANY', 'ADMIN'] as const
+type MfaRequiredType = (typeof MFA_REQUIRED_TYPES)[number]
+
+function requiresMandatoryMfa(type: string): type is MfaRequiredType {
+  return MFA_REQUIRED_TYPES.includes(type as MfaRequiredType)
+}
 
 const USER_PUBLIC_SELECT = {
   id: true,
@@ -124,13 +133,22 @@ export class AuthService {
       data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
     })
 
-    // Se MFA habilitado → emite token temporário de 5 min
+    // Se MFA habilitado → emite token temporário de 5 min para verificação
     if (user.mfaEnabled) {
       const mfaToken = await this.jwt.signAsync(
         { sub: user.id, type: 'mfa_pending' },
         { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '5m' },
       )
       return { requiresMfa: true, mfaToken }
+    }
+
+    // Perfis privilegiados sem MFA ativo → bloqueio com token de setup
+    if (requiresMandatoryMfa(user.type)) {
+      const mfaSetupToken = await this.jwt.signAsync(
+        { sub: user.id, type: 'mfa_setup_required' },
+        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30m' },
+      )
+      return { requiresMfaSetup: true, mfaSetupToken }
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
@@ -234,10 +252,10 @@ export class AuthService {
   // MFA — ENABLE (confirma com primeiro código)
   // ─────────────────────────────────────────────
 
-  async mfaEnable(userId: string, code: string) {
+  async mfaEnable(userId: string, code: string, fromSetupFlow = false) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, mfaEnabled: true, mfaSecret: true },
+      select: { id: true, email: true, name: true, type: true, verified: true, reputation: true, avatarUrl: true, emailVerified: true, createdAt: true, mfaEnabled: true, mfaSecret: true },
     })
     if (!user) throw new NotFoundException('User not found')
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled')
@@ -258,6 +276,18 @@ export class AuthService {
     })
 
     await this.mail.sendMfaBackupCodes(user.email, user.name, plainCodes)
+
+    // Fluxo de setup obrigatório: emite tokens completos para concluir o login
+    if (fromSetupFlow) {
+      const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
+      await this.storeRefreshHash(user.id, refreshToken)
+      const publicUser = {
+        id: user.id, name: user.name, email: user.email, type: user.type,
+        verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified, createdAt: user.createdAt,
+      }
+      return { backupCodes: plainCodes, accessToken, refreshToken, user: publicUser }
+    }
 
     return { backupCodes: plainCodes }
   }
@@ -315,10 +345,14 @@ export class AuthService {
   async mfaDisable(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, mfaEnabled: true, mfaSecret: true },
+      select: { id: true, type: true, mfaEnabled: true, mfaSecret: true },
     })
     if (!user || !user.mfaEnabled || !user.mfaSecret) {
       throw new BadRequestException('MFA is not enabled')
+    }
+
+    if (requiresMandatoryMfa(user.type)) {
+      throw new ForbiddenException('MFA cannot be disabled for this account type')
     }
 
     const { valid: isValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })

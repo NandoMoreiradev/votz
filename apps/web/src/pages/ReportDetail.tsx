@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { VoteType, EventType, ReportStatus, RecipientType } from '@votz/shared-types'
@@ -8,6 +9,7 @@ import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { useReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
+import { useDisputeReport } from '../hooks/useReports'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -275,6 +277,48 @@ const AvocBtn = styled(Button)`
   &:disabled { opacity: 0.6; cursor: not-allowed; }
 `
 
+const DisputeBtn = styled(Button)`
+  width: 100%;
+  background: ${({ theme }) => theme.colors.action};
+  color: #fff;
+  border-color: ${({ theme }) => theme.colors.action};
+  font-size: 0.9375rem;
+
+  &:hover:not(:disabled) { background: #c1121f; border-color: #c1121f; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+`
+
+const DisputeTextarea = styled.textarea`
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  font-family: ${({ theme }) => theme.fonts.body};
+  color: ${({ theme }) => theme.colors.text};
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus { border-color: ${({ theme }) => theme.colors.action}; }
+`
+
+const CharCount = styled.span<{ $over: boolean }>`
+  display: block;
+  text-align: right;
+  font-size: 0.75rem;
+  color: ${({ $over, theme }) => ($over ? theme.colors.action : theme.colors.muted)};
+  margin-top: 4px;
+`
+
+const DisputeActions = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+`
+
 const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
@@ -311,6 +355,10 @@ export function ReportDetail() {
   const { data: myVotes } = useMyVotes(id!)
   const user = useAuthStore((s) => s.user)
   const qc = useQueryClient()
+
+  const [showDisputeForm, setShowDisputeForm] = useState(false)
+  const [disputeReason, setDisputeReason] = useState('')
+  const disputeMutation = useDisputeReport(id!)
 
   const advocateMutation = useMutation({
     mutationFn: ({ politicianId, reportId }: { politicianId: string; reportId: string }) =>
@@ -472,6 +520,79 @@ export function ReportDetail() {
                     <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
                       Não foi possível avocar. Verifique se este relato é direcionado ao seu perfil.
                     </p>
+                  )}
+                </SideCard>
+              )
+            })()}
+
+            {(() => {
+              const alreadyDisputed = report.timeline?.some((e) => e.type === EventType.DISPUTED)
+              const canDispute =
+                report.status === ReportStatus.RESOLVED &&
+                !report.anonymous &&
+                user?.id === report.author?.id &&
+                !alreadyDisputed
+
+              if (!canDispute) return null
+
+              function handleDisputeSubmit() {
+                if (disputeReason.trim().length < 20) return
+                disputeMutation.mutate(
+                  { reason: disputeReason.trim() },
+                  {
+                    onSuccess: () => {
+                      setShowDisputeForm(false)
+                      setDisputeReason('')
+                    },
+                  },
+                )
+              }
+
+              return (
+                <SideCard>
+                  <SideTitle>Contestação</SideTitle>
+                  {!showDisputeForm ? (
+                    <>
+                      <p style={{ fontSize: '0.8125rem', color: '#6B7280', lineHeight: 1.5, marginBottom: 12 }}>
+                        Se o problema ainda não foi resolvido, você pode contestar a resolução com justificativa.
+                      </p>
+                      <DisputeBtn onClick={() => setShowDisputeForm(true)}>
+                        ⚡ Contestar resolução
+                      </DisputeBtn>
+                    </>
+                  ) : (
+                    <>
+                      <DisputeTextarea
+                        placeholder="Descreva por que o problema ainda não foi resolvido… (mín. 20 caracteres)"
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                        maxLength={500}
+                      />
+                      <CharCount $over={disputeReason.length > 500}>
+                        {disputeReason.length}/500
+                      </CharCount>
+                      {disputeMutation.isError && (
+                        <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
+                          Não foi possível contestar. Tente novamente.
+                        </p>
+                      )}
+                      <DisputeActions>
+                        <DisputeBtn
+                          disabled={disputeReason.trim().length < 20 || disputeMutation.isPending}
+                          onClick={handleDisputeSubmit}
+                          style={{ flex: 1 }}
+                        >
+                          {disputeMutation.isPending ? 'Enviando…' : 'Enviar contestação'}
+                        </DisputeBtn>
+                        <Button
+                          variant="outline"
+                          onClick={() => { setShowDisputeForm(false); setDisputeReason('') }}
+                          disabled={disputeMutation.isPending}
+                        >
+                          Cancelar
+                        </Button>
+                      </DisputeActions>
+                    </>
                   )}
                 </SideCard>
               )

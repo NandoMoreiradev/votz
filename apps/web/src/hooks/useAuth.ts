@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-import { AuthResponse, LoginResponse } from '../types/api'
+import { AuthResponse, LoginResponse, MfaEnableForcedResponse, MfaSetupResponse } from '../types/api'
 
 export function useLogin() {
   return useMutation({
@@ -44,6 +44,33 @@ export function useRegister() {
   return useMutation({
     mutationFn: (data: RegisterPayload) =>
       api.post<AuthResponse>('/auth/register', data).then((r) => r.data),
+    onSuccess: ({ user, accessToken }) => {
+      setAuth(user, accessToken)
+    },
+  })
+}
+
+export function useMfaSetupForced(mfaSetupToken: string) {
+  return useMutation({
+    mutationFn: () =>
+      api
+        .post<MfaSetupResponse>('/auth/mfa/setup/forced', {}, {
+          headers: { Authorization: `Bearer ${mfaSetupToken}` },
+        })
+        .then((r) => r.data),
+  })
+}
+
+export function useMfaEnableForced(mfaSetupToken: string) {
+  const setAuth = useAuthStore((s) => s.setAuth)
+
+  return useMutation({
+    mutationFn: (code: string) =>
+      api
+        .post<MfaEnableForcedResponse>('/auth/mfa/enable/forced', { code }, {
+          headers: { Authorization: `Bearer ${mfaSetupToken}` },
+        })
+        .then((r) => r.data),
     onSuccess: ({ user, accessToken }) => {
       setAuth(user, accessToken)
     },

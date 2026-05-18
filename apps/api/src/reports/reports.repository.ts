@@ -137,4 +137,28 @@ export class ReportsRepository {
       select: { id: true, status: true },
     })
   }
+
+  async findAuthorId(id: string): Promise<string | null> {
+    const report = await this.prisma.report.findUnique({
+      where: { id },
+      select: { authorId: true },
+    })
+    return report?.authorId ?? null
+  }
+
+  async setDisputed(id: string) {
+    return this.prisma.report.update({
+      where: { id },
+      data: { status: ReportStatus.DISPUTED },
+      select: { id: true, status: true },
+    })
+  }
+
+  async resolveDispute(id: string, status: ReportStatus.OPEN | ReportStatus.RESOLVED) {
+    return this.prisma.report.update({
+      where: { id },
+      data: { status },
+      select: { id: true, status: true },
+    })
+  }
 }

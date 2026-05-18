@@ -18,6 +18,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto'
 import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard'
+import { JwtMfaSetupGuard } from './guards/jwt-mfa-setup.guard'
 import { GoogleAuthGuard } from './guards/google-auth.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
 import { ConfigService } from '@nestjs/config'
@@ -58,8 +59,9 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto)
     if (result.requiresMfa) return { requiresMfa: true, mfaToken: result.mfaToken }
+    if (result.requiresMfaSetup) return { requiresMfaSetup: true, mfaSetupToken: result.mfaSetupToken }
     res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
-    return { requiresMfa: false, user: result.user, accessToken: result.accessToken }
+    return { requiresMfa: false, requiresMfaSetup: false, user: result.user, accessToken: result.accessToken }
   }
 
   @Post('verify-email')
@@ -89,13 +91,35 @@ export class AuthController {
     return this.authService.mfaSetup(user.id)
   }
 
+  @Post('mfa/setup/forced')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtMfaSetupGuard)
+  @ApiOperation({ summary: 'Generate TOTP secret for mandatory MFA setup (uses mfaSetupToken)' })
+  mfaSetupForced(@CurrentUser() user: { id: string }) {
+    return this.authService.mfaSetup(user.id)
+  }
+
   @Post('mfa/enable')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Confirm MFA setup with first TOTP code' })
   mfaEnable(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
-    return this.authService.mfaEnable(user.id, dto.code)
+    return this.authService.mfaEnable(user.id, dto.code, false)
+  }
+
+  @Post('mfa/enable/forced')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtMfaSetupGuard)
+  @ApiOperation({ summary: 'Complete mandatory MFA setup and receive full access tokens (uses mfaSetupToken)' })
+  async mfaEnableForced(
+    @CurrentUser() user: { id: string; fromSetupFlow: boolean },
+    @Body() dto: MfaCodeDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.mfaEnable(user.id, dto.code, true)
+    res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
+    return { backupCodes: result.backupCodes, accessToken: result.accessToken, user: result.user }
   }
 
   @Post('mfa/verify')
