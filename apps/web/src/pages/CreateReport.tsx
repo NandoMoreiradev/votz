@@ -678,6 +678,27 @@ export function CreateReport() {
     )
   }
 
+  if (!user.emailVerified) {
+    return (
+      <Page>
+        <Navbar />
+        <Content>
+          <BackLink to="/">← Voltar</BackLink>
+          <Card style={{ textAlign: 'center', padding: '48px' }}>
+            <PageTitle>Verifique seu e-mail</PageTitle>
+            <PageDesc>
+              Para criar relatos, você precisa confirmar seu e-mail.<br />
+              Verifique a caixa de entrada de <strong>{user.email}</strong>.
+            </PageDesc>
+            <Button variant="action" as={Link as any} to="/verificar-email">
+              Ir para verificação
+            </Button>
+          </Card>
+        </Content>
+      </Page>
+    )
+  }
+
   function onSubmit(data: FormValues) {
     const recipient =
       recipientTab === 'entity' && selectedEntity
@@ -803,7 +824,18 @@ export function CreateReport() {
               </CheckboxRow>
             </Field>
 
-            {error && <ErrorMsg>Erro ao criar relato. Tente novamente.</ErrorMsg>}
+            {error && (
+              <ErrorMsg>
+                {(() => {
+                  const msg = (error as any)?.response?.data?.message
+                  if (!msg) return 'Erro ao criar relato. Tente novamente.'
+                  if (Array.isArray(msg)) return msg.join(' • ')
+                  if (msg === 'Email verification required to create reports')
+                    return 'Você precisa verificar seu e-mail antes de criar relatos.'
+                  return msg
+                })()}
+              </ErrorMsg>
+            )}
 
             <Button variant="action" fullWidth disabled={isPending}>
               {isPending ? 'Publicando...' : 'Publicar relato'}
