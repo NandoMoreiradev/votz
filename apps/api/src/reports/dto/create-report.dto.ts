@@ -34,11 +34,29 @@ export class CreateReportDto {
   @IsOptional()
   longitude?: number
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Endereço formatado para exibição (gerado pelo frontend)' })
   @IsString()
   @MaxLength(300)
   @IsOptional()
   typedAddress?: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  city?: string
+
+  @ApiPropertyOptional({ description: 'UF — 2 caracteres', example: 'SP' })
+  @IsString()
+  @MaxLength(2)
+  @IsOptional()
+  state?: string
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  neighborhood?: string
 
   @ApiPropertyOptional({ enum: RecipientType })
   @IsEnum(RecipientType)

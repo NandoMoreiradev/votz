@@ -7,6 +7,7 @@ import { Category } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
+import { CepInput, ManualAddressFields, type CepAddressResult } from '../components/ui/CepInput'
 import { useCreateReport } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
@@ -398,6 +399,25 @@ const ErrorMsg = styled.span`
   color: ${({ theme }) => theme.colors.action};
 `
 
+const LocationBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`
+
+const LocationClear = styled.button`
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  align-self: flex-start;
+  &:hover { color: ${({ theme }) => theme.colors.text}; }
+`
+
 // ── Entity search ──────────────────────────────────────────────────────────
 
 const SearchWrapper = styled.div`
@@ -652,6 +672,25 @@ export function CreateReport() {
   const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(null)
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
+  // ── Location state ─────────────────────────────────────────────────────────
+  const [cep, setCep] = useState('')
+  const [address, setAddress] = useState<CepAddressResult | null>(null)
+  const [street, setStreet] = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
+
+  function handleAddressFetched(result: CepAddressResult) {
+    setAddress(result)
+    setStreet(result.street)
+    setNeighborhood(result.neighborhood)
+  }
+
+  function clearLocation() {
+    setCep('')
+    setAddress(null)
+    setStreet('')
+    setNeighborhood('')
+  }
+
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     defaultValues: { anonymous: false },
   })
@@ -707,8 +746,24 @@ export function CreateReport() {
           ? { recipientType: 'POLITICIAN', recipientId: selectedPolitician.id }
           : {}
 
+    const location = address
+      ? {
+          city: address.city,
+          state: address.state,
+          neighborhood: neighborhood || address.neighborhood,
+          latitude: address.latitude,
+          longitude: address.longitude,
+          typedAddress: [
+            street || address.street,
+            neighborhood || address.neighborhood,
+            address.city,
+            address.state,
+          ].filter(Boolean).join(', '),
+        }
+      : {}
+
     createReport(
-      { ...data, ...recipient, media: mediaUrls } as any,
+      { ...data, ...recipient, ...location, media: mediaUrls } as any,
       { onSuccess: (report: any) => navigate(`/relatos/${report.id}`) },
     )
   }
@@ -815,6 +870,38 @@ export function CreateReport() {
               <Label>Fotos ou vídeos <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
               <Hint>Evidências visuais aumentam a credibilidade do relato.</Hint>
               <MediaUploader onChange={setMediaUrls} />
+            </Field>
+
+            <Field>
+              <Label>
+                Localização do problema{' '}
+                <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span>
+              </Label>
+              <Hint>
+                Informe o CEP do local — o relato aparecerá no mapa e ativará alertas de surto.
+              </Hint>
+              <LocationBox>
+                <CepInput
+                  value={cep}
+                  onChange={setCep}
+                  onAddressFetched={handleAddressFetched}
+                />
+                {address && (
+                  <>
+                    <ManualAddressFields
+                      street={street}
+                      neighborhood={neighborhood}
+                      onStreetChange={setStreet}
+                      onNeighborhoodChange={setNeighborhood}
+                      city={address.city}
+                      state={address.state}
+                    />
+                    <LocationClear type="button" onClick={clearLocation}>
+                      Remover localização
+                    </LocationClear>
+                  </>
+                )}
+              </LocationBox>
             </Field>
 
             <Field>
