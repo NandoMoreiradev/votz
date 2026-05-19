@@ -7,6 +7,7 @@ interface UseReportsParams {
   category?: Category
   status?: ReportStatus
   city?: string
+  state?: string
   page?: number
   limit?: number
 }

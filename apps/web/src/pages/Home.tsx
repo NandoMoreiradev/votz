@@ -3,11 +3,14 @@ import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Category, ReportStatus, VoteType } from '@votz/shared-types'
+import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useReports } from '../hooks/useReports'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
+import { useUser } from '../hooks/useUser'
+import { useMyVotes } from '../hooks/useVote'
+import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
 import type { Report, Politician } from '../types/api'
 
@@ -595,6 +598,47 @@ const FeedAvocBanner = styled.div`
   b { font-weight: 600; }
 `
 
+const AvocBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #BFDBFE;
+  background: #EFF6FF;
+  color: #1E40AF;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  &:hover { background: #DBEAFE; }
+  &:disabled { opacity: 0.6; cursor: default; }
+`
+const LocationRow = styled.div`
+  display: flex;
+  gap: 6px;
+`
+const LocationInput = styled.input`
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #E5E5E0;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #0D0D0D;
+  background: #fff;
+  &:focus { outline: none; border-color: #1A1A2E; }
+`
+const LocationSelect = styled.select`
+  width: 72px;
+  padding: 6px 4px;
+  border: 1px solid #E5E5E0;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #0D0D0D;
+  background: #fff;
+  &:focus { outline: none; border-color: #1A1A2E; }
+`
+
 const SkeletonCard = styled.div`
   background: #fff;
   border: 1px solid #E5E5E0;
@@ -829,60 +873,78 @@ const ImprensaBtn = styled(Link)`
 `
 
 // ─── FeedCard ─────────────────────────────────────────────────────────────────
-function FeedCard({ report }: { report: Report }) {
+function FeedCard({ report, politicianId }: { report: Report; politicianId?: string }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [voted, setVoted] = useState({ support: false, meToo: false })
-  const [meTooCount, setMeTooCount] = useState(report._count.meTooVotes)
+  const user = useAuthStore(s => s.user)
+  const { data: myVotes } = useMyVotes(report.id)
+
+  const isSupport = myVotes?.SUPPORT ?? false
+  const isMeToo   = myVotes?.ME_TOO   ?? false
 
   const vote = useMutation({
     mutationFn: (type: VoteType) =>
       api.post(`/reports/${report.id}/votes`, { type }).then(r => r.data),
     onMutate: async (type) => {
       await qc.cancelQueries({ queryKey: ['reports'] })
-      const prevData = qc.getQueriesData<{ data: Report[] }>({ queryKey: ['reports'] })
-      const prevVoted = { ...voted }
-      const prevMeToo = meTooCount
+      await qc.cancelQueries({ queryKey: ['my-votes', report.id] })
 
-      if (type === VoteType.SUPPORT) {
-        const delta = voted.support ? -1 : 1
-        qc.setQueriesData<{ data: Report[]; meta: unknown }>({ queryKey: ['reports'] }, (old) => {
-          if (!old) return old
-          return {
-            ...old,
-            data: old.data.map(r =>
-              r.id === report.id
-                ? { ...r, _count: { ...r._count, votes: Math.max(0, r._count.votes + delta) } }
-                : r
-            ),
-          }
-        })
-        setVoted(v => ({ ...v, support: !v.support }))
-      } else {
-        const delta = voted.meToo ? -1 : 1
-        setMeTooCount(c => Math.max(0, c + delta))
-        setVoted(v => ({ ...v, meToo: !v.meToo }))
-      }
+      const prevReports  = qc.getQueriesData<{ data: Report[] }>({ queryKey: ['reports'] })
+      const prevMyVotes  = qc.getQueryData<{ SUPPORT: boolean; ME_TOO: boolean }>(['my-votes', report.id])
 
-      return { prevData, prevVoted, prevMeToo }
+      const wasVoted  = prevMyVotes?.[type] ?? false
+      const delta     = wasVoted ? -1 : 1
+      const countKey  = type === VoteType.SUPPORT ? 'votes' : 'meTooVotes'
+
+      qc.setQueriesData<{ data: Report[]; meta: unknown }>({ queryKey: ['reports'] }, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          data: old.data.map(r =>
+            r.id === report.id
+              ? { ...r, _count: { ...r._count, [countKey]: Math.max(0, r._count[countKey as keyof typeof r._count] + delta) } }
+              : r
+          ),
+        }
+      })
+
+      qc.setQueryData(['my-votes', report.id], {
+        SUPPORT: prevMyVotes?.SUPPORT ?? false,
+        ME_TOO:  prevMyVotes?.ME_TOO  ?? false,
+        [type]: !wasVoted,
+      })
+
+      return { prevReports, prevMyVotes }
     },
     onError: (_, __, ctx) => {
-      ctx?.prevData.forEach(([key, data]) => qc.setQueryData(key, data))
-      if (ctx) { setVoted(ctx.prevVoted); setMeTooCount(ctx.prevMeToo) }
+      ctx?.prevReports.forEach(([key, data]) => qc.setQueryData(key, data))
+      if (ctx?.prevMyVotes) qc.setQueryData(['my-votes', report.id], ctx.prevMyVotes)
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['reports'] })
+      qc.invalidateQueries({ queryKey: ['my-votes', report.id] })
+    },
   })
 
-  const handleCard = () => navigate(`/relatos/${report.id}`)
-  const handleVote = (e: MouseEvent, type: VoteType) => {
-    e.stopPropagation()
-    vote.mutate(type)
-  }
-  const handleComment = (e: MouseEvent) => {
-    e.stopPropagation()
-    navigate(`/relatos/${report.id}`)
-  }
-  const handleShare = (e: MouseEvent) => {
+  const canAdvocate =
+    !!politicianId &&
+    user?.type === UserType.POLITICIAN &&
+    !report.advocacy &&
+    report.recipientType === RecipientType.POLITICIAN &&
+    report.recipientId === politicianId &&
+    (report.status === ReportStatus.OPEN || report.status === ReportStatus.UNDER_REVIEW)
+
+  const advocate = useMutation({
+    mutationFn: () =>
+      api.post(`/politicians/${politicianId}/advocate/${report.id}`).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+  })
+
+  const handleCard    = () => navigate(`/relatos/${report.id}`)
+  const handleVote    = (e: MouseEvent, type: VoteType) => { e.stopPropagation(); vote.mutate(type) }
+  const handleComment = (e: MouseEvent) => { e.stopPropagation(); navigate(`/relatos/${report.id}`) }
+  const handleAdvocate = (e: MouseEvent) => { e.stopPropagation(); advocate.mutate() }
+  const handleShare   = (e: MouseEvent) => {
     e.stopPropagation()
     const url = `${window.location.origin}/relatos/${report.id}`
     if (navigator.share) {
@@ -948,18 +1010,18 @@ function FeedCard({ report }: { report: Report }) {
         )}
 
         <Actions>
-          <ActBtn $active={voted.support} onClick={e => handleVote(e, VoteType.SUPPORT)}>
+          <ActBtn $active={isSupport} onClick={e => handleVote(e, VoteType.SUPPORT)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 22h10V11l-5-9-1.5 2.5L8 9H4l3 13z" />
             </svg>
             Apoiar <span className="ct">{fmtCount(report._count.votes)}</span>
           </ActBtn>
 
-          <ActBtn $active={voted.meToo} onClick={e => handleVote(e, VoteType.ME_TOO)}>
+          <ActBtn $active={isMeToo} onClick={e => handleVote(e, VoteType.ME_TOO)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="7" r="3" /><path d="M5 20c0-4 3-7 7-7s7 3 7 7" />
             </svg>
-            Eu também <span className="ct">{fmtCount(meTooCount)}</span>
+            Eu também <span className="ct">{fmtCount(report._count.meTooVotes)}</span>
           </ActBtn>
 
           <ActBtn onClick={handleComment}>
@@ -970,6 +1032,12 @@ function FeedCard({ report }: { report: Report }) {
           </ActBtn>
 
           <ActSpacer />
+
+          {canAdvocate && (
+            <AvocBtn onClick={handleAdvocate} disabled={advocate.isPending} title="Avocar este relato">
+              🤝 Avocar
+            </AvocBtn>
+          )}
 
           <ActBtn onClick={handleShare} title="Compartilhar">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -983,6 +1051,11 @@ function FeedCard({ report }: { report: Report }) {
 }
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
+const UF_LIST = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS',
+  'MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
+]
+
 const ALL_ACTIVE = new Set([
   ReportStatus.OPEN,
   ReportStatus.UNDER_REVIEW,
@@ -993,14 +1066,27 @@ const ALL_ACTIVE = new Set([
 
 export function Home() {
   const navigate = useNavigate()
+  const user = useAuthStore(s => s.user)
+
   const [category, setCategory]             = useState<Category | undefined>()
   const [statuses, setStatuses]             = useState<Set<ReportStatus>>(new Set(ALL_ACTIVE))
   const [sort, setSort]                     = useState<Sort>('pressure')
   const [period, setPeriod]                 = useState<Period>('30d')
   const [avoc, setAvoc]                     = useState<'all' | 'avocated' | 'none'>('all')
   const [view, setView]                     = useState<'list' | 'map'>('list')
+  const [city, setCity]                     = useState('')
+  const [uf, setUf]                         = useState('')
 
-  const { data, isLoading, isError } = useReports({ category, limit: 50 })
+  const needsProfile = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
+  const { data: userProfile } = useUser(needsProfile ? (user?.id ?? '') : '')
+  const politicianId = userProfile?.politician?.id ?? undefined
+
+  const { data, isLoading, isError } = useReports({
+    category,
+    city:  city  || undefined,
+    state: uf    || undefined,
+    limit: 50,
+  })
   const { data: polData }            = usePoliticians()
   const { data: alerts }             = useAlerts()
 
@@ -1008,6 +1094,7 @@ export function Home() {
   const filtered = (data?.data ?? [])
     .filter(r => statuses.size === 0 || statuses.has(r.status))
     .filter(r => cutoff === 0 || new Date(r.createdAt).getTime() >= cutoff)
+    .filter(r => avoc === 'all' ? true : avoc === 'avocated' ? !!r.advocacy : !r.advocacy)
     .sort((a, b) => {
       if (sort === 'pressure') return b.pressureScore - a.pressureScore
       if (sort === 'votes')    return b._count.votes - a._count.votes
@@ -1121,6 +1208,24 @@ export function Home() {
           </FilterBlock>
 
           <FilterBlock>
+            <FilterLabel>
+              <span>Localização</span>
+              {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
+            </FilterLabel>
+            <LocationRow>
+              <LocationInput
+                placeholder="Cidade"
+                value={city}
+                onChange={e => setCity(e.target.value)}
+              />
+              <LocationSelect value={uf} onChange={e => setUf(e.target.value)}>
+                <option value="">UF</option>
+                {UF_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+              </LocationSelect>
+            </LocationRow>
+          </FilterBlock>
+
+          <FilterBlock>
             <FilterLabel><span>Avocação política</span></FilterLabel>
             <RadioList>
               <RadioOpt>
@@ -1180,7 +1285,7 @@ export function Home() {
             )}
 
             {filtered.map(report => (
-              <FeedCard key={report.id} report={report} />
+              <FeedCard key={report.id} report={report} politicianId={politicianId} />
             ))}
           </Feed>
         </FeedSection>
