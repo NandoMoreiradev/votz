@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger'
-import { IsEnum, IsString, MinLength, MaxLength } from 'class-validator'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { IsArray, IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength, ArrayMaxSize } from 'class-validator'
 
 export enum UpdatableStatus {
   UNDER_REVIEW = 'UNDER_REVIEW',
@@ -13,9 +13,16 @@ export class UpdateStatusDto {
   @IsEnum(UpdatableStatus)
   status: UpdatableStatus
 
-  @ApiProperty({ example: 'Team dispatched for repair next week' })
+  @ApiProperty({ example: 'Equipe despachada para reparo na próxima semana' })
   @IsString()
   @MinLength(10)
   @MaxLength(500)
   content: string
+
+  @ApiPropertyOptional({ type: [String], description: 'URLs de mídia já enviadas ao R2 (máx. 4)' })
+  @IsOptional()
+  @IsArray()
+  @IsUrl({}, { each: true })
+  @ArrayMaxSize(4)
+  media?: string[]
 }

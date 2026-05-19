@@ -3,6 +3,12 @@ import { api } from '../lib/api'
 import { Category, ReportStatus } from '@votz/shared-types'
 import { ReportsResponse } from '../types/api'
 
+export interface UpdateStatusPayload {
+  status: string
+  content: string
+  media?: string[]
+}
+
 interface UseReportsParams {
   category?: Category
   status?: ReportStatus
@@ -29,6 +35,18 @@ export function useDisputeReport(reportId: string) {
     mutationFn: (data: { reason: string; evidence?: string[] }) =>
       api.post(`/reports/${reportId}/dispute`, data).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['report', reportId] }),
+  })
+}
+
+export function useUpdateReportStatus(reportId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: UpdateStatusPayload) =>
+      api.patch(`/reports/${reportId}/status`, data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['report', reportId] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }
 

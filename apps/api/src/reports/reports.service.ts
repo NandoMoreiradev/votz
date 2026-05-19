@@ -118,7 +118,7 @@ export class ReportsService {
       type: EventType.STATUS_CHANGED,
       content: dto.content,
       authorId: user.id,
-      metadata: { previousStatus: report.status, newStatus: dto.status },
+      metadata: { previousStatus: report.status, newStatus: dto.status, media: dto.media ?? [] },
     })
 
     // Notify report author

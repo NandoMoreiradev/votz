@@ -9,7 +9,8 @@ import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
-import { useDisputeReport } from '../hooks/useReports'
+import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
+import { useUser } from '../hooks/useUser'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -366,6 +367,167 @@ const FollowerRole = styled.span`
   font-size: 0.75rem;
 `
 
+const UpdateSelect = styled.select`
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  font-family: ${({ theme }) => theme.fonts.body};
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
+  outline: none;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const UpdateTextarea = styled.textarea`
+  width: 100%;
+  min-height: 90px;
+  padding: 10px 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  font-family: ${({ theme }) => theme.fonts.body};
+  color: ${({ theme }) => theme.colors.text};
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const MediaUploadLabel = styled.label`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  margin-top: 10px;
+  border: 1.5px dashed ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  box-sizing: border-box;
+
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const MediaPreviewGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+`
+
+const MediaThumb = styled.div<{ $error?: boolean }>`
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: ${({ theme }) => theme.radii.md};
+  overflow: hidden;
+  background: ${({ $error, theme }) => ($error ? '#FEE2E2' : theme.colors.border)};
+  border: 1px solid ${({ $error }) => ($error ? '#FCA5A5' : 'transparent')};
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`
+
+const MediaThumbOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #fff;
+`
+
+const MediaThumbRemove = styled.button`
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+
+  &:hover { background: rgba(220,38,38,0.9); }
+`
+
+const UpdateSubmitBtn = styled(Button)`
+  width: 100%;
+  margin-top: 12px;
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  border-color: ${({ theme }) => theme.colors.primary};
+  font-size: 0.9375rem;
+
+  &:hover:not(:disabled) { background: #0f0f1a; border-color: #0f0f1a; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+`
+
+const TimelineMediaGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+`
+
+const TimelineMediaItem = styled.a`
+  display: block;
+  aspect-ratio: 1;
+  border-radius: ${({ theme }) => theme.radii.md};
+  overflow: hidden;
+  background: ${({ theme }) => theme.colors.border};
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: opacity 0.15s;
+  }
+  &:hover img { opacity: 0.85; }
+`
+
+interface UploadMediaItem {
+  id: string
+  previewUrl: string
+  url: string | null
+  uploading: boolean
+  error: boolean
+}
+
+const UPDATABLE_STATUSES: Record<string, string> = {
+  UNDER_REVIEW: 'Em análise',
+  IN_PROGRESS:  'Em andamento',
+  RESOLVED:     'Resolvido',
+  ARCHIVED:     'Arquivado',
+}
+
+const TERMINAL_STATUSES = new Set(['RESOLVED', 'DISPUTED', 'ARCHIVED'])
+
 const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
@@ -384,11 +546,23 @@ function formatDate(iso: string) {
 }
 
 function TimelineRow({ event }: { event: TimelineEvent }) {
+  const meta = event.metadata as Record<string, unknown> | null
+  const media = Array.isArray(meta?.media) ? (meta.media as string[]).filter(Boolean) : []
+
   return (
     <TimelineItem>
       <TimelineDot $color={EVENT_COLORS[event.type]} />
       <TimelineContent>
         <TimelineText>{event.content}</TimelineText>
+        {media.length > 0 && (
+          <TimelineMediaGrid>
+            {media.map((url) => (
+              <TimelineMediaItem key={url} href={url} target="_blank" rel="noopener noreferrer">
+                <img src={url} alt="" loading="lazy" />
+              </TimelineMediaItem>
+            ))}
+          </TimelineMediaGrid>
+        )}
         <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
       </TimelineContent>
     </TimelineItem>
@@ -407,10 +581,25 @@ export function ReportDetail() {
   const [disputeReason, setDisputeReason] = useState('')
   const disputeMutation = useDisputeReport(id!)
 
-  const canFollow = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
+  const isActorType = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
+  const { data: userProfile } = useUser(isActorType && user ? user.id : '')
+
+  const actorId = user?.type === UserType.POLITICIAN
+    ? userProfile?.politician?.id
+    : user?.type === UserType.ENTITY
+      ? userProfile?.entity?.id
+      : undefined
+
+  const canFollow = isActorType
   const { data: followers } = useFollowers(id!)
   const { data: followStatus, isLoading: followStatusLoading } = useFollowStatus(id!, canFollow)
   const { follow: followMut, unfollow: unfollowMut } = useFollowReport(id!)
+
+  // Update status form state
+  const [updateStatus, setUpdateStatus] = useState('')
+  const [updateContent, setUpdateContent] = useState('')
+  const [mediaItems, setMediaItems] = useState<UploadMediaItem[]>([])
+  const updateStatusMut = useUpdateReportStatus(id!)
 
   const advocateMutation = useMutation({
     mutationFn: ({ politicianId, reportId }: { politicianId: string; reportId: string }) =>
@@ -443,6 +632,63 @@ export function ReportDetail() {
       return
     }
     vote(type)
+  }
+
+  async function handleMediaFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    const slots = 4 - mediaItems.length
+    const toProcess = files.slice(0, slots)
+
+    const newItems: UploadMediaItem[] = toProcess.map((f) => ({
+      id: Math.random().toString(36).slice(2),
+      previewUrl: URL.createObjectURL(f),
+      url: null,
+      uploading: true,
+      error: false,
+    }))
+    setMediaItems((prev) => [...prev, ...newItems])
+
+    await Promise.all(
+      toProcess.map(async (file, i) => {
+        const localId = newItems[i].id
+        try {
+          const form = new FormData()
+          form.append('file', file)
+          const { url } = await api
+            .post<{ url: string }>('/storage/upload/report-media', form, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            .then((r) => r.data)
+          setMediaItems((prev) =>
+            prev.map((it) => (it.id === localId ? { ...it, url, uploading: false } : it)),
+          )
+        } catch {
+          setMediaItems((prev) =>
+            prev.map((it) => (it.id === localId ? { ...it, uploading: false, error: true } : it)),
+          )
+        }
+      }),
+    )
+  }
+
+  function handleStatusSubmit() {
+    if (!updateStatus || updateContent.trim().length < 10) return
+    if (mediaItems.some((m) => m.uploading)) return
+    const uploadedUrls = mediaItems.filter((m) => m.url).map((m) => m.url!)
+    updateStatusMut.mutate(
+      { status: updateStatus, content: updateContent.trim(), media: uploadedUrls },
+      {
+        onSuccess: () => {
+          setMediaItems((prev) => {
+            prev.forEach((m) => URL.revokeObjectURL(m.previewUrl))
+            return []
+          })
+          setUpdateStatus('')
+          setUpdateContent('')
+        },
+      },
+    )
   }
 
   return (
@@ -649,6 +895,97 @@ export function ReportDetail() {
                       </DisputeActions>
                     </>
                   )}
+                </SideCard>
+              )
+            })()}
+
+            {(() => {
+              const isRecipient = !!actorId && report.recipientId === actorId
+              if (!isRecipient || TERMINAL_STATUSES.has(report.status)) return null
+
+              const uploadingCount = mediaItems.filter((m) => m.uploading).length
+              const canSubmit =
+                !!updateStatus &&
+                updateContent.trim().length >= 10 &&
+                uploadingCount === 0 &&
+                !updateStatusMut.isPending
+
+              return (
+                <SideCard>
+                  <SideTitle>Dar andamento</SideTitle>
+
+                  <UpdateSelect
+                    value={updateStatus}
+                    onChange={(e) => setUpdateStatus(e.target.value)}
+                  >
+                    <option value="">Selecione o novo status…</option>
+                    {Object.entries(UPDATABLE_STATUSES)
+                      .filter(([key]) => key !== report.status)
+                      .map(([key, label]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                  </UpdateSelect>
+
+                  <UpdateTextarea
+                    placeholder="Descreva o andamento (mín. 10 caracteres)"
+                    value={updateContent}
+                    onChange={(e) => setUpdateContent(e.target.value)}
+                    maxLength={500}
+                  />
+                  <CharCount $over={updateContent.length > 480}>
+                    {updateContent.length}/500
+                  </CharCount>
+
+                  {mediaItems.length < 4 && (
+                    <>
+                      <MediaUploadLabel>
+                        📎 Anexar fotos ({mediaItems.length}/4)
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
+                          multiple
+                          style={{ display: 'none' }}
+                          onChange={handleMediaFiles}
+                        />
+                      </MediaUploadLabel>
+                    </>
+                  )}
+
+                  {mediaItems.length > 0 && (
+                    <MediaPreviewGrid>
+                      {mediaItems.map((item) => (
+                        <MediaThumb key={item.id} $error={item.error}>
+                          <img src={item.previewUrl} alt="" />
+                          {item.uploading && <MediaThumbOverlay>…</MediaThumbOverlay>}
+                          {item.error && <MediaThumbOverlay>✕</MediaThumbOverlay>}
+                          {!item.uploading && (
+                            <MediaThumbRemove
+                              onClick={() => {
+                                URL.revokeObjectURL(item.previewUrl)
+                                setMediaItems((prev) => prev.filter((m) => m.id !== item.id))
+                              }}
+                            >
+                              ✕
+                            </MediaThumbRemove>
+                          )}
+                        </MediaThumb>
+                      ))}
+                    </MediaPreviewGrid>
+                  )}
+
+                  {updateStatusMut.isError && (
+                    <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 8 }}>
+                      Não foi possível atualizar. Verifique se você é o destinatário deste relato.
+                    </p>
+                  )}
+
+                  <UpdateSubmitBtn disabled={!canSubmit} onClick={handleStatusSubmit}>
+                    {updateStatusMut.isPending
+                      ? 'Enviando…'
+                      : uploadingCount > 0
+                        ? `Aguardando ${uploadingCount} foto(s)…`
+                        : 'Publicar atualização'}
+                  </UpdateSubmitBtn>
                 </SideCard>
               )
             })()}
