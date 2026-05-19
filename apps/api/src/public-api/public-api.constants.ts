@@ -1,0 +1,1 @@
+export const REDIS_CLIENT = Symbol('PUBLIC_API_REDIS_CLIENT')

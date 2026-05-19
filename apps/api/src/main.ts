@@ -5,6 +5,7 @@ import { Logger } from 'nestjs-pino'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import { AppModule } from './app.module'
+import { PublicApiModule } from './public-api/public-api.module'
 import { RedisIoAdapter } from './notifications/redis-io.adapter'
 
 async function bootstrap() {
@@ -56,21 +57,42 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1')
 
   if (process.env.NODE_ENV !== 'production') {
-    const config = new DocumentBuilder()
+    // Swagger principal — todas as rotas internas
+    const mainConfig = new DocumentBuilder()
       .setTitle('Votz API')
       .setDescription('Infraestrutura de accountability cívico do Brasil')
       .setVersion('1.0')
       .addBearerAuth()
       .build()
-    const document = SwaggerModule.createDocument(app, config)
-    SwaggerModule.setup('api/docs', app, document)
+    const mainDoc = SwaggerModule.createDocument(app, mainConfig)
+    SwaggerModule.setup('api/docs', app, mainDoc)
+
+    // Swagger público — somente rotas do PublicApiModule
+    const publicConfig = new DocumentBuilder()
+      .setTitle('Votz — API Pública')
+      .setDescription(
+        'API read-only para desenvolvedores e portais de notícias.\n\n' +
+        '**Autenticação:** envie sua API key no cabeçalho `x-api-key`.\n\n' +
+        'Gere sua key em `POST /api/v1/api-keys` (requer conta verificada).\n\n' +
+        '**Rate limit:** 1.000 req/h (FREE) · 10.000 req/h (PAID)',
+      )
+      .setVersion('1.0')
+      .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'x-api-key')
+      .build()
+    const publicDoc = SwaggerModule.createDocument(app, publicConfig, {
+      include: [PublicApiModule],
+    })
+    SwaggerModule.setup('api-publica/docs', app, publicDoc)
   }
 
   const port = process.env.API_PORT ?? 3000
   await app.listen(port)
 
   app.get(Logger).log(`Votz API rodando em http://localhost:${port}/api/v1`)
-  app.get(Logger).log(`Swagger em http://localhost:${port}/api/docs`)
+  app.get(Logger).log(`Swagger interno em http://localhost:${port}/api/docs`)
+  if (process.env.NODE_ENV !== 'production') {
+    app.get(Logger).log(`Swagger público em http://localhost:${port}/api-publica/docs`)
+  }
 }
 
 bootstrap()

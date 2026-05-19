@@ -141,6 +141,11 @@ enum NotificationType {
   SURTO_DETECTED
 }
 
+enum ApiKeyTier {
+  FREE
+  PAID
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -192,6 +197,7 @@ model User {
   registrationRequests  RegistrationRequest[] @relation("RegistrationRequester")
   reviewedRequests      RegistrationRequest[] @relation("RegistrationReviewer")
   memberships           OrgMembership[]
+  apiKeys               ApiKey[]
 
   @@map("users")
 }
@@ -467,6 +473,24 @@ model Surto {
 
   @@unique([category, city])
   @@map("surtos")
+}
+
+// API keys — used by the public API (section 3.6 / 10)
+model ApiKey {
+  id         String     @id @default(uuid())
+  name       String
+  keyHash    String     @unique
+  prefix     String                     // first 12 chars for safe display
+  tier       ApiKeyTier @default(FREE)
+  userId     String
+  user       User       @relation(fields: [userId], references: [id])
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId])
+  @@map("api_keys")
 }
 
 // Pending invite — resolved when the invitee clicks the link
