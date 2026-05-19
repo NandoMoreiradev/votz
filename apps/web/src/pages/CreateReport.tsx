@@ -678,6 +678,17 @@ export function CreateReport() {
   const [street, setStreet] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
 
+  function handleCepChange(raw: string) {
+    setCep(raw)
+    // Limpa endereço stale imediatamente ao digitar um novo CEP,
+    // evitando que um fetch anterior com falha deixe dados incorretos no envio.
+    if (address) {
+      setAddress(null)
+      setStreet('')
+      setNeighborhood('')
+    }
+  }
+
   function handleAddressFetched(result: CepAddressResult) {
     setAddress(result)
     setStreet(result.street)
@@ -883,7 +894,7 @@ export function CreateReport() {
               <LocationBox>
                 <CepInput
                   value={cep}
-                  onChange={setCep}
+                  onChange={handleCepChange}
                   onAddressFetched={handleAddressFetched}
                 />
                 {address && (

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsArray, IsEnum, IsString, IsUrl, MinLength, MaxLength, IsBoolean, IsOptional, IsNumber, IsUUID, ArrayMaxSize } from 'class-validator'
+import { IsArray, IsEnum, IsString, IsUrl, MinLength, MaxLength, IsBoolean, IsOptional, IsNumber, IsUUID, ArrayMaxSize, Matches } from 'class-validator'
+import { Transform } from 'class-transformer'
 import { Category, RecipientType } from '@votz/shared-types'
 
 export class CreateReportDto {
@@ -41,21 +42,25 @@ export class CreateReportDto {
   typedAddress?: string
 
   @ApiPropertyOptional()
-  @IsString()
-  @MaxLength(100)
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(100)
   city?: string
 
-  @ApiPropertyOptional({ description: 'UF — 2 caracteres', example: 'SP' })
-  @IsString()
-  @MaxLength(2)
+  @ApiPropertyOptional({ description: 'UF — 2 caracteres maiúsculos', example: 'SP' })
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @Matches(/^[A-Z]{2}$/, { message: 'state deve ser uma UF de 2 letras maiúsculas' })
   state?: string
 
   @ApiPropertyOptional()
-  @IsString()
-  @MaxLength(100)
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MaxLength(100)
   neighborhood?: string
 
   @ApiPropertyOptional({ enum: RecipientType })
