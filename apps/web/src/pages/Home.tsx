@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
+import { useMediaViewer } from '../components/ui/MediaViewer'
 import { useReports } from '../hooks/useReports'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
@@ -460,7 +461,7 @@ const CatTag = styled.span`
   font-weight: 500;
   z-index: 1;
 `
-const PhotoCount = styled.span`
+const PhotoCount = styled.button`
   position: absolute;
   bottom: 10px;
   right: 10px;
@@ -474,6 +475,11 @@ const PhotoCount = styled.span`
   align-items: center;
   gap: 4px;
   z-index: 1;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover { background: rgba(0,0,0,.75); }
 `
 const CardBody = styled.div`
   flex: 1;
@@ -878,6 +884,7 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const { data: myVotes } = useMyVotes(report.id)
+  const { open: openMedia } = useMediaViewer()
 
   const isSupport = myVotes?.SUPPORT ?? false
   const isMeToo   = myVotes?.ME_TOO   ?? false
@@ -964,7 +971,13 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
       <CardImg $category={report.category}>
         <CatTag>{CAT_CFG[report.category].label}</CatTag>
         {report.media.length > 0 && (
-          <PhotoCount>
+          <PhotoCount
+            onClick={(e) => {
+              e.stopPropagation()
+              openMedia(report.media.map((url) => ({ url })))
+            }}
+            aria-label={`Ver ${report.media.length} ${report.media.length === 1 ? 'foto' : 'fotos'}`}
+          >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
               <path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z" />
             </svg>
