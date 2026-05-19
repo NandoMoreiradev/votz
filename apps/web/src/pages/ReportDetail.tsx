@@ -7,6 +7,7 @@ import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
+import { useMediaViewer } from '../components/ui/MediaViewer'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
@@ -93,20 +94,38 @@ const MediaGallery = styled.div`
   margin-top: 20px;
 `
 
-const MediaItem = styled.a`
+const MediaItem = styled.div`
   display: block;
   aspect-ratio: 1;
   border-radius: ${({ theme }) => theme.radii.md};
   overflow: hidden;
   border: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ theme }) => theme.colors.neutral};
+  cursor: pointer;
+  position: relative;
+  transition: opacity 0.15s;
+
+  &:hover { opacity: 0.88; }
 
   img, video {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    pointer-events: none;
   }
+`
+
+const VideoPlayOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  font-size: 1.5rem;
+  pointer-events: none;
 `
 
 const Description = styled.p`
@@ -494,21 +513,24 @@ const TimelineMediaGrid = styled.div`
   margin-top: 8px;
 `
 
-const TimelineMediaItem = styled.a`
+const TimelineMediaItem = styled.div`
   display: block;
   aspect-ratio: 1;
   border-radius: ${({ theme }) => theme.radii.md};
   overflow: hidden;
   background: ${({ theme }) => theme.colors.border};
+  cursor: pointer;
+  transition: opacity 0.15s;
+
+  &:hover { opacity: 0.82; }
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: opacity 0.15s;
+    pointer-events: none;
   }
-  &:hover img { opacity: 0.85; }
 `
 
 interface UploadMediaItem {
@@ -545,7 +567,13 @@ function formatDate(iso: string) {
   })
 }
 
-function TimelineRow({ event }: { event: TimelineEvent }) {
+function TimelineRow({
+  event,
+  onOpenMedia,
+}: {
+  event: TimelineEvent
+  onOpenMedia: (items: { url: string }[], index: number) => void
+}) {
   const meta = event.metadata as Record<string, unknown> | null
   const media = Array.isArray(meta?.media) ? (meta.media as string[]).filter(Boolean) : []
 
@@ -556,8 +584,14 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
         <TimelineText>{event.content}</TimelineText>
         {media.length > 0 && (
           <TimelineMediaGrid>
-            {media.map((url) => (
-              <TimelineMediaItem key={url} href={url} target="_blank" rel="noopener noreferrer">
+            {media.map((url, i) => (
+              <TimelineMediaItem
+                key={url}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenMedia(media.map((u) => ({ url: u })), i)}
+                onKeyDown={(e) => e.key === 'Enter' && onOpenMedia(media.map((u) => ({ url: u })), i)}
+              >
                 <img src={url} alt="" loading="lazy" />
               </TimelineMediaItem>
             ))}
@@ -576,6 +610,7 @@ export function ReportDetail() {
   const { data: myVotes } = useMyVotes(id!)
   const user = useAuthStore((s) => s.user)
   const qc = useQueryClient()
+  const { open: openMedia } = useMediaViewer()
 
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
@@ -731,15 +766,27 @@ export function ReportDetail() {
 
               {report.media && report.media.length > 0 && (
                 <MediaGallery>
-                  {report.media.map((url) => (
-                    <MediaItem key={url} href={url} target="_blank" rel="noopener noreferrer">
-                      {/\.(mp4|mov|webm)$/i.test(url) ? (
-                        <video src={url} muted playsInline />
-                      ) : (
-                        <img src={url} alt="" loading="lazy" />
-                      )}
-                    </MediaItem>
-                  ))}
+                  {report.media.map((url, i) => {
+                    const isVideo = /\.(mp4|mov|webm)$/i.test(url)
+                    return (
+                      <MediaItem
+                        key={url}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openMedia(report.media.map((u) => ({ url: u })), i)}
+                        onKeyDown={(e) => e.key === 'Enter' && openMedia(report.media.map((u) => ({ url: u })), i)}
+                      >
+                        {isVideo ? (
+                          <>
+                            <video src={url} muted playsInline preload="metadata" />
+                            <VideoPlayOverlay>▶</VideoPlayOverlay>
+                          </>
+                        ) : (
+                          <img src={url} alt="" loading="lazy" />
+                        )}
+                      </MediaItem>
+                    )
+                  })}
                 </MediaGallery>
               )}
             </Card>
@@ -1050,7 +1097,7 @@ export function ReportDetail() {
                 <SideTitle>Linha do tempo</SideTitle>
                 <TimelineList>
                   {report.timeline.map((event) => (
-                    <TimelineRow key={event.id} event={event} />
+                    <TimelineRow key={event.id} event={event} onOpenMedia={openMedia} />
                   ))}
                 </TimelineList>
               </SideCard>

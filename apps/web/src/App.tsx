@@ -32,6 +32,7 @@ import { SurtoDetail } from './pages/SurtoDetail'
 import { Imprensa } from './pages/Imprensa'
 import { Footer } from './components/layout/Footer'
 import { useSocket } from './hooks/useSocket'
+import { MediaViewerProvider } from './components/ui/MediaViewer'
 
 function AuthInit() {
   const navigate = useNavigate()
@@ -72,32 +73,34 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <GlobalStyle />
-        <BrowserRouter>
-          <AuthInit />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/relatos/:id" element={<ReportDetail />} />
-            <Route path="/novo" element={<CreateReport />} />
-            <Route path="/entrar" element={<Login />} />
-            <Route path="/cadastro" element={<Register />} />
-            <Route path="/verificar-email" element={<VerifyEmail />} />
-            <Route path="/perfil/:id" element={<UserProfile />} />
-            <Route path="/meu-perfil" element={<MyProfile />} />
-            <Route path="/entidade/:id" element={<EntityProfile />} />
-            <Route path="/politico/:id" element={<PoliticianProfile />} />
-            <Route path="/mapa" element={<MapView />} />
-            <Route path="/entidades" element={<EntitiesList />} />
-            <Route path="/politicos" element={<PoliticiansList />} />
-            <Route path="/auth/google/callback" element={<GoogleCallback />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
-            <Route path="/convite/:token" element={<AcceptInvite />} />
-            <Route path="/empresa/:id" element={<CompanyProfile />} />
-            <Route path="/surtos/:id" element={<SurtoDetail />} />
-            <Route path="/imprensa" element={<Imprensa />} />
-          </Routes>
-          <Footer />
-        </BrowserRouter>
+        <MediaViewerProvider>
+          <BrowserRouter>
+            <AuthInit />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/relatos/:id" element={<ReportDetail />} />
+              <Route path="/novo" element={<CreateReport />} />
+              <Route path="/entrar" element={<Login />} />
+              <Route path="/cadastro" element={<Register />} />
+              <Route path="/verificar-email" element={<VerifyEmail />} />
+              <Route path="/perfil/:id" element={<UserProfile />} />
+              <Route path="/meu-perfil" element={<MyProfile />} />
+              <Route path="/entidade/:id" element={<EntityProfile />} />
+              <Route path="/politico/:id" element={<PoliticianProfile />} />
+              <Route path="/mapa" element={<MapView />} />
+              <Route path="/entidades" element={<EntitiesList />} />
+              <Route path="/politicos" element={<PoliticiansList />} />
+              <Route path="/auth/google/callback" element={<GoogleCallback />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
+              <Route path="/convite/:token" element={<AcceptInvite />} />
+              <Route path="/empresa/:id" element={<CompanyProfile />} />
+              <Route path="/surtos/:id" element={<SurtoDetail />} />
+              <Route path="/imprensa" element={<Imprensa />} />
+            </Routes>
+            <Footer />
+          </BrowserRouter>
+        </MediaViewerProvider>
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
