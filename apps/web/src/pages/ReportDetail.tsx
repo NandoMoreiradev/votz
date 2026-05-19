@@ -248,6 +248,54 @@ const TimelineDate = styled.span`
   font-family: ${({ theme }) => theme.fonts.mono};
 `
 
+const TimelineMeta = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+`
+
+const TimelineActor = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+  min-width: 0;
+
+  &:hover span { color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const TimelineActorAvatar = styled.div<{ $src: string | null }>`
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.border)};
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const TimelineActorName = styled.span`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const AuthorAnonymous = styled.span`
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  font-style: italic;
+`
+
 const Skeleton = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
@@ -597,7 +645,17 @@ function TimelineRow({
             ))}
           </TimelineMediaGrid>
         )}
-        <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
+        <TimelineMeta>
+          <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
+          {event.author && (
+            <TimelineActor to={`/perfil/${event.author.id}`}>
+              <TimelineActorAvatar $src={event.author.avatarUrl}>
+                {!event.author.avatarUrl && event.author.name.charAt(0).toUpperCase()}
+              </TimelineActorAvatar>
+              <TimelineActorName>{event.author.name}</TimelineActorName>
+            </TimelineActor>
+          )}
+        </TimelineMeta>
       </TimelineContent>
     </TimelineItem>
   )
@@ -797,9 +855,9 @@ export function ReportDetail() {
           </Main>
 
           <Sidebar>
-            {report.author && (
-              <SideCard>
-                <SideTitle>Autor</SideTitle>
+            <SideCard>
+              <SideTitle>Autor</SideTitle>
+              {report.author ? (
                 <AuthorCard>
                   <AuthorAvatar $src={report.author.avatarUrl}>
                     {!report.author.avatarUrl && report.author.name.charAt(0).toUpperCase()}
@@ -808,8 +866,13 @@ export function ReportDetail() {
                     {report.author.name}
                   </AuthorLink>
                 </AuthorCard>
-              </SideCard>
-            )}
+              ) : (
+                <AuthorCard>
+                  <AuthorAvatar $src={null}>?</AuthorAvatar>
+                  <AuthorAnonymous>Cidadão anônimo</AuthorAnonymous>
+                </AuthorCard>
+              )}
+            </SideCard>
 
             <SideCard>
               <SideTitle>Pressão coletiva</SideTitle>

@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
+import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { useReports } from '../hooks/useReports'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
@@ -622,28 +623,23 @@ const AvocBtn = styled.button`
 `
 const LocationRow = styled.div`
   display: flex;
+  flex-direction: column;
   gap: 6px;
 `
-const LocationInput = styled.input`
-  flex: 1;
+const filterSelectCss = `
+  width: 100%;
   padding: 6px 8px;
   border: 1px solid #E5E5E0;
   border-radius: 6px;
   font-size: 12.5px;
   color: #0D0D0D;
   background: #fff;
+  cursor: pointer;
   &:focus { outline: none; border-color: #1A1A2E; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
-const LocationSelect = styled.select`
-  width: 72px;
-  padding: 6px 4px;
-  border: 1px solid #E5E5E0;
-  border-radius: 6px;
-  font-size: 12.5px;
-  color: #0D0D0D;
-  background: #fff;
-  &:focus { outline: none; border-color: #1A1A2E; }
-`
+const FilterStateSelect = styled(StateSelect)`${filterSelectCss}`
+const FilterCitySelect  = styled(CitySelect)`${filterSelectCss}`
 
 const SkeletonCard = styled.div`
   background: #fff;
@@ -1064,10 +1060,6 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
 }
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
-const UF_LIST = [
-  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS',
-  'MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
-]
 
 const ALL_ACTIVE = new Set([
   ReportStatus.OPEN,
@@ -1226,15 +1218,17 @@ export function Home() {
               {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
             </FilterLabel>
             <LocationRow>
-              <LocationInput
-                placeholder="Cidade"
-                value={city}
-                onChange={e => setCity(e.target.value)}
+              <FilterStateSelect
+                value={uf}
+                onChange={(v) => { setUf(v); setCity('') }}
+                placeholder="Todos os estados"
               />
-              <LocationSelect value={uf} onChange={e => setUf(e.target.value)}>
-                <option value="">UF</option>
-                {UF_LIST.map(u => <option key={u} value={u}>{u}</option>)}
-              </LocationSelect>
+              <FilterCitySelect
+                uf={uf}
+                value={city}
+                onChange={setCity}
+                placeholder="Todas as cidades"
+              />
             </LocationRow>
           </FilterBlock>
 

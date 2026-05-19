@@ -12,11 +12,11 @@ export interface TimelineEvent {
   content: string
   metadata: unknown
   createdAt: string
-  author: { id: string; name: string } | null
+  author: { id: string; name: string; avatarUrl: string | null } | null
 }
 
 export interface ReportAdvocacy {
-  author: { id: string; name: string } | null
+  author: { id: string; name: string; avatarUrl: string | null } | null
   createdAt: string
 }
 

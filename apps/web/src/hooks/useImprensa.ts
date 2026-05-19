@@ -112,9 +112,10 @@ export function useSurtosAtivos() {
   })
 }
 
-export async function downloadCsv(days: number, state?: string, category?: string): Promise<void> {
+export async function downloadCsv(days: number, state?: string, city?: string, category?: string): Promise<void> {
   const params = new URLSearchParams({ days: String(days) })
   if (state) params.set('state', state)
+  if (city) params.set('city', city)
   if (category) params.set('category', category)
 
   const response = await api.get(`/imprensa/export/csv?${params.toString()}`, {

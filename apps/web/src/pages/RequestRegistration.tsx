@@ -6,6 +6,7 @@ import { Navbar } from '../components/layout/Navbar'
 import { useAuthStore } from '../store/auth.store'
 import { useCnpj } from '../hooks/useCnpj'
 import { api } from '../lib/api'
+import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 
 type RequestType = 'ENTITY' | 'POLITICIAN' | 'COMPANY'
 
@@ -125,6 +126,34 @@ const Input = styled.input`
 
   &:focus { outline: none; border-color: ${({ theme }) => theme.colors.primary}; }
   &:disabled { background: ${({ theme }) => theme.colors.neutral}; color: ${({ theme }) => theme.colors.muted}; }
+`
+
+const formSelectCss = `
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  cursor: pointer;
+  appearance: auto;
+  &:focus { outline: none; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`
+const FormStateSelect = styled(StateSelect)`
+  ${formSelectCss}
+  border-color: ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
+`
+const FormCitySelect = styled(CitySelect)`
+  ${formSelectCss}
+  border-color: ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
 `
 
 const Textarea = styled.textarea`
@@ -334,6 +363,8 @@ function EntityForm({ onSubmit, loading }: { onSubmit: (p: Record<string, unknow
   const [officialDoc, setOfficialDoc] = useState<string | null>(null)
   const s = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+  const handleStateChange = (v: string) => setForm(f => ({ ...f, state: v, city: '' }))
+  const handleCityChange  = (v: string) => setForm(f => ({ ...f, city: v }))
 
   const handleSubmit = () => {
     const payload: Record<string, unknown> = { ...form }
@@ -366,12 +397,12 @@ function EntityForm({ onSubmit, loading }: { onSubmit: (p: Record<string, unknow
       </Field>
       <Row>
         <Field>
-          <Label>Cidade *</Label>
-          <Input value={form.city} onChange={s('city')} placeholder="São Paulo" />
+          <Label>Estado *</Label>
+          <FormStateSelect value={form.state} onChange={handleStateChange} placeholder="Selecione o estado" />
         </Field>
         <Field>
-          <Label>Estado *</Label>
-          <Input value={form.state} onChange={s('state')} maxLength={2} placeholder="SP" style={{ textTransform: 'uppercase' }} />
+          <Label>Cidade *</Label>
+          <FormCitySelect uf={form.state} value={form.city} onChange={handleCityChange} placeholder="Selecione a cidade" />
         </Field>
       </Row>
       <Field>
@@ -405,6 +436,8 @@ function PoliticianForm({ onSubmit, loading }: { onSubmit: (p: Record<string, un
   const [voterTitle, setVoterTitle] = useState<string | null>(null)
   const s = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+  const handleStateChange = (v: string) => setForm(f => ({ ...f, state: v, city: '' }))
+  const handleCityChange  = (v: string) => setForm(f => ({ ...f, city: v }))
 
   const docsReady = !!selfieWithId && !!voterTitle
 
@@ -444,11 +477,11 @@ function PoliticianForm({ onSubmit, loading }: { onSubmit: (p: Record<string, un
       <Row>
         <Field>
           <Label>Estado *</Label>
-          <Input value={form.state} onChange={s('state')} maxLength={2} placeholder="SP" style={{ textTransform: 'uppercase' }} />
+          <FormStateSelect value={form.state} onChange={handleStateChange} placeholder="Selecione o estado" />
         </Field>
         <Field>
           <Label>Cidade</Label>
-          <Input value={form.city} onChange={s('city')} placeholder="São Paulo" />
+          <FormCitySelect uf={form.state} value={form.city} onChange={handleCityChange} placeholder="Selecione a cidade" />
         </Field>
       </Row>
       <Row>

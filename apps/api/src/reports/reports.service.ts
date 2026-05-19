@@ -34,7 +34,7 @@ export class ReportsService {
     await this.timeline.record({
       reportId: report.id,
       type: EventType.CREATED,
-      content: 'Report registered on the Votz platform.',
+      content: 'Relato registrado na plataforma Votz.',
       authorId: dto.anonymous ? null : user.id,
     })
 

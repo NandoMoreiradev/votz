@@ -55,9 +55,10 @@ export class ImprensaController {
     @CurrentUser() user: { id: string },
     @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
     @Query('state') state?: string,
+    @Query('city') city?: string,
     @Query('category') category?: string,
   ): Promise<StreamableFile> {
-    const { filename, csv } = await this.service.exportCsv(user.id, days, state, category)
+    const { filename, csv } = await this.service.exportCsv(user.id, days, state, city, category)
     const buffer = Buffer.from(csv, 'utf-8')
     return new StreamableFile(buffer, {
       type: 'text/csv; charset=utf-8',

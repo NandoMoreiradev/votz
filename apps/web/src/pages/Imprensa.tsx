@@ -16,6 +16,7 @@ import {
 } from '../hooks/useImprensa'
 import { Category, ReportStatus, UserType } from '@votz/shared-types'
 import { useAuthStore } from '../store/auth.store'
+import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +267,16 @@ const PressSelect = styled.select`
   &:focus{outline:none;border-color:rgba(255,255,255,.4);}
   option{background:#1A1A2E;color:#fff;}
 `
+const pressSelectCss = `
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);
+  border-radius:6px;padding:8px 12px;font-size:13px;color:#fff;
+  cursor:pointer;min-width:140px;
+  &:focus{outline:none;border-color:rgba(255,255,255,.4);}
+  option{background:#1A1A2E;color:#fff;}
+  &:disabled{opacity:0.45;cursor:not-allowed;}
+`
+const PressStateSelect = styled(StateSelect)`${pressSelectCss}`
+const PressCitySelect  = styled(CitySelect)`${pressSelectCss}`
 const CsvButton = styled.button<{ $loading?: boolean }>`
   padding:8px 18px;border-radius:6px;border:none;cursor:pointer;
   background:${({ $loading }) => ($loading ? 'rgba(230,57,70,.6)' : '#E63946')};
@@ -285,10 +296,6 @@ const AlertDot = styled.span`
   box-shadow:0 0 0 3px rgba(45,198,83,.2);flex-shrink:0;
 `
 
-const UF_OPTIONS = [
-  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
-  'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
-]
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -307,15 +314,18 @@ function PressSection({
   onDaysChange: (d: number) => void
 }) {
   const [state, setState] = useState('')
+  const [city, setCity]   = useState('')
   const [category, setCategory] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const handleStateChange = (v: string) => { setState(v); setCity('') }
 
   async function handleDownload() {
     setLoading(true)
     setError('')
     try {
-      await downloadCsv(days, state || undefined, category || undefined)
+      await downloadCsv(days, state || undefined, city || undefined, category || undefined)
     } catch {
       setError('Falha ao gerar o CSV. Tente novamente.')
     } finally {
@@ -338,12 +348,11 @@ function PressSection({
         </PressLabel>
         <PressLabel>
           Estado
-          <PressSelect value={state} onChange={(e) => setState(e.target.value)}>
-            <option value="">Todos os estados</option>
-            {UF_OPTIONS.map((uf) => (
-              <option key={uf} value={uf}>{uf}</option>
-            ))}
-          </PressSelect>
+          <PressStateSelect value={state} onChange={handleStateChange} placeholder="Todos os estados" />
+        </PressLabel>
+        <PressLabel>
+          Cidade
+          <PressCitySelect uf={state} value={city} onChange={setCity} placeholder="Todas as cidades" />
         </PressLabel>
         <PressLabel>
           Categoria

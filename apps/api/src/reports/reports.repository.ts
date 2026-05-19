@@ -7,7 +7,7 @@ import { FollowerActorType } from '@prisma/client'
 const ADVOCACY_SELECT = {
   where: { type: 'RESPONDED' as const },
   select: {
-    author: { select: { id: true, name: true } },
+    author: { select: { id: true, name: true, avatarUrl: true } },
     createdAt: true,
   },
   take: 1,
@@ -88,7 +88,7 @@ export class ReportsRepository {
             content: true,
             metadata: true,
             createdAt: true,
-            author: { select: { id: true, name: true } },
+            author: { select: { id: true, name: true, avatarUrl: true } },
           },
         },
       },

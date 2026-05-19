@@ -33,6 +33,7 @@ export class ImprensaService {
     userId: string,
     days = 30,
     state?: string,
+    city?: string,
     category?: string,
   ): Promise<{ filename: string; csv: string }> {
     const user = await this.prisma.user.findUnique({
@@ -45,7 +46,7 @@ export class ImprensaService {
     }
 
     const clampedDays = Math.min(Math.max(days, 7), 365)
-    const reports = await this.repo.getReportsForExport(clampedDays, state, category)
+    const reports = await this.repo.getReportsForExport(clampedDays, state, city, category)
 
     const header = 'id,titulo,categoria,status,cidade,estado,bairro,pressao,votos,comentarios,criado_em'
     const rows = reports.map((r) => [
@@ -64,7 +65,8 @@ export class ImprensaService {
 
     const csv = [header, ...rows].join('\n')
     const datePart = new Date().toISOString().slice(0, 10)
-    const filename = `votz-relatos-${datePart}${state ? `-${state.toLowerCase()}` : ''}.csv`
+    const locationPart = [state?.toLowerCase(), city?.toLowerCase().replace(/\s+/g, '-')].filter(Boolean).join('-')
+    const filename = `votz-relatos-${datePart}${locationPart ? `-${locationPart}` : ''}.csv`
 
     return { filename, csv }
   }

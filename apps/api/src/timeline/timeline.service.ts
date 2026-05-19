@@ -37,7 +37,7 @@ export class TimelineService {
         content: true,
         metadata: true,
         createdAt: true,
-        author: { select: { id: true, name: true } },
+        author: { select: { id: true, name: true, avatarUrl: true } },
       },
     })
   }

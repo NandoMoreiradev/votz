@@ -163,7 +163,7 @@ export class ImprensaRepository {
     })
   }
 
-  async getReportsForExport(days: number, state?: string, category?: string) {
+  async getReportsForExport(days: number, state?: string, city?: string, category?: string) {
     const since = daysAgo(days)
     return this.prisma.report.findMany({
       where: {
@@ -171,6 +171,7 @@ export class ImprensaRepository {
         status: { not: ReportStatus.ARCHIVED },
         createdAt: { gte: since },
         ...(state && { state: { equals: state.toUpperCase() } }),
+        ...(city && { city: { contains: city, mode: 'insensitive' as const } }),
         ...(category && { category: category as Category }),
       },
       orderBy: { pressureScore: 'desc' },
