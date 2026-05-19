@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
 import DOMPurify from 'isomorphic-dompurify'
 import { ReportsRepository } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
@@ -8,7 +8,8 @@ import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
-import { Category, EventType, ReportStatus, UserType } from '@votz/shared-types'
+import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
+import { FollowerActorType } from '@prisma/client'
 
 @Injectable()
 export class ReportsService {
@@ -83,9 +84,31 @@ export class ReportsService {
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Report not found')
 
-    const allowedTypes = [UserType.ENTITY, UserType.MODERATOR, UserType.ADMIN]
-    if (!allowedTypes.includes(user.type as UserType)) {
-      throw new ForbiddenException('Not authorized to update report status')
+    const userType = user.type as UserType
+
+    if (userType === UserType.ENTITY) {
+      const entity = await this.repository.findEntityByUserId(user.id)
+      if (
+        !entity ||
+        report.recipientType !== RecipientType.ENTITY ||
+        report.recipientId !== entity.id
+      ) {
+        throw new ForbiddenException('Sua entidade não é a destinatária deste relato')
+      }
+    } else if (userType === UserType.POLITICIAN) {
+      const politician = await this.repository.findPoliticianByUserId(user.id)
+      if (
+        !politician ||
+        report.recipientType !== RecipientType.POLITICIAN ||
+        report.recipientId !== politician.id
+      ) {
+        throw new ForbiddenException('Você não é o destinatário deste relato')
+      }
+    } else if (
+      userType !== UserType.MODERATOR &&
+      userType !== UserType.ADMIN
+    ) {
+      throw new ForbiddenException('Não autorizado')
     }
 
     const updated = await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
@@ -98,6 +121,7 @@ export class ReportsService {
       metadata: { previousStatus: report.status, newStatus: dto.status },
     })
 
+    // Notify report author
     if (report.author?.id && report.author.id !== user.id) {
       this.notifications.notify({
         userId: report.author.id,
@@ -107,7 +131,79 @@ export class ReportsService {
       }).catch(() => null)
     }
 
+    // Notify followers
+    this.repository.getFollowerUserIds(reportId).then(userIds => {
+      for (const userId of userIds) {
+        if (userId !== user.id && userId !== report.author?.id) {
+          this.notifications.notify({
+            userId,
+            type: 'STATUS_CHANGED',
+            reportId,
+            metadata: { previousStatus: report.status, newStatus: dto.status },
+          }).catch(() => null)
+        }
+      }
+    }).catch(() => null)
+
     return updated
+  }
+
+  // ── Follow ───────────────────────────────────────────────────────────────────
+
+  async follow(reportId: string, userId: string, userType: string) {
+    const report = await this.repository.findById(reportId)
+    if (!report) throw new NotFoundException('Relato não encontrado')
+
+    if (userType === UserType.POLITICIAN) {
+      const politician = await this.repository.findPoliticianByUserId(userId)
+      if (!politician) throw new ForbiddenException('Perfil de político não encontrado')
+      await this.repository.addFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
+      return { following: true, actorType: 'POLITICIAN', actorId: politician.id }
+    }
+
+    if (userType === UserType.ENTITY) {
+      const entity = await this.repository.findEntityByUserId(userId)
+      if (!entity) throw new ForbiddenException('Perfil de entidade não encontrado')
+      await this.repository.addFollower(reportId, FollowerActorType.ENTITY, entity.id)
+      return { following: true, actorType: 'ENTITY', actorId: entity.id }
+    }
+
+    throw new ForbiddenException('Apenas políticos e entidades podem acompanhar relatos')
+  }
+
+  async unfollow(reportId: string, userId: string, userType: string) {
+    if (userType === UserType.POLITICIAN) {
+      const politician = await this.repository.findPoliticianByUserId(userId)
+      if (!politician) throw new ForbiddenException('Perfil de político não encontrado')
+      await this.repository.removeFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
+    } else if (userType === UserType.ENTITY) {
+      const entity = await this.repository.findEntityByUserId(userId)
+      if (!entity) throw new ForbiddenException('Perfil de entidade não encontrado')
+      await this.repository.removeFollower(reportId, FollowerActorType.ENTITY, entity.id)
+    } else {
+      throw new ForbiddenException('Apenas políticos e entidades podem acompanhar relatos')
+    }
+    return { following: false }
+  }
+
+  async getFollowStatus(reportId: string, userId: string, userType: string) {
+    if (userType === UserType.POLITICIAN) {
+      const politician = await this.repository.findPoliticianByUserId(userId)
+      if (!politician) return { following: false }
+      const f = await this.repository.findFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
+      return { following: !!f }
+    }
+    if (userType === UserType.ENTITY) {
+      const entity = await this.repository.findEntityByUserId(userId)
+      if (!entity) return { following: false }
+      const f = await this.repository.findFollower(reportId, FollowerActorType.ENTITY, entity.id)
+      return { following: !!f }
+    }
+    return { following: false }
+  }
+
+  getFollowers(reportId: string) {
+    return this.repository.getFollowers(reportId)
   }
 
   async dispute(reportId: string, dto: DisputeDto, userId: string) {

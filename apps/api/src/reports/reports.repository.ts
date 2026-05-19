@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { Category, ReportStatus, VoteType } from '@votz/shared-types'
+import { FollowerActorType } from '@prisma/client'
 
 const ADVOCACY_SELECT = {
   where: { type: 'RESPONDED' as const },
@@ -32,7 +33,7 @@ const PUBLIC_REPORT_SELECT = {
   recipientId: true,
   createdAt: true,
   updatedAt: true,
-  _count: { select: { votes: true, comments: true } },
+  _count: { select: { votes: { where: { type: VoteType.SUPPORT } }, comments: true } },
   author: { select: { id: true, name: true, avatarUrl: true } },
 } as const
 
@@ -160,5 +161,92 @@ export class ReportsRepository {
       data: { status },
       select: { id: true, status: true },
     })
+  }
+
+  // ── Recipient resolution (for updateStatus authorization) ───────────────────
+
+  async findEntityByUserId(userId: string) {
+    return this.prisma.entity.findUnique({ where: { userId }, select: { id: true } })
+  }
+
+  async findPoliticianByUserId(userId: string) {
+    return this.prisma.politician.findUnique({ where: { userId }, select: { id: true } })
+  }
+
+  // ── Followers ────────────────────────────────────────────────────────────────
+
+  async addFollower(reportId: string, actorType: FollowerActorType, actorId: string) {
+    return this.prisma.reportFollower.upsert({
+      where: { reportId_actorType_actorId: { reportId, actorType, actorId } },
+      create: { reportId, actorType, actorId },
+      update: {},
+    })
+  }
+
+  async removeFollower(reportId: string, actorType: FollowerActorType, actorId: string) {
+    await this.prisma.reportFollower.deleteMany({
+      where: { reportId, actorType, actorId },
+    })
+  }
+
+  async findFollower(reportId: string, actorType: FollowerActorType, actorId: string) {
+    return this.prisma.reportFollower.findUnique({
+      where: { reportId_actorType_actorId: { reportId, actorType, actorId } },
+    })
+  }
+
+  async getFollowers(reportId: string) {
+    const followers = await this.prisma.reportFollower.findMany({
+      where: { reportId },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    const politicianIds = followers
+      .filter(f => f.actorType === FollowerActorType.POLITICIAN)
+      .map(f => f.actorId)
+    const entityIds = followers
+      .filter(f => f.actorType === FollowerActorType.ENTITY)
+      .map(f => f.actorId)
+
+    const [politicians, entities] = await Promise.all([
+      politicianIds.length
+        ? this.prisma.politician.findMany({
+            where: { id: { in: politicianIds } },
+            select: { id: true, office: true, state: true, user: { select: { id: true, name: true } } },
+          })
+        : [],
+      entityIds.length
+        ? this.prisma.entity.findMany({
+            where: { id: { in: entityIds } },
+            select: { id: true, legalName: true, type: true },
+          })
+        : [],
+    ])
+
+    return {
+      count: followers.length,
+      politicians,
+      entities,
+    }
+  }
+
+  async getFollowerUserIds(reportId: string): Promise<string[]> {
+    const followers = await this.prisma.reportFollower.findMany({
+      where: { reportId },
+    })
+
+    const politicianIds = followers.filter(f => f.actorType === FollowerActorType.POLITICIAN).map(f => f.actorId)
+    const entityIds     = followers.filter(f => f.actorType === FollowerActorType.ENTITY).map(f => f.actorId)
+
+    const [politicians, entities] = await Promise.all([
+      politicianIds.length
+        ? this.prisma.politician.findMany({ where: { id: { in: politicianIds } }, select: { userId: true } })
+        : [],
+      entityIds.length
+        ? this.prisma.entity.findMany({ where: { id: { in: entityIds } }, select: { userId: true } })
+        : [],
+    ])
+
+    return [...politicians.map(p => p.userId), ...entities.map(e => e.userId)]
   }
 }

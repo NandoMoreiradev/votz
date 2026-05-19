@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { VoteType } from '@votz/shared-types'
 
 const PUBLIC_USER_SELECT = {
   id: true,
@@ -21,7 +22,7 @@ const REPORT_LIST_SELECT = {
   state: true,
   pressureScore: true,
   createdAt: true,
-  _count: { select: { votes: true, comments: true } },
+  _count: { select: { votes: { where: { type: VoteType.SUPPORT } }, comments: true } },
 } as const
 
 @Injectable()

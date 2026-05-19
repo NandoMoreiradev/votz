@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ReportsService } from './reports.service'
 import { CreateReportDto } from './dto/create-report.dto'
@@ -78,5 +78,44 @@ export class ReportsController {
     @CurrentUser() user: { id: string; type: string },
   ) {
     return this.reportsService.resolveDispute(id, dto, user)
+  }
+
+  @Get(':id/followers')
+  @ApiOperation({ summary: 'Listar políticos e entidades que acompanham o relato' })
+  getFollowers(@Param('id') id: string) {
+    return this.reportsService.getFollowers(id)
+  }
+
+  @Get(':id/follow/me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar se o usuário atual está acompanhando o relato' })
+  getFollowStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; type: string },
+  ) {
+    return this.reportsService.getFollowStatus(id, user.id, user.type)
+  }
+
+  @Post(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Acompanhar relato (apenas político ou entidade)' })
+  follow(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; type: string },
+  ) {
+    return this.reportsService.follow(id, user.id, user.type)
+  }
+
+  @Delete(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Deixar de acompanhar relato' })
+  unfollow(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; type: string },
+  ) {
+    return this.reportsService.unfollow(id, user.id, user.type)
   }
 }

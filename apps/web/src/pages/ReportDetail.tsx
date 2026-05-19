@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
-import { VoteType, EventType, ReportStatus, RecipientType } from '@votz/shared-types'
+import { VoteType, EventType, ReportStatus, RecipientType, UserType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
-import { useReport } from '../hooks/useReport'
+import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport } from '../hooks/useReports'
 import { useAuthStore } from '../store/auth.store'
@@ -319,6 +319,53 @@ const DisputeActions = styled.div`
   margin-top: 12px;
 `
 
+const FollowBtn = styled(Button)<{ $following?: boolean }>`
+  width: 100%;
+  font-size: 0.9375rem;
+  margin-bottom: 12px;
+  ${({ $following, theme }) =>
+    $following
+      ? `background: transparent; color: ${theme.colors.muted}; border-color: ${theme.colors.border};`
+      : `background: #1A1A2E; color: #fff; border-color: #1A1A2E;`}
+
+  &:hover:not(:disabled) {
+    ${({ $following, theme }) =>
+      $following
+        ? `border-color: ${theme.colors.action}; color: ${theme.colors.action};`
+        : `background: #0f0f1a; border-color: #0f0f1a;`}
+  }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+`
+
+const FollowerCount = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 12px;
+  line-height: 1.4;
+`
+
+const FollowerList = styled.ul`
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
+const FollowerItem = styled.li`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.text};
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`
+
+const FollowerRole = styled.span`
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 0.75rem;
+`
+
 const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
@@ -359,6 +406,11 @@ export function ReportDetail() {
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const disputeMutation = useDisputeReport(id!)
+
+  const canFollow = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
+  const { data: followers } = useFollowers(id!)
+  const { data: followStatus, isLoading: followStatusLoading } = useFollowStatus(id!, canFollow)
+  const { follow: followMut, unfollow: unfollowMut } = useFollowReport(id!)
 
   const advocateMutation = useMutation({
     mutationFn: ({ politicianId, reportId }: { politicianId: string; reportId: string }) =>
@@ -597,6 +649,61 @@ export function ReportDetail() {
                 </SideCard>
               )
             })()}
+
+            {(canFollow || (followers && followers.count > 0)) && (
+              <SideCard>
+                <SideTitle>Acompanhando</SideTitle>
+
+                {canFollow && (
+                  <>
+                    <FollowBtn
+                      $following={followStatus?.following}
+                      disabled={followStatusLoading || followMut.isPending || unfollowMut.isPending}
+                      onClick={() =>
+                        followStatus?.following
+                          ? unfollowMut.mutate()
+                          : followMut.mutate()
+                      }
+                    >
+                      {followMut.isPending || unfollowMut.isPending
+                        ? 'Aguarde…'
+                        : followStatus?.following
+                          ? '✓ Deixar de acompanhar'
+                          : '+ Acompanhar este relato'}
+                    </FollowBtn>
+                    {(followMut.isError || unfollowMut.isError) && (
+                      <p style={{ fontSize: '0.8125rem', color: '#E63946', marginBottom: 8 }}>
+                        Não foi possível atualizar. Tente novamente.
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {followers && (
+                  <FollowerCount>
+                    {followers.count === 0
+                      ? 'Nenhum político ou entidade acompanha este relato ainda.'
+                      : `${followers.count} ${followers.count === 1 ? 'ator público acompanha' : 'atores públicos acompanham'} este relato.`}
+                  </FollowerCount>
+                )}
+
+                {followers && followers.count > 0 && (
+                  <FollowerList>
+                    {followers.politicians.map((p) => (
+                      <FollowerItem key={p.id}>
+                        🏛 <span>{p.user.name}</span>
+                        <FollowerRole>· {p.office} – {p.state}</FollowerRole>
+                      </FollowerItem>
+                    ))}
+                    {followers.entities.map((e) => (
+                      <FollowerItem key={e.id}>
+                        🏢 <span>{e.legalName}</span>
+                      </FollowerItem>
+                    ))}
+                  </FollowerList>
+                )}
+              </SideCard>
+            )}
 
             {report.timeline && report.timeline.length > 0 && (
               <SideCard>

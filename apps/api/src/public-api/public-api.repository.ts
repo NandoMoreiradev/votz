@@ -23,7 +23,7 @@ const PUBLIC_REPORT_SELECT = {
   recipientId: true,
   createdAt: true,
   updatedAt: true,
-  _count: { select: { votes: true, comments: true } },
+  _count: { select: { votes: { where: { type: VoteType.SUPPORT } }, comments: true } },
 } as const
 
 function daysAgo(n: number): Date {

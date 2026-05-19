@@ -248,3 +248,22 @@ export interface MfaEnableForcedResponse {
   accessToken: string
   user: AuthUser
 }
+
+export interface FollowerPolitician {
+  id: string
+  office: string
+  state: string
+  user: { id: string; name: string }
+}
+
+export interface FollowerEntity {
+  id: string
+  legalName: string
+  type: string
+}
+
+export interface FollowersResponse {
+  count: number
+  politicians: FollowerPolitician[]
+  entities: FollowerEntity[]
+}

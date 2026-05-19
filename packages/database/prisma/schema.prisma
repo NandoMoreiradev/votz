@@ -146,6 +146,11 @@ enum ApiKeyTier {
   PAID
 }
 
+enum FollowerActorType {
+  POLITICIAN
+  ENTITY
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -244,6 +249,7 @@ model Report {
   votes            Vote[]
   comments         Comment[]
   notifications    Notification[]
+  followers        ReportFollower[]
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -473,6 +479,20 @@ model Surto {
 
   @@unique([category, city])
   @@map("surtos")
+}
+
+// Politician or entity explicitly following a report for notifications/visibility
+model ReportFollower {
+  id        String            @id @default(uuid())
+  reportId  String
+  report    Report            @relation(fields: [reportId], references: [id])
+  actorType FollowerActorType
+  actorId   String            // politician.id or entity.id
+  createdAt DateTime          @default(now())
+
+  @@unique([reportId, actorType, actorId])
+  @@index([actorType, actorId])
+  @@map("report_followers")
 }
 
 // API keys — used by the public API (section 3.6 / 10)
