@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import styled from 'styled-components'
+import styled, { css } from 'styled-components'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
@@ -128,33 +128,22 @@ const Input = styled.input`
   &:disabled { background: ${({ theme }) => theme.colors.neutral}; color: ${({ theme }) => theme.colors.muted}; }
 `
 
-const formSelectCss = `
+const formSelectStyles = css`
   width: 100%;
   padding: 10px 14px;
-  border: 1.5px solid;
-  border-radius: 8px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
   font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
   box-sizing: border-box;
   transition: border-color 0.15s;
   cursor: pointer;
-  appearance: auto;
-  &:focus { outline: none; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:focus { outline: none; border-color: ${({ theme }) => theme.colors.primary}; }
+  &:disabled { background: ${({ theme }) => theme.colors.neutral}; opacity: 0.6; cursor: not-allowed; }
 `
-const FormStateSelect = styled(StateSelect)`
-  ${formSelectCss}
-  border-color: ${({ theme }) => theme.colors.border};
-  color: ${({ theme }) => theme.colors.text};
-  background: ${({ theme }) => theme.colors.white};
-  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
-`
-const FormCitySelect = styled(CitySelect)`
-  ${formSelectCss}
-  border-color: ${({ theme }) => theme.colors.border};
-  color: ${({ theme }) => theme.colors.text};
-  background: ${({ theme }) => theme.colors.white};
-  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
-`
+const FormStateSelect = styled(StateSelect)`${formSelectStyles}`
+const FormCitySelect  = styled(CitySelect)`${formSelectStyles}`
 
 const Textarea = styled.textarea`
   width: 100%;

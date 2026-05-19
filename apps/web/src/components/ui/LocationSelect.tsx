@@ -101,25 +101,35 @@ export const CitySelect = forwardRef<HTMLSelectElement, CitySelectProps>(functio
   { uf, value, onChange, placeholder = 'Cidade', disabled, ...rest },
   ref,
 ) {
-  const { data: cities, isLoading } = useIbgeCities(uf)
+  const { data: cities, isLoading, isError, refetch } = useIbgeCities(uf)
   const isDisabled = disabled || !uf || isLoading
 
-  const emptyLabel = !uf ? 'Selecione um estado' : isLoading ? 'Carregando…' : placeholder
+  const emptyLabel = !uf
+    ? 'Selecione um estado'
+    : isLoading
+    ? 'Carregando…'
+    : isError
+    ? 'Falha ao carregar — clique para tentar'
+    : placeholder
 
   return (
     <select
       ref={ref}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      disabled={isDisabled}
+      disabled={isDisabled && !isError}
+      onClick={() => { if (isError && uf) refetch() }}
       {...rest}
     >
       <option value="">{emptyLabel}</option>
-      {cities?.map((c) => (
-        <option key={c.codigo_ibge} value={c.nome}>
-          {toTitleCase(c.nome)}
-        </option>
-      ))}
+      {cities?.map((c) => {
+        const label = toTitleCase(c.nome)
+        return (
+          <option key={c.codigo_ibge} value={label}>
+            {label}
+          </option>
+        )
+      })}
     </select>
   )
 })
