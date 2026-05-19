@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, OnModuleDestroy, Inject } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Redis from 'ioredis'
 import { PrismaModule } from '../prisma/prisma.module'
@@ -33,4 +33,10 @@ import { ApiKeyGuard } from './guards/api-key.guard'
   controllers: [ApiKeysController, PublicApiController],
   exports: [ApiKeysService],
 })
-export class PublicApiModule {}
+export class PublicApiModule implements OnModuleDestroy {
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+
+  async onModuleDestroy() {
+    await this.redis.quit()
+  }
+}

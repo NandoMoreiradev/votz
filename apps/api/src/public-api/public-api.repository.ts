@@ -42,11 +42,9 @@ export class PublicApiRepository {
 
     const where = {
       ...(dto.category && { category: dto.category }),
-      ...(dto.status   && { status: dto.status }),
-      ...(dto.city     && { city: { contains: dto.city, mode: 'insensitive' as const } }),
-      ...(dto.state    && { state: dto.state.toUpperCase() }),
-      status: { not: ReportStatus.ARCHIVED },
-      ...(dto.status   && { status: dto.status }),
+      status: dto.status ?? { not: ReportStatus.ARCHIVED },
+      ...(dto.city  && { city:  { contains: dto.city,  mode: 'insensitive' as const } }),
+      ...(dto.state && { state: dto.state.toUpperCase() }),
     }
 
     const [total, items] = await Promise.all([
