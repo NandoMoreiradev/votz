@@ -538,6 +538,9 @@ export function ReportDetail() {
                   style={{ fontSize: '0.875rem' }}
                 >
                   <span>⚠ Também sofro isso</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}>
+                    {report._count.meTooVotes}
+                  </span>
                 </VoteBtn>
               </VoteButtons>
             </SideCard>

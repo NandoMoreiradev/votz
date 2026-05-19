@@ -38,11 +38,12 @@ export function useVote(reportId: string) {
 
       const wasVoted = prevMyVotes?.[type] ?? false
       const delta = wasVoted ? -1 : 1
+      const countKey = type === VoteType.SUPPORT ? 'votes' : 'meTooVotes'
 
       if (prevReport) {
         qc.setQueryData<Report>(['report', reportId], {
           ...prevReport,
-          _count: { ...prevReport._count, votes: prevReport._count.votes + delta },
+          _count: { ...prevReport._count, [countKey]: prevReport._count[countKey] + delta },
         })
       }
 
