@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { HandsClapping, UsersThree } from '@phosphor-icons/react'
 import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
@@ -1010,16 +1011,12 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
 
         <Actions>
           <ActBtn $active={isSupport} onClick={e => handleVote(e, VoteType.SUPPORT)}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M7 22h10V11l-5-9-1.5 2.5L8 9H4l3 13z" />
-            </svg>
+            <HandsClapping size={16} weight="duotone" />
             Apoiar <span className="ct">{fmtCount(report._count.votes)}</span>
           </ActBtn>
 
           <ActBtn $active={isMeToo} onClick={e => handleVote(e, VoteType.ME_TOO)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="7" r="3" /><path d="M5 20c0-4 3-7 7-7s7 3 7 7" />
-            </svg>
+            <UsersThree size={16} weight="duotone" />
             Eu também <span className="ct">{fmtCount(report._count.meTooVotes)}</span>
           </ActBtn>
 

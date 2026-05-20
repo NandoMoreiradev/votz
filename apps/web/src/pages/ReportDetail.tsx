@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
+import { HandsClapping, UsersThree } from '@phosphor-icons/react'
 import { VoteType, EventType, ReportStatus, RecipientType, UserType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
@@ -858,7 +859,10 @@ export function ReportDetail() {
                   $active={myVotes?.SUPPORT}
                   onClick={() => handleVote(VoteType.SUPPORT)}
                 >
-                  <span>▲ Apoio</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <HandsClapping size={18} weight="duotone" />
+                    Apoiar
+                  </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}>
                     {report._count.votes}
                   </span>
@@ -867,9 +871,11 @@ export function ReportDetail() {
                   variant="outline"
                   $active={myVotes?.ME_TOO}
                   onClick={() => handleVote(VoteType.ME_TOO)}
-                  style={{ fontSize: '0.875rem' }}
                 >
-                  <span>⚠ Também sofro isso</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <UsersThree size={18} weight="duotone" />
+                    Eu também
+                  </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}>
                     {report._count.meTooVotes}
                   </span>
