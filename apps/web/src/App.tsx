@@ -10,6 +10,7 @@ import { queryClient } from './lib/query-client'
 import { api } from './lib/api'
 import { setToken, getToken } from './lib/token'
 import { useAuthStore } from './store/auth.store'
+import { SwitchContextResponse } from './types/api'
 import { Home } from './pages/Home'
 import { ReportDetail } from './pages/ReportDetail'
 import { CreateReport } from './pages/CreateReport'
@@ -37,6 +38,7 @@ import { MediaViewerProvider } from './components/ui/MediaViewer'
 function AuthInit() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
+  const applyContext = useAuthStore((s) => s.applyContext)
   const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
@@ -45,6 +47,10 @@ function AuthInit() {
       navigate('/entrar', { replace: true })
     }
     window.addEventListener('votz:logout', handleForceLogout)
+
+    // Lê o contexto salvo ANTES de qualquer operação assíncrona ou setAuth,
+    // usando getState() para garantir o valor hidratado do localStorage
+    const savedContext = useAuthStore.getState().activeContext
 
     const apiBase = import.meta.env.VITE_API_URL ?? '/api/v1'
     axios
@@ -55,7 +61,18 @@ function AuthInit() {
       })
       .then(({ data: user }) => {
         const token = getToken()
-        if (token) setAuth(user, token)
+        if (!token) return
+        setAuth(user, token)
+
+        if (savedContext) {
+          api
+            .post<SwitchContextResponse>('/auth/switch-context', {
+              contextType: savedContext.type.toLowerCase(),
+              contextId: savedContext.id,
+            })
+            .then(({ data: ctx }) => applyContext(ctx.accessToken, ctx.ctx))
+            .catch(() => applyContext(token, null))
+        }
       })
       .catch(() => {
         logout()

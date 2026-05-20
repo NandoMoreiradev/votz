@@ -4,10 +4,17 @@ import { CreateReportDto } from './dto/create-report.dto'
 import { Category, ReportStatus, VoteType } from '@votz/shared-types'
 import { FollowerActorType } from '@prisma/client'
 
+const ACTOR_SELECT = {
+  id: true,
+  name: true,
+  avatarUrl: true,
+  entity: { select: { logoUrl: true, legalName: true } },
+} as const
+
 const ADVOCACY_SELECT = {
   where: { type: 'RESPONDED' as const },
   select: {
-    author: { select: { id: true, name: true, avatarUrl: true } },
+    author: { select: ACTOR_SELECT },
     createdAt: true,
   },
   take: 1,
@@ -92,7 +99,7 @@ export class ReportsRepository {
             content: true,
             metadata: true,
             createdAt: true,
-            author: { select: { id: true, name: true, avatarUrl: true } },
+            author: { select: ACTOR_SELECT },
           },
         },
       },

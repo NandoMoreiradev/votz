@@ -1,9 +1,43 @@
-import { Category, EntityType, ReportStatus, RecipientType, EventType, UserType } from '@votz/shared-types'
+import { Category, EntityType, ReportStatus, RecipientType, EventType, UserType, ActiveContext, OrgContextType } from '@votz/shared-types'
+
+export type { ActiveContext, OrgContextType }
+
+export interface OrgProfile {
+  id: string
+  name: string
+  type: OrgContextType
+  logoUrl: string | null
+  verified: boolean
+  role: string
+  permissions: string[]
+}
+
+export interface MyProfilesResponse {
+  personal: {
+    id: string
+    name: string
+    type: UserType
+    avatarUrl: string | null
+  }
+  orgs: OrgProfile[]
+}
+
+export interface SwitchContextResponse {
+  accessToken: string
+  ctx: ActiveContext | null
+}
 
 export interface Author {
   id: string
   name: string
   avatarUrl: string | null
+}
+
+export interface AdvocacyAuthor {
+  id: string
+  name: string
+  avatarUrl: string | null
+  entity: { logoUrl: string | null; legalName: string } | null
 }
 
 export interface TimelineEvent {
@@ -12,11 +46,11 @@ export interface TimelineEvent {
   content: string
   metadata: unknown
   createdAt: string
-  author: { id: string; name: string; avatarUrl: string | null } | null
+  author: AdvocacyAuthor | null
 }
 
 export interface ReportAdvocacy {
-  author: { id: string; name: string; avatarUrl: string | null } | null
+  author: AdvocacyAuthor | null
   createdAt: string
 }
 

@@ -7,6 +7,7 @@ import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
+import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { useReports } from '../hooks/useReports'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
@@ -590,20 +591,6 @@ const ActBtn = styled.button<{ $active?: boolean }>`
 `
 const ActSpacer = styled.div`flex: 1;`
 
-const FeedAvocBanner = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
-  border-radius: 6px;
-  padding: 7px 10px;
-  margin-bottom: 10px;
-  font-size: 12px;
-  color: #1E40AF;
-  line-height: 1.4;
-  b { font-weight: 600; }
-`
 
 const AvocBtn = styled.button`
   display: inline-flex;
@@ -1006,16 +993,19 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
             Pressão <b>{report.pressureScore.toFixed(1)}</b>
           </Pill>
           {report.advocacy && (
-            <Pill style={{ background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E40AF' }}>
-              🤝 Avocado
+            <Pill style={{ background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E40AF', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <ShieldCheckIcon size={12} />
+              Avocado
             </Pill>
           )}
         </StatusRow>
 
         {report.advocacy && (
-          <FeedAvocBanner>
-            🤝 <span><b>{report.advocacy.author?.name ?? 'Político'}</b> avocou este relato</span>
-          </FeedAvocBanner>
+          <AdvocacyBanner
+            author={report.advocacy.author}
+            recipientType={report.recipientType}
+            compact
+          />
         )}
 
         <Actions>
@@ -1044,7 +1034,7 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
 
           {canAdvocate && (
             <AvocBtn onClick={handleAdvocate} disabled={advocate.isPending} title="Avocar este relato">
-              🤝 Avocar
+              <ShieldCheckIcon size={13} style={{ marginRight: 4 }} />Avocar
             </AvocBtn>
           )}
 

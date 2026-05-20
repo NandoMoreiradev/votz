@@ -14,10 +14,13 @@ import * as bcrypt from 'bcrypt'
 import { randomBytes, randomUUID } from 'crypto'
 import { generateSecret, generateURI, verify as otpVerify } from 'otplib'
 import * as QRCode from 'qrcode'
+import { OrgPermission, MembershipStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
+import { ContextType } from './dto/switch-context.dto'
+import { ActiveContextPayload } from './strategies/jwt.strategy'
 
 const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock skew)
 
@@ -428,6 +431,240 @@ export class AuthService {
       }
     }
     return -1
+  }
+
+  // ─────────────────────────────────────────────
+  // MULTI-PROFILE
+  // ─────────────────────────────────────────────
+
+  async getMyProfiles(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        avatarUrl: true,
+        entity: { select: { id: true, legalName: true, logoUrl: true, verified: true } },
+        politician: {
+          select: {
+            id: true,
+            office: true,
+            verified: true,
+            user: { select: { name: true, avatarUrl: true } },
+          },
+        },
+        memberships: {
+          where: { status: MembershipStatus.ACTIVE },
+          select: {
+            orgType: true,
+            orgId: true,
+            role: { select: { name: true, permissions: true } },
+          },
+        },
+      },
+    })
+
+    if (!user) throw new UnauthorizedException()
+
+    const ALL_PERMISSIONS = Object.values(OrgPermission)
+
+    type OrgProfile = {
+      id: string
+      name: string
+      type: 'ENTITY' | 'POLITICIAN' | 'COMPANY'
+      logoUrl: string | null
+      verified: boolean
+      role: string
+      permissions: OrgPermission[]
+    }
+
+    const orgs: OrgProfile[] = []
+
+    if (user.entity) {
+      orgs.push({
+        id: user.entity.id,
+        name: user.entity.legalName,
+        type: 'ENTITY',
+        logoUrl: user.entity.logoUrl,
+        verified: user.entity.verified,
+        role: 'OWNER',
+        permissions: ALL_PERMISSIONS,
+      })
+    }
+
+    if (user.politician) {
+      orgs.push({
+        id: user.politician.id,
+        name: user.politician.user.name,
+        type: 'POLITICIAN',
+        logoUrl: user.politician.user.avatarUrl,
+        verified: user.politician.verified,
+        role: 'OWNER',
+        permissions: ALL_PERMISSIONS,
+      })
+    }
+
+    for (const membership of user.memberships) {
+      const alreadyOwned = orgs.some(
+        (o) => o.type === membership.orgType && o.id === membership.orgId,
+      )
+      if (alreadyOwned) continue
+
+      if (membership.orgType === 'ENTITY') {
+        const entity = await this.prisma.entity.findUnique({
+          where: { id: membership.orgId },
+          select: { legalName: true, logoUrl: true, verified: true },
+        })
+        if (entity) {
+          orgs.push({
+            id: membership.orgId,
+            name: entity.legalName,
+            type: 'ENTITY',
+            logoUrl: entity.logoUrl,
+            verified: entity.verified,
+            role: membership.role.name,
+            permissions: membership.role.permissions,
+          })
+        }
+      } else if (membership.orgType === 'POLITICIAN') {
+        const politician = await this.prisma.politician.findUnique({
+          where: { id: membership.orgId },
+          select: { verified: true, user: { select: { name: true, avatarUrl: true } } },
+        })
+        if (politician) {
+          orgs.push({
+            id: membership.orgId,
+            name: politician.user.name,
+            type: 'POLITICIAN',
+            logoUrl: politician.user.avatarUrl,
+            verified: politician.verified,
+            role: membership.role.name,
+            permissions: membership.role.permissions,
+          })
+        }
+      } else if (membership.orgType === 'COMPANY') {
+        const company = await this.prisma.company.findUnique({
+          where: { id: membership.orgId },
+          select: { tradeName: true, logoUrl: true },
+        })
+        if (company) {
+          orgs.push({
+            id: membership.orgId,
+            name: company.tradeName,
+            type: 'COMPANY',
+            logoUrl: company.logoUrl,
+            verified: false,
+            role: membership.role.name,
+            permissions: membership.role.permissions,
+          })
+        }
+      }
+    }
+
+    return {
+      personal: {
+        id: user.id,
+        name: user.name,
+        type: user.type,
+        avatarUrl: user.avatarUrl,
+      },
+      orgs,
+    }
+  }
+
+  async switchContext(userId: string, contextType: ContextType, contextId?: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, type: true },
+    })
+    if (!user) throw new UnauthorizedException()
+
+    if (contextType === 'personal') {
+      const accessToken = await this.jwt.signAsync(
+        { sub: userId, email: user.email, type: user.type },
+        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: this.config.get('JWT_EXPIRES_IN', '15m') },
+      )
+      return { accessToken, ctx: null }
+    }
+
+    if (!contextId) throw new BadRequestException('contextId é obrigatório')
+
+    const ctx = await this.resolveOrgContext(userId, contextType, contextId)
+    const accessToken = await this.jwt.signAsync(
+      { sub: userId, email: user.email, type: user.type, ctx },
+      { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: this.config.get('JWT_EXPIRES_IN', '15m') },
+    )
+    return { accessToken, ctx }
+  }
+
+  private async resolveOrgContext(
+    userId: string,
+    contextType: ContextType,
+    contextId: string,
+  ): Promise<ActiveContextPayload> {
+    const ALL_PERMISSIONS = Object.values(OrgPermission)
+
+    if (contextType === 'entity') {
+      const entity = await this.prisma.entity.findUnique({
+        where: { id: contextId },
+        select: { userId: true, legalName: true, logoUrl: true },
+      })
+      if (!entity) throw new NotFoundException('Entidade não encontrada')
+
+      if (entity.userId === userId) {
+        return { type: 'ENTITY', id: contextId, name: entity.legalName, logoUrl: entity.logoUrl, permissions: ALL_PERMISSIONS }
+      }
+
+      const membership = await this.prisma.orgMembership.findUnique({
+        where: { userId_orgType_orgId: { userId, orgType: 'ENTITY', orgId: contextId } },
+        select: { status: true, role: { select: { permissions: true } } },
+      })
+      if (!membership || membership.status !== MembershipStatus.ACTIVE) {
+        throw new ForbiddenException('Sem acesso ativo a esta entidade')
+      }
+      return { type: 'ENTITY', id: contextId, name: entity.legalName, logoUrl: entity.logoUrl, permissions: membership.role.permissions }
+    }
+
+    if (contextType === 'politician') {
+      const politician = await this.prisma.politician.findUnique({
+        where: { id: contextId },
+        select: { userId: true, user: { select: { name: true, avatarUrl: true } } },
+      })
+      if (!politician) throw new NotFoundException('Político não encontrado')
+
+      if (politician.userId === userId) {
+        return { type: 'POLITICIAN', id: contextId, name: politician.user.name, logoUrl: politician.user.avatarUrl, permissions: ALL_PERMISSIONS }
+      }
+
+      const membership = await this.prisma.orgMembership.findUnique({
+        where: { userId_orgType_orgId: { userId, orgType: 'POLITICIAN', orgId: contextId } },
+        select: { status: true, role: { select: { permissions: true } } },
+      })
+      if (!membership || membership.status !== MembershipStatus.ACTIVE) {
+        throw new ForbiddenException('Sem acesso ativo a este perfil de político')
+      }
+      return { type: 'POLITICIAN', id: contextId, name: politician.user.name, logoUrl: politician.user.avatarUrl, permissions: membership.role.permissions }
+    }
+
+    if (contextType === 'company') {
+      const company = await this.prisma.company.findUnique({
+        where: { id: contextId },
+        select: { tradeName: true, logoUrl: true },
+      })
+      if (!company) throw new NotFoundException('Empresa não encontrada')
+
+      const membership = await this.prisma.orgMembership.findUnique({
+        where: { userId_orgType_orgId: { userId, orgType: 'COMPANY', orgId: contextId } },
+        select: { status: true, role: { select: { permissions: true } } },
+      })
+      if (!membership || membership.status !== MembershipStatus.ACTIVE) {
+        throw new ForbiddenException('Sem acesso ativo a esta empresa')
+      }
+      return { type: 'COMPANY', id: contextId, name: company.tradeName, logoUrl: company.logoUrl, permissions: membership.role.permissions }
+    }
+
+    throw new BadRequestException('Tipo de contexto inválido')
   }
 
   private async generateTokens(userId: string, email: string, type: string) {

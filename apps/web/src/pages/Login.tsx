@@ -4,8 +4,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
-import { useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced } from '../hooks/useAuth'
+import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
+import { useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced, useMyProfiles, useSwitchContext } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
+import { AuthUser } from '../types/api'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -115,22 +117,41 @@ export function Login() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const { mutate: login, isPending: loginPending, error: loginError } = useLogin()
   const { mutate: verifyMfa, isPending: mfaPending, error: mfaError } = useMfaVerify()
+  const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [mfaSetupToken, setMfaSetupToken] = useState<string | null>(null)
   const [mfaSetupStep, setMfaSetupStep] = useState<'intro' | 'qr' | 'code' | 'backup'>('intro')
   const [qrData, setQrData] = useState<{ qrCode: string; secret: string } | null>(null)
   const [backupCodes, setBackupCodes] = useState<string[]>([])
+  const [pendingAuth, setPendingAuth] = useState<{ user: AuthUser; accessToken: string } | null>(null)
 
   const { mutate: startSetup, isPending: setupPending } = useMfaSetupForced(mfaSetupToken ?? '')
   const { mutate: enableForced, isPending: enablePending, error: enableError } = useMfaEnableForced(mfaSetupToken ?? '')
+
+  const { data: profiles } = useMyProfiles(!!pendingAuth)
 
   const { register: regCreds, handleSubmit: handleCreds, formState: { errors: credErrors } } = useForm<CredentialsForm>()
   const { register: regMfa, handleSubmit: handleMfa, formState: { errors: mfaErrors } } = useForm<MfaForm>()
 
   useEffect(() => {
-    if (user) navigate(redirect, { replace: true })
-  }, [user, navigate, redirect])
+    if (user && !pendingAuth) navigate(redirect, { replace: true })
+  }, [user, pendingAuth, navigate, redirect])
+
+  // Quando temos os perfis carregados e há apenas o pessoal, entra direto
+  useEffect(() => {
+    if (pendingAuth && profiles && profiles.orgs.length === 0) {
+      setAuth(pendingAuth.user, pendingAuth.accessToken)
+      setPendingAuth(null)
+    }
+  }, [pendingAuth, profiles, setAuth])
+
+  function enterWithAuth(authResult: { user: AuthUser; accessToken: string }) {
+    // Primeiro seta o token para poder chamar /auth/my-profiles autenticado
+    setAuth(authResult.user, authResult.accessToken)
+    // Guarda pendingAuth para exibir o modal após carregar os perfis
+    setPendingAuth(authResult)
+  }
 
   function onCredentials(data: CredentialsForm) {
     login(data, {
@@ -141,9 +162,18 @@ export function Login() {
           setMfaSetupToken(result.mfaSetupToken)
           setMfaSetupStep('intro')
         } else {
-          setAuth(result.user, result.accessToken)
-          navigate(redirect, { replace: true })
+          enterWithAuth(result)
         }
+      },
+    })
+  }
+
+  function onProfileSelect(contextType: string, contextId?: string) {
+    if (!pendingAuth) return
+    switchContext({ contextType, contextId }, {
+      onSuccess: () => {
+        setPendingAuth(null)
+        navigate(redirect, { replace: true })
       },
     })
   }
@@ -161,6 +191,7 @@ export function Login() {
     enableForced(data.code, {
       onSuccess: (result) => {
         setBackupCodes(result.backupCodes)
+        enterWithAuth({ user: result.user, accessToken: result.accessToken })
         setMfaSetupStep('backup')
       },
     })
@@ -168,7 +199,9 @@ export function Login() {
 
   function onMfa(data: MfaForm) {
     if (!mfaToken) return
-    verifyMfa({ mfaToken, code: data.code }, { onSuccess: () => navigate(redirect, { replace: true }) })
+    verifyMfa({ mfaToken, code: data.code }, {
+      onSuccess: (result) => enterWithAuth(result),
+    })
   }
 
   if (mfaSetupToken) {
@@ -265,10 +298,29 @@ export function Login() {
                 </code>
               ))}
             </div>
-            <Button variant="primary" fullWidth onClick={() => navigate(redirect, { replace: true })}>
-              Entendi, já guardei
+            <Button
+              variant="primary"
+              fullWidth
+              disabled={!!pendingAuth && !profiles}
+              onClick={() => {
+                if (!pendingAuth || !profiles || profiles.orgs.length === 0) {
+                  setPendingAuth(null)
+                  navigate(redirect, { replace: true })
+                }
+                // se orgs.length > 0: o modal já está renderizado sobre este card
+              }}
+            >
+              {pendingAuth && !profiles ? 'Carregando...' : 'Entendi, já guardei'}
             </Button>
           </Card>
+          {pendingAuth && profiles && profiles.orgs.length > 0 && (
+            <ProfileSelectModal
+              profiles={profiles}
+              loading={switchPending}
+              error={switchError}
+              onSelect={onProfileSelect}
+            />
+          )}
         </Page>
       )
     }
@@ -308,6 +360,13 @@ export function Login() {
             </button>
           </Footer>
         </Card>
+        {pendingAuth && profiles && profiles.orgs.length > 0 && (
+          <ProfileSelectModal
+            profiles={profiles}
+            loading={switchPending}
+            onSelect={onProfileSelect}
+          />
+        )}
       </Page>
     )
   }
@@ -361,6 +420,14 @@ export function Login() {
           <Link to="/cadastro">Cadastre-se grátis</Link>
         </Footer>
       </Card>
+
+      {pendingAuth && profiles && profiles.orgs.length > 0 && (
+        <ProfileSelectModal
+          profiles={profiles}
+          loading={switchPending}
+          onSelect={onProfileSelect}
+        />
+      )}
     </Page>
   )
 }

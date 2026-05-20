@@ -4,10 +4,19 @@ import { ExtractJwt, Strategy } from 'passport-jwt'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../../prisma/prisma.service'
 
+export interface ActiveContextPayload {
+  type: 'ENTITY' | 'POLITICIAN' | 'COMPANY'
+  id: string
+  name: string
+  logoUrl: string | null
+  permissions: string[]
+}
+
 export interface JwtPayload {
   sub: string
   email: string
   type: string
+  ctx?: ActiveContextPayload
 }
 
 @Injectable()
@@ -33,6 +42,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException()
     }
 
-    return user
+    return { ...user, ctx: payload.ctx ?? null }
   }
 }

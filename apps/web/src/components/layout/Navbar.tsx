@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
+import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { useAuthStore } from '../../store/auth.store'
 import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
+import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
 import { useUser } from '../../hooks/useUser'
 
@@ -126,6 +128,24 @@ const DropdownButton = styled.button`
   padding: 10px 16px;
   font-size: 0.9375rem;
   color: ${({ theme }) => theme.colors.action};
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+  transition: background 0.1s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const DropdownAction = styled.button`
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
   background: none;
   border: none;
   cursor: pointer;
@@ -351,15 +371,59 @@ const ReportButton = styled(Button)`
   }
 `
 
+const ContextBadge = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: ${({ theme }) => theme.radii.full};
+  padding: 3px 10px 3px 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+`
+
+const ContextAvatar = styled.div<{ $src?: string | null }>`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: ${({ $src, theme }) =>
+    $src ? `url(${$src}) center/cover` : theme.colors.action};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  flex-shrink: 0;
+`
+
+const ContextName = styled.span`
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: rgba(255, 255, 255, 0.9);
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
 export function Navbar() {
-  const { user, logout } = useAuthStore()
+  const { user, activeContext, logout } = useAuthStore()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   const isInstitutional = user?.type === 'ENTITY' || user?.type === 'POLITICIAN'
-  // Só busca o perfil completo (com entity/politician ID) se for conta institucional
   const { data: profile } = useUser(isInstitutional ? (user?.id ?? '') : '')
+  const { data: profiles } = useMyProfiles(!!user)
+  const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
   useEffect(() => {
     function close(e: MouseEvent) {
@@ -382,80 +446,115 @@ export function Navbar() {
     navigate('/')
   }
 
+  function handleProfileSelect(contextType: string, contextId?: string) {
+    switchContext({ contextType, contextId }, {
+      onSuccess: () => setShowProfileModal(false),
+    })
+  }
+
   const isStaff = user?.type === 'MODERATOR' || user?.type === 'ADMIN'
+  const hasMultipleProfiles = profiles && profiles.orgs.length > 0
 
   return (
-    <Nav>
-      <Inner>
-        <Logo to="/">
-          <span>◆</span> VOTZ
-        </Logo>
+    <>
+      <Nav>
+        <Inner>
+          <Logo to="/">
+            <span>◆</span> VOTZ
+          </Logo>
 
-        <NavLinks>
-          <NavLink to="/">Explorar</NavLink>
-          <NavLink to="/entidades">Entidades</NavLink>
-          <NavLink to="/politicos">Políticos</NavLink>
-          <NavLink to="/mapa">Mapa</NavLink>
-          <NavLink to="/imprensa">Imprensa</NavLink>
-          {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
-        </NavLinks>
+          <NavLinks>
+            <NavLink to="/">Explorar</NavLink>
+            <NavLink to="/entidades">Entidades</NavLink>
+            <NavLink to="/politicos">Políticos</NavLink>
+            <NavLink to="/mapa">Mapa</NavLink>
+            <NavLink to="/imprensa">Imprensa</NavLink>
+            {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
+          </NavLinks>
 
-        <Actions>
-          {user ? (
-            <>
-              <ReportButton as={Link as any} to="/novo">
-                + Relatar
-              </ReportButton>
-              <NotificationsPanel />
-              <AvatarWrapper ref={wrapperRef}>
-                <Avatar
-                  $src={user.avatarUrl}
-                  onClick={() => setOpen((o) => !o)}
-                  title={user.name}
-                >
-                  {!user.avatarUrl && user.name.charAt(0).toUpperCase()}
-                </Avatar>
-                {open && (
-                  <Dropdown>
-                    <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
-                      Meu perfil
-                    </DropdownItem>
-                    {profile?.entity && (
-                      <DropdownItem to={`/entidade/${profile.entity.id}`} onClick={() => setOpen(false)}>
-                        Perfil da entidade
-                      </DropdownItem>
-                    )}
-                    {profile?.politician && (
-                      <DropdownItem to={`/politico/${profile.politician.id}`} onClick={() => setOpen(false)}>
-                        Perfil do político
-                      </DropdownItem>
-                    )}
-                    <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
-                      Editar perfil
-                    </DropdownItem>
-                    <DropdownButton onClick={handleLogout}>Sair</DropdownButton>
-                  </Dropdown>
+          <Actions>
+            {user ? (
+              <>
+                {activeContext && hasMultipleProfiles && (
+                  <ContextBadge
+                    title={`Atuando como: ${activeContext.name}`}
+                    onClick={() => { setShowProfileModal(true); setOpen(false) }}
+                  >
+                    <ContextAvatar $src={activeContext.logoUrl}>
+                      {!activeContext.logoUrl && activeContext.name.charAt(0).toUpperCase()}
+                    </ContextAvatar>
+                    <ContextName>{activeContext.name}</ContextName>
+                  </ContextBadge>
                 )}
-              </AvatarWrapper>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                as={Link as any}
-                to="/entrar"
-                style={{ color: 'rgba(255,255,255,0.8)' }}
-              >
-                Entrar
-              </Button>
-              <ReportButton as={Link as any} to="/novo">
-                + Relatar
-              </ReportButton>
-            </>
-          )}
-        </Actions>
-      </Inner>
-    </Nav>
+
+                <ReportButton as={Link as any} to="/novo">
+                  + Relatar
+                </ReportButton>
+                <NotificationsPanel />
+                <AvatarWrapper ref={wrapperRef}>
+                  <Avatar
+                    $src={user.avatarUrl}
+                    onClick={() => setOpen((o) => !o)}
+                    title={user.name}
+                  >
+                    {!user.avatarUrl && user.name.charAt(0).toUpperCase()}
+                  </Avatar>
+                  {open && (
+                    <Dropdown>
+                      <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
+                        Meu perfil
+                      </DropdownItem>
+                      {profile?.entity && (
+                        <DropdownItem to={`/entidade/${profile.entity.id}`} onClick={() => setOpen(false)}>
+                          Perfil da entidade
+                        </DropdownItem>
+                      )}
+                      {profile?.politician && (
+                        <DropdownItem to={`/politico/${profile.politician.id}`} onClick={() => setOpen(false)}>
+                          Perfil do político
+                        </DropdownItem>
+                      )}
+                      <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
+                        Editar perfil
+                      </DropdownItem>
+                      {hasMultipleProfiles && (
+                        <DropdownAction onClick={() => { setShowProfileModal(true); setOpen(false) }}>
+                          Trocar perfil
+                        </DropdownAction>
+                      )}
+                      <DropdownButton onClick={handleLogout}>Sair</DropdownButton>
+                    </Dropdown>
+                  )}
+                </AvatarWrapper>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  as={Link as any}
+                  to="/entrar"
+                  style={{ color: 'rgba(255,255,255,0.8)' }}
+                >
+                  Entrar
+                </Button>
+                <ReportButton as={Link as any} to="/novo">
+                  + Relatar
+                </ReportButton>
+              </>
+            )}
+          </Actions>
+        </Inner>
+      </Nav>
+
+      {showProfileModal && profiles && (
+        <ProfileSelectModal
+          profiles={profiles}
+          loading={switchPending}
+          error={switchError}
+          onSelect={handleProfileSelect}
+        />
+      )}
+    </>
   )
 }

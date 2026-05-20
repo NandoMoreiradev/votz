@@ -1,5 +1,15 @@
 import { UserType } from './enums'
 
+export type OrgContextType = 'ENTITY' | 'POLITICIAN' | 'COMPANY'
+
+export interface ActiveContext {
+  type: OrgContextType
+  id: string
+  name: string
+  logoUrl: string | null
+  permissions: string[]
+}
+
 export interface PublicUser {
   id: string
   name: string

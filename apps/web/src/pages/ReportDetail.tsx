@@ -8,6 +8,7 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { useMediaViewer } from '../components/ui/MediaViewer'
+import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
@@ -309,29 +310,6 @@ const Skeleton = styled.div`
   }
 `
 
-const AvocBanner = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: #EFF6FF;
-  border: 1px solid #BFDBFE;
-  border-radius: ${({ theme }) => theme.radii.md};
-  padding: 12px 16px;
-  margin-top: 20px;
-`
-
-const AvocIcon = styled.span`
-  font-size: 1.25rem;
-  flex-shrink: 0;
-`
-
-const AvocText = styled.p`
-  font-size: 0.875rem;
-  color: #1E40AF;
-  line-height: 1.5;
-  margin: 0;
-  b { font-weight: ${({ theme }) => theme.fontWeights.semibold}; }
-`
 
 const AvocBtn = styled(Button)`
   width: 100%;
@@ -813,12 +791,10 @@ export function ReportDetail() {
                 )
                 if (!avocEvent) return null
                 return (
-                  <AvocBanner>
-                    <AvocIcon>🤝</AvocIcon>
-                    <AvocText>
-                      <b>{avocEvent.author?.name ?? 'Político'}</b> avocou este relato e assumiu a responsabilidade de resolvê-lo.
-                    </AvocText>
-                  </AvocBanner>
+                  <AdvocacyBanner
+                    author={avocEvent.author}
+                    recipientType={report.recipientType}
+                  />
                 )
               })()}
 
@@ -922,7 +898,10 @@ export function ReportDetail() {
                       advocateMutation.mutate({ politicianId: report.recipientId!, reportId: report.id })
                     }
                   >
-                    {advocateMutation.isPending ? 'Avocando…' : '🤝 Avocar este relato'}
+                    {advocateMutation.isPending
+                      ? 'Avocando…'
+                      : <><ShieldCheckIcon size={14} style={{ marginRight: 6 }} />Avocar este relato</>
+                    }
                   </AvocBtn>
                   <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: 8, lineHeight: 1.5 }}>
                     Ao avocar, você assume publicamente a responsabilidade de resolver este problema.

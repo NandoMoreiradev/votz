@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 import { VerifyEmailDto } from './dto/verify-email.dto'
 import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
+import { SwitchContextDto } from './dto/switch-context.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard'
 import { JwtMfaSetupGuard } from './guards/jwt-mfa-setup.guard'
@@ -173,6 +174,25 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user' })
   me(@CurrentUser() user: { id: string }) {
     return this.authService.me(user.id)
+  }
+
+  // ── Multi-profile ────────────────────────────────────────────────────────
+
+  @Get('my-profiles')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all profiles the authenticated user can act as' })
+  myProfiles(@CurrentUser() user: { id: string }) {
+    return this.authService.getMyProfiles(user.id)
+  }
+
+  @Post('switch-context')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Switch active profile context and get a new access token' })
+  switchContext(@CurrentUser() user: { id: string }, @Body() dto: SwitchContextDto) {
+    return this.authService.switchContext(user.id, dto.contextType, dto.contextId)
   }
 
   // ── Google OAuth ────────────────────────────────────────────────────────
