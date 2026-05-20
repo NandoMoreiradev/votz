@@ -44,7 +44,7 @@ import { CompaniesModule } from './companies/companies.module'
             ? { target: 'pino-pretty', options: { colorize: true } }
             : undefined,
         serializers: {
-          req(req) {
+          req(req: { method: string; url: string }) {
             return { method: req.method, url: req.url }
           },
         },
