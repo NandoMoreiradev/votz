@@ -84,15 +84,11 @@ export class UsersService {
       throw new BadRequestException('Contas de moderadores e administradores não podem ser encerradas pelo portal. Entre em contato com o suporte.')
     }
 
-    const hasLinkedProfile = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        politician: { select: { id: true } },
-        entity: { select: { id: true } },
-      },
+    const hasOrgMembership = await this.prisma.orgMembership.findFirst({
+      where: { userId, status: 'ACTIVE', orgType: { in: ['ENTITY', 'POLITICIAN'] } },
     })
 
-    if (hasLinkedProfile?.politician || hasLinkedProfile?.entity) {
+    if (hasOrgMembership) {
       throw new BadRequestException('Contas vinculadas a perfis de político ou entidade não podem ser encerradas pelo portal. Entre em contato com o suporte.')
     }
 

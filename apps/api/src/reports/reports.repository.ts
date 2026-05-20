@@ -8,7 +8,6 @@ const ACTOR_SELECT = {
   id: true,
   name: true,
   avatarUrl: true,
-  entity: { select: { logoUrl: true, legalName: true } },
 } as const
 
 const ADVOCACY_SELECT = {
@@ -177,11 +176,19 @@ export class ReportsRepository {
   // ── Recipient resolution (for updateStatus authorization) ───────────────────
 
   async findEntityByUserId(userId: string) {
-    return this.prisma.entity.findUnique({ where: { userId }, select: { id: true } })
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { userId, orgType: 'ENTITY', status: 'ACTIVE' },
+      select: { orgId: true },
+    })
+    return membership ? { id: membership.orgId } : null
   }
 
   async findPoliticianByUserId(userId: string) {
-    return this.prisma.politician.findUnique({ where: { userId }, select: { id: true } })
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
+      select: { orgId: true },
+    })
+    return membership ? { id: membership.orgId } : null
   }
 
   // ── Followers ────────────────────────────────────────────────────────────────
@@ -223,7 +230,7 @@ export class ReportsRepository {
       politicianIds.length
         ? this.prisma.politician.findMany({
             where: { id: { in: politicianIds } },
-            select: { id: true, office: true, state: true, user: { select: { id: true, name: true } } },
+            select: { id: true, name: true, office: true, state: true },
           })
         : [],
       entityIds.length
@@ -249,15 +256,15 @@ export class ReportsRepository {
     const politicianIds = followers.filter(f => f.actorType === FollowerActorType.POLITICIAN).map(f => f.actorId)
     const entityIds     = followers.filter(f => f.actorType === FollowerActorType.ENTITY).map(f => f.actorId)
 
-    const [politicians, entities] = await Promise.all([
+    const [politicianMembers, entityMembers] = await Promise.all([
       politicianIds.length
-        ? this.prisma.politician.findMany({ where: { id: { in: politicianIds } }, select: { userId: true } })
+        ? this.prisma.orgMembership.findMany({ where: { orgType: 'POLITICIAN', orgId: { in: politicianIds }, status: 'ACTIVE' }, select: { userId: true } })
         : [],
       entityIds.length
-        ? this.prisma.entity.findMany({ where: { id: { in: entityIds } }, select: { userId: true } })
+        ? this.prisma.orgMembership.findMany({ where: { orgType: 'ENTITY', orgId: { in: entityIds }, status: 'ACTIVE' }, select: { userId: true } })
         : [],
     ])
 
-    return [...politicians.map(p => p.userId), ...entities.map(e => e.userId)]
+    return [...politicianMembers.map(m => m.userId), ...entityMembers.map(m => m.userId)]
   }
 }

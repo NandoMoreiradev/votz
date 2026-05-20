@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import styled from 'styled-components'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -411,9 +411,9 @@ function PoliticiansTab() {
             {data.data.map((p: any) => (
               <Tr key={p.id}>
                 <Td>
-                  <Link to={`/politico/${p.id}`} style={{ color: 'inherit', textDecoration: 'underline' }}>{p.user.name}</Link>
+                  <Link to={`/politico/${p.id}`} style={{ color: 'inherit', textDecoration: 'underline' }}>{p.name}</Link>
                 </Td>
-                <Td style={{ color: '#6B7280' }}>{p.user.email}</Td>
+                <Td style={{ color: '#6B7280' }}>{p.office}</Td>
                 <Td><Badge>{p.party.abbreviation}</Badge></Td>
                 <Td>{p.office}</Td>
                 <Td>{p.state}</Td>
@@ -650,3 +650,4 @@ export function Admin() {
     </Page>
   )
 }
+

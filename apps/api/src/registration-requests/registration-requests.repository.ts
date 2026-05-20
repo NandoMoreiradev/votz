@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { Prisma, RegistrationRequestStatus, RegistrationRequestType } from '@prisma/client'
+import { Prisma, RegistrationRequestStatus, RegistrationRequestType, OrgType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 const SELECT = {
@@ -8,6 +8,8 @@ const SELECT = {
   status: true,
   payload: true,
   reviewNote: true,
+  approvedOrgId: true,
+  approvedOrgType: true,
   createdAt: true,
   updatedAt: true,
   requester: { select: { id: true, name: true, email: true } },
@@ -55,10 +57,17 @@ export class RegistrationRequestsRepository {
     })
   }
 
-  review(id: string, reviewerId: string, status: RegistrationRequestStatus, reviewNote?: string) {
+  review(
+    id: string,
+    reviewerId: string,
+    status: RegistrationRequestStatus,
+    reviewNote?: string,
+    approvedOrgId?: string,
+    approvedOrgType?: OrgType,
+  ) {
     return this.prisma.registrationRequest.update({
       where: { id },
-      data: { status, reviewerId, reviewNote },
+      data: { status, reviewerId, reviewNote, approvedOrgId, approvedOrgType },
       select: SELECT,
     })
   }

@@ -508,14 +508,14 @@ export function EntityProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
-  const currentUser = useAuthStore((s) => s.user)
+  const { user: currentUser, activeContext } = useAuthStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
   const { data: entity, isLoading } = useEntity(id!)
   const { data: reports, isLoading: loadingReports } = useEntityReports(id!, page, statusFilter || undefined)
 
-  const isOwner = !!currentUser && !!entity && currentUser.id === entity.user.id
+  const isOwner = !!activeContext && activeContext.type === 'ENTITY' && activeContext.id === id
 
   const logoMutation = useMutation({
     mutationFn: async (file: File) => {

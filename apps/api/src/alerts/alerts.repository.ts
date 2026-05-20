@@ -69,12 +69,13 @@ export class AlertsRepository {
     const topEntityId = groups[0]?.recipientId
     if (!topEntityId) return null
 
-    const entity = await this.prisma.entity.findUnique({
-      where: { id: topEntityId },
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { orgType: 'ENTITY', orgId: topEntityId, status: 'ACTIVE' },
       select: { userId: true },
+      orderBy: { createdAt: 'asc' },
     })
 
-    return entity?.userId ?? null
+    return membership?.userId ?? null
   }
 
   async linkReportsToSurto(surtoId: string, category: string, city: string, since: Date): Promise<number> {

@@ -197,8 +197,6 @@ model User {
   comments        Comment[]
   timelineEvents  TimelineEvent[]
   notifications   Notification[]
-  entity                Entity?
-  politician            Politician?
   registrationRequests  RegistrationRequest[] @relation("RegistrationRequester")
   reviewedRequests      RegistrationRequest[] @relation("RegistrationReviewer")
   memberships           OrgMembership[]
@@ -281,21 +279,20 @@ model TimelineEvent {
 }
 
 model Entity {
-  id        String     @id @default(uuid())
-  userId    String     @unique
-  user      User       @relation(fields: [userId], references: [id])
-  legalName String
-  cnpj      String     @unique
-  type      EntityType
-  verified  Boolean    @default(false)
-  votzScore Float      @default(0)
-  slaHours  Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
-  city      String?
-  state     String?
-  logoUrl   String?
-  website   String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id              String     @id @default(uuid())
+  createdByUserId String?    // auditoria — não determina ownership (ver OrgMembership)
+  legalName       String
+  cnpj            String     @unique
+  type            EntityType
+  verified        Boolean    @default(false)
+  votzScore       Float      @default(0)
+  slaHours        Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
+  city            String?
+  state           String?
+  logoUrl         String?
+  website         String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@map("entities")
 }
@@ -315,21 +312,23 @@ model Party {
 }
 
 model Politician {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id])
-  partyId       String
-  party         Party    @relation(fields: [partyId], references: [id])
-  office        String
-  termStart     DateTime
-  termEnd       DateTime
-  electoralZone String
-  state         String
-  city          String?
-  verified      Boolean  @default(false)
-  mandatometer  Json?    // snapshot: { resolved, ignored, advocated }
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  createdByUserId String?  // auditoria — não determina ownership (ver OrgMembership)
+  name            String   @default("") // nome completo do político
+  cpf             String?  @unique // AES-256 em app layer — chave de deduplicação
+  tseId           String?  @unique // código oficial TSE (futuro: DivulgaCand)
+  partyId         String
+  party           Party    @relation(fields: [partyId], references: [id])
+  office          String
+  termStart       DateTime
+  termEnd         DateTime
+  electoralZone   String
+  state           String
+  city            String?
+  verified        Boolean  @default(false)
+  mandatometer    Json?    // snapshot: { resolved, ignored, advocated }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("politicians")
 }
@@ -397,17 +396,19 @@ model Notification {
 }
 
 model RegistrationRequest {
-  id          String                    @id @default(uuid())
-  type        RegistrationRequestType
-  status      RegistrationRequestStatus @default(PENDING)
-  requesterId String
-  requester   User                      @relation("RegistrationRequester", fields: [requesterId], references: [id])
-  payload     Json
-  reviewerId  String?
-  reviewer    User?                     @relation("RegistrationReviewer", fields: [reviewerId], references: [id])
-  reviewNote  String?
-  createdAt   DateTime                  @default(now())
-  updatedAt   DateTime                  @updatedAt
+  id              String                    @id @default(uuid())
+  type            RegistrationRequestType
+  status          RegistrationRequestStatus @default(PENDING)
+  requesterId     String
+  requester       User                      @relation("RegistrationRequester", fields: [requesterId], references: [id])
+  payload         Json
+  reviewerId      String?
+  reviewer        User?                     @relation("RegistrationReviewer", fields: [reviewerId], references: [id])
+  reviewNote      String?
+  approvedOrgId   String?  // id do org criado na aprovação
+  approvedOrgType OrgType? // tipo do org criado
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
 
   @@map("registration_requests")
 }

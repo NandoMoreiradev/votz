@@ -37,7 +37,6 @@ export interface AdvocacyAuthor {
   id: string
   name: string
   avatarUrl: string | null
-  entity: { logoUrl: string | null; legalName: string } | null
 }
 
 export interface TimelineEvent {
@@ -130,8 +129,6 @@ export interface UserProfile {
   avatarUrl: string | null
   bio?: string
   createdAt: string
-  entity?: { id: string } | null
-  politician?: { id: string } | null
   _count: { reports: number; votes: number; comments: number }
 }
 
@@ -175,7 +172,6 @@ export interface Entity {
   logoUrl: string | null
   website: string | null
   createdAt: string
-  user: { id: string; name: string; avatarUrl: string | null }
   stats?: {
     total: number
     resolved: number
@@ -211,6 +207,7 @@ export interface PoliticianParty {
 
 export interface Politician {
   id: string
+  name: string
   party: PoliticianParty
   office: string
   termStart: string
@@ -221,7 +218,6 @@ export interface Politician {
   verified: boolean
   mandatometer: Mandatometer | null
   createdAt: string
-  user: { id: string; name: string; avatarUrl: string | null; bio?: string | null }
 }
 
 export interface PoliticiansResponse {
@@ -285,9 +281,9 @@ export interface MfaEnableForcedResponse {
 
 export interface FollowerPolitician {
   id: string
+  name: string
   office: string
   state: string
-  user: { id: string; name: string }
 }
 
 export interface FollowerEntity {

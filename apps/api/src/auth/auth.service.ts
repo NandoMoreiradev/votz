@@ -445,15 +445,6 @@ export class AuthService {
         name: true,
         type: true,
         avatarUrl: true,
-        entity: { select: { id: true, legalName: true, logoUrl: true, verified: true } },
-        politician: {
-          select: {
-            id: true,
-            office: true,
-            verified: true,
-            user: { select: { name: true, avatarUrl: true } },
-          },
-        },
         memberships: {
           where: { status: MembershipStatus.ACTIVE },
           select: {
@@ -467,8 +458,6 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException()
 
-    const ALL_PERMISSIONS = Object.values(OrgPermission)
-
     type OrgProfile = {
       id: string
       name: string
@@ -481,36 +470,7 @@ export class AuthService {
 
     const orgs: OrgProfile[] = []
 
-    if (user.entity) {
-      orgs.push({
-        id: user.entity.id,
-        name: user.entity.legalName,
-        type: 'ENTITY',
-        logoUrl: user.entity.logoUrl,
-        verified: user.entity.verified,
-        role: 'OWNER',
-        permissions: ALL_PERMISSIONS,
-      })
-    }
-
-    if (user.politician) {
-      orgs.push({
-        id: user.politician.id,
-        name: user.politician.user.name,
-        type: 'POLITICIAN',
-        logoUrl: user.politician.user.avatarUrl,
-        verified: user.politician.verified,
-        role: 'OWNER',
-        permissions: ALL_PERMISSIONS,
-      })
-    }
-
     for (const membership of user.memberships) {
-      const alreadyOwned = orgs.some(
-        (o) => o.type === membership.orgType && o.id === membership.orgId,
-      )
-      if (alreadyOwned) continue
-
       if (membership.orgType === 'ENTITY') {
         const entity = await this.prisma.entity.findUnique({
           where: { id: membership.orgId },
@@ -530,14 +490,16 @@ export class AuthService {
       } else if (membership.orgType === 'POLITICIAN') {
         const politician = await this.prisma.politician.findUnique({
           where: { id: membership.orgId },
-          select: { verified: true, user: { select: { name: true, avatarUrl: true } } },
+          select: { verified: true, office: true, createdByUserId: true },
         })
         if (politician) {
+          const displayName = await this.resolvePoliticianName(politician.createdByUserId, politician.office)
+          const displayAvatar = await this.resolvePoliticianAvatar(politician.createdByUserId)
           orgs.push({
             id: membership.orgId,
-            name: politician.user.name,
+            name: displayName,
             type: 'POLITICIAN',
-            logoUrl: politician.user.avatarUrl,
+            logoUrl: displayAvatar,
             verified: politician.verified,
             role: membership.role.name,
             permissions: membership.role.permissions,
@@ -603,18 +565,12 @@ export class AuthService {
     contextType: ContextType,
     contextId: string,
   ): Promise<ActiveContextPayload> {
-    const ALL_PERMISSIONS = Object.values(OrgPermission)
-
     if (contextType === 'entity') {
       const entity = await this.prisma.entity.findUnique({
         where: { id: contextId },
-        select: { userId: true, legalName: true, logoUrl: true },
+        select: { legalName: true, logoUrl: true },
       })
       if (!entity) throw new NotFoundException('Entidade não encontrada')
-
-      if (entity.userId === userId) {
-        return { type: 'ENTITY', id: contextId, name: entity.legalName, logoUrl: entity.logoUrl, permissions: ALL_PERMISSIONS }
-      }
 
       const membership = await this.prisma.orgMembership.findUnique({
         where: { userId_orgType_orgId: { userId, orgType: 'ENTITY', orgId: contextId } },
@@ -629,13 +585,9 @@ export class AuthService {
     if (contextType === 'politician') {
       const politician = await this.prisma.politician.findUnique({
         where: { id: contextId },
-        select: { userId: true, user: { select: { name: true, avatarUrl: true } } },
+        select: { office: true, createdByUserId: true },
       })
       if (!politician) throw new NotFoundException('Político não encontrado')
-
-      if (politician.userId === userId) {
-        return { type: 'POLITICIAN', id: contextId, name: politician.user.name, logoUrl: politician.user.avatarUrl, permissions: ALL_PERMISSIONS }
-      }
 
       const membership = await this.prisma.orgMembership.findUnique({
         where: { userId_orgType_orgId: { userId, orgType: 'POLITICIAN', orgId: contextId } },
@@ -644,7 +596,10 @@ export class AuthService {
       if (!membership || membership.status !== MembershipStatus.ACTIVE) {
         throw new ForbiddenException('Sem acesso ativo a este perfil de político')
       }
-      return { type: 'POLITICIAN', id: contextId, name: politician.user.name, logoUrl: politician.user.avatarUrl, permissions: membership.role.permissions }
+
+      const displayName = await this.resolvePoliticianName(politician.createdByUserId, politician.office)
+      const displayAvatar = await this.resolvePoliticianAvatar(politician.createdByUserId)
+      return { type: 'POLITICIAN', id: contextId, name: displayName, logoUrl: displayAvatar, permissions: membership.role.permissions }
     }
 
     if (contextType === 'company') {
@@ -665,6 +620,24 @@ export class AuthService {
     }
 
     throw new BadRequestException('Tipo de contexto inválido')
+  }
+
+  private async resolvePoliticianName(createdByUserId: string | null, office: string): Promise<string> {
+    if (!createdByUserId) return office
+    const owner = await this.prisma.user.findUnique({
+      where: { id: createdByUserId },
+      select: { name: true },
+    })
+    return owner?.name ?? office
+  }
+
+  private async resolvePoliticianAvatar(createdByUserId: string | null): Promise<string | null> {
+    if (!createdByUserId) return null
+    const owner = await this.prisma.user.findUnique({
+      where: { id: createdByUserId },
+      select: { avatarUrl: true },
+    })
+    return owner?.avatarUrl ?? null
   }
 
   private async generateTokens(userId: string, email: string, type: string) {

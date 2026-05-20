@@ -13,7 +13,6 @@ import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
-import { useUser } from '../hooks/useUser'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -645,7 +644,7 @@ export function ReportDetail() {
   const { data: report, isLoading } = useReport(id!)
   const { mutate: vote } = useVote(id!)
   const { data: myVotes } = useMyVotes(id!)
-  const user = useAuthStore((s) => s.user)
+  const { user, activeContext } = useAuthStore()
   const qc = useQueryClient()
   const { open: openMedia } = useMediaViewer()
 
@@ -653,14 +652,8 @@ export function ReportDetail() {
   const [disputeReason, setDisputeReason] = useState('')
   const disputeMutation = useDisputeReport(id!)
 
-  const isActorType = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
-  const { data: userProfile } = useUser(isActorType && user ? user.id : '')
-
-  const actorId = user?.type === UserType.POLITICIAN
-    ? userProfile?.politician?.id
-    : user?.type === UserType.ENTITY
-      ? userProfile?.entity?.id
-      : undefined
+  const isActorType = activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY'
+  const actorId = activeContext?.id
 
   const canFollow = isActorType
   const { data: followers } = useFollowers(id!)
@@ -1126,7 +1119,7 @@ export function ReportDetail() {
                   <FollowerList>
                     {followers.politicians.map((p) => (
                       <FollowerItem key={p.id}>
-                        🏛 <span>{p.user.name}</span>
+                        🏛 <span>{p.name}</span>
                         <FollowerRole>· {p.office} – {p.state}</FollowerRole>
                       </FollowerItem>
                     ))}

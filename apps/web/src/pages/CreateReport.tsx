@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -599,7 +599,7 @@ function PoliticianSearch({
   if (selected) {
     return (
       <SelectedEntity>
-        <SelectedName>{selected.user.name} — {selected.party.abbreviation}</SelectedName>
+        <SelectedName>{selected.name} — {selected.party.abbreviation}</SelectedName>
         <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
       </SelectedEntity>
     )
@@ -619,7 +619,7 @@ function PoliticianSearch({
         <Dropdown>
           {data.data.map((p) => (
             <DropdownItem key={p.id} onMouseDown={() => select(p)}>
-              {p.user.name}
+              {p.name}
               <DropdownSub>{p.office} — {p.party.abbreviation} — {p.state}</DropdownSub>
             </DropdownItem>
           ))}
@@ -944,3 +944,4 @@ export function CreateReport() {
     </Page>
   )
 }
+

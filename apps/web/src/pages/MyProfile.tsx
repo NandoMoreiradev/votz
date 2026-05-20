@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-import { useUser } from '../hooks/useUser'
+import { useMyProfiles } from '../hooks/useAuth'
 import { AuthenticatedUser } from '@votz/shared-types'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ export function MyProfile() {
   }
 
   const hasAddress = !!address?.city
-  const { data: profile } = useUser(user.id)
+  const { data: profiles } = useMyProfiles(true)
 
   return (
     <Page>
@@ -342,18 +342,18 @@ export function MyProfile() {
       <Content>
         <PageTitle>Editar perfil</PageTitle>
 
-        {profile?.entity && (
-          <InstitutionalBanner>
+        {profiles?.orgs.filter(o => o.type === 'ENTITY').map(org => (
+          <InstitutionalBanner key={org.id}>
             <span>Gerencie sua equipe e relatos no</span>
-            <Link to={`/entidade/${profile.entity.id}`}>perfil da entidade →</Link>
+            <Link to={`/entidade/${org.id}`}>perfil da entidade →</Link>
           </InstitutionalBanner>
-        )}
-        {profile?.politician && (
-          <InstitutionalBanner>
+        ))}
+        {profiles?.orgs.filter(o => o.type === 'POLITICIAN').map(org => (
+          <InstitutionalBanner key={org.id}>
             <span>Gerencie sua equipe e relatos no</span>
-            <Link to={`/politico/${profile.politician.id}`}>perfil do político →</Link>
+            <Link to={`/politico/${org.id}`}>perfil do político →</Link>
           </InstitutionalBanner>
-        )}
+        ))}
 
         <Card>
           {/* Avatar */}

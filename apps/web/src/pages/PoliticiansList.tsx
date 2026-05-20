@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -285,11 +285,11 @@ export function PoliticiansList() {
                 return (
                   <Card key={p.id} to={`/politico/${p.id}`}>
                     <CardTop>
-                      <Avatar $src={p.user.avatarUrl}>
-                        {!p.user.avatarUrl && p.user.name.charAt(0).toUpperCase()}
+                      <Avatar $src={null}>
+                        {p.name.charAt(0).toUpperCase()}
                       </Avatar>
                       <CardInfo>
-                        <CardName>{p.user.name}</CardName>
+                        <CardName>{p.name}</CardName>
                         <CardMeta>
                           <Badge>{p.party.abbreviation}</Badge>
                           <Badge>{p.office}</Badge>
@@ -345,3 +345,4 @@ export function PoliticiansList() {
     </Page>
   )
 }
+

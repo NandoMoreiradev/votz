@@ -7,7 +7,6 @@ import { useAuthStore } from '../../store/auth.store'
 import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
 import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
-import { useUser } from '../../hooks/useUser'
 
 const Nav = styled.nav`
   position: sticky;
@@ -420,8 +419,6 @@ export function Navbar() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  const isInstitutional = user?.type === 'ENTITY' || user?.type === 'POLITICIAN'
-  const { data: profile } = useUser(isInstitutional ? (user?.id ?? '') : '')
   const { data: profiles } = useMyProfiles(!!user)
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
@@ -504,16 +501,16 @@ export function Navbar() {
                       <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
                         Meu perfil
                       </DropdownItem>
-                      {profile?.entity && (
-                        <DropdownItem to={`/entidade/${profile.entity.id}`} onClick={() => setOpen(false)}>
-                          Perfil da entidade
+                      {profiles?.orgs.filter(o => o.type === 'ENTITY').map(org => (
+                        <DropdownItem key={org.id} to={`/entidade/${org.id}`} onClick={() => setOpen(false)}>
+                          {org.name}
                         </DropdownItem>
-                      )}
-                      {profile?.politician && (
-                        <DropdownItem to={`/politico/${profile.politician.id}`} onClick={() => setOpen(false)}>
-                          Perfil do político
+                      ))}
+                      {profiles?.orgs.filter(o => o.type === 'POLITICIAN').map(org => (
+                        <DropdownItem key={org.id} to={`/politico/${org.id}`} onClick={() => setOpen(false)}>
+                          {org.name}
                         </DropdownItem>
-                      )}
+                      ))}
                       <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
                         Editar perfil
                       </DropdownItem>

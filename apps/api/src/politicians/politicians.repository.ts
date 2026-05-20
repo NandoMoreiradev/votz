@@ -5,6 +5,7 @@ import { VoteType } from '@votz/shared-types'
 
 const POLITICIAN_PUBLIC_SELECT = {
   id: true,
+  name: true,
   office: true,
   termStart: true,
   termEnd: true,
@@ -15,7 +16,6 @@ const POLITICIAN_PUBLIC_SELECT = {
   mandatometer: true,
   createdAt: true,
   party: { select: { id: true, name: true, abbreviation: true, number: true, logoUrl: true } },
-  user: { select: { id: true, name: true, avatarUrl: true, bio: true } },
 } as const
 
 const REPORT_SELECT = {
@@ -34,7 +34,8 @@ const REPORT_SELECT = {
 export class PoliticiansRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(userId: string, data: {
+  create(createdByUserId: string, data: {
+    name: string
     partyId: string
     office: string
     termStart: Date
@@ -44,13 +45,9 @@ export class PoliticiansRepository {
     city?: string
   }) {
     return this.prisma.politician.create({
-      data: { userId, ...data },
+      data: { createdByUserId, ...data },
       select: POLITICIAN_PUBLIC_SELECT,
     })
-  }
-
-  findByUserId(userId: string) {
-    return this.prisma.politician.findUnique({ where: { userId }, select: { id: true } })
   }
 
   findById(id: string) {
@@ -74,9 +71,7 @@ export class PoliticiansRepository {
       ...(params.city && { city: { contains: params.city, mode: 'insensitive' } }),
       ...(params.party && { party: { abbreviation: { contains: params.party, mode: 'insensitive' } } }),
       ...(params.office && { office: { contains: params.office, mode: 'insensitive' } }),
-      ...(params.search && {
-        user: { name: { contains: params.search, mode: 'insensitive' } },
-      }),
+      ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
     }
 
     const [data, total] = await this.prisma.$transaction([

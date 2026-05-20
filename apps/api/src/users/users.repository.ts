@@ -48,8 +48,6 @@ export class UsersRepository {
       where: { id },
       select: {
         ...PUBLIC_USER_SELECT,
-        entity:     { select: { id: true } },
-        politician: { select: { id: true } },
         _count: {
           select: { reports: true, votes: true, comments: true },
         },

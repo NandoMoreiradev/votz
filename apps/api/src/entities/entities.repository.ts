@@ -16,7 +16,6 @@ const ENTITY_PUBLIC_SELECT = {
   logoUrl: true,
   website: true,
   createdAt: true,
-  user: { select: { id: true, name: true, avatarUrl: true } },
 } as const
 
 const REPORT_SELECT = {
@@ -35,7 +34,7 @@ const REPORT_SELECT = {
 export class EntitiesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(userId: string, data: {
+  create(createdByUserId: string, data: {
     legalName: string
     cnpj: string
     type: EntityType
@@ -44,13 +43,9 @@ export class EntitiesRepository {
     website?: string
   }) {
     return this.prisma.entity.create({
-      data: { userId, ...data },
+      data: { createdByUserId, ...data },
       select: ENTITY_PUBLIC_SELECT,
     })
-  }
-
-  findByUserId(userId: string) {
-    return this.prisma.entity.findUnique({ where: { userId }, select: { id: true } })
   }
 
   findByIdFull(id: string) {

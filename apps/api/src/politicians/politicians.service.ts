@@ -2,9 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  ConflictException,
   BadRequestException,
 } from '@nestjs/common'
+import { OrgPermission } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { PoliticiansRepository } from './politicians.repository'
@@ -22,9 +22,6 @@ export class PoliticiansService {
   ) {}
 
   async register(userId: string, dto: CreatePoliticianDto) {
-    const existing = await this.repo.findByUserId(userId)
-    if (existing) throw new ConflictException('User already has a registered politician profile')
-
     return this.repo.create(userId, {
       ...dto,
       termStart: new Date(dto.termStart),
@@ -60,8 +57,13 @@ export class PoliticiansService {
   }
 
   async update(id: string, userId: string, dto: UpdatePoliticianDto) {
-    const p = await this.repo.findByUserId(userId)
-    if (!p || p.id !== id) throw new ForbiddenException()
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { userId, orgType: 'POLITICIAN', orgId: id, status: 'ACTIVE' },
+      select: { role: { select: { permissions: true } } },
+    })
+    if (!membership || !membership.role.permissions.includes(OrgPermission.MANAGE_PROFILE)) {
+      throw new ForbiddenException()
+    }
     const data: Record<string, unknown> = { ...dto }
     if (dto.termStart) data.termStart = new Date(dto.termStart)
     if (dto.termEnd) data.termEnd = new Date(dto.termEnd)
@@ -69,8 +71,10 @@ export class PoliticiansService {
   }
 
   async advocate(politicianId: string, reportId: string, userId: string) {
-    const politician = await this.repo.findByUserId(userId)
-    if (!politician || politician.id !== politicianId) throw new ForbiddenException()
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { userId, orgType: 'POLITICIAN', orgId: politicianId, status: 'ACTIVE' },
+    })
+    if (!membership) throw new ForbiddenException()
 
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
@@ -105,7 +109,6 @@ export class PoliticiansService {
       }),
     ])
 
-    // Recalcula mandatômetro
     const stats = await this.repo.mandatometerStats(politicianId)
     await this.repo.updateMandatometer(politicianId, stats)
 

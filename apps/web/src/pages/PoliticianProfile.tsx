@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -473,11 +473,11 @@ export function PoliticianProfile() {
         ) : politician ? (
           <HeaderCard>
             <HeaderTop>
-              <AvatarLink to={`/perfil/${politician.user.id}`} $src={politician.user.avatarUrl}>
-                {!politician.user.avatarUrl && politician.user.name.charAt(0)}
+              <AvatarLink to={`/politico/${politician.id}`} $src={null}>
+                {politician.name.charAt(0)}
               </AvatarLink>
               <Info>
-                <Name>{politician.user.name}</Name>
+                <Name>{politician.name}</Name>
                 <MetaRow>
                   <Tag $variant="office">{politician.office}</Tag>
                   <Tag $variant="party">{politician.party.abbreviation}</Tag>
@@ -492,9 +492,8 @@ export function PoliticianProfile() {
                 <Term>
                   Mandato: {formatDate(politician.termStart)} → {formatDate(politician.termEnd)}
                 </Term>
-                {politician.user.bio && <Bio>"{politician.user.bio}"</Bio>}
                 <CtaRow>
-                  <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.user.name)}`}>
+                  <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.name)}`}>
                     + Criar relato
                   </ReportCta>
                 </CtaRow>
@@ -649,3 +648,4 @@ export function PoliticianProfile() {
     </Page>
   )
 }
+

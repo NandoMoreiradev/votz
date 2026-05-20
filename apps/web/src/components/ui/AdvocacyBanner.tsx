@@ -97,7 +97,7 @@ function ActorAvatar({
   isEntity: boolean
   size: number
 }) {
-  const src = author?.entity?.logoUrl ?? author?.avatarUrl ?? null
+  const src = author?.avatarUrl ?? null
 
   if (src) {
     return <AvatarImg src={src} $size={size} alt={author?.name ?? ''} />

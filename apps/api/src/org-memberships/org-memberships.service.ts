@@ -90,8 +90,8 @@ export class OrgMembershipsService {
       return e?.legalName ?? 'Organização'
     }
     if (orgType === OrgType.POLITICIAN) {
-      const p = await this.prisma.politician.findUnique({ where: { id: orgId }, include: { user: { select: { name: true } } } })
-      return p?.user.name ?? 'Político'
+      const p = await this.prisma.politician.findUnique({ where: { id: orgId }, select: { name: true } })
+      return p?.name ?? 'Político'
     }
     if (orgType === OrgType.COMPANY) {
       const c = await this.prisma.company.findUnique({ where: { id: orgId }, select: { tradeName: true } })

@@ -365,16 +365,6 @@ export function UserProfile() {
                 </Stat>
               </StatsRow>
 
-              {user.entity && (
-                <InstitutionalLink to={`/entidade/${user.entity.id}`}>
-                  Ver perfil da entidade →
-                </InstitutionalLink>
-              )}
-              {user.politician && (
-                <InstitutionalLink to={`/politico/${user.politician.id}`}>
-                  Ver perfil do político →
-                </InstitutionalLink>
-              )}
             </ProfileInfo>
           </ProfileCard>
         ) : (

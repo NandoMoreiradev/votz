@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
@@ -12,7 +12,6 @@ import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner
 import { useReports } from '../hooks/useReports'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
-import { useUser } from '../hooks/useUser'
 import { useMyVotes } from '../hooks/useVote'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
@@ -1058,7 +1057,7 @@ const ALL_ACTIVE = new Set([
 
 export function Home() {
   const navigate = useNavigate()
-  const user = useAuthStore(s => s.user)
+  const { user, activeContext } = useAuthStore()
 
   const [category, setCategory]             = useState<Category | undefined>()
   const [statuses, setStatuses]             = useState<Set<ReportStatus>>(new Set(ALL_ACTIVE))
@@ -1069,9 +1068,7 @@ export function Home() {
   const [city, setCity]                     = useState('')
   const [uf, setUf]                         = useState('')
 
-  const needsProfile = user?.type === UserType.POLITICIAN || user?.type === UserType.ENTITY
-  const { data: userProfile } = useUser(needsProfile ? (user?.id ?? '') : '')
-  const politicianId = userProfile?.politician?.id ?? undefined
+  const politicianId = activeContext?.type === 'POLITICIAN' ? activeContext.id : undefined
 
   const { data, isLoading, isError } = useReports({
     category,
@@ -1335,11 +1332,11 @@ export function Home() {
                   const score = polScore(pol)
                   return (
                     <MandItem key={pol.id} to={`/politicos/${pol.id}`}>
-                      <MandAvatar $bg={avatarColor(pol.user.name)}>
-                        {initials(pol.user.name)}
+                      <MandAvatar $bg={avatarColor(pol.name)}>
+                        {initials(pol.name)}
                       </MandAvatar>
                       <MandContent>
-                        <MandName>{pol.user.name}</MandName>
+                        <MandName>{pol.name}</MandName>
                         <MandRole>{pol.party.abbreviation} · {pol.office}</MandRole>
                       </MandContent>
                       <div>
@@ -1366,3 +1363,4 @@ export function Home() {
     </Page>
   )
 }
+

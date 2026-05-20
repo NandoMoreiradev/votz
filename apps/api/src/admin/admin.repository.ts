@@ -91,7 +91,7 @@ export class AdminRepository {
     const [data, total] = await Promise.all([
       this.prisma.politician.findMany({
         where,
-        select: { id: true, party: true, office: true, state: true, verified: true, createdAt: true, user: { select: { id: true, name: true, email: true } } },
+        select: { id: true, name: true, party: true, office: true, state: true, verified: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: params.limit,

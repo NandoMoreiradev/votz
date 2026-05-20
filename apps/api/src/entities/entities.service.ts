@@ -2,8 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  ConflictException,
 } from '@nestjs/common'
+import { OrgPermission } from '@prisma/client'
+import { PrismaService } from '../prisma/prisma.service'
 import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
@@ -11,12 +12,12 @@ import { ListEntitiesDto } from './dto/list-entities.dto'
 
 @Injectable()
 export class EntitiesService {
-  constructor(private readonly repo: EntitiesRepository) {}
+  constructor(
+    private readonly repo: EntitiesRepository,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async register(userId: string, dto: CreateEntityDto) {
-    const existing = await this.repo.findByUserId(userId)
-    if (existing) throw new ConflictException('User already has a registered entity')
-
     const cnpj = dto.cnpj.replace(/\D/g, '')
     return this.repo.create(userId, { ...dto, cnpj })
   }
@@ -48,8 +49,13 @@ export class EntitiesService {
   }
 
   async update(id: string, userId: string, dto: UpdateEntityDto) {
-    const entity = await this.repo.findByUserId(userId)
-    if (!entity || entity.id !== id) throw new ForbiddenException()
+    const membership = await this.prisma.orgMembership.findFirst({
+      where: { userId, orgType: 'ENTITY', orgId: id, status: 'ACTIVE' },
+      select: { role: { select: { permissions: true } } },
+    })
+    if (!membership || !membership.role.permissions.includes(OrgPermission.MANAGE_PROFILE)) {
+      throw new ForbiddenException()
+    }
     return this.repo.update(id, dto as object)
   }
 }
