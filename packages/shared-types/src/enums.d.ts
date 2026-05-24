@@ -20,6 +20,7 @@ export declare enum EventType {
     CREATED = "CREATED",
     RESPONDED = "RESPONDED",
     STATUS_CHANGED = "STATUS_CHANGED",
+    UPDATE = "UPDATE",
     DISPUTED = "DISPUTED",
     RESOLVED = "RESOLVED",
     ARCHIVED = "ARCHIVED"

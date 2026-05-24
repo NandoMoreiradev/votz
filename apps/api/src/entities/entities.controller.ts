@@ -69,4 +69,16 @@ export class EntitiesController {
   ) {
     return this.entitiesService.update(id, user.id, dto)
   }
+
+  @Post(':id/advocate/:reportId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Entity advocates (takes responsibility for) a report' })
+  advocate(
+    @Param('id') id: string,
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.entitiesService.advocate(id, reportId, user.id)
+  }
 }

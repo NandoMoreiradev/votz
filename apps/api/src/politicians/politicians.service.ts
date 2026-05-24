@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common'
 import { OrgPermission } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
@@ -78,36 +79,49 @@ export class PoliticiansService {
 
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
-      select: { id: true, status: true, recipientType: true, recipientId: true },
+      select: {
+        id: true,
+        status: true,
+        timeline: {
+          where: { type: EventType.RESPONDED },
+          select: { metadata: true },
+        },
+      },
     })
     if (!report) throw new NotFoundException('Report not found')
 
-    if (
-      report.recipientType !== 'POLITICIAN' ||
-      report.recipientId !== politicianId
-    ) {
-      throw new BadRequestException('This report is not directed to this politician')
-    }
-
-    if (report.status !== ReportStatus.OPEN && report.status !== ReportStatus.UNDER_REVIEW) {
+    const ADVOCATABLE = [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW, ReportStatus.IN_PROGRESS]
+    if (!ADVOCATABLE.includes(report.status as ReportStatus)) {
       throw new BadRequestException('Report cannot be advocated at this stage')
     }
 
-    await this.prisma.$transaction([
-      this.prisma.report.update({
+    const alreadyAdvocated = report.timeline.some(
+      (e) =>
+        (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
+        (e.metadata as Record<string, unknown>)?.politicianId === politicianId,
+    )
+    if (alreadyAdvocated) throw new ConflictException('Você já avocou este relato')
+
+    const isFirstAdvocacy = !report.timeline.some(
+      (e) => (e.metadata as Record<string, unknown>)?.action === 'advocated',
+    )
+
+    if (isFirstAdvocacy && report.status !== ReportStatus.IN_PROGRESS) {
+      await this.prisma.report.update({
         where: { id: reportId },
         data: { status: ReportStatus.IN_PROGRESS },
-      }),
-      this.prisma.timelineEvent.create({
-        data: {
-          reportId,
-          type: EventType.RESPONDED,
-          content: 'Político avocou este relato e assumiu a responsabilidade.',
-          authorId: userId,
-          metadata: { action: 'advocated', politicianId },
-        },
-      }),
-    ])
+      })
+    }
+
+    await this.prisma.timelineEvent.create({
+      data: {
+        reportId,
+        type: EventType.RESPONDED,
+        content: 'Político avocou este relato e assumiu o compromisso de acompanhá-lo.',
+        authorId: userId,
+        metadata: { action: 'advocated', politicianId },
+      },
+    })
 
     const stats = await this.repo.mandatometerStats(politicianId)
     await this.repo.updateMandatometer(politicianId, stats)

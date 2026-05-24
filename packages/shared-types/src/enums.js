@@ -26,6 +26,7 @@ var EventType;
     EventType["CREATED"] = "CREATED";
     EventType["RESPONDED"] = "RESPONDED";
     EventType["STATUS_CHANGED"] = "STATUS_CHANGED";
+    EventType["UPDATE"] = "UPDATE";
     EventType["DISPUTED"] = "DISPUTED";
     EventType["RESOLVED"] = "RESOLVED";
     EventType["ARCHIVED"] = "ARCHIVED";

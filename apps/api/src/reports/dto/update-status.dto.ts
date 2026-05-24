@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { ApiPropertyOptional } from '@nestjs/swagger'
 import { IsArray, IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength, ArrayMaxSize } from 'class-validator'
 
 export enum UpdatableStatus {
@@ -9,11 +9,12 @@ export enum UpdatableStatus {
 }
 
 export class UpdateStatusDto {
-  @ApiProperty({ enum: UpdatableStatus })
+  @ApiPropertyOptional({ enum: UpdatableStatus, description: 'Omitir para postar atualização sem trocar o status' })
+  @IsOptional()
   @IsEnum(UpdatableStatus)
-  status: UpdatableStatus
+  status?: UpdatableStatus
 
-  @ApiProperty({ example: 'Equipe despachada para reparo na próxima semana' })
+  @ApiPropertyOptional({ example: 'Equipe despachada para reparo na próxima semana' })
   @IsString()
   @MinLength(10)
   @MaxLength(500)

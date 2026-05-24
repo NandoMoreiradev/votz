@@ -117,12 +117,18 @@ function ActorAvatar({
 
 const Wrap = styled.div<{ $compact: boolean }>`
   display: flex;
-  align-items: center;
-  gap: ${({ $compact }) => ($compact ? '8px' : '12px')};
+  flex-direction: column;
+  gap: ${({ $compact }) => ($compact ? '6px' : '10px')};
   background: #EFF6FF;
   border: 1px solid #BFDBFE;
   border-radius: ${({ theme }) => theme.radii.md};
   padding: ${({ $compact }) => ($compact ? '8px 12px' : '12px 16px')};
+`
+
+const AdvocateRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
 `
 
 const BannerText = styled.p<{ $compact: boolean }>`
@@ -133,30 +139,99 @@ const BannerText = styled.p<{ $compact: boolean }>`
   b { font-weight: 600; }
 `
 
+const MultiHeader = styled.p`
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1E40AF;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`
+
+const MultiList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
 // ── Public component ──────────────────────────────────────────────────────────
 
-interface AdvocacyBannerProps {
+export interface AdvocateEntry {
   author: AdvocacyAuthor | null
-  /** RecipientType from the report — determines fallback icon */
+  isEntity: boolean
+}
+
+interface AdvocacyBannerProps {
+  /** Modo múltiplo (página de detalhe) */
+  advocates?: AdvocateEntry[]
+  /** Modo legado single (feed cards) */
+  author?: AdvocacyAuthor | null
   recipientType?: string | null
-  /** Compact mode for feed cards; full mode for report detail */
   compact?: boolean
 }
 
-export function AdvocacyBanner({ author, recipientType, compact = false }: AdvocacyBannerProps) {
+export function AdvocacyBanner({ advocates, author, recipientType, compact = false }: AdvocacyBannerProps) {
+  const size = compact ? 30 : 40
+
+  // Modo múltiplo
+  if (advocates && advocates.length > 0) {
+    if (advocates.length === 1) {
+      const { author: a, isEntity } = advocates[0]
+      const displayName = a?.name ?? (isEntity ? 'Entidade' : 'Político')
+      return (
+        <Wrap $compact={compact}>
+          <AdvocateRow>
+            <ActorAvatar author={a} isEntity={isEntity} size={size} />
+            <BannerText $compact={compact}>
+              <b>{displayName}</b>{' '}
+              {compact
+                ? 'avocou este relato'
+                : 'avocou este relato e assumiu o compromisso de acompanhá-lo.'}
+            </BannerText>
+          </AdvocateRow>
+        </Wrap>
+      )
+    }
+
+    return (
+      <Wrap $compact={compact}>
+        <MultiHeader>
+          <ShieldCheckIcon size={14} />
+          {advocates.length} atores avocaram este relato
+        </MultiHeader>
+        <MultiList>
+          {advocates.map((adv, i) => {
+            const displayName = adv.author?.name ?? (adv.isEntity ? 'Entidade' : 'Político')
+            return (
+              <AdvocateRow key={i}>
+                <ActorAvatar author={adv.author} isEntity={adv.isEntity} size={size} />
+                <BannerText $compact={compact}>
+                  <b>{displayName}</b>
+                </BannerText>
+              </AdvocateRow>
+            )
+          })}
+        </MultiList>
+      </Wrap>
+    )
+  }
+
+  // Modo legado (single author)
   const isEntity = recipientType === 'ENTITY'
   const displayName = author?.name ?? (isEntity ? 'Entidade' : 'Político')
-  const size = compact ? 30 : 40
 
   return (
     <Wrap $compact={compact}>
-      <ActorAvatar author={author} isEntity={isEntity} size={size} />
-      <BannerText $compact={compact}>
-        <b>{displayName}</b>{' '}
-        {compact
-          ? 'avocou este relato'
-          : 'avocou este relato e assumiu a responsabilidade de resolvê-lo.'}
-      </BannerText>
+      <AdvocateRow>
+        <ActorAvatar author={author ?? null} isEntity={isEntity} size={size} />
+        <BannerText $compact={compact}>
+          <b>{displayName}</b>{' '}
+          {compact
+            ? 'avocou este relato'
+            : 'avocou este relato e assumiu o compromisso de acompanhá-lo.'}
+        </BannerText>
+      </AdvocateRow>
     </Wrap>
   )
 }

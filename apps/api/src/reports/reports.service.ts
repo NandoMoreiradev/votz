@@ -85,67 +85,90 @@ export class ReportsService {
     if (!report) throw new NotFoundException('Report not found')
 
     const userType = user.type as UserType
+    const isModAdmin = userType === UserType.MODERATOR || userType === UserType.ADMIN
+
+    let isRecipient = false
+    let actorId: string | null = null
 
     if (userType === UserType.ENTITY) {
       const entity = await this.repository.findEntityByUserId(user.id)
-      if (
-        !entity ||
-        report.recipientType !== RecipientType.ENTITY ||
-        report.recipientId !== entity.id
-      ) {
-        throw new ForbiddenException('Sua entidade não é a destinatária deste relato')
+      if (entity) {
+        actorId = entity.id
+        isRecipient = report.recipientType === RecipientType.ENTITY && report.recipientId === entity.id
       }
     } else if (userType === UserType.POLITICIAN) {
       const politician = await this.repository.findPoliticianByUserId(user.id)
-      if (
-        !politician ||
-        report.recipientType !== RecipientType.POLITICIAN ||
-        report.recipientId !== politician.id
-      ) {
-        throw new ForbiddenException('Você não é o destinatário deste relato')
+      if (politician) {
+        actorId = politician.id
+        isRecipient = report.recipientType === RecipientType.POLITICIAN && report.recipientId === politician.id
       }
-    } else if (
-      userType !== UserType.MODERATOR &&
-      userType !== UserType.ADMIN
-    ) {
+    } else if (!isModAdmin) {
       throw new ForbiddenException('Não autorizado')
     }
 
-    const updated = await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
+    const hasAdvocated = actorId
+      ? report.timeline?.some(
+          (e) =>
+            e.type === EventType.RESPONDED &&
+            (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
+            ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
+              (e.metadata as Record<string, unknown>)?.entityId === actorId),
+        ) ?? false
+      : false
 
-    await this.timeline.record({
-      reportId,
-      type: EventType.STATUS_CHANGED,
-      content: dto.content,
-      authorId: user.id,
-      metadata: { previousStatus: report.status, newStatus: dto.status, media: dto.media ?? [] },
-    })
-
-    // Notify report author
-    if (report.author?.id && report.author.id !== user.id) {
-      this.notifications.notify({
-        userId: report.author.id,
-        type: 'STATUS_CHANGED',
-        reportId,
-        metadata: { previousStatus: report.status, newStatus: dto.status },
-      }).catch(() => null)
+    if (!isRecipient && !hasAdvocated && !isModAdmin) {
+      throw new ForbiddenException('Você não é destinatário nem avocou este relato')
     }
 
-    // Notify followers
-    this.repository.getFollowerUserIds(reportId).then(userIds => {
-      for (const userId of userIds) {
-        if (userId !== user.id && userId !== report.author?.id) {
-          this.notifications.notify({
-            userId,
-            type: 'STATUS_CHANGED',
-            reportId,
-            metadata: { previousStatus: report.status, newStatus: dto.status },
-          }).catch(() => null)
-        }
-      }
-    }).catch(() => null)
+    // Apenas o destinatário (ou mod/admin) pode trocar o status
+    if (dto.status !== undefined && !isRecipient && !isModAdmin) {
+      throw new ForbiddenException('Apenas o destinatário pode alterar o status do relato')
+    }
 
-    return updated
+    const sanitizedContent = DOMPurify.sanitize(dto.content)
+
+    if (dto.status !== undefined) {
+      await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
+      await this.timeline.record({
+        reportId,
+        type: EventType.STATUS_CHANGED,
+        content: sanitizedContent,
+        authorId: user.id,
+        metadata: { previousStatus: report.status, newStatus: dto.status, media: dto.media ?? [] },
+      })
+      // Notificar sobre mudança de status
+      if (report.author?.id && report.author.id !== user.id) {
+        this.notifications.notify({
+          userId: report.author.id,
+          type: 'STATUS_CHANGED',
+          reportId,
+          metadata: { previousStatus: report.status, newStatus: dto.status },
+        }).catch(() => null)
+      }
+      this.repository.getFollowerUserIds(reportId).then(userIds => {
+        for (const userId of userIds) {
+          if (userId !== user.id && userId !== report.author?.id) {
+            this.notifications.notify({
+              userId,
+              type: 'STATUS_CHANGED',
+              reportId,
+              metadata: { previousStatus: report.status, newStatus: dto.status },
+            }).catch(() => null)
+          }
+        }
+      }).catch(() => null)
+      return await this.repository.findById(reportId)
+    }
+
+    // Atualização informacional sem troca de status
+    await this.timeline.record({
+      reportId,
+      type: EventType.UPDATE,
+      content: sanitizedContent,
+      authorId: user.id,
+      metadata: { media: dto.media ?? [] },
+    })
+    return { id: reportId, status: report.status }
   }
 
   // ── Follow ───────────────────────────────────────────────────────────────────

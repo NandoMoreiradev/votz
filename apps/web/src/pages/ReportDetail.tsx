@@ -9,7 +9,7 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { useMediaViewer } from '../components/ui/MediaViewer'
-import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
+import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
@@ -24,11 +24,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
   padding: 24px 32px 64px;
 
-  @media (max-width: 640px) { padding: 16px 16px 48px; }
+  @media (max-width: 820px) { padding: 16px 16px 48px; }
 `
 
 const BackLink = styled(Link)`
@@ -45,13 +45,12 @@ const BackLink = styled(Link)`
 
 const Layout = styled.div`
   display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 24px;
+  grid-template-columns: 1fr 340px;
+  gap: 32px;
   align-items: start;
 
-  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
-    grid-template-columns: 1fr;
-  }
+  @media (max-width: 1180px) { grid-template-columns: 1fr 300px; gap: 24px; }
+  @media (max-width: 820px)  { grid-template-columns: 1fr; }
 `
 
 const Main = styled.div`
@@ -580,6 +579,7 @@ const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
   [EventType.STATUS_CHANGED]:'#F59E0B',
+  [EventType.UPDATE]:        '#8B5CF6',
   [EventType.DISPUTED]:      '#F97316',
   [EventType.RESOLVED]:      '#2DC653',
   [EventType.ARCHIVED]:      '#6B7280',
@@ -667,8 +667,10 @@ export function ReportDetail() {
   const updateStatusMut = useUpdateReportStatus(id!)
 
   const advocateMutation = useMutation({
-    mutationFn: ({ politicianId, reportId }: { politicianId: string; reportId: string }) =>
-      api.post(`/politicians/${politicianId}/advocate/${reportId}`).then((r) => r.data),
+    mutationFn: ({ actorType, actorId, reportId }: { actorType: 'POLITICIAN' | 'ENTITY'; actorId: string; reportId: string }) => {
+      const base = actorType === 'POLITICIAN' ? 'politicians' : 'entities'
+      return api.post(`/${base}/${actorId}/advocate/${reportId}`).then((r) => r.data)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['report', id] }),
   })
 
@@ -738,22 +740,22 @@ export function ReportDetail() {
   }
 
   function handleStatusSubmit() {
-    if (!updateStatus || updateContent.trim().length < 10) return
+    if (updateContent.trim().length < 10) return
     if (mediaItems.some((m) => m.uploading)) return
     const uploadedUrls = mediaItems.filter((m) => m.url).map((m) => m.url!)
-    updateStatusMut.mutate(
-      { status: updateStatus, content: updateContent.trim(), media: uploadedUrls },
-      {
-        onSuccess: () => {
-          setMediaItems((prev) => {
-            prev.forEach((m) => URL.revokeObjectURL(m.previewUrl))
-            return []
-          })
-          setUpdateStatus('')
-          setUpdateContent('')
-        },
+    const payload = updateStatus
+      ? { status: updateStatus, content: updateContent.trim(), media: uploadedUrls }
+      : { content: updateContent.trim(), media: uploadedUrls }
+    updateStatusMut.mutate(payload, {
+      onSuccess: () => {
+        setMediaItems((prev) => {
+          prev.forEach((m) => URL.revokeObjectURL(m.previewUrl))
+          return []
+        })
+        setUpdateStatus('')
+        setUpdateContent('')
       },
-    )
+    })
   }
 
   return (
@@ -780,16 +782,18 @@ export function ReportDetail() {
               </Description>
 
               {(() => {
-                const avocEvent = report.timeline?.find(
-                  (e) => e.type === EventType.RESPONDED && (e.metadata as Record<string, unknown>)?.action === 'advocated',
-                )
-                if (!avocEvent) return null
-                return (
-                  <AdvocacyBanner
-                    author={avocEvent.author}
-                    recipientType={report.recipientType}
-                  />
-                )
+                const advocates: AdvocateEntry[] = (report.timeline ?? [])
+                  .filter(
+                    (e) =>
+                      e.type === EventType.RESPONDED &&
+                      (e.metadata as Record<string, unknown>)?.action === 'advocated',
+                  )
+                  .map((e) => ({
+                    author: e.author,
+                    isEntity: !!(e.metadata as Record<string, unknown>)?.entityId,
+                  }))
+                if (advocates.length === 0) return null
+                return <AdvocacyBanner advocates={advocates} />
               })()}
 
               {report.media && report.media.length > 0 && (
@@ -877,24 +881,33 @@ export function ReportDetail() {
             </SideCard>
 
             {(() => {
-              const alreadyAdvocated = report.timeline?.some(
-                (e) => e.type === EventType.RESPONDED && (e.metadata as Record<string, unknown>)?.action === 'advocated',
-              )
-              const canAdvocate =
-                user?.type === 'POLITICIAN' &&
-                report.recipientType === RecipientType.POLITICIAN &&
-                (report.status === ReportStatus.OPEN || report.status === ReportStatus.UNDER_REVIEW) &&
-                !alreadyAdvocated
+              const actorType = activeContext?.type as 'POLITICIAN' | 'ENTITY' | undefined
+              if (actorType !== 'POLITICIAN' && actorType !== 'ENTITY') return null
 
-              if (!canAdvocate) return null
+              const TERMINAL = new Set(['RESOLVED', 'DISPUTED', 'ARCHIVED'])
+              if (TERMINAL.has(report.status)) return null
+
+              const thisActorHasAdvocated = actorId
+                ? report.timeline?.some(
+                    (e) =>
+                      e.type === EventType.RESPONDED &&
+                      (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
+                      ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
+                        (e.metadata as Record<string, unknown>)?.entityId === actorId),
+                  )
+                : false
+
+              if (thisActorHasAdvocated) return null
+
+              const sectionTitle = actorType === 'POLITICIAN' ? 'Ação política' : 'Ação da entidade'
 
               return (
                 <SideCard>
-                  <SideTitle>Ação política</SideTitle>
+                  <SideTitle>{sectionTitle}</SideTitle>
                   <AvocBtn
                     disabled={advocateMutation.isPending}
                     onClick={() =>
-                      advocateMutation.mutate({ politicianId: report.recipientId!, reportId: report.id })
+                      advocateMutation.mutate({ actorType, actorId: actorId!, reportId: report.id })
                     }
                   >
                     {advocateMutation.isPending
@@ -903,11 +916,11 @@ export function ReportDetail() {
                     }
                   </AvocBtn>
                   <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: 8, lineHeight: 1.5 }}>
-                    Ao avocar, você assume publicamente a responsabilidade de resolver este problema.
+                    Ao avocar, você assume publicamente o compromisso de acompanhar e pressionar pela resolução deste problema.
                   </p>
                   {advocateMutation.isError && (
                     <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
-                      Não foi possível avocar. Verifique se este relato é direcionado ao seu perfil.
+                      Não foi possível avocar. Tente novamente.
                     </p>
                   )}
                 </SideCard>
@@ -988,12 +1001,23 @@ export function ReportDetail() {
             })()}
 
             {(() => {
+              if (TERMINAL_STATUSES.has(report.status)) return null
+
               const isRecipient = !!actorId && report.recipientId === actorId
-              if (!isRecipient || TERMINAL_STATUSES.has(report.status)) return null
+              const hasAdvocatedUpdate = actorId
+                ? report.timeline?.some(
+                    (e) =>
+                      e.type === EventType.RESPONDED &&
+                      (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
+                      ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
+                        (e.metadata as Record<string, unknown>)?.entityId === actorId),
+                  )
+                : false
+
+              if (!isRecipient && !hasAdvocatedUpdate) return null
 
               const uploadingCount = mediaItems.filter((m) => m.uploading).length
               const canSubmit =
-                !!updateStatus &&
                 updateContent.trim().length >= 10 &&
                 uploadingCount === 0 &&
                 !updateStatusMut.isPending
@@ -1002,17 +1026,25 @@ export function ReportDetail() {
                 <SideCard>
                   <SideTitle>Dar andamento</SideTitle>
 
-                  <UpdateSelect
-                    value={updateStatus}
-                    onChange={(e) => setUpdateStatus(e.target.value)}
-                  >
-                    <option value="">Selecione o novo status…</option>
-                    {Object.entries(UPDATABLE_STATUSES)
-                      .filter(([key]) => key !== report.status)
-                      .map(([key, label]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                  </UpdateSelect>
+                  {isRecipient && (
+                    <UpdateSelect
+                      value={updateStatus}
+                      onChange={(e) => setUpdateStatus(e.target.value)}
+                    >
+                      <option value="">Manter status atual</option>
+                      {Object.entries(UPDATABLE_STATUSES)
+                        .filter(([key]) => key !== report.status)
+                        .map(([key, label]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                    </UpdateSelect>
+                  )}
+
+                  {!isRecipient && (
+                    <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginBottom: 10, lineHeight: 1.5 }}>
+                      Como avocador, você pode postar atualizações informacionais. A troca de status é exclusiva do destinatário.
+                    </p>
+                  )}
 
                   <UpdateTextarea
                     placeholder="Descreva o andamento (mín. 10 caracteres)"
@@ -1025,18 +1057,16 @@ export function ReportDetail() {
                   </CharCount>
 
                   {mediaItems.length < 4 && (
-                    <>
-                      <MediaUploadLabel>
-                        📎 Anexar fotos ({mediaItems.length}/4)
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={handleMediaFiles}
-                        />
-                      </MediaUploadLabel>
-                    </>
+                    <MediaUploadLabel>
+                      📎 Anexar fotos ({mediaItems.length}/4)
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={handleMediaFiles}
+                      />
+                    </MediaUploadLabel>
                   )}
 
                   {mediaItems.length > 0 && (
@@ -1063,7 +1093,7 @@ export function ReportDetail() {
 
                   {updateStatusMut.isError && (
                     <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 8 }}>
-                      Não foi possível atualizar. Verifique se você é o destinatário deste relato.
+                      Não foi possível publicar a atualização. Tente novamente.
                     </p>
                   )}
 

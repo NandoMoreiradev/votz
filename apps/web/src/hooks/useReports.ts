@@ -4,7 +4,7 @@ import { Category, ReportStatus } from '@votz/shared-types'
 import { ReportsResponse } from '../types/api'
 
 export interface UpdateStatusPayload {
-  status: string
+  status?: string
   content: string
   media?: string[]
 }
