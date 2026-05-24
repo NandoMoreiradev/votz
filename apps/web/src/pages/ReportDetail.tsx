@@ -205,15 +205,15 @@ const TimelineList = styled.div`
 
 const TimelineItem = styled.div`
   display: flex;
-  gap: 12px;
-  padding-bottom: 20px;
+  gap: 14px;
+  padding-bottom: 28px;
   position: relative;
 
   &:not(:last-child)::before {
     content: '';
     position: absolute;
-    left: 7px;
-    top: 16px;
+    left: 9px;
+    top: 22px;
     bottom: 0;
     width: 2px;
     background: ${({ theme }) => theme.colors.border};
@@ -221,14 +221,14 @@ const TimelineItem = styled.div`
 `
 
 const TimelineDot = styled.div<{ $color?: string }>`
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: ${({ $color, theme }) => $color || theme.colors.border};
-  border: 2px solid ${({ theme }) => theme.colors.white};
+  border: 2.5px solid ${({ theme }) => theme.colors.white};
   box-shadow: 0 0 0 2px ${({ $color, theme }) => $color || theme.colors.border};
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
 `
 
 const TimelineContent = styled.div`
@@ -236,30 +236,54 @@ const TimelineContent = styled.div`
   min-width: 0;
 `
 
-const TimelineText = styled.p`
-  font-size: 0.875rem;
-  color: ${({ theme }) => theme.colors.text};
-  line-height: 1.5;
-`
-
-const TimelineDate = styled.span`
-  font-size: 0.75rem;
-  color: ${({ theme }) => theme.colors.muted};
-  font-family: ${({ theme }) => theme.fonts.mono};
-`
-
-const TimelineMeta = styled.div`
+const TimelineHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 4px;
+  margin-bottom: 6px;
+`
+
+const TimelineTypeBadge = styled.span<{ $color?: string }>`
+  font-size: 0.6875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: ${({ $color }) => $color || '#9CA3AF'};
+  background: ${({ $color }) => ($color ? `${$color}1a` : '#9CA3AF1a')};
+  border: 1px solid ${({ $color }) => ($color ? `${$color}40` : '#9CA3AF40')};
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.5;
+  white-space: nowrap;
+`
+
+const TimelineDate = styled.span`
+  font-size: 0.6875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  white-space: nowrap;
+  flex-shrink: 0;
+`
+
+const TimelineText = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  line-height: 1.55;
+  margin-bottom: 10px;
+`
+
+const TimelineAuthorRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
 `
 
 const TimelineActor = styled(Link)`
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   text-decoration: none;
   min-width: 0;
 
@@ -267,8 +291,8 @@ const TimelineActor = styled(Link)`
 `
 
 const TimelineActorAvatar = styled.div<{ $src: string | null }>`
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.border)};
   flex-shrink: 0;
@@ -585,6 +609,16 @@ const EVENT_COLORS: Record<EventType, string> = {
   [EventType.ARCHIVED]:      '#6B7280',
 }
 
+const EVENT_LABELS: Record<EventType, string> = {
+  [EventType.CREATED]:       'Registrado',
+  [EventType.RESPONDED]:     'Respondido',
+  [EventType.STATUS_CHANGED]:'Status alterado',
+  [EventType.UPDATE]:        'Atualização',
+  [EventType.DISPUTED]:      'Contestado',
+  [EventType.RESOLVED]:      'Resolvido',
+  [EventType.ARCHIVED]:      'Arquivado',
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', {
     day: '2-digit',
@@ -607,6 +641,12 @@ function TimelineRow({
     <TimelineItem>
       <TimelineDot $color={EVENT_COLORS[event.type]} />
       <TimelineContent>
+        <TimelineHeader>
+          <TimelineTypeBadge $color={EVENT_COLORS[event.type]}>
+            {EVENT_LABELS[event.type]}
+          </TimelineTypeBadge>
+          <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
+        </TimelineHeader>
         <TimelineText>{event.content}</TimelineText>
         {media.length > 0 && (
           <TimelineMediaGrid>
@@ -623,17 +663,16 @@ function TimelineRow({
             ))}
           </TimelineMediaGrid>
         )}
-        <TimelineMeta>
-          <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
-          {event.author && (
+        {event.author && (
+          <TimelineAuthorRow>
             <TimelineActor to={`/perfil/${event.author.id}`}>
               <TimelineActorAvatar $src={event.author.avatarUrl}>
                 {!event.author.avatarUrl && event.author.name.charAt(0).toUpperCase()}
               </TimelineActorAvatar>
               <TimelineActorName>{event.author.name}</TimelineActorName>
             </TimelineActor>
-          )}
-        </TimelineMeta>
+          </TimelineAuthorRow>
+        )}
       </TimelineContent>
     </TimelineItem>
   )
