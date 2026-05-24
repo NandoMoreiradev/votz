@@ -12,7 +12,7 @@ export class EmbeddingService {
   }
 
   async embed(text: string): Promise<number[]> {
-    const model = this.client.getGenerativeModel({ model: 'text-embedding-004' })
+    const model = this.client.getGenerativeModel({ model: 'embedding-001' })
     const result = await model.embedContent(text)
     return result.embedding.values
   }

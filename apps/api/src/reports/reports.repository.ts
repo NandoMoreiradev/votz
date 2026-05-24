@@ -268,7 +268,7 @@ export class ReportsRepository {
     return this.prisma.$queryRaw<SimilarReportRow[]>`
       SELECT
         id, title, description, category::text, status::text, city, state,
-        created_at AS "createdAt", pressure_score AS "pressureScore",
+        "createdAt", "pressureScore",
         GREATEST(
           similarity(title, ${title}),
           similarity(description, ${description})
@@ -287,7 +287,7 @@ export class ReportsRepository {
     return this.prisma.$queryRaw<SimilarReportRow[]>`
       SELECT
         id, title, description, category::text, status::text, city, state,
-        created_at AS "createdAt", pressure_score AS "pressureScore",
+        "createdAt", "pressureScore",
         ts_rank(search_vector,
           to_tsquery('portuguese', regexp_replace(
             plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'
