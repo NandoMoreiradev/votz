@@ -794,29 +794,31 @@ export function CreateReport() {
           <PageDesc>Registre um problema público. Seja direto e específico.</PageDesc>
 
           <Form onSubmit={handleSubmit(onSubmit)}>
-            <Field>
-              <Label>Título do problema</Label>
-              <Hint>Descreva em uma frase — mín. 10, máx. 120 caracteres.</Hint>
-              <Input
-                type="text"
-                placeholder="Ex: Buraco na Rua XV de Novembro há 2 meses"
-                $error={!!errors.title}
-                {...register('title', {
-                  required: 'Obrigatório',
-                  minLength: { value: 10, message: 'Mínimo 10 caracteres' },
-                  maxLength: { value: 120, message: 'Máximo 120 caracteres' },
-                })}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                {errors.title
-                  ? <ErrorMsg>{errors.title.message}</ErrorMsg>
-                  : <span />
-                }
-                <CharCount $warn={title.length > 110}>{title.length}/120</CharCount>
-              </div>
-            </Field>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <Field>
+                <Label>Título do problema</Label>
+                <Hint>Descreva em uma frase — mín. 10, máx. 120 caracteres.</Hint>
+                <Input
+                  type="text"
+                  placeholder="Ex: Buraco na Rua XV de Novembro há 2 meses"
+                  $error={!!errors.title}
+                  {...register('title', {
+                    required: 'Obrigatório',
+                    minLength: { value: 10, message: 'Mínimo 10 caracteres' },
+                    maxLength: { value: 120, message: 'Máximo 120 caracteres' },
+                  })}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {errors.title
+                    ? <ErrorMsg>{errors.title.message}</ErrorMsg>
+                    : <span />
+                  }
+                  <CharCount $warn={title.length > 110}>{title.length}/120</CharCount>
+                </div>
+              </Field>
 
-            <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} isError={isSimilarError} />
+              <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} isError={isSimilarError} />
+            </div>
 
             <Field>
               <Label>Categoria</Label>
