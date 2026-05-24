@@ -25,11 +25,15 @@ export function useSimilarReports(title: string, description?: string) {
     queryFn: () =>
       api
         .get<SimilarReport[]>('/reports/similar', {
-          params: { title: debouncedTitle, description: debouncedDesc, limit: 5 },
+          params: {
+            title: debouncedTitle,
+            ...(debouncedDesc ? { description: debouncedDesc } : {}),
+            limit: 5,
+          },
         })
         .then((r) => r.data),
     enabled,
     staleTime: 30_000,
-    placeholderData: [],
+    retry: 0,
   })
 }

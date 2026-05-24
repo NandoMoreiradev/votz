@@ -712,7 +712,7 @@ export function CreateReport() {
   const description = watch('description') ?? ''
   const title = watch('title') ?? ''
 
-  const { data: similarReports = [], isFetching: isFetchingSimilar } = useSimilarReports(title, description)
+  const { data: similarReports = [], isFetching: isFetchingSimilar, isError: isSimilarError } = useSimilarReports(title, description)
 
   if (!user) {
     return (
@@ -816,7 +816,7 @@ export function CreateReport() {
               </div>
             </Field>
 
-            <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} />
+            <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} isError={isSimilarError} />
 
             <Field>
               <Label>Categoria</Label>

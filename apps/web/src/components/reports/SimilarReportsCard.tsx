@@ -114,10 +114,17 @@ const SOURCE_LABELS: Record<string, string> = {
 interface Props {
   reports: SimilarReport[]
   isLoading?: boolean
+  isError?: boolean
 }
 
-export function SimilarReportsCard({ reports, isLoading }: Props) {
-  if (isLoading || reports.length === 0) return null
+export function SimilarReportsCard({ reports, isLoading, isError }: Props) {
+  if (isLoading) return null
+  if (isError) return (
+    <div style={{ fontSize: '0.8125rem', color: '#E63946', padding: '8px 0' }}>
+      Não foi possível verificar relatos similares no momento.
+    </div>
+  )
+  if (reports.length === 0) return null
 
   return (
     <Wrapper>
