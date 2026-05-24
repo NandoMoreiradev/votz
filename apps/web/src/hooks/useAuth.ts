@@ -27,7 +27,7 @@ export interface RegisterPayload {
   email: string
   password: string
   phone: string
-  zipCode: string
+  zipCode?: string
   streetNumber: string
   complement?: string
   street?: string
