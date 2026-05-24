@@ -9,9 +9,11 @@ import { Button } from '../components/ui/Button'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { CepInput, ManualAddressFields, type CepAddressResult } from '../components/ui/CepInput'
 import { useCreateReport } from '../hooks/useAuth'
+import { useSimilarReports } from '../hooks/useSimilarReports'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
 import { EntitiesResponse, EntityListItem, PoliticiansResponse, Politician } from '../types/api'
+import { SimilarReportsCard } from '../components/reports/SimilarReportsCard'
 
 // ── Media upload ───────────────────────────────────────────────────────────
 
@@ -710,6 +712,8 @@ export function CreateReport() {
   const description = watch('description') ?? ''
   const title = watch('title') ?? ''
 
+  const { data: similarReports = [], isFetching: isFetchingSimilar } = useSimilarReports(title, description)
+
   if (!user) {
     return (
       <Page>
@@ -811,6 +815,8 @@ export function CreateReport() {
                 <CharCount $warn={title.length > 110}>{title.length}/120</CharCount>
               </div>
             </Field>
+
+            <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} />
 
             <Field>
               <Label>Categoria</Label>

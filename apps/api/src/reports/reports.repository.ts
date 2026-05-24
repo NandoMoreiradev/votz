@@ -1,8 +1,22 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { Category, ReportStatus, VoteType } from '@votz/shared-types'
 import { FollowerActorType } from '@prisma/client'
+
+export interface SimilarReportRow {
+  id: string
+  title: string
+  description: string
+  category: string
+  status: string
+  city: string | null
+  state: string | null
+  createdAt: Date
+  pressureScore: number
+  score: number
+}
 
 const ACTOR_SELECT = {
   id: true,
@@ -246,6 +260,68 @@ export class ReportsRepository {
       politicians,
       entities,
     }
+  }
+
+  // ── Similarity search ────────────────────────────────────────────────────────
+
+  async findByTrigram(title: string, description: string, limit: number): Promise<SimilarReportRow[]> {
+    return this.prisma.$queryRaw<SimilarReportRow[]>`
+      SELECT
+        id, title, description, category::text, status::text, city, state,
+        created_at AS "createdAt", pressure_score AS "pressureScore",
+        GREATEST(
+          similarity(title, ${title}),
+          similarity(description, ${description})
+        ) AS score
+      FROM reports
+      WHERE
+        similarity(title, ${title}) > 0.2
+        OR similarity(description, ${description}) > 0.15
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `
+  }
+
+  async findByFullText(query: string, limit: number): Promise<SimilarReportRow[]> {
+    return this.prisma.$queryRaw<SimilarReportRow[]>`
+      SELECT
+        id, title, description, category::text, status::text, city, state,
+        created_at AS "createdAt", pressure_score AS "pressureScore",
+        ts_rank(search_vector, plainto_tsquery('portuguese', ${query})) AS score
+      FROM reports
+      WHERE search_vector @@ plainto_tsquery('portuguese', ${query})
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `
+  }
+
+  async findByEmbedding(embedding: number[], limit: number): Promise<SimilarReportRow[]> {
+    const vectorLiteral = `[${embedding.map(n => n.toFixed(8)).join(',')}]`
+    return this.prisma.$queryRaw<SimilarReportRow[]>(
+      Prisma.sql`
+        SELECT
+          id, title, description, category::text, status::text, city, state,
+          created_at AS "createdAt", pressure_score AS "pressureScore",
+          1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) AS score
+        FROM reports
+        WHERE
+          embedding IS NOT NULL
+          AND 1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) > 0.6
+        ORDER BY embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}
+        LIMIT ${limit}
+      `
+    )
+  }
+
+  async updateEmbedding(reportId: string, embedding: number[]): Promise<void> {
+    const vectorLiteral = `[${embedding.map(n => n.toFixed(8)).join(',')}]`
+    await this.prisma.$executeRaw(
+      Prisma.sql`
+        UPDATE reports
+        SET embedding = ${Prisma.raw(`'${vectorLiteral}'::vector`)}
+        WHERE id = ${reportId}
+      `
+    )
   }
 
   async getFollowerUserIds(reportId: string): Promise<string[]> {

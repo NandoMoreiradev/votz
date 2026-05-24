@@ -6,6 +6,7 @@ import { UpdateStatusDto } from './dto/update-status.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { ListReportsQueryDto } from './dto/list-reports-query.dto'
+import { SimilarReportsQueryDto } from './dto/similar-reports-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
@@ -23,6 +24,12 @@ export class ReportsController {
     @CurrentUser() user: { id: string; type: string; emailVerified: boolean },
   ) {
     return this.reportsService.create(dto, user)
+  }
+
+  @Get('similar')
+  @ApiOperation({ summary: 'Buscar relatos similares por trigram, full-text e embedding semântico' })
+  findSimilar(@Query() query: SimilarReportsQueryDto) {
+    return this.reportsService.findSimilar(query.title, query.description, query.limit ?? 5)
   }
 
   @Get()

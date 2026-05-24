@@ -263,6 +263,20 @@ export interface CompaniesResponse {
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
 
+export interface SimilarReport {
+  id: string
+  title: string
+  description: string
+  category: string
+  status: string
+  city: string | null
+  state: string | null
+  createdAt: string
+  pressureScore: number
+  score: number
+  sources: string[]
+}
+
 export type LoginResponse =
   | { requiresMfa: false; requiresMfaSetup: false; user: AuthUser; accessToken: string }
   | { requiresMfa: true; requiresMfaSetup: false; mfaToken: string }

@@ -1,15 +1,19 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
+import { InjectQueue } from '@nestjs/bullmq'
+import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
-import { ReportsRepository } from './reports.repository'
+import { ReportsRepository, SimilarReportRow } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
+import { EmbeddingService } from '../embedding/embedding.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
 import { FollowerActorType } from '@prisma/client'
+import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
 
 @Injectable()
 export class ReportsService {
@@ -18,6 +22,8 @@ export class ReportsService {
     private readonly timeline: TimelineService,
     private readonly notifications: NotificationsService,
     private readonly alerts: AlertsService,
+    private readonly embedding: EmbeddingService,
+    @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
@@ -43,7 +49,47 @@ export class ReportsService {
       this.alerts.enqueueCheck(report.category, report.city, report.state ?? '').catch(() => null)
     }
 
+    // Fire-and-forget: gera embedding semântico para busca por similaridade
+    this.reportsQueue.add(
+      'generate-embedding',
+      { reportId: report.id, text: `${cleanTitle} ${sanitizedDescription}` } satisfies GenerateEmbeddingJob,
+      { removeOnComplete: 10, removeOnFail: 5, attempts: 3, backoff: { type: 'exponential', delay: 2_000 } },
+    ).catch(() => null)
+
     return report
+  }
+
+  async findSimilar(title: string, description?: string, limit = 5) {
+    const text = [title, description].filter(Boolean).join(' ')
+
+    const [trgmResult, ftsResult, semanticResult] = await Promise.allSettled([
+      this.repository.findByTrigram(title, description ?? '', limit),
+      this.repository.findByFullText(text, limit),
+      this.embedding.embed(text).then(vec => this.repository.findByEmbedding(vec, limit)),
+    ])
+
+    const scores = new Map<string, { row: SimilarReportRow; combined: number; sources: string[] }>()
+
+    const merge = (results: SimilarReportRow[], source: string, weight: number) => {
+      for (const row of results) {
+        const existing = scores.get(row.id)
+        if (existing) {
+          existing.combined += row.score * weight
+          existing.sources.push(source)
+        } else {
+          scores.set(row.id, { row, combined: row.score * weight, sources: [source] })
+        }
+      }
+    }
+
+    if (trgmResult.status === 'fulfilled') merge(trgmResult.value, 'trigram', 1)
+    if (ftsResult.status === 'fulfilled') merge(ftsResult.value, 'fulltext', 1)
+    if (semanticResult.status === 'fulfilled') merge(semanticResult.value, 'semantic', 1.5)
+
+    return Array.from(scores.values())
+      .sort((a, b) => b.combined - a.combined)
+      .slice(0, limit)
+      .map(({ row, combined, sources }) => ({ ...row, score: combined, sources }))
   }
 
   async findById(id: string) {

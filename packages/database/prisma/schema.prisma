@@ -232,6 +232,11 @@ model Report {
   recipientType    RecipientType?
   recipientId      String?
 
+  // Similarity search — populated async, queried via $queryRaw
+  embedding        Unsupported("vector(768)")?
+  // Generated column (GENERATED ALWAYS AS in DB) — Prisma never writes this, only $queryRaw reads it
+  search_vector    Unsupported("tsvector")?
+
   // Author (null if anonymous — link exists in DB but never exposed in public queries)
   authorId         String?
   author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
