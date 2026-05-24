@@ -6,6 +6,7 @@ const COMMENT_SELECT = {
   content: true,
   parentId: true,
   createdAt: true,
+  updatedAt: true,
   author: { select: { id: true, name: true, avatarUrl: true } },
   _count: { select: { replies: true } },
 } as const
@@ -37,6 +38,14 @@ export class CommentsRepository {
 
   findById(id: string) {
     return this.prisma.comment.findUnique({ where: { id }, select: { id: true, authorId: true } })
+  }
+
+  update(id: string, content: string) {
+    return this.prisma.comment.update({
+      where: { id },
+      data: { content },
+      select: COMMENT_SELECT,
+    })
   }
 
   delete(id: string) {

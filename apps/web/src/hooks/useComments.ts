@@ -26,11 +26,13 @@ export function useCreateComment(reportId: string) {
       await qc.cancelQueries({ queryKey: ['comments', reportId] })
       const prev = qc.getQueryData<Comment[]>(['comments', reportId])
 
+      const now = new Date().toISOString()
       const optimistic: Comment = {
         id: `__opt__${Date.now()}`,
         content: data.content,
         parentId: data.parentId ?? null,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         author: { id: user.id, name: user.name, avatarUrl: user.avatarUrl },
         _count: { replies: 0 },
         replies: [],
@@ -60,6 +62,35 @@ export function useCreateComment(reportId: string) {
       qc.invalidateQueries({ queryKey: ['comments', reportId] })
       qc.invalidateQueries({ queryKey: ['report', reportId] })
     },
+  })
+}
+
+export function useEditComment(reportId: string) {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ commentId, content }: { commentId: string; content: string }) =>
+      api.patch<Comment>(`/reports/${reportId}/comments/${commentId}`, { content }).then((r) => r.data),
+
+    onMutate: async ({ commentId, content }) => {
+      await qc.cancelQueries({ queryKey: ['comments', reportId] })
+      const prev = qc.getQueryData<Comment[]>(['comments', reportId])
+
+      const patchContent = (c: Comment): Comment =>
+        c.id === commentId ? { ...c, content, updatedAt: new Date().toISOString() } : c
+
+      qc.setQueryData<Comment[]>(['comments', reportId], (old = []) =>
+        old.map((c) => ({ ...patchContent(c), replies: c.replies?.map(patchContent) ?? [] })),
+      )
+
+      return { prev }
+    },
+
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev !== undefined) qc.setQueryData(['comments', reportId], ctx.prev)
+    },
+
+    onSettled: () => qc.invalidateQueries({ queryKey: ['comments', reportId] }),
   })
 }
 

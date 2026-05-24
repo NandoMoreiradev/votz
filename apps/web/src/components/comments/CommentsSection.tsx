@@ -2,7 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Comment } from '../../types/api'
-import { useComments, useCreateComment, useDeleteComment } from '../../hooks/useComments'
+import { useComments, useCreateComment, useEditComment, useDeleteComment } from '../../hooks/useComments'
 import { useAuthStore } from '../../store/auth.store'
 import { UserType } from '@votz/shared-types'
 
@@ -212,6 +212,18 @@ const RepliesBlock = styled.div`
   border-left: 2px solid ${({ theme }) => theme.colors.border};
 `
 
+const EditedBadge = styled.span`
+  font-size: 0.7rem;
+  color: ${({ theme }) => theme.colors.muted};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  margin-left: 4px;
+`
+
+const EditTextarea = styled(Textarea)`
+  margin-top: 6px;
+  min-height: 72px;
+`
+
 const Empty = styled.p`
   text-align: center;
   color: ${({ theme }) => theme.colors.muted};
@@ -298,10 +310,24 @@ interface CommentRowProps {
 
 function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: CommentRowProps) {
   const [showReplyForm, setShowReplyForm] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(comment.content)
+  const { mutate: edit, isPending: saving } = useEditComment(reportId)
   const { mutate: del, isPending: deleting } = useDeleteComment(reportId)
 
   const isOwner = currentUserId === comment.author.id
-  const showDelete = isOwner || canModerate
+  const isEdited = new Date(comment.updatedAt).getTime() - new Date(comment.createdAt).getTime() > 5_000
+
+  function handleEditSave() {
+    const content = editText.trim()
+    if (!content || content === comment.content) { setEditing(false); return }
+    edit({ commentId: comment.id, content }, { onSuccess: () => setEditing(false) })
+  }
+
+  function handleEditCancel() {
+    setEditText(comment.content)
+    setEditing(false)
+  }
 
   return (
     <CommentItem $reply={reply}>
@@ -317,29 +343,61 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
         <CommentMeta>
           <AuthorName to={`/perfil/${comment.author.id}`}>{comment.author.name}</AuthorName>
           <CommentDate>{timeAgo(comment.createdAt)}</CommentDate>
+          {isEdited && <EditedBadge>(editado)</EditedBadge>}
         </CommentMeta>
 
-        <CommentText>{comment.content}</CommentText>
+        {editing ? (
+          <>
+            <EditTextarea
+              $compact
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              maxLength={1000}
+              autoFocus
+            />
+            <FormRow style={{ marginTop: 8 }}>
+              <CancelBtn type="button" onClick={handleEditCancel} disabled={saving}>
+                Cancelar
+              </CancelBtn>
+              <SubmitBtn
+                type="button"
+                disabled={saving || editText.trim().length < 1 || editText.trim() === comment.content}
+                onClick={handleEditSave}
+              >
+                {saving ? 'Salvando...' : 'Salvar'}
+              </SubmitBtn>
+            </FormRow>
+          </>
+        ) : (
+          <CommentText>{comment.content}</CommentText>
+        )}
 
-        <CommentActions>
-          {currentUserId && !reply && (
-            <ActionBtn type="button" onClick={() => setShowReplyForm((v) => !v)}>
-              {showReplyForm ? 'Cancelar' : 'Responder'}
-            </ActionBtn>
-          )}
-          {showDelete && (
-            <ActionBtn
-              $danger
-              type="button"
-              disabled={deleting}
-              onClick={() => del(comment.id)}
-            >
-              Excluir
-            </ActionBtn>
-          )}
-        </CommentActions>
+        {!editing && (
+          <CommentActions>
+            {currentUserId && !reply && (
+              <ActionBtn type="button" onClick={() => setShowReplyForm((v) => !v)}>
+                {showReplyForm ? 'Cancelar' : 'Responder'}
+              </ActionBtn>
+            )}
+            {isOwner && (
+              <ActionBtn type="button" onClick={() => { setEditText(comment.content); setEditing(true) }}>
+                Editar
+              </ActionBtn>
+            )}
+            {(isOwner || canModerate) && (
+              <ActionBtn
+                $danger
+                type="button"
+                disabled={deleting}
+                onClick={() => del(comment.id)}
+              >
+                Excluir
+              </ActionBtn>
+            )}
+          </CommentActions>
+        )}
 
-        {showReplyForm && (
+        {showReplyForm && !editing && (
           <div style={{ marginTop: 12 }}>
             <CommentForm
               reportId={reportId}

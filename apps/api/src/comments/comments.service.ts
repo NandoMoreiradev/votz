@@ -5,6 +5,7 @@ import { CommentsRepository } from './comments.repository'
 import { NotificationsService } from '../notifications/notifications.service'
 import { PressureService } from '../press/pressure.service'
 import { CreateCommentDto } from './dto/create-comment.dto'
+import { UpdateCommentDto } from './dto/update-comment.dto'
 import { UserType } from '@votz/shared-types'
 
 @Injectable()
@@ -43,6 +44,15 @@ export class CommentsService {
 
   findByReport(reportId: string) {
     return this.repo.findByReport(reportId)
+  }
+
+  async update(id: string, requesterId: string, dto: UpdateCommentDto) {
+    const comment = await this.repo.findById(id)
+    if (!comment) throw new NotFoundException('Comment not found')
+    if (comment.authorId !== requesterId) throw new ForbiddenException()
+
+    const content = DOMPurify.sanitize(dto.content)
+    return this.repo.update(id, content)
   }
 
   async delete(id: string, requesterId: string, requesterType: string) {

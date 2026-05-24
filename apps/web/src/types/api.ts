@@ -93,6 +93,7 @@ export interface Comment {
   content: string
   parentId: string | null
   createdAt: string
+  updatedAt: string
   author: { id: string; name: string; avatarUrl: string | null }
   _count: { replies: number }
   replies?: Comment[]
