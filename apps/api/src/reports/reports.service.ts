@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
@@ -17,6 +17,8 @@ import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.p
 
 @Injectable()
 export class ReportsService {
+  private readonly logger = new Logger(ReportsService.name)
+
   constructor(
     private readonly repository: ReportsRepository,
     private readonly timeline: TimelineService,
@@ -81,6 +83,10 @@ export class ReportsService {
         }
       }
     }
+
+    if (trgmResult.status === 'rejected') this.logger.warn(`findByTrigram failed: ${trgmResult.reason?.message}`)
+    if (ftsResult.status === 'rejected') this.logger.warn(`findByFullText failed: ${ftsResult.reason?.message}`)
+    if (semanticResult.status === 'rejected') this.logger.warn(`findByEmbedding failed: ${semanticResult.reason?.message}`)
 
     if (trgmResult.status === 'fulfilled') merge(trgmResult.value, 'trigram', 1)
     if (ftsResult.status === 'fulfilled') merge(ftsResult.value, 'fulltext', 1)
