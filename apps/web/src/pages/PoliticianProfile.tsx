@@ -18,9 +18,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 1100px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 16px 80px;
+  padding: 24px 32px 64px;
+
+  @media (max-width: 820px) { padding: 16px 16px 48px; }
 `
 
 const BackLink = styled(Link)`
@@ -36,11 +38,11 @@ const BackLink = styled(Link)`
 
 const TwoCol = styled.div`
   display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 20px;
+  grid-template-columns: 1fr 320px;
+  gap: 24px;
   align-items: start;
 
-  @media (max-width: 768px) { grid-template-columns: 1fr; }
+  @media (max-width: 820px) { grid-template-columns: 1fr; }
 `
 
 const MainCol = styled.div``
