@@ -283,13 +283,20 @@ export class ReportsRepository {
   }
 
   async findByFullText(query: string, limit: number): Promise<SimilarReportRow[]> {
+    // Converte AND (plainto_tsquery default) para OR para aceitar matches parciais
     return this.prisma.$queryRaw<SimilarReportRow[]>`
       SELECT
         id, title, description, category::text, status::text, city, state,
         created_at AS "createdAt", pressure_score AS "pressureScore",
-        ts_rank(search_vector, plainto_tsquery('portuguese', ${query})) AS score
+        ts_rank(search_vector,
+          to_tsquery('portuguese', regexp_replace(
+            plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'
+          ))
+        ) AS score
       FROM reports
-      WHERE search_vector @@ plainto_tsquery('portuguese', ${query})
+      WHERE search_vector @@ to_tsquery('portuguese', regexp_replace(
+          plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'
+        ))
       ORDER BY score DESC
       LIMIT ${limit}
     `
