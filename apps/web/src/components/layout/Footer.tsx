@@ -154,7 +154,8 @@ export function Footer() {
           <Col>
             <ColTitle>Recursos</ColTitle>
             <NavList>
-              <NavItem><NavLink to="/solicitar-cadastro">Solicitar cadastro</NavLink></NavItem>
+              <NavItem><NavLink to="/solicitar-cadastro">Registrar organização</NavLink></NavItem>
+              <NavItem><NavLink to="/minhas-solicitacoes">Minhas solicitações</NavLink></NavItem>
               <NavItem><NavA href="#imprensa">Para a imprensa</NavA></NavItem>
               <NavItem><NavA href="/api/v1/docs" target="_blank" rel="noreferrer">API pública</NavA></NavItem>
             </NavList>

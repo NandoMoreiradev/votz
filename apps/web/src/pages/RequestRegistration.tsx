@@ -431,7 +431,8 @@ function PoliticianForm({ onSubmit, loading }: { onSubmit: (p: Record<string, un
   const docsReady = !!selfieWithId && !!voterTitle
 
   const handleSubmit = () => {
-    const payload: Record<string, unknown> = { ...form }
+    const { party, ...rest } = form
+    const payload: Record<string, unknown> = { ...rest, partySigla: party }
     if (selfieWithId || voterTitle) {
       payload['documents'] = {
         ...(selfieWithId && { selfieWithId }),

@@ -27,6 +27,7 @@ import { PoliticiansList } from './pages/PoliticiansList'
 import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
+import { MyRequests } from './pages/MyRequests'
 import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
 import { SurtoDetail } from './pages/SurtoDetail'
@@ -110,6 +111,7 @@ function App() {
               <Route path="/auth/google/callback" element={<GoogleCallback />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
+              <Route path="/minhas-solicitacoes" element={<MyRequests />} />
               <Route path="/convite/:token" element={<AcceptInvite />} />
               <Route path="/empresa/:id" element={<CompanyProfile />} />
               <Route path="/surtos/:id" element={<SurtoDetail />} />

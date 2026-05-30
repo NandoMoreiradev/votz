@@ -111,6 +111,58 @@ export class MailService {
     }).catch((err) => this.logger.error('Failed to send account deleted email', err))
   }
 
+  async sendRegistrationApproved(
+    email: string,
+    name: string,
+    orgType: 'ENTITY' | 'POLITICIAN' | 'COMPANY',
+    orgName: string,
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const typeLabel = orgType === 'ENTITY' ? 'entidade pública'
+      : orgType === 'POLITICIAN' ? 'perfil de político'
+      : 'empresa'
+    const link = `${baseUrl}/minhas-solicitacoes`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: `Solicitação aprovada: ${orgName} — Votz`,
+      html: `
+        <h2>Olá, ${name}!</h2>
+        <p>Sua solicitação de cadastro de <strong>${typeLabel}</strong> foi <strong style="color:#2DC653">aprovada</strong>.</p>
+        <p><strong>${orgName}</strong> já está disponível na plataforma Votz. Agora você pode acessar o painel da organização e começar a responder relatos.</p>
+        <p><a href="${link}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver minhas solicitações</a></p>
+        <p style="color:#6B7280;font-size:13px">Obrigado por fazer parte do Votz.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send registration approved email', err))
+  }
+
+  async sendRegistrationRejected(
+    email: string,
+    name: string,
+    orgType: 'ENTITY' | 'POLITICIAN' | 'COMPANY',
+    reviewNote: string,
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const typeLabel = orgType === 'ENTITY' ? 'entidade pública'
+      : orgType === 'POLITICIAN' ? 'perfil de político'
+      : 'empresa'
+    const link = `${baseUrl}/minhas-solicitacoes`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: `Solicitação não aprovada — Votz`,
+      html: `
+        <h2>Olá, ${name}!</h2>
+        <p>Sua solicitação de cadastro de <strong>${typeLabel}</strong> não foi aprovada neste momento.</p>
+        ${reviewNote ? `<p><strong>Motivo informado pela moderação:</strong></p><blockquote style="border-left:3px solid #E63946;margin:0;padding:8px 16px;color:#374151;">${reviewNote}</blockquote>` : ''}
+        <p>Se acreditar que houve um engano ou quiser tentar novamente com mais informações, você pode enviar uma nova solicitação.</p>
+        <p><a href="${link}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver minhas solicitações</a></p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send registration rejected email', err))
+  }
+
   async sendMfaBackupCodes(email: string, name: string, codes: string[]): Promise<void> {
     const formattedCodes = codes.map((c) => `<li><code>${c}</code></li>`).join('')
 

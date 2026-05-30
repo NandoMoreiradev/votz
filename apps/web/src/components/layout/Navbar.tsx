@@ -466,6 +466,7 @@ export function Navbar() {
             <NavLink to="/politicos">Políticos</NavLink>
             <NavLink to="/mapa">Mapa</NavLink>
             <NavLink to="/imprensa">Imprensa</NavLink>
+            {!user && <NavLink to="/solicitar-cadastro">Registrar organização</NavLink>}
             {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
           </NavLinks>
 
@@ -513,6 +514,12 @@ export function Navbar() {
                       ))}
                       <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
                         Editar perfil
+                      </DropdownItem>
+                      <DropdownItem to="/minhas-solicitacoes" onClick={() => setOpen(false)}>
+                        Minhas solicitações
+                      </DropdownItem>
+                      <DropdownItem to="/solicitar-cadastro" onClick={() => setOpen(false)}>
+                        Registrar organização
                       </DropdownItem>
                       {hasMultipleProfiles && (
                         <DropdownAction onClick={() => { setShowProfileModal(true); setOpen(false) }}>

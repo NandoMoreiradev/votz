@@ -95,7 +95,22 @@ export class RegistrationRequestsService {
       approvedOrgType = OrgType.COMPANY
     }
 
-    return this.repo.review(id, reviewerId, RegistrationRequestStatus.APPROVED, reviewNote, approvedOrgId, approvedOrgType)
+    const reviewed = await this.repo.review(id, reviewerId, RegistrationRequestStatus.APPROVED, reviewNote, approvedOrgId, approvedOrgType)
+
+    const orgName = (
+      request.type === RegistrationRequestType.POLITICIAN
+        ? payload['name']
+        : payload['legalName']
+    ) as string ?? ''
+
+    this.mail.sendRegistrationApproved(
+      request.requester.email,
+      request.requester.name,
+      request.type as 'ENTITY' | 'POLITICIAN' | 'COMPANY',
+      orgName,
+    )
+
+    return reviewed
   }
 
   async reject(id: string, reviewerId: string, reviewNote: string) {
@@ -105,7 +120,16 @@ export class RegistrationRequestsService {
       throw new BadRequestException('Solicitação já foi revisada')
     }
 
-    return this.repo.review(id, reviewerId, RegistrationRequestStatus.REJECTED, reviewNote)
+    const reviewed = await this.repo.review(id, reviewerId, RegistrationRequestStatus.REJECTED, reviewNote)
+
+    this.mail.sendRegistrationRejected(
+      request.requester.email,
+      request.requester.name,
+      request.type as 'ENTITY' | 'POLITICIAN' | 'COMPANY',
+      reviewNote,
+    )
+
+    return reviewed
   }
 
   async getDocumentUrls(id: string): Promise<Record<string, string>> {
