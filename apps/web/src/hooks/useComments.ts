@@ -1,7 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { Comment } from '../types/api'
+import { Comment, CommentMediaType } from '../types/api'
 import { useAuthStore } from '../store/auth.store'
+
+export function useUploadCommentAudio() {
+  return useMutation({
+    mutationFn: async (blob: Blob) => {
+      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      const form = new FormData()
+      form.append('file', blob, `voice-${Date.now()}.${ext}`)
+      const r = await api.post<{ key: string; url: string; mimeType: string; size: number }>(
+        '/storage/upload/comment-audio',
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      )
+      return r.data
+    },
+  })
+}
 
 export function useComments(reportId: string) {
   return useQuery({
@@ -12,12 +28,21 @@ export function useComments(reportId: string) {
   })
 }
 
+interface CreateCommentData {
+  content?: string
+  parentId?: string
+  mediaType?: CommentMediaType
+  mediaUrl?: string
+  mediaKey?: string
+  mediaDuration?: number
+}
+
 export function useCreateComment(reportId: string) {
   const qc = useQueryClient()
   const user = useAuthStore((s) => s.user)
 
   return useMutation({
-    mutationFn: (data: { content: string; parentId?: string }) =>
+    mutationFn: (data: CreateCommentData) =>
       api.post<Comment>(`/reports/${reportId}/comments`, data).then((r) => r.data),
 
     onMutate: async (data) => {
@@ -29,8 +54,12 @@ export function useCreateComment(reportId: string) {
       const now = new Date().toISOString()
       const optimistic: Comment = {
         id: `__opt__${Date.now()}`,
-        content: data.content,
+        content: data.content ?? '',
         parentId: data.parentId ?? null,
+        mediaType: data.mediaType ?? 'TEXT',
+        mediaUrl: data.mediaUrl ?? null,
+        mediaDuration: data.mediaDuration ?? null,
+        transcript: null,
         createdAt: now,
         updatedAt: now,
         author: { id: user.id, name: user.name, avatarUrl: user.avatarUrl },

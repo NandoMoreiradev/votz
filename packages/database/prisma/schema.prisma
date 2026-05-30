@@ -168,6 +168,12 @@ enum PropostaEventType {
   UPDATED
 }
 
+enum CommentMediaType {
+  TEXT
+  AUDIO
+  VIDEO
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -252,7 +258,8 @@ model Report {
 
   // Similarity search — populated async, queried via $queryRaw
   embedding        Unsupported("vector(768)")?
-  // Generated column (GENERATED ALWAYS AS in DB) — Prisma never writes this, only $queryRaw reads it
+  // Coluna gerada pelo PostgreSQL (GENERATED ALWAYS AS) — gerenciada fora do Prisma via SQL manual
+  /// @Ignored
   search_vector    Unsupported("tsvector")?
 
   // Author (null if anonymous — link exists in DB but never exposed in public queries)
@@ -449,12 +456,19 @@ model Comment {
   report    Report    @relation(fields: [reportId], references: [id])
   authorId  String
   author    User      @relation(fields: [authorId], references: [id])
-  content   String
-  parentId  String?
-  parent    Comment?  @relation("CommentReply", fields: [parentId], references: [id])
-  replies   Comment[] @relation("CommentReply")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  content       String
+  parentId      String?
+  parent        Comment?         @relation("CommentReply", fields: [parentId], references: [id])
+  replies       Comment[]        @relation("CommentReply")
+
+  mediaType     CommentMediaType @default(TEXT)
+  mediaUrl      String?
+  mediaKey      String?
+  mediaDuration Int?
+  transcript    String?
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   @@map("comments")
 }

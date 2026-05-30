@@ -5,6 +5,10 @@ const COMMENT_SELECT = {
   id: true,
   content: true,
   parentId: true,
+  mediaType: true,
+  mediaUrl: true,
+  mediaDuration: true,
+  transcript: true,
   createdAt: true,
   updatedAt: true,
   author: { select: { id: true, name: true, avatarUrl: true } },
@@ -15,9 +19,27 @@ const COMMENT_SELECT = {
 export class CommentsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: { reportId: string; authorId: string; content: string; parentId?: string }) {
+  create(data: {
+    reportId: string
+    authorId: string
+    content: string
+    parentId?: string
+    mediaType?: string
+    mediaUrl?: string
+    mediaKey?: string
+    mediaDuration?: number
+  }) {
     return this.prisma.comment.create({
-      data,
+      data: {
+        reportId: data.reportId,
+        authorId: data.authorId,
+        content: data.content,
+        parentId: data.parentId,
+        mediaType: (data.mediaType ?? 'TEXT') as never,
+        mediaUrl: data.mediaUrl,
+        mediaKey: data.mediaKey,
+        mediaDuration: data.mediaDuration,
+      },
       select: COMMENT_SELECT,
     })
   }

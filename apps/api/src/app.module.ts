@@ -34,6 +34,7 @@ import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
 import { SenadoSyncModule } from './senado-sync/senado-sync.module'
 import { TseSyncModule } from './tse-sync/tse-sync.module'
 import { PropostasModule } from './propostas/propostas.module'
+import { TranscriptionModule } from './transcription/transcription.module'
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { PropostasModule } from './propostas/propostas.module'
     SenadoSyncModule,
     TseSyncModule,
     PropostasModule,
+    TranscriptionModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

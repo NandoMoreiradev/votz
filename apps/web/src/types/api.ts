@@ -88,10 +88,16 @@ export interface ReportsResponse {
   }
 }
 
+export type CommentMediaType = 'TEXT' | 'AUDIO' | 'VIDEO'
+
 export interface Comment {
   id: string
   content: string
   parentId: string | null
+  mediaType: CommentMediaType
+  mediaUrl: string | null
+  mediaDuration: number | null
+  transcript: string | null
   createdAt: string
   updatedAt: string
   author: { id: string; name: string; avatarUrl: string | null }

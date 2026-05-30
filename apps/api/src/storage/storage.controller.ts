@@ -84,4 +84,21 @@ export class StorageController {
     // Return only key — URL is private, accessible only via signed URLs
     return { key, mimeType, size }
   }
+
+  @Post('upload/comment-audio')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload áudio de comentário (webm/mp4/ogg/wav, máx 50 MB)' })
+  async uploadCommentAudio(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado')
+    return this.storageService.upload(file.buffer, file.mimetype, 'comments')
+  }
 }

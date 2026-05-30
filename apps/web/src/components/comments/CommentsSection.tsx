@@ -2,9 +2,11 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Comment } from '../../types/api'
-import { useComments, useCreateComment, useEditComment, useDeleteComment } from '../../hooks/useComments'
+import { useComments, useCreateComment, useEditComment, useDeleteComment, useUploadCommentAudio } from '../../hooks/useComments'
 import { useAuthStore } from '../../store/auth.store'
 import { UserType } from '@votz/shared-types'
+import { VoiceRecorder } from './VoiceRecorder'
+import { VoiceCommentPlayer } from './VoiceCommentPlayer'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -224,6 +226,39 @@ const EditTextarea = styled(Textarea)`
   min-height: 72px;
 `
 
+const VoiceToggleBtn = styled.button<{ $active: boolean }>`
+  padding: 8px 14px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  border: 1.5px solid ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.border};
+  background: ${({ $active, theme }) => $active ? theme.colors.primary + '10' : 'transparent'};
+  color: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.muted};
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const VoiceBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.primary + '12'};
+  color: ${({ theme }) => theme.colors.primary};
+  margin-left: 6px;
+`
+
+const VoiceCommentItem = styled(CommentItem)`
+  border-left: 3px solid ${({ theme }) => theme.colors.primary + '40'};
+  padding-left: 12px;
+`
+
 const Empty = styled.p`
   text-align: center;
   color: ${({ theme }) => theme.colors.muted};
@@ -253,11 +288,14 @@ interface CommentFormProps {
   placeholder?: string
   compact?: boolean
   onDone?: () => void
+  canVoice?: boolean
 }
 
-function CommentForm({ reportId, parentId, placeholder, compact, onDone }: CommentFormProps) {
+function CommentForm({ reportId, parentId, placeholder, compact, onDone, canVoice }: CommentFormProps) {
   const [text, setText] = useState('')
+  const [voiceMode, setVoiceMode] = useState(false)
   const { mutate, isPending } = useCreateComment(reportId)
+  const { mutateAsync: uploadAudio, isPending: uploading } = useUploadCommentAudio()
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -274,6 +312,42 @@ function CommentForm({ reportId, parentId, placeholder, compact, onDone }: Comme
     )
   }
 
+  async function handleVoiceRecorded(blob: Blob, durationSeconds: number) {
+    const uploaded = await uploadAudio(blob)
+    mutate(
+      {
+        content: '',
+        parentId,
+        mediaType: 'AUDIO',
+        mediaUrl: uploaded.url,
+        mediaKey: uploaded.key,
+        mediaDuration: durationSeconds,
+      },
+      {
+        onSuccess: () => {
+          setVoiceMode(false)
+          onDone?.()
+        },
+      },
+    )
+  }
+
+  if (voiceMode) {
+    return (
+      <div style={{ marginBottom: 28 }}>
+        <VoiceRecorder
+          onRecorded={handleVoiceRecorded}
+          onCancel={() => setVoiceMode(false)}
+        />
+        {uploading && (
+          <p style={{ fontSize: '0.8125rem', color: '#9CA3AF', marginTop: 8 }}>
+            Enviando áudio...
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Form onSubmit={handleSubmit}>
       <Textarea
@@ -282,9 +356,18 @@ function CommentForm({ reportId, parentId, placeholder, compact, onDone }: Comme
         onChange={(e) => setText(e.target.value)}
         placeholder={placeholder ?? 'Escreva um comentário...'}
         maxLength={1000}
-        required
       />
       <FormRow>
+        {canVoice && !parentId && (
+          <VoiceToggleBtn
+            type="button"
+            $active={false}
+            onClick={() => setVoiceMode(true)}
+            title="Gravar resposta em áudio"
+          >
+            🎙 Gravar voz
+          </VoiceToggleBtn>
+        )}
         {onDone && (
           <CancelBtn type="button" onClick={onDone}>
             Cancelar
@@ -329,8 +412,11 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
     setEditing(false)
   }
 
+  const isVoice = comment.mediaType === 'AUDIO' || comment.mediaType === 'VIDEO'
+  const Wrapper = isVoice ? VoiceCommentItem : CommentItem
+
   return (
-    <CommentItem $reply={reply}>
+    <Wrapper $reply={reply}>
       <AvatarCircle
         to={`/perfil/${comment.author.id}`}
         $src={comment.author.avatarUrl}
@@ -342,8 +428,9 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
       <CommentBody>
         <CommentMeta>
           <AuthorName to={`/perfil/${comment.author.id}`}>{comment.author.name}</AuthorName>
+          {isVoice && <VoiceBadge>🎙 Resposta oficial</VoiceBadge>}
           <CommentDate>{timeAgo(comment.createdAt)}</CommentDate>
-          {isEdited && <EditedBadge>(editado)</EditedBadge>}
+          {isEdited && !isVoice && <EditedBadge>(editado)</EditedBadge>}
         </CommentMeta>
 
         {editing ? (
@@ -368,6 +455,12 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
               </SubmitBtn>
             </FormRow>
           </>
+        ) : isVoice && comment.mediaUrl ? (
+          <VoiceCommentPlayer
+            url={comment.mediaUrl}
+            duration={comment.mediaDuration}
+            transcript={comment.transcript}
+          />
         ) : (
           <CommentText>{comment.content}</CommentText>
         )}
@@ -424,7 +517,7 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
           </RepliesBlock>
         )}
       </CommentBody>
-    </CommentItem>
+    </Wrapper>
   )
 }
 
@@ -451,7 +544,10 @@ export function CommentsSection({ reportId }: CommentsSectionProps) {
       </SectionHeader>
 
       {user ? (
-        <CommentForm reportId={reportId} />
+        <CommentForm
+          reportId={reportId}
+          canVoice={user.type === UserType.POLITICIAN || user.type === UserType.ENTITY}
+        />
       ) : (
         <LoginPrompt>
           <Link to="/entrar">Entre</Link> para deixar um comentário.

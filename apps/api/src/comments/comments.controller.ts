@@ -18,9 +18,9 @@ export class CommentsController {
   create(
     @Param('reportId') reportId: string,
     @Body() dto: CreateCommentDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; type: string },
   ) {
-    return this.commentsService.create(reportId, user.id, dto)
+    return this.commentsService.create(reportId, user.id, user.type, dto)
   }
 
   @Get()

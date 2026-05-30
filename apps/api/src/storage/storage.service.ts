@@ -17,11 +17,16 @@ const ALLOWED_MIME_TYPES = new Set([
   'video/mp4',
   'video/quicktime',
   'application/pdf',
+  'audio/webm',
+  'audio/mp4',
+  'audio/ogg',
+  'audio/wav',
 ])
 
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
 const PDF_MAX_SIZE   = 50 * 1024 * 1024   // 50 MB
+const AUDIO_MAX_SIZE = 50 * 1024 * 1024   // 50 MB
 
 function detectMimeFromBuffer(buf: Buffer): string {
   if (buf.length < 12) return ''
@@ -36,6 +41,13 @@ function detectMimeFromBuffer(buf: Buffer): string {
       buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
   // PDF: %PDF
   if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return 'application/pdf'
+  // WebM (áudio ou vídeo): EBML header 1A 45 DF A3
+  if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) return 'audio/webm'
+  // OGG: 4F 67 67 53
+  if (buf[0] === 0x4F && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return 'audio/ogg'
+  // WAV: RIFF....WAVE
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x41 && buf[10] === 0x56 && buf[11] === 0x45) return 'audio/wav'
   // MP4 / MOV: ftyp box at offset 4
   if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
     const brand = buf.slice(8, 12).toString('ascii').trim()
@@ -97,7 +109,7 @@ export class StorageService {
   async upload(
     buffer: Buffer,
     _claimedMimeType: string,
-    folder: 'reports' | 'avatars' | 'entities' | 'verification',
+    folder: 'reports' | 'avatars' | 'entities' | 'verification' | 'comments',
   ): Promise<UploadedFile> {
     const mimeType = detectMimeFromBuffer(buffer)
 
@@ -106,10 +118,12 @@ export class StorageService {
     }
 
     const isVideo = mimeType.startsWith('video/')
+    const isAudio = mimeType.startsWith('audio/')
     const isPdf = mimeType === 'application/pdf'
-    const maxSize = isVideo ? VIDEO_MAX_SIZE : isPdf ? PDF_MAX_SIZE : IMAGE_MAX_SIZE
+    const maxSize = isVideo ? VIDEO_MAX_SIZE : isAudio ? AUDIO_MAX_SIZE : isPdf ? PDF_MAX_SIZE : IMAGE_MAX_SIZE
     if (buffer.byteLength > maxSize) {
       const label = isVideo ? 'Vídeo excede o limite de 100 MB'
+        : isAudio ? 'Áudio excede o limite de 50 MB'
         : isPdf ? 'PDF excede o limite de 50 MB'
         : 'Imagem excede o limite de 10 MB'
       throw new BadRequestException(label)
