@@ -307,6 +307,7 @@ const USER_TYPE_LABELS: Record<UserType, string> = {
   CITIZEN: 'Cidadão',
   ENTITY: 'Entidade',
   POLITICIAN: 'Político',
+  COMPANY: 'Empresa',
   PRESS: 'Imprensa',
   NGO: 'ONG',
   RESEARCHER: 'Pesquisador',
