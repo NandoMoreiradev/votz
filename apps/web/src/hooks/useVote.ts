@@ -11,11 +11,12 @@ interface MyVotes {
 
 export function useMyVotes(reportId: string) {
   const user = useAuthStore((s) => s.user)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
   return useQuery({
     queryKey: ['my-votes', reportId],
     queryFn: () =>
       api.get<MyVotes>(`/reports/${reportId}/votes/me`).then((r) => r.data),
-    enabled: !!user && !!reportId,
+    enabled: !!user && !!reportId && sessionReady,
     staleTime: 60_000,
   })
 }

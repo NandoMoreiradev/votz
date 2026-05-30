@@ -191,7 +191,7 @@ interface UploadResult {
 // ── Componente ─────────────────────────────────────────────────────────────
 
 export function MyProfile() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, sessionReady } = useAuthStore()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -334,7 +334,7 @@ export function MyProfile() {
   }
 
   const hasAddress = !!address?.city
-  const { data: profiles } = useMyProfiles(true)
+  const { data: profiles } = useMyProfiles(!!user && sessionReady)
 
   return (
     <Page>

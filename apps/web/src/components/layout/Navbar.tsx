@@ -413,13 +413,13 @@ const ContextName = styled.span`
 `
 
 export function Navbar() {
-  const { user, activeContext, logout } = useAuthStore()
+  const { user, activeContext, logout, sessionReady } = useAuthStore()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  const { data: profiles } = useMyProfiles(!!user)
+  const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
   useEffect(() => {

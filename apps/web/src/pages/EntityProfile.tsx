@@ -668,7 +668,7 @@ export function EntityProfile() {
           <TwoCol>
             {/* Main: relatos */}
             <MainCol>
-              {currentUser && (
+              {currentUser && isOwner && (
                 <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
               )}
 

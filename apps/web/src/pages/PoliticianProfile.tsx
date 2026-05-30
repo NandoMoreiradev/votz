@@ -640,7 +640,7 @@ export function PoliticianProfile() {
           <TwoCol>
             {/* Main */}
             <MainCol>
-              {currentUser && (
+              {currentUser && canEdit && (
                 <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
               )}
 

@@ -509,8 +509,9 @@ export function CompanyProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
-  const currentUser = useAuthStore((s) => s.user)
+  const { user: currentUser, activeContext } = useAuthStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const canEdit = !!activeContext && activeContext.type === 'COMPANY' && activeContext.id === id
   const qc = useQueryClient()
 
   const { data: company, isLoading } = useCompany(id!)
@@ -649,7 +650,7 @@ export function CompanyProfile() {
         {company && (
           <TwoCol>
             <MainCol>
-              {currentUser && (
+              {currentUser && canEdit && (
                 <TeamPanel orgType="COMPANY" orgId={company.id} currentUserId={currentUser.id} />
               )}
 
