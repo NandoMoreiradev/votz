@@ -8,11 +8,15 @@
  *   1. Partidos políticos (Câmara dos Deputados)
  *   2. Deputados Federais — Legislatura 57 (2023–2027)
  *   3. Senadores Federais — lista atual (Senado Federal)
- *   4. Prefeituras Municipais — todos os 5.570 municípios brasileiros (IBGE)
+ *   4. Presidente + Governadores — eleições 2022 (TSE)
+ *   5. Deputados Estaduais — eleições 2022 (TSE)
+ *   6. Prefeitos + Vereadores — eleições 2024 (TSE, ~60 MB, download único)
+ *   7. Prefeituras Municipais — todos os 5.570 municípios brasileiros (IBGE)
  */
 
 import { PrismaClient, EntityType } from '@prisma/client'
 import { XMLParser } from 'fast-xml-parser'
+import AdmZip from 'adm-zip'
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -78,6 +82,10 @@ async function syncParties(): Promise<number> {
 
 async function syncDeputados(): Promise<{ created: number; updated: number; skipped: number }> {
   console.log('\n🏛️  Sincronizando deputados federais (Legislatura 57)...')
+
+  const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
+  const partyMap   = new Map(allParties.map(p => [p.abbreviation, p.id]))
+
   let page = 1
   let created = 0
   let updated = 0
@@ -91,15 +99,9 @@ async function syncDeputados(): Promise<{ created: number; updated: number; skip
     for (const d of dados) {
       const tseId = String(d.id)
 
-      const party = await prisma.party.findFirst({
-        where: { abbreviation: d.siglaPartido },
-        select: { id: true },
-      })
-
-      if (!party) {
-        skipped++
-        continue
-      }
+      const partyId = partyMap.get(d.siglaPartido)
+      if (!partyId) { skipped++; continue }
+      const party = { id: partyId }
 
       const payload = {
         name:          d.nome,
@@ -205,7 +207,236 @@ async function syncMunicipios(): Promise<{ created: number; updated: number }> {
   return { created, updated }
 }
 
-// ── 4. Senadores Federais ─────────────────────────────────────────────────────
+// ── 4. Presidente + Governadores (TSE 2022) ───────────────────────────────────
+
+const TSE_2022_URL    = 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2022.zip'
+const TERM_2022_START = new Date('2023-01-01')
+const TERM_2022_END   = new Date('2026-12-31')
+const ELEITO_VALUES   = new Set(['ELEITO', 'ELEITO POR QP', 'ELEITO POR MÉDIA'])
+
+const OFFICE_LABEL: Record<string, string> = {
+  'PRESIDENTE':                     'Presidente da República',
+  'GOVERNADOR':                     'Governador',
+  'GOVERNADOR DO DISTRITO FEDERAL': 'Governador',
+}
+
+async function downloadAndFilterTSE(url: string, cargos: string[]): Promise<Record<string, string>[]> {
+  console.log(`  Baixando ${url}...`)
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`TSE CDN ${res.status}`)
+
+  const zip = new AdmZip(Buffer.from(await res.arrayBuffer()))
+  const entry = zip.getEntries().find((e) =>
+    e.entryName.toUpperCase().includes('BRASIL') && e.entryName.endsWith('.csv'),
+  )
+  if (!entry) throw new Error('BRASIL.csv not found in ZIP')
+
+  const csv = zip.readFile(entry)!.toString('latin1')
+  const lines = csv.split('\n')
+  const headers = lines[0].split(';').map((h) => h.trim().replace(/^"|"$/g, ''))
+
+  const cargoIdx = headers.indexOf('DS_CARGO')
+  const sitIdx   = headers.indexOf('DS_SIT_TOT_TURNO')
+  const targetSet = new Set(cargos)
+  const results: Record<string, string>[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+    const cols = line.split(';').map((c) => c.trim().replace(/^"|"$/g, ''))
+    if (cols.length < headers.length - 2) continue
+    if (!targetSet.has(cols[cargoIdx])) continue
+    if (!ELEITO_VALUES.has(cols[sitIdx])) continue
+    const row: Record<string, string> = {}
+    headers.forEach((h, idx) => { row[h] = cols[idx] ?? '' })
+    results.push(row)
+  }
+
+  return results
+}
+
+async function syncPresidenteGovernadores(): Promise<{ created: number; updated: number; skipped: number }> {
+  console.log('\n🇧🇷  Sincronizando Presidente + Governadores (TSE 2022)...')
+
+  const rows = await downloadAndFilterTSE(TSE_2022_URL, [
+    'PRESIDENTE', 'GOVERNADOR', 'GOVERNADOR DO DISTRITO FEDERAL',
+  ])
+
+  console.log(`  ${rows.length} candidatos eleitos encontrados`)
+
+  const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
+  const partyMap   = new Map(allParties.map(p => [p.abbreviation, p.id]))
+
+  let created = 0, updated = 0, skipped = 0
+
+  for (const row of rows) {
+    const tseId      = `TSE-${row['SQ_CANDIDATO']}`
+    const partySigla = row['SG_PARTIDO']
+    const uf         = row['SG_UF']
+
+    const party = { id: partyMap.get(partySigla) }
+
+    if (!party.id) {
+      console.log(`  ⚠ Partido "${partySigla}" não encontrado para ${row['NM_URNA_CANDIDATO']}`)
+      skipped++
+      continue
+    }
+
+    const cargo = row['DS_CARGO']
+    const payload = {
+      name:          row['NM_URNA_CANDIDATO'] || row['NM_CANDIDATO'],
+      partyId:       party.id,
+      office:        OFFICE_LABEL[cargo] ?? cargo,
+      state:         uf === 'BR' ? '' : uf,
+      electoralZone: uf === 'BR' ? 'Nacional' : uf,
+      termStart:     TERM_2022_START,
+      termEnd:       TERM_2022_END,
+      avatarUrl:     null as string | null,
+    }
+
+    const existing = await prisma.politician.findUnique({
+      where: { tseId }, select: { id: true },
+    })
+
+    if (existing) {
+      await prisma.politician.update({ where: { tseId }, data: payload })
+      updated++
+    } else {
+      await prisma.politician.create({ data: { ...payload, tseId, verified: false } })
+      created++
+    }
+
+    process.stdout.write(`  Criados: ${created} | Atualizados: ${updated} | Ignorados: ${skipped}\r`)
+  }
+
+  console.log(`  ✓ Criados: ${created} | Atualizados: ${updated} | Ignorados: ${skipped}`)
+  return { created, updated, skipped }
+}
+
+// ── 5. Deputados Estaduais (TSE 2022) ────────────────────────────────────────
+
+const DEP_ESTADUAL_OFFICE: Record<string, string> = {
+  'DEPUTADO ESTADUAL':  'Deputado Estadual',
+  'DEPUTADO DISTRITAL': 'Deputado Distrital',
+}
+
+async function syncDepEstaduais(): Promise<{ created: number; updated: number; skipped: number }> {
+  console.log('\n🏛️  Sincronizando Deputados Estaduais (TSE 2022)...')
+
+  const rows = await downloadAndFilterTSE(TSE_2022_URL, [
+    'DEPUTADO ESTADUAL',
+    'DEPUTADO DISTRITAL',
+  ])
+
+  console.log(`  ${rows.length} deputados estaduais eleitos encontrados`)
+
+  const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
+  const partyMap   = new Map(allParties.map(p => [p.abbreviation, p.id]))
+
+  let created = 0, updated = 0, skipped = 0
+
+  for (const row of rows) {
+    const tseId = `TSE-${row['SQ_CANDIDATO']}`
+    const uf    = row['SG_UF']
+
+    const partyId = partyMap.get(row['SG_PARTIDO'])
+    if (!partyId) { skipped++; continue }
+
+    const cargo   = row['DS_CARGO']
+    const payload = {
+      name:          row['NM_URNA_CANDIDATO'] || row['NM_CANDIDATO'],
+      partyId,
+      office:        DEP_ESTADUAL_OFFICE[cargo] ?? cargo,
+      state:         uf,
+      electoralZone: uf,
+      termStart:     TERM_2022_START,
+      termEnd:       TERM_2022_END,
+      avatarUrl:     null as string | null,
+    }
+
+    const existing = await prisma.politician.findUnique({
+      where: { tseId }, select: { id: true },
+    })
+
+    if (existing) {
+      await prisma.politician.update({ where: { tseId }, data: payload })
+      updated++
+    } else {
+      await prisma.politician.create({ data: { ...payload, tseId, verified: false } })
+      created++
+    }
+
+    process.stdout.write(`  Criados: ${created} | Atualizados: ${updated} | Ignorados: ${skipped}\r`)
+  }
+
+  console.log(`  ✓ Criados: ${created} | Atualizados: ${updated} | Ignorados: ${skipped}`)
+  return { created, updated, skipped }
+}
+
+// ── 6. Prefeitos + Vereadores (TSE 2024) — download único ────────────────────
+
+const TSE_2024_URL    = 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2024.zip'
+const TERM_2024_START = new Date('2025-01-01')
+const TERM_2024_END   = new Date('2028-12-31')
+const MUNICIPAL_CARGOS = new Set(['PREFEITO', 'VEREADOR'])
+const OFFICE_MUNICIPAL: Record<string, string> = { PREFEITO: 'Prefeito', VEREADOR: 'Vereador' }
+
+async function syncMunicipal2024(): Promise<{ processed: number; skipped: number }> {
+  console.log('\n🏙️  Sincronizando Prefeitos + Vereadores (TSE 2024)')
+  console.log('  Baixando arquivo ~60 MB — pode levar alguns minutos...')
+
+  // Download único: filtra PREFEITO + VEREADOR na mesma passagem
+  const rows = await downloadAndFilterTSE(TSE_2024_URL, ['PREFEITO', 'VEREADOR'])
+
+  const prefeitos = rows.filter(r => r['DS_CARGO'] === 'PREFEITO').length
+  const vereadores = rows.filter(r => r['DS_CARGO'] === 'VEREADOR').length
+  console.log(`  ${prefeitos} prefeitos + ${vereadores} vereadores eleitos`)
+
+  // Cache de partidos em memória — evita 65k queries individuais ao banco
+  const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
+  const partyMap = new Map(allParties.map(p => [p.abbreviation, p.id]))
+  console.log(`  ${partyMap.size} partidos carregados em cache`)
+
+  let processed = 0, skipped = 0
+
+  for (const row of rows) {
+    const tseId   = `TSE-${row['SQ_CANDIDATO']}`
+    const uf      = row['SG_UF']
+    const cargo   = row['DS_CARGO']
+    const city    = MUNICIPAL_CARGOS.has(cargo) ? (row['NM_UE'] || undefined) : undefined
+    const partyId = partyMap.get(row['SG_PARTIDO'])
+
+    if (!partyId) { skipped++; continue }
+
+    const payload = {
+      name:          row['NM_URNA_CANDIDATO'] || row['NM_CANDIDATO'],
+      partyId,
+      office:        OFFICE_MUNICIPAL[cargo] ?? cargo,
+      state:         uf,
+      electoralZone: city ?? uf,
+      city,
+      termStart:     TERM_2024_START,
+      termEnd:       TERM_2024_END,
+      avatarUrl:     null as string | null,
+    }
+
+    await prisma.politician.upsert({
+      where:  { tseId },
+      update: payload,
+      create: { ...payload, tseId, verified: false },
+    })
+
+    processed++
+    if (processed % 1000 === 0) {
+      process.stdout.write(`  Processados: ${processed} | Ignorados: ${skipped}\r`)
+    }
+  }
+
+  console.log(`  ✓ Processados: ${processed} | Ignorados: ${skipped}`)
+  return { processed, skipped }
+}
+
+// ── 7. Senadores Federais ─────────────────────────────────────────────────────
 
 async function syncSenadores(): Promise<{ created: number; updated: number; skipped: number }> {
   console.log('\n🏛️  Sincronizando senadores federais (Senado Federal)...')
@@ -231,6 +462,9 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
 
   console.log(`  ${titulares.length} senadores titulares encontrados`)
 
+  const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
+  const partyMap   = new Map(allParties.map(p => [p.abbreviation, p.id]))
+
   let created = 0
   let updated = 0
   let skipped = 0
@@ -239,10 +473,8 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
     const id = p.IdentificacaoParlamentar
     const tseId = `SEN-${id.CodigoParlamentar}`
 
-    const party = await prisma.party.findFirst({
-      where: { abbreviation: id.SiglaPartidoParlamentar },
-      select: { id: true },
-    })
+    const partyId = partyMap.get(id.SiglaPartidoParlamentar)
+    const party = partyId ? { id: partyId } : null
 
     if (!party) {
       console.log(`\n  ⚠ Partido "${id.SiglaPartidoParlamentar}" não encontrado para ${id.NomeParlamentar}`)
@@ -304,6 +536,9 @@ async function main() {
     await syncParties()
     await syncDeputados()
     await syncSenadores()
+    await syncPresidenteGovernadores()
+    await syncDepEstaduais()
+    await syncMunicipal2024()
     await syncMunicipios()
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)

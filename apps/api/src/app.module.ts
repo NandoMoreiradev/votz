@@ -32,6 +32,7 @@ import { CompaniesModule } from './companies/companies.module'
 import { CamaraSyncModule } from './camara-sync/camara-sync.module'
 import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
 import { SenadoSyncModule } from './senado-sync/senado-sync.module'
+import { TseSyncModule } from './tse-sync/tse-sync.module'
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { SenadoSyncModule } from './senado-sync/senado-sync.module'
     CamaraSyncModule,
     IbgeSyncModule,
     SenadoSyncModule,
+    TseSyncModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
