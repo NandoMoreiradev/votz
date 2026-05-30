@@ -216,6 +216,8 @@ export interface Politician {
   electoralZone: string
   state: string
   city: string | null
+  avatarUrl: string | null
+  website: string | null
   verified: boolean
   mandatometer: Mandatometer | null
   createdAt: string

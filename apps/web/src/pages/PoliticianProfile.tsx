@@ -6,6 +6,7 @@ import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
 import { useAuthStore } from '../store/auth.store'
+import { Button } from '../components/ui/Button'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
@@ -436,10 +437,11 @@ export function PoliticianProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
-  const currentUser = useAuthStore((s) => s.user)
-
+  const { user: currentUser, activeContext } = useAuthStore()
   const { data: politician, isLoading } = usePolitician(id!)
   const { data: reports, isLoading: loadingReports } = usePoliticianReports(id!, page, statusFilter || undefined)
+
+  const canEdit = !!activeContext && activeContext.type === 'POLITICIAN' && activeContext.id === id
 
   const m = politician?.mandatometer
   const resolutionPct = m && m.total > 0 ? Math.round((m.resolved / m.total) * 100) : 0
@@ -475,8 +477,8 @@ export function PoliticianProfile() {
         ) : politician ? (
           <HeaderCard>
             <HeaderTop>
-              <AvatarLink to={`/politico/${politician.id}`} $src={null}>
-                {politician.name.charAt(0)}
+              <AvatarLink to={`/politico/${politician.id}`} $src={politician.avatarUrl ?? null}>
+                {!politician.avatarUrl && politician.name.charAt(0)}
               </AvatarLink>
               <Info>
                 <Name>{politician.name}</Name>
@@ -490,6 +492,16 @@ export function PoliticianProfile() {
                   <Location>
                     📍 {politician.electoralZone} — {[politician.city, politician.state].filter(Boolean).join(', ')}
                   </Location>
+                  {politician.website && (
+                    <a
+                      href={politician.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: '0.8125rem', color: '#6B7280' }}
+                    >
+                      {politician.website.replace(/^https?:\/\//, '')}
+                    </a>
+                  )}
                 </MetaRow>
                 <Term>
                   Mandato: {formatDate(politician.termStart)} → {formatDate(politician.termEnd)}
@@ -498,6 +510,16 @@ export function PoliticianProfile() {
                   <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.name)}`}>
                     + Criar relato
                   </ReportCta>
+                  {canEdit && (
+                    <Button
+                      as={Link as any}
+                      to={`/politico/${politician.id}/editar`}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Editar perfil
+                    </Button>
+                  )}
                 </CtaRow>
               </Info>
             </HeaderTop>

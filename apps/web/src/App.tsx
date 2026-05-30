@@ -27,6 +27,7 @@ import { PoliticiansList } from './pages/PoliticiansList'
 import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
+import { PoliticianEdit } from './pages/PoliticianEdit'
 import { MyRequests } from './pages/MyRequests'
 import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
@@ -105,6 +106,7 @@ function App() {
               <Route path="/meu-perfil" element={<MyProfile />} />
               <Route path="/entidade/:id" element={<EntityProfile />} />
               <Route path="/politico/:id" element={<PoliticianProfile />} />
+              <Route path="/politico/:id/editar" element={<PoliticianEdit />} />
               <Route path="/mapa" element={<MapView />} />
               <Route path="/entidades" element={<EntitiesList />} />
               <Route path="/politicos" element={<PoliticiansList />} />

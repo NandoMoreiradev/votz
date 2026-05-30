@@ -331,6 +331,8 @@ model Politician {
   electoralZone   String
   state           String
   city            String?
+  avatarUrl       String?
+  website         String?
   verified        Boolean  @default(false)
   mandatometer    Json?    // snapshot: { resolved, ignored, advocated }
   createdAt       DateTime @default(now())
