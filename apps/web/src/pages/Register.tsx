@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
+import { PhoneInput } from '../components/ui/PhoneInput'
 import { useRegister, type RegisterPayload } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 
@@ -121,7 +122,6 @@ interface FormValues {
   name: string
   email: string
   password: string
-  phone: string
   zipCode: string
   streetNumber: string
   complement?: string
@@ -137,6 +137,10 @@ export function Register() {
   const { mutate: register_, isPending, error } = useRegister()
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>()
+
+  // Phone state
+  const [phoneE164, setPhoneE164] = useState('')
+  const [phoneError, setPhoneError] = useState('')
 
   // CEP state — campos vindos do BrasilAPI
   const [zipCode, setZipCode] = useState('')
@@ -164,25 +168,36 @@ export function Register() {
   }
 
   function onSubmit(data: FormValues) {
+    let hasError = false
+
+    if (!phoneE164) {
+      setPhoneError('Telefone obrigatório.')
+      hasError = true
+    } else {
+      setPhoneError('')
+    }
+
     if (!address) {
       setCepError('Digite um CEP válido para continuar.')
-      return
+      hasError = true
     }
+
+    if (hasError) return
 
     const payload: RegisterPayload = {
       name: data.name,
       email: data.email,
       password: data.password,
-      phone: data.phone.replace(/\D/g, ''),
-      zipCode: address.zipCode,
+      phone: phoneE164,
+      zipCode: address!.zipCode,
       streetNumber: data.streetNumber,
       complement: data.complement,
-      street: street || address.street,
-      neighborhood: neighborhood || address.neighborhood,
-      city: address.city,
-      state: address.state,
-      latitude: address.latitude,
-      longitude: address.longitude,
+      street: street || address!.street,
+      neighborhood: neighborhood || address!.neighborhood,
+      city: address!.city,
+      state: address!.state,
+      latitude: address!.latitude,
+      longitude: address!.longitude,
     }
 
     register_(payload, { onSuccess: () => navigate(redirect, { replace: true }) })
@@ -225,19 +240,11 @@ export function Register() {
 
           <Field>
             <Label>Telefone</Label>
-            <Input
-              type="tel"
-              placeholder="(11) 99999-9999"
-              $error={!!errors.phone}
-              {...register('phone', {
-                required: 'Obrigatório',
-                validate: (v) => {
-                  const digits = v.replace(/\D/g, '')
-                  return (digits.length === 10 || digits.length === 11) || 'Número inválido. Use (11) 99999-9999'
-                },
-              })}
+            <PhoneInput
+              value={phoneE164}
+              onChange={(e164) => { setPhoneE164(e164); if (e164) setPhoneError('') }}
+              error={phoneError}
             />
-            {errors.phone && <ErrorMsg>{errors.phone.message}</ErrorMsg>}
           </Field>
 
           <Field>

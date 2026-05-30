@@ -283,3 +283,82 @@ export function ManualAddressFields({
 }
 
 export { EditLink }
+
+// ─── FullManualAddressFields — todos os campos editáveis (sem CEP) ────────────
+
+interface FullManualProps {
+  street: string
+  neighborhood: string
+  city: string
+  state: string
+  onStreetChange: (v: string) => void
+  onNeighborhoodChange: (v: string) => void
+  onCityChange: (v: string) => void
+  onStateChange: (v: string) => void
+}
+
+const StateInput = styled(InlineInput)`
+  text-transform: uppercase;
+  width: 80px;
+`
+
+export function FullManualAddressFields({
+  street,
+  neighborhood,
+  city,
+  state,
+  onStreetChange,
+  onNeighborhoodChange,
+  onCityChange,
+  onStateChange,
+}: FullManualProps) {
+  return (
+    <ManualGrid>
+      <InlineField>
+        <InlineLabel>Logradouro</InlineLabel>
+        <InlineInput
+          type="text"
+          value={street}
+          onChange={(e) => onStreetChange(e.target.value)}
+          maxLength={200}
+          autoComplete="street-address"
+          placeholder="Av. Paulista"
+        />
+      </InlineField>
+
+      <InlineField>
+        <InlineLabel>Bairro</InlineLabel>
+        <InlineInput
+          type="text"
+          value={neighborhood}
+          onChange={(e) => onNeighborhoodChange(e.target.value)}
+          maxLength={100}
+          placeholder="Bela Vista"
+        />
+      </InlineField>
+
+      <TwoCol>
+        <InlineField>
+          <InlineLabel>Cidade</InlineLabel>
+          <InlineInput
+            type="text"
+            value={city}
+            onChange={(e) => onCityChange(e.target.value)}
+            maxLength={100}
+            placeholder="São Paulo"
+          />
+        </InlineField>
+        <InlineField>
+          <InlineLabel>Estado (UF)</InlineLabel>
+          <StateInput
+            type="text"
+            value={state}
+            onChange={(e) => onStateChange(e.target.value.toUpperCase().slice(0, 2))}
+            maxLength={2}
+            placeholder="SP"
+          />
+        </InlineField>
+      </TwoCol>
+    </ManualGrid>
+  )
+}

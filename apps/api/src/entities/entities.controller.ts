@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -9,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { UserType } from '@votz/shared-types'
 import { EntitiesService } from './entities.service'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
@@ -24,11 +26,14 @@ export class EntitiesController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Register an entity linked to authenticated user' })
+  @ApiOperation({ summary: 'Create an entity directly (admin only). Use POST /registration-requests for the standard flow.' })
   register(
     @Body() dto: CreateEntityDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; type: string },
   ) {
+    if (user.type !== UserType.ADMIN) {
+      throw new ForbiddenException('Use POST /registration-requests to register an entity.')
+    }
     return this.entitiesService.register(user.id, dto)
   }
 

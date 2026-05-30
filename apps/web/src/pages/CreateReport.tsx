@@ -7,7 +7,7 @@ import { Category } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
-import { CepInput, ManualAddressFields, type CepAddressResult } from '../components/ui/CepInput'
+import { CepInput, ManualAddressFields, FullManualAddressFields, type CepAddressResult } from '../components/ui/CepInput'
 import { useCreateReport } from '../hooks/useAuth'
 import { useSimilarReports } from '../hooks/useSimilarReports'
 import { useAuthStore } from '../store/auth.store'
@@ -108,9 +108,11 @@ const UploadingOverlay = styled.div`
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime'])
-const ACCEPTED_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES]
+const PDF_TYPES   = new Set(['application/pdf'])
+const ACCEPTED_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES, ...PDF_TYPES]
 const IMAGE_MAX = 10 * 1024 * 1024   // 10 MB
 const VIDEO_MAX = 100 * 1024 * 1024  // 100 MB
+const PDF_MAX   = 50 * 1024 * 1024   // 50 MB
 const MAX_FILES = 5
 
 interface MediaFile {
@@ -126,6 +128,7 @@ function validateFile(f: File): string | null {
   if (!ACCEPTED_TYPES.includes(f.type)) return 'Tipo não suportado'
   if (IMAGE_TYPES.has(f.type) && f.size > IMAGE_MAX) return 'Imagem acima de 10 MB'
   if (VIDEO_TYPES.has(f.type) && f.size > VIDEO_MAX) return 'Vídeo acima de 100 MB'
+  if (PDF_TYPES.has(f.type) && f.size > PDF_MAX) return 'PDF acima de 50 MB'
   return null
 }
 
@@ -216,13 +219,13 @@ function MediaUploader({ onChange }: { onChange: (urls: string[]) => void }) {
         }}
       >
         <MediaZoneText>
-          <strong>Clique ou arraste</strong> fotos/vídeos aqui<br />
-          Imagens (JPEG, PNG, WebP, GIF) até 10 MB · Vídeos (MP4, MOV) até 100 MB · máx. {MAX_FILES} arquivos
+          <strong>Clique ou arraste</strong> arquivos aqui<br />
+          Imagens até 10 MB · Vídeos até 100 MB · PDF até 50 MB · máx. {MAX_FILES} arquivos
         </MediaZoneText>
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,application/pdf"
           multiple
           style={{ display: 'none' }}
           onChange={(e) => handleFiles(e.target.files)}
@@ -675,15 +678,22 @@ export function CreateReport() {
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
   // ── Location state ─────────────────────────────────────────────────────────
+  const [locationMode, setLocationMode] = useState<'cep' | 'manual'>('cep')
+
+  // CEP mode
   const [cep, setCep] = useState('')
   const [address, setAddress] = useState<CepAddressResult | null>(null)
   const [street, setStreet] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
 
+  // Manual mode
+  const [manualStreet, setManualStreet] = useState('')
+  const [manualNeighborhood, setManualNeighborhood] = useState('')
+  const [manualCity, setManualCity] = useState('')
+  const [manualState, setManualState] = useState('')
+
   function handleCepChange(raw: string) {
     setCep(raw)
-    // Limpa endereço stale imediatamente ao digitar um novo CEP,
-    // evitando que um fetch anterior com falha deixe dados incorretos no envio.
     if (address) {
       setAddress(null)
       setStreet('')
@@ -702,6 +712,15 @@ export function CreateReport() {
     setAddress(null)
     setStreet('')
     setNeighborhood('')
+    setManualStreet('')
+    setManualNeighborhood('')
+    setManualCity('')
+    setManualState('')
+  }
+
+  function switchMode(mode: 'cep' | 'manual') {
+    setLocationMode(mode)
+    clearLocation()
   }
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
@@ -761,8 +780,9 @@ export function CreateReport() {
           ? { recipientType: 'POLITICIAN', recipientId: selectedPolitician.id }
           : {}
 
-    const location = address
-      ? {
+    const location = (() => {
+      if (locationMode === 'cep' && address) {
+        return {
           city: address.city,
           state: address.state,
           neighborhood: neighborhood || address.neighborhood,
@@ -775,7 +795,19 @@ export function CreateReport() {
             address.state,
           ].filter(Boolean).join(', '),
         }
-      : {}
+      }
+      if (locationMode === 'manual' && (manualCity || manualStreet)) {
+        return {
+          city: manualCity,
+          state: manualState,
+          neighborhood: manualNeighborhood,
+          typedAddress: [manualStreet, manualNeighborhood, manualCity, manualState]
+            .filter(Boolean)
+            .join(', '),
+        }
+      }
+      return {}
+    })()
 
     createReport(
       { ...data, ...recipient, ...location, media: mediaUrls } as any,
@@ -886,8 +918,8 @@ export function CreateReport() {
             </Field>
 
             <Field>
-              <Label>Fotos ou vídeos <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
-              <Hint>Evidências visuais aumentam a credibilidade do relato.</Hint>
+              <Label>Fotos, vídeos ou PDFs <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
+              <Hint>Evidências visuais e documentos aumentam a credibilidade do relato.</Hint>
               <MediaUploader onChange={setMediaUrls} />
             </Field>
 
@@ -896,31 +928,73 @@ export function CreateReport() {
                 Localização do problema{' '}
                 <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span>
               </Label>
-              <Hint>
-                Informe o CEP do local — o relato aparecerá no mapa e ativará alertas de surto.
-              </Hint>
-              <LocationBox>
-                <CepInput
-                  value={cep}
-                  onChange={handleCepChange}
-                  onAddressFetched={handleAddressFetched}
-                />
-                {address && (
-                  <>
-                    <ManualAddressFields
-                      street={street}
-                      neighborhood={neighborhood}
-                      onStreetChange={setStreet}
-                      onNeighborhoodChange={setNeighborhood}
-                      city={address.city}
-                      state={address.state}
-                    />
+              <RecipientTabs>
+                <RecipientTab
+                  type="button"
+                  $active={locationMode === 'cep'}
+                  onClick={() => switchMode('cep')}
+                >
+                  Tenho o CEP
+                </RecipientTab>
+                <RecipientTab
+                  type="button"
+                  $active={locationMode === 'manual'}
+                  onClick={() => switchMode('manual')}
+                >
+                  Não sei o CEP
+                </RecipientTab>
+              </RecipientTabs>
+
+              {locationMode === 'cep' && (
+                <LocationBox>
+                  <Hint>
+                    Informe o CEP — o relato aparecerá no mapa e ativará alertas de surto.
+                  </Hint>
+                  <CepInput
+                    value={cep}
+                    onChange={handleCepChange}
+                    onAddressFetched={handleAddressFetched}
+                  />
+                  {address && (
+                    <>
+                      <ManualAddressFields
+                        street={street}
+                        neighborhood={neighborhood}
+                        onStreetChange={setStreet}
+                        onNeighborhoodChange={setNeighborhood}
+                        city={address.city}
+                        state={address.state}
+                      />
+                      <LocationClear type="button" onClick={clearLocation}>
+                        Remover localização
+                      </LocationClear>
+                    </>
+                  )}
+                </LocationBox>
+              )}
+
+              {locationMode === 'manual' && (
+                <LocationBox>
+                  <Hint>
+                    Preencha os campos que souber — pelo menos cidade e estado.
+                  </Hint>
+                  <FullManualAddressFields
+                    street={manualStreet}
+                    neighborhood={manualNeighborhood}
+                    city={manualCity}
+                    state={manualState}
+                    onStreetChange={setManualStreet}
+                    onNeighborhoodChange={setManualNeighborhood}
+                    onCityChange={setManualCity}
+                    onStateChange={setManualState}
+                  />
+                  {(manualStreet || manualCity) && (
                     <LocationClear type="button" onClick={clearLocation}>
-                      Remover localização
+                      Limpar localização
                     </LocationClear>
-                  </>
-                )}
-              </LocationBox>
+                  )}
+                </LocationBox>
+              )}
             </Field>
 
             <Field>

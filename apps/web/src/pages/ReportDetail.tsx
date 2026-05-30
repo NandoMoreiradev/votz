@@ -585,6 +585,7 @@ const TimelineMediaItem = styled.div`
 interface UploadMediaItem {
   id: string
   previewUrl: string
+  mimeType: string
   url: string | null
   uploading: boolean
   error: boolean
@@ -744,11 +745,17 @@ export function ReportDetail() {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
     const slots = 4 - mediaItems.length
-    const toProcess = files.slice(0, slots)
+    const toProcess = files.slice(0, slots).filter((f) => {
+      if (f.type === 'application/pdf' && f.size > 50 * 1024 * 1024) return false
+      if (f.type.startsWith('image/') && f.size > 10 * 1024 * 1024) return false
+      if (f.type.startsWith('video/') && f.size > 100 * 1024 * 1024) return false
+      return true
+    })
 
     const newItems: UploadMediaItem[] = toProcess.map((f) => ({
       id: Math.random().toString(36).slice(2),
       previewUrl: URL.createObjectURL(f),
+      mimeType: f.type,
       url: null,
       uploading: true,
       error: false,
@@ -1097,10 +1104,10 @@ export function ReportDetail() {
 
                   {mediaItems.length < 4 && (
                     <MediaUploadLabel>
-                      📎 Anexar fotos ({mediaItems.length}/4)
+                      📎 Anexar fotos, vídeos ou PDFs ({mediaItems.length}/4)
                       <input
                         type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
+                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,application/pdf"
                         multiple
                         style={{ display: 'none' }}
                         onChange={handleMediaFiles}
@@ -1112,7 +1119,11 @@ export function ReportDetail() {
                     <MediaPreviewGrid>
                       {mediaItems.map((item) => (
                         <MediaThumb key={item.id} $error={item.error}>
-                          <img src={item.previewUrl} alt="" />
+                          {item.mimeType === 'application/pdf' ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>📄</div>
+                          ) : (
+                            <img src={item.previewUrl} alt="" />
+                          )}
                           {item.uploading && <MediaThumbOverlay>…</MediaThumbOverlay>}
                           {item.error && <MediaThumbOverlay>✕</MediaThumbOverlay>}
                           {!item.uploading && (

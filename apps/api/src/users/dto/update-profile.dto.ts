@@ -9,6 +9,9 @@ import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
 function normalizePhone(value: unknown): string {
   const raw = String(value ?? '').trim()
   try {
+    if (raw.startsWith('+') && isValidPhoneNumber(raw)) {
+      return parsePhoneNumber(raw).format('E.164')
+    }
     if (isValidPhoneNumber(raw, 'BR')) {
       return parsePhoneNumber(raw, 'BR').format('E.164')
     }
@@ -38,7 +41,7 @@ export class UpdateProfileDto {
   @ApiPropertyOptional({ example: '+5511999999999' })
   @IsOptional()
   @Transform(({ value }) => normalizePhone(value))
-  @Matches(/^\+\d{10,15}$/, { message: 'Telefone inválido. Use o formato (11) 99999-9999' })
+  @Matches(/^\+\d{7,15}$/, { message: 'Telefone inválido. Envie no formato E.164, ex: +5511999999999' })
   phone?: string
 
   @ApiPropertyOptional({ example: '01310100' })

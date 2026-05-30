@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { UserType } from '@votz/shared-types'
 import { PoliticiansService } from './politicians.service'
 import { CreatePoliticianDto } from './dto/create-politician.dto'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'
@@ -15,11 +16,14 @@ export class PoliticiansController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Register a politician profile linked to authenticated user' })
+  @ApiOperation({ summary: 'Create a politician profile directly (admin only). Use POST /registration-requests for the standard flow.' })
   register(
     @Body() dto: CreatePoliticianDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; type: string },
   ) {
+    if (user.type !== UserType.ADMIN) {
+      throw new ForbiddenException('Use POST /registration-requests to register a politician.')
+    }
     return this.service.register(user.id, dto)
   }
 

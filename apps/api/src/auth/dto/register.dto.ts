@@ -9,6 +9,11 @@ import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
 function normalizePhone(value: unknown): string {
   const raw = String(value ?? '').trim()
   try {
+    // Accept any E.164 number (starts with +)
+    if (raw.startsWith('+') && isValidPhoneNumber(raw)) {
+      return parsePhoneNumber(raw).format('E.164')
+    }
+    // Fallback: try to parse as BR local number
     if (isValidPhoneNumber(raw, 'BR')) {
       return parsePhoneNumber(raw, 'BR').format('E.164')
     }
@@ -37,7 +42,7 @@ export class RegisterDto {
 
   @ApiProperty({ example: '11999999999' })
   @Transform(({ value }) => normalizePhone(value))
-  @Matches(/^\+\d{10,15}$/, { message: 'Telefone inválido. Use o formato (11) 99999-9999' })
+  @Matches(/^\+\d{7,15}$/, { message: 'Telefone inválido. Envie no formato E.164, ex: +5511999999999' })
   phone: string
 
   @ApiProperty({ example: '01310100' })

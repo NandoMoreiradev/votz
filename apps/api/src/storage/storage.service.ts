@@ -21,6 +21,7 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
+const PDF_MAX_SIZE   = 50 * 1024 * 1024   // 50 MB
 
 function detectMimeFromBuffer(buf: Buffer): string {
   if (buf.length < 12) return ''
@@ -105,11 +106,13 @@ export class StorageService {
     }
 
     const isVideo = mimeType.startsWith('video/')
-    const maxSize = isVideo ? VIDEO_MAX_SIZE : IMAGE_MAX_SIZE
+    const isPdf = mimeType === 'application/pdf'
+    const maxSize = isVideo ? VIDEO_MAX_SIZE : isPdf ? PDF_MAX_SIZE : IMAGE_MAX_SIZE
     if (buffer.byteLength > maxSize) {
-      throw new BadRequestException(
-        isVideo ? 'Vídeo excede o limite de 100 MB' : 'Imagem excede o limite de 10 MB',
-      )
+      const label = isVideo ? 'Vídeo excede o limite de 100 MB'
+        : isPdf ? 'PDF excede o limite de 50 MB'
+        : 'Imagem excede o limite de 10 MB'
+      throw new BadRequestException(label)
     }
 
     const ext = mimeType.split('/')[1].replace('quicktime', 'mov')
