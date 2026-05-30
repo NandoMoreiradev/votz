@@ -5,9 +5,11 @@ import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
+import { usePoliticianPropostas, PublicProposta } from '../hooks/usePropostas'
 import { useAuthStore } from '../store/auth.store'
 import { Button } from '../components/ui/Button'
 import { TeamPanel } from '../components/org/TeamPanel'
+import { PropostaStatusBadge } from '../components/ui/Badge'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 
@@ -394,6 +396,52 @@ const Empty = styled.p`
   text-align: center; color: ${({ theme }) => theme.colors.muted}; padding: 40px 0;
 `
 
+// ── Propostas ─────────────────────────────────────────────────────────────────
+
+const MainTabs = styled.div` display: flex; gap: 6px; margin-bottom: 20px; `
+const MainTab = styled.button<{ $active: boolean }>`
+  padding: 7px 18px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.border};
+  background: ${({ $active, theme }) => $active ? theme.colors.primary : 'transparent'};
+  color: ${({ $active, theme }) => $active ? '#fff' : theme.colors.muted};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ $active, theme }) => $active ? '#fff' : theme.colors.primary}; }
+`
+
+const PropostaCard = styled(Link)`
+  display: block;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 18px 20px;
+  transition: all 0.15s;
+  &:hover { border-color: #c4c4c4; box-shadow: ${({ theme }) => theme.shadows.md}; transform: translateY(-1px); }
+`
+
+const PCardBadges = styled.div` display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; `
+const PCardTitle = styled.h3`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.md};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 10px;
+`
+const PCardFooter = styled.div` display: flex; gap: 12px; align-items: center; `
+const PCardStat = styled.span` font-size: 0.8125rem; color: ${({ theme }) => theme.colors.muted}; font-family: ${({ theme }) => theme.fonts.mono}; `
+const PCardDate = styled.span` font-size: 0.8125rem; color: ${({ theme }) => theme.colors.muted}; margin-left: auto; `
+
+const PROPOSTA_STATUS_TABS = [
+  { label: 'Todas', value: '' },
+  { label: 'Rascunhos', value: 'DRAFT' },
+  { label: 'Apresentadas', value: 'PRESENTED' },
+  { label: 'Em votação', value: 'IN_VOTE' },
+  { label: 'Aprovadas', value: 'APPROVED' },
+]
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string) {
@@ -437,9 +485,17 @@ export function PoliticianProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
+  const [activeTab, setActiveTab] = useState<'relatos' | 'propostas'>('relatos')
+  const [propostaPage, setPropostaPage] = useState(1)
+  const [propostaStatusFilter, setPropostaStatusFilter] = useState('')
   const { user: currentUser, activeContext } = useAuthStore()
   const { data: politician, isLoading } = usePolitician(id!)
   const { data: reports, isLoading: loadingReports } = usePoliticianReports(id!, page, statusFilter || undefined)
+  const { data: propostas, isLoading: loadingPropostas } = usePoliticianPropostas(
+    id!,
+    propostaPage,
+    propostaStatusFilter || undefined,
+  )
 
   const canEdit = !!activeContext && activeContext.type === 'POLITICIAN' && activeContext.id === id
 
@@ -454,6 +510,11 @@ export function PoliticianProfile() {
   function handleTabChange(value: string) {
     setStatusFilter(value)
     setPage(1)
+  }
+
+  function handlePropostaTabChange(value: string) {
+    setPropostaStatusFilter(value)
+    setPropostaPage(1)
   }
 
   return (
@@ -520,6 +581,14 @@ export function PoliticianProfile() {
                       Editar perfil
                     </Button>
                   )}
+                  {canEdit && (
+                    <ReportCta
+                      to="/proposta/nova"
+                      style={{ background: '#2DC653' }}
+                    >
+                      + Nova proposta
+                    </ReportCta>
+                  )}
                   {!politician.verified && currentUser && !canEdit && (
                     <ReportCta
                       to={`/reivindicar/politico/${politician.id}`}
@@ -576,67 +645,142 @@ export function PoliticianProfile() {
               )}
 
               <div style={{ marginTop: currentUser ? 20 : 0 }}>
-                <SectionHeader>
-                  <SectionTitle>Relatos direcionados</SectionTitle>
-                  <StatusTabs>
-                    {STATUS_TABS.map((t) => (
-                      <StatusTab
-                        key={t.value}
-                        $active={statusFilter === t.value}
-                        onClick={() => handleTabChange(t.value)}
-                      >
-                        {t.label}
-                      </StatusTab>
-                    ))}
-                  </StatusTabs>
-                </SectionHeader>
+                {/* Abas principais: Relatos / Propostas */}
+                <MainTabs>
+                  <MainTab $active={activeTab === 'relatos'} onClick={() => setActiveTab('relatos')}>
+                    Relatos
+                  </MainTab>
+                  <MainTab $active={activeTab === 'propostas'} onClick={() => setActiveTab('propostas')}>
+                    Propostas
+                  </MainTab>
+                </MainTabs>
 
-                {loadingReports ? (
-                  <ReportList>
-                    {[1, 2, 3].map((i) => <Skeleton key={i} style={{ height: 120 }} />)}
-                  </ReportList>
-                ) : reports && reports.data.length > 0 ? (
+                {/* ── Aba Relatos ── */}
+                {activeTab === 'relatos' && (
                   <>
-                    <ReportList>
-                      {reports.data.map((r) => {
-                        const location = [r.city, r.state].filter(Boolean).join(', ')
-                        return (
-                          <ReportCard key={r.id} to={`/relatos/${r.id}`}>
-                            <RHeader>
-                              <RBadges>
-                                <CategoryBadge category={r.category} />
-                                <StatusBadge status={r.status} />
-                              </RBadges>
-                              {location && <RLocation>{location}</RLocation>}
-                            </RHeader>
-                            <RTitle>{r.title}</RTitle>
-                            <PressureBar score={r.pressureScore} />
-                            <RFooter>
-                              <RStat>▲ {r._count.votes}</RStat>
-                              <Dot>·</Dot>
-                              <RStat>💬 {r._count.comments}</RStat>
-                              <RAgo>{timeAgo(r.createdAt)}</RAgo>
-                            </RFooter>
-                          </ReportCard>
-                        )
-                      })}
-                    </ReportList>
-                    {reports.meta.totalPages > 1 && (
-                      <Pagination>
-                        <PageBtn disabled={page === 1} onClick={() => setPage((p) => p - 1)}>←</PageBtn>
-                        {Array.from({ length: reports.meta.totalPages }, (_, i) => i + 1).map((p) => (
-                          <PageBtn key={p} $active={p === page} onClick={() => setPage(p)}>{p}</PageBtn>
+                    <SectionHeader>
+                      <SectionTitle>Relatos direcionados</SectionTitle>
+                      <StatusTabs>
+                        {STATUS_TABS.map((t) => (
+                          <StatusTab
+                            key={t.value}
+                            $active={statusFilter === t.value}
+                            onClick={() => handleTabChange(t.value)}
+                          >
+                            {t.label}
+                          </StatusTab>
                         ))}
-                        <PageBtn disabled={page === reports.meta.totalPages} onClick={() => setPage((p) => p + 1)}>→</PageBtn>
-                      </Pagination>
+                      </StatusTabs>
+                    </SectionHeader>
+
+                    {loadingReports ? (
+                      <ReportList>
+                        {[1, 2, 3].map((i) => <Skeleton key={i} style={{ height: 120 }} />)}
+                      </ReportList>
+                    ) : reports && reports.data.length > 0 ? (
+                      <>
+                        <ReportList>
+                          {reports.data.map((r) => {
+                            const location = [r.city, r.state].filter(Boolean).join(', ')
+                            return (
+                              <ReportCard key={r.id} to={`/relatos/${r.id}`}>
+                                <RHeader>
+                                  <RBadges>
+                                    <CategoryBadge category={r.category} />
+                                    <StatusBadge status={r.status} />
+                                  </RBadges>
+                                  {location && <RLocation>{location}</RLocation>}
+                                </RHeader>
+                                <RTitle>{r.title}</RTitle>
+                                <PressureBar score={r.pressureScore} />
+                                <RFooter>
+                                  <RStat>▲ {r._count.votes}</RStat>
+                                  <Dot>·</Dot>
+                                  <RStat>💬 {r._count.comments}</RStat>
+                                  <RAgo>{timeAgo(r.createdAt)}</RAgo>
+                                </RFooter>
+                              </ReportCard>
+                            )
+                          })}
+                        </ReportList>
+                        {reports.meta.totalPages > 1 && (
+                          <Pagination>
+                            <PageBtn disabled={page === 1} onClick={() => setPage((p) => p - 1)}>←</PageBtn>
+                            {Array.from({ length: reports.meta.totalPages }, (_, i) => i + 1).map((p) => (
+                              <PageBtn key={p} $active={p === page} onClick={() => setPage(p)}>{p}</PageBtn>
+                            ))}
+                            <PageBtn disabled={page === reports.meta.totalPages} onClick={() => setPage((p) => p + 1)}>→</PageBtn>
+                          </Pagination>
+                        )}
+                      </>
+                    ) : (
+                      <Empty>
+                        {statusFilter
+                          ? 'Nenhum relato com este status.'
+                          : 'Nenhum relato direcionado a este político ainda.'}
+                      </Empty>
                     )}
                   </>
-                ) : (
-                  <Empty>
-                    {statusFilter
-                      ? 'Nenhum relato com este status.'
-                      : 'Nenhum relato direcionado a este político ainda.'}
-                  </Empty>
+                )}
+
+                {/* ── Aba Propostas ── */}
+                {activeTab === 'propostas' && (
+                  <>
+                    <SectionHeader>
+                      <SectionTitle>Propostas</SectionTitle>
+                      <StatusTabs>
+                        {PROPOSTA_STATUS_TABS.map((t) => (
+                          <StatusTab
+                            key={t.value}
+                            $active={propostaStatusFilter === t.value}
+                            onClick={() => handlePropostaTabChange(t.value)}
+                          >
+                            {t.label}
+                          </StatusTab>
+                        ))}
+                      </StatusTabs>
+                    </SectionHeader>
+
+                    {loadingPropostas ? (
+                      <ReportList>
+                        {[1, 2, 3].map((i) => <Skeleton key={i} style={{ height: 110 }} />)}
+                      </ReportList>
+                    ) : propostas && propostas.data.length > 0 ? (
+                      <>
+                        <ReportList>
+                          {propostas.data.map((p: PublicProposta) => (
+                            <PropostaCard key={p.id} to={`/propostas/${p.id}`}>
+                              <PCardBadges>
+                                <PropostaStatusBadge status={p.status} />
+                              </PCardBadges>
+                              <PCardTitle>{p.titulo}</PCardTitle>
+                              <PCardFooter>
+                                <PCardStat>▲ {p.totalApoios}</PCardStat>
+                                <Dot>·</Dot>
+                                <PCardStat>▼ {p.totalRejeicoes}</PCardStat>
+                                <PCardDate>{timeAgo(p.createdAt)}</PCardDate>
+                              </PCardFooter>
+                            </PropostaCard>
+                          ))}
+                        </ReportList>
+                        {propostas.meta.totalPages > 1 && (
+                          <Pagination>
+                            <PageBtn disabled={propostaPage === 1} onClick={() => setPropostaPage(p => p - 1)}>←</PageBtn>
+                            {Array.from({ length: propostas.meta.totalPages }, (_, i) => i + 1).map((p) => (
+                              <PageBtn key={p} $active={p === propostaPage} onClick={() => setPropostaPage(p)}>{p}</PageBtn>
+                            ))}
+                            <PageBtn disabled={propostaPage === propostas.meta.totalPages} onClick={() => setPropostaPage(p => p + 1)}>→</PageBtn>
+                          </Pagination>
+                        )}
+                      </>
+                    ) : (
+                      <Empty>
+                        {propostaStatusFilter
+                          ? 'Nenhuma proposta com este status.'
+                          : 'Nenhuma proposta publicada ainda.'}
+                      </Empty>
+                    )}
+                  </>
                 )}
               </div>
             </MainCol>

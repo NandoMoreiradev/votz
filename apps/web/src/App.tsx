@@ -35,6 +35,9 @@ import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
 import { SurtoDetail } from './pages/SurtoDetail'
 import { Imprensa } from './pages/Imprensa'
+import { PropostasList } from './pages/PropostasList'
+import { PropostaDetail } from './pages/PropostaDetail'
+import { CreateProposta } from './pages/CreateProposta'
 import { Footer } from './components/layout/Footer'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
@@ -122,6 +125,9 @@ function App() {
               <Route path="/empresa/:id" element={<CompanyProfile />} />
               <Route path="/surtos/:id" element={<SurtoDetail />} />
               <Route path="/imprensa" element={<Imprensa />} />
+              <Route path="/propostas" element={<PropostasList />} />
+              <Route path="/propostas/:id" element={<PropostaDetail />} />
+              <Route path="/proposta/nova" element={<CreateProposta />} />
             </Routes>
             <Footer />
           </BrowserRouter>

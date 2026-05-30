@@ -1,5 +1,5 @@
 import styled from 'styled-components'
-import { Category, ReportStatus } from '@votz/shared-types'
+import { Category, ReportStatus, PropostaStatus } from '@votz/shared-types'
 
 export const CATEGORY_CONFIG: Record<Category, { label: string; color: string }> = {
   [Category.HEALTH]:        { label: 'Saúde',              color: '#F59E0B' },
@@ -55,5 +55,19 @@ export function CategoryBadge({ category }: { category: Category }) {
 
 export function StatusBadge({ status }: { status: ReportStatus }) {
   const config = STATUS_CONFIG[status]
+  return <BadgeRoot $color={config.color}>{config.label}</BadgeRoot>
+}
+
+export const PROPOSTA_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  [PropostaStatus.DRAFT]:      { label: 'Rascunho',    color: '#9CA3AF' },
+  [PropostaStatus.PRESENTED]:  { label: 'Apresentada', color: '#3B82F6' },
+  [PropostaStatus.IN_VOTE]:    { label: 'Em votação',  color: '#F59E0B' },
+  [PropostaStatus.APPROVED]:   { label: 'Aprovada',    color: '#2DC653' },
+  [PropostaStatus.REJECTED]:   { label: 'Rejeitada',   color: '#E63946' },
+  [PropostaStatus.ARCHIVED]:   { label: 'Arquivada',   color: '#6B7280' },
+}
+
+export function PropostaStatusBadge({ status }: { status: string }) {
+  const config = PROPOSTA_STATUS_CONFIG[status] ?? { label: status, color: '#6B7280' }
   return <BadgeRoot $color={config.color}>{config.label}</BadgeRoot>
 }

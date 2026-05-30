@@ -153,6 +153,21 @@ enum FollowerActorType {
   ENTITY
 }
 
+enum PropostaStatus {
+  DRAFT
+  PRESENTED
+  IN_VOTE
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum PropostaEventType {
+  CREATED
+  STATUS_CHANGED
+  UPDATED
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -194,15 +209,17 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  reports         Report[]  @relation("ReportAuthor")
-  votes           Vote[]
-  comments        Comment[]
-  timelineEvents  TimelineEvent[]
-  notifications   Notification[]
-  registrationRequests  RegistrationRequest[] @relation("RegistrationRequester")
-  reviewedRequests      RegistrationRequest[] @relation("RegistrationReviewer")
-  memberships           OrgMembership[]
-  apiKeys               ApiKey[]
+  reports              Report[]         @relation("ReportAuthor")
+  votes                Vote[]
+  comments             Comment[]
+  timelineEvents       TimelineEvent[]
+  notifications        Notification[]
+  registrationRequests RegistrationRequest[] @relation("RegistrationRequester")
+  reviewedRequests     RegistrationRequest[] @relation("RegistrationReviewer")
+  memberships          OrgMembership[]
+  apiKeys              ApiKey[]
+  propostaTimeline     PropostaTimeline[]
+  propostaVotos        PropostaVoto[]
 
   @@map("users")
 }
@@ -335,10 +352,12 @@ model Politician {
   city            String?
   avatarUrl       String?
   website         String?
-  verified        Boolean  @default(false)
-  mandatometer    Json?    // snapshot: { resolved, ignored, advocated }
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  verified        Boolean    @default(false)
+  mandatometer    Json?      // snapshot: { resolved, ignored, advocated }
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  propostas       Proposta[]
 
   @@map("politicians")
 }
@@ -538,4 +557,53 @@ model MemberInvite {
   createdAt   DateTime  @default(now())
 
   @@map("member_invites")
+}
+
+// ==================== PROPOSTAS ====================
+
+model Proposta {
+  id          String         @id @default(uuid())
+  titulo      String
+  descricao   String
+  status      PropostaStatus @default(DRAFT)
+  categorias  Category[]
+  linkExterno String?
+
+  politicoId  String
+  politico    Politician     @relation(fields: [politicoId], references: [id])
+
+  timeline    PropostaTimeline[]
+  votos       PropostaVoto[]
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("propostas")
+}
+
+model PropostaTimeline {
+  id         String            @id @default(uuid())
+  propostaId String
+  proposta   Proposta          @relation(fields: [propostaId], references: [id])
+  tipo       PropostaEventType
+  conteudo   String
+  autorId    String?
+  autor      User?             @relation(fields: [autorId], references: [id])
+  metadata   Json?
+  createdAt  DateTime          @default(now())
+
+  @@map("proposta_timeline")
+}
+
+model PropostaVoto {
+  id         String   @id @default(uuid())
+  propostaId String
+  proposta   Proposta @relation(fields: [propostaId], references: [id])
+  usuarioId  String
+  usuario    User     @relation(fields: [usuarioId], references: [id])
+  apoio      Boolean  // true = apoia, false = rejeita
+  createdAt  DateTime @default(now())
+
+  @@unique([propostaId, usuarioId])
+  @@map("proposta_votos")
 }
