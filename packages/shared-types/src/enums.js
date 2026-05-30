@@ -6,6 +6,7 @@ var UserType;
     UserType["CITIZEN"] = "CITIZEN";
     UserType["ENTITY"] = "ENTITY";
     UserType["POLITICIAN"] = "POLITICIAN";
+    UserType["COMPANY"] = "COMPANY";
     UserType["PRESS"] = "PRESS";
     UserType["NGO"] = "NGO";
     UserType["RESEARCHER"] = "RESEARCHER";

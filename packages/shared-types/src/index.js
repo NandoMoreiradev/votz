@@ -18,4 +18,5 @@ __exportStar(require("./enums"), exports);
 __exportStar(require("./report"), exports);
 __exportStar(require("./user"), exports);
 __exportStar(require("./pagination"), exports);
+__exportStar(require("./proposta"), exports);
 //# sourceMappingURL=index.js.map

@@ -144,7 +144,7 @@ export class PropostasRepository {
         tipo: data.tipo as never,
         conteudo: data.conteudo,
         autorId: data.autorId,
-        metadata: data.metadata ?? {},
+        metadata: (data.metadata ?? {}) as object,
       },
       select: TIMELINE_SELECT,
     })
