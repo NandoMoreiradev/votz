@@ -2,6 +2,7 @@ export enum UserType {
   CITIZEN = 'CITIZEN',
   ENTITY = 'ENTITY',
   POLITICIAN = 'POLITICIAN',
+  COMPANY = 'COMPANY',
   PRESS = 'PRESS',
   NGO = 'NGO',
   RESEARCHER = 'RESEARCHER',
