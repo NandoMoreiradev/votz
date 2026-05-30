@@ -29,15 +29,19 @@ interface UsePoliticiansParams {
   party?: string
   office?: string
   search?: string
+  verified?: boolean
+  enabled?: boolean
   page?: number
 }
 
 export function usePoliticians(params: UsePoliticiansParams = {}) {
+  const { enabled = true, ...queryParams } = params
   return useQuery({
-    queryKey: ['politicians', params],
+    queryKey: ['politicians', queryParams],
     queryFn: () =>
-      api.get<PoliticiansResponse>('/politicians', { params: { ...params, limit: 20 } }).then((r) => r.data),
+      api.get<PoliticiansResponse>('/politicians', { params: { ...queryParams, limit: 20 } }).then((r) => r.data),
     staleTime: 60_000,
+    enabled,
   })
 }
 

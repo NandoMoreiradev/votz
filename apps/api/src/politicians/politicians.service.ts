@@ -37,6 +37,7 @@ export class PoliticiansService {
       party: query.party,
       office: query.office,
       search: query.search,
+      verified: query.verified,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     })

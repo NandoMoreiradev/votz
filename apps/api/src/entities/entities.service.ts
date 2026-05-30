@@ -31,6 +31,7 @@ export class EntitiesService {
       city: query.city,
       state: query.state,
       search: query.search,
+      verified: query.verified,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     })

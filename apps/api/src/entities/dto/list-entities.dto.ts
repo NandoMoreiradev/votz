@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
-import { Type } from 'class-transformer'
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { Transform, Type } from 'class-transformer'
 import { EntityType } from '@votz/shared-types'
 
 export class ListEntitiesDto {
@@ -23,6 +23,12 @@ export class ListEntitiesDto {
   @IsOptional()
   @IsString()
   search?: string
+
+  @ApiPropertyOptional({ description: 'Filter only verified entities' })
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : value === 'true')
+  @IsBoolean()
+  verified?: boolean
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

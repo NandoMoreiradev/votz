@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
-import { Type } from 'class-transformer'
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { Transform, Type } from 'class-transformer'
 
 export class ListPoliticiansDto {
   @ApiPropertyOptional()
@@ -27,6 +27,12 @@ export class ListPoliticiansDto {
   @IsOptional()
   @IsString()
   search?: string
+
+  @ApiPropertyOptional({ description: 'Filter only verified politicians' })
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : value === 'true')
+  @IsBoolean()
+  verified?: boolean
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

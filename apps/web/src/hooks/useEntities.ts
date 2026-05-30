@@ -17,15 +17,19 @@ interface UseEntitiesParams {
   city?: string
   state?: string
   search?: string
+  verified?: boolean
+  enabled?: boolean
   page?: number
 }
 
 export function useEntities(params: UseEntitiesParams = {}) {
+  const { enabled = true, ...queryParams } = params
   return useQuery({
-    queryKey: ['entities', params],
+    queryKey: ['entities', queryParams],
     queryFn: () =>
-      api.get<EntitiesResponse>('/entities', { params: { ...params, limit: 20 } }).then((r) => r.data),
+      api.get<EntitiesResponse>('/entities', { params: { ...queryParams, limit: 20 } }).then((r) => r.data),
     staleTime: 60_000,
+    enabled,
   })
 }
 

@@ -44,6 +44,7 @@ const Filters = styled.div`
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 24px;
+  align-items: center;
 `
 
 const SearchInput = styled.input`
@@ -72,6 +73,28 @@ const Select = styled.select`
   background: ${({ theme }) => theme.colors.white};
   outline: none;
   cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+  transition: border-color 0.15s;
+  &:focus { outline: none; border-color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const VerifiedBtn = styled.button<{ $active: boolean }>`
+  height: 40px;
+  padding: 0 16px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme, $active }) => ($active ? theme.colors.positive : theme.colors.border)};
+  background: ${({ theme, $active }) => ($active ? theme.colors.positive + '18' : theme.colors.white)};
+  color: ${({ theme, $active }) => ($active ? theme.colors.positive : theme.colors.muted)};
+  font-size: 0.875rem;
+  font-weight: ${({ $active }) => ($active ? 600 : 400)};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  &:hover { border-color: ${({ theme }) => theme.colors.positive}; }
 `
 
 // ── Cards ──────────────────────────────────────────────────────────────────
@@ -192,10 +215,23 @@ const StatLabel = styled.span`
 
 // ── Paginação ──────────────────────────────────────────────────────────────
 
+function getPageRange(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | null)[] = [1]
+  const left = current - 2
+  const right = current + 2
+  if (left > 2) pages.push(null)
+  for (let i = Math.max(2, left); i <= Math.min(total - 1, right); i++) pages.push(i)
+  if (right < total - 1) pages.push(null)
+  pages.push(total)
+  return pages
+}
+
 const Pagination = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 32px;
 `
@@ -212,6 +248,17 @@ const PageBtn = styled.button<{ $active?: boolean }>`
   cursor: pointer;
   transition: all 0.15s;
   &:disabled { opacity: 0.4; cursor: not-allowed; }
+`
+
+const Ellipsis = styled.span`
+  min-width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 0.875rem;
+  user-select: none;
 `
 
 // ── Skeleton / Empty ───────────────────────────────────────────────────────
@@ -241,24 +288,33 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   OTHER:           'Outro',
 }
 
+const BR_STATES = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO',
+  'MA','MT','MS','MG','PA','PB','PR','PE','PI',
+  'RJ','RN','RS','RO','RR','SC','SP','SE','TO',
+]
+
 // ── Componente ─────────────────────────────────────────────────────────────
 
 export function EntitiesList() {
   const [search, setSearch] = useState('')
   const [type, setType] = useState<EntityType | ''>('')
   const [state, setState] = useState('')
+  const [verified, setVerified] = useState(false)
   const [page, setPage] = useState(1)
 
   const { data, isLoading } = useEntities({
     search: search || undefined,
     type: type || undefined,
     state: state || undefined,
+    verified: verified || undefined,
     page,
   })
 
   function handleSearch(v: string) { setSearch(v); setPage(1) }
   function handleType(v: string) { setType(v as EntityType | ''); setPage(1) }
   function handleState(v: string) { setState(v); setPage(1) }
+  function toggleVerified() { setVerified((v) => !v); setPage(1) }
 
   return (
     <Page>
@@ -281,12 +337,15 @@ export function EntitiesList() {
               <option key={k} value={k}>{v}</option>
             ))}
           </Select>
-          <SearchInput
-            placeholder="Estado (ex: SP)"
-            value={state}
-            onChange={(e) => handleState(e.target.value.toUpperCase())}
-            style={{ maxWidth: 90 }}
-          />
+          <Select value={state} onChange={(e) => handleState(e.target.value)}>
+            <option value="">Todos os estados</option>
+            {BR_STATES.map((uf) => (
+              <option key={uf} value={uf}>{uf}</option>
+            ))}
+          </Select>
+          <VerifiedBtn $active={verified} onClick={toggleVerified}>
+            ✓ Somente verificadas
+          </VerifiedBtn>
         </Filters>
 
         {isLoading ? (
@@ -335,16 +394,18 @@ export function EntitiesList() {
             {data.meta.totalPages > 1 && (
               <Pagination>
                 <PageBtn disabled={page === 1} onClick={() => setPage((p) => p - 1)}>←</PageBtn>
-                {Array.from({ length: data.meta.totalPages }, (_, i) => i + 1).map((p) => (
-                  <PageBtn key={p} $active={p === page} onClick={() => setPage(p)}>{p}</PageBtn>
-                ))}
+                {getPageRange(page, data.meta.totalPages).map((p, i) =>
+                  p === null
+                    ? <Ellipsis key={`e-${i}`}>…</Ellipsis>
+                    : <PageBtn key={p} $active={p === page} onClick={() => setPage(p)}>{p}</PageBtn>
+                )}
                 <PageBtn disabled={page === data.meta.totalPages} onClick={() => setPage((p) => p + 1)}>→</PageBtn>
               </Pagination>
             )}
           </>
         ) : (
           <Empty>
-            {search || type || state
+            {search || type || state || verified
               ? 'Nenhuma entidade encontrada com esses filtros.'
               : 'Nenhuma entidade cadastrada ainda.'}
           </Empty>

@@ -63,6 +63,7 @@ export class PoliticiansRepository {
     party?: string
     office?: string
     search?: string
+    verified?: boolean
     page: number
     limit: number
   }) {
@@ -72,6 +73,7 @@ export class PoliticiansRepository {
       ...(params.party && { party: { abbreviation: { contains: params.party, mode: 'insensitive' } } }),
       ...(params.office && { office: { contains: params.office, mode: 'insensitive' } }),
       ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
+      ...(params.verified !== undefined && { verified: params.verified }),
     }
 
     const [data, total] = await this.prisma.$transaction([

@@ -1,12 +1,14 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import styled, { css } from 'styled-components'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
 import { useAuthStore } from '../store/auth.store'
 import { useCnpj } from '../hooks/useCnpj'
 import { api } from '../lib/api'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
+import { useEntities } from '../hooks/useEntities'
+import { usePoliticians } from '../hooks/usePoliticians'
 
 type RequestType = 'ENTITY' | 'POLITICIAN' | 'COMPANY'
 
@@ -266,6 +268,64 @@ const UploadingSpinner = styled.span`
   color: ${({ theme }) => theme.colors.muted};
 `
 
+// ── DuplicateAlert ─────────────────────────────────────────────────────────
+
+const DuplicateBox = styled.div`
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #f59e0b;
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 12px 14px;
+  margin-top: 8px;
+`
+
+const DuplicateTitle = styled.p`
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 6px;
+`
+
+const DuplicateItem = styled(Link)`
+  display: block;
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.primary};
+  text-decoration: underline;
+  padding: 2px 0;
+  &:hover { opacity: 0.8; }
+`
+
+const DuplicateHint = styled.p`
+  font-size: 0.75rem;
+  color: #92400e;
+  margin-top: 8px;
+  line-height: 1.4;
+`
+
+interface DuplicateAlertItem {
+  id: string
+  label: string
+  path: string
+}
+
+function DuplicateAlert({ items }: { items: DuplicateAlertItem[] }) {
+  if (items.length === 0) return null
+  return (
+    <DuplicateBox>
+      <DuplicateTitle>Já existe algo parecido no sistema:</DuplicateTitle>
+      {items.map((item) => (
+        <DuplicateItem key={item.id} to={item.path} target="_blank" rel="noopener noreferrer">
+          → {item.label}
+        </DuplicateItem>
+      ))}
+      <DuplicateHint>
+        Se for o mesmo, acesse o perfil existente em vez de cadastrar novamente.
+        Se for diferente, continue o cadastro normalmente.
+      </DuplicateHint>
+    </DuplicateBox>
+  )
+}
+
 // ── DocUpload component ────────────────────────────────────────────────────
 
 interface DocUploadProps {
@@ -350,10 +410,24 @@ function DocUpload({ label, hint, required, value, onChange }: DocUploadProps) {
 function EntityForm({ onSubmit, loading }: { onSubmit: (p: Record<string, unknown>) => void; loading: boolean }) {
   const [form, setForm] = useState({ legalName: '', cnpj: '', type: 'CITY_HALL', city: '', state: '', website: '' })
   const [officialDoc, setOfficialDoc] = useState<string | null>(null)
+  const [debouncedName, setDebouncedName] = useState('')
   const s = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
   const handleStateChange = (v: string) => setForm(f => ({ ...f, state: v, city: '' }))
   const handleCityChange  = (v: string) => setForm(f => ({ ...f, city: v }))
+
+  useEffect(() => {
+    if (form.legalName.length < 3) { setDebouncedName(''); return }
+    const t = setTimeout(() => setDebouncedName(form.legalName), 500)
+    return () => clearTimeout(t)
+  }, [form.legalName])
+
+  const { data: similar } = useEntities({ search: debouncedName, enabled: debouncedName.length >= 3 })
+  const duplicates: DuplicateAlertItem[] = (similar?.data ?? []).slice(0, 3).map((e) => ({
+    id: e.id,
+    label: [e.legalName, [e.city, e.state].filter(Boolean).join('/')].filter(Boolean).join(' — '),
+    path: `/entidade/${e.id}`,
+  }))
 
   const handleSubmit = () => {
     const payload: Record<string, unknown> = { ...form }
@@ -367,6 +441,7 @@ function EntityForm({ onSubmit, loading }: { onSubmit: (p: Record<string, unknow
         <Field>
           <Label>Razão Social *</Label>
           <Input value={form.legalName} onChange={s('legalName')} placeholder="Prefeitura Municipal de..." />
+          <DuplicateAlert items={duplicates} />
         </Field>
         <Field>
           <Label>CNPJ *</Label>
@@ -423,10 +498,28 @@ function PoliticianForm({ onSubmit, loading }: { onSubmit: (p: Record<string, un
   const [form, setForm] = useState({ name: '', party: '', office: '', state: '', city: '', electoralZone: '', termStart: '', termEnd: '' })
   const [selfieWithId, setSelfieWithId] = useState<string | null>(null)
   const [voterTitle, setVoterTitle] = useState<string | null>(null)
+  const [debouncedName, setDebouncedName] = useState('')
   const s = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
   const handleStateChange = (v: string) => setForm(f => ({ ...f, state: v, city: '' }))
   const handleCityChange  = (v: string) => setForm(f => ({ ...f, city: v }))
+
+  useEffect(() => {
+    if (form.name.length < 3) { setDebouncedName(''); return }
+    const t = setTimeout(() => setDebouncedName(form.name), 500)
+    return () => clearTimeout(t)
+  }, [form.name])
+
+  const { data: similar } = usePoliticians({
+    search: debouncedName,
+    state: form.state || undefined,
+    enabled: debouncedName.length >= 3,
+  })
+  const duplicates: DuplicateAlertItem[] = (similar?.data ?? []).slice(0, 3).map((p) => ({
+    id: p.id,
+    label: [p.name, p.party?.abbreviation, p.office, [p.city, p.state].filter(Boolean).join('/')].filter(Boolean).join(' · '),
+    path: `/politico/${p.id}`,
+  }))
 
   const docsReady = !!selfieWithId && !!voterTitle
 
@@ -448,6 +541,7 @@ function PoliticianForm({ onSubmit, loading }: { onSubmit: (p: Record<string, un
         <Field>
           <Label>Nome completo *</Label>
           <Input value={form.name} onChange={s('name')} placeholder="Nome do político" />
+          <DuplicateAlert items={duplicates} />
         </Field>
         <Field>
           <Label>Partido (sigla) *</Label>

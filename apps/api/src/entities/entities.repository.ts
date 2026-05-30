@@ -60,6 +60,7 @@ export class EntitiesRepository {
     city?: string
     state?: string
     search?: string
+    verified?: boolean
     page: number
     limit: number
   }) {
@@ -68,6 +69,7 @@ export class EntitiesRepository {
       ...(params.city && { city: { contains: params.city, mode: 'insensitive' } }),
       ...(params.state && { state: params.state }),
       ...(params.search && { legalName: { contains: params.search, mode: 'insensitive' } }),
+      ...(params.verified !== undefined && { verified: params.verified }),
     }
 
     const [data, total] = await this.prisma.$transaction([
