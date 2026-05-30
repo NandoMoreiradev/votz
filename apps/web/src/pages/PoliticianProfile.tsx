@@ -520,6 +520,14 @@ export function PoliticianProfile() {
                       Editar perfil
                     </Button>
                   )}
+                  {!politician.verified && currentUser && !canEdit && (
+                    <ReportCta
+                      to={`/reivindicar/politico/${politician.id}`}
+                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
+                    >
+                      Reivindicar perfil
+                    </ReportCta>
+                  )}
                 </CtaRow>
               </Info>
             </HeaderTop>

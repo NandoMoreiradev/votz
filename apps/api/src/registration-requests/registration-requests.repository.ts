@@ -7,6 +7,7 @@ const SELECT = {
   type: true,
   status: true,
   payload: true,
+  claimTargetId: true,
   reviewNote: true,
   approvedOrgId: true,
   approvedOrgType: true,
@@ -23,6 +24,7 @@ export class RegistrationRequestsRepository {
   create(requesterId: string, data: {
     type: RegistrationRequestType
     payload: Prisma.InputJsonValue
+    claimTargetId?: string
     note?: string
   }) {
     return this.prisma.registrationRequest.create({

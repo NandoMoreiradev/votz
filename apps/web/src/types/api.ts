@@ -163,7 +163,8 @@ export interface CategoryStat {
 export interface Entity {
   id: string
   legalName: string
-  cnpj: string
+  cnpj: string | null
+  ibgeCode: string | null
   type: EntityType
   verified: boolean
   votzScore: number

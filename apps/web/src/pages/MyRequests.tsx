@@ -12,6 +12,7 @@ interface RegistrationRequest {
   type: 'ENTITY' | 'POLITICIAN' | 'COMPANY'
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   payload: Record<string, unknown>
+  claimTargetId: string | null
   reviewNote: string | null
   approvedOrgId: string | null
   approvedOrgType: 'ENTITY' | 'POLITICIAN' | 'COMPANY' | null
@@ -25,6 +26,12 @@ const TYPE_LABEL: Record<string, string> = {
   ENTITY:    'Entidade Pública',
   POLITICIAN: 'Político',
   COMPANY:   'Empresa',
+}
+
+const TYPE_LABEL_CLAIM: Record<string, string> = {
+  ENTITY:    'Reivindicação de Entidade',
+  POLITICIAN: 'Reivindicação de Político',
+  COMPANY:   'Reivindicação de Empresa',
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -287,7 +294,7 @@ export function MyRequests() {
                     <div>
                       <CardTitle>{orgName(req)}</CardTitle>
                       <CardMeta>
-                        {TYPE_LABEL[req.type]} · Enviada em {formatDate(req.createdAt)}
+                        {req.claimTargetId ? TYPE_LABEL_CLAIM[req.type] : TYPE_LABEL[req.type]} · Enviada em {formatDate(req.createdAt)}
                         {req.status !== 'PENDING' && ` · Revisada em ${formatDate(req.updatedAt)}`}
                       </CardMeta>
                     </div>

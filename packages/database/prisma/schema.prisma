@@ -288,7 +288,8 @@ model Entity {
   id              String     @id @default(uuid())
   createdByUserId String?    // auditoria — não determina ownership (ver OrgMembership)
   legalName       String
-  cnpj            String     @unique
+  cnpj            String?    @unique  // opcional para entidades importadas via IBGE
+  ibgeCode        String?    @unique  // código IBGE do município — identifica prefeituras importadas
   type            EntityType
   verified        Boolean    @default(false)
   votzScore       Float      @default(0)
@@ -410,11 +411,12 @@ model RegistrationRequest {
   requesterId     String
   requester       User                      @relation("RegistrationRequester", fields: [requesterId], references: [id])
   payload         Json
+  claimTargetId   String?  // id do org existente a ser reivindicado (fluxo claim)
   reviewerId      String?
   reviewer        User?                     @relation("RegistrationReviewer", fields: [reviewerId], references: [id])
   reviewNote      String?
-  approvedOrgId   String?  // id do org criado na aprovação
-  approvedOrgType OrgType? // tipo do org criado
+  approvedOrgId   String?  // id do org criado/reivindicado na aprovação
+  approvedOrgType OrgType? // tipo do org criado/reivindicado
   createdAt       DateTime                  @default(now())
   updatedAt       DateTime                  @updatedAt
 

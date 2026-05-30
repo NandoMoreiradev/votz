@@ -28,6 +28,8 @@ import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
 import { RequestRegistration } from './pages/RequestRegistration'
 import { PoliticianEdit } from './pages/PoliticianEdit'
+import { ClaimProfile } from './pages/ClaimProfile'
+import { EntityEdit } from './pages/EntityEdit'
 import { MyRequests } from './pages/MyRequests'
 import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
@@ -107,6 +109,8 @@ function App() {
               <Route path="/entidade/:id" element={<EntityProfile />} />
               <Route path="/politico/:id" element={<PoliticianProfile />} />
               <Route path="/politico/:id/editar" element={<PoliticianEdit />} />
+              <Route path="/reivindicar/:type/:id" element={<ClaimProfile />} />
+              <Route path="/entidade/:id/editar" element={<EntityEdit />} />
               <Route path="/mapa" element={<MapView />} />
               <Route path="/entidades" element={<EntitiesList />} />
               <Route path="/politicos" element={<PoliticiansList />} />

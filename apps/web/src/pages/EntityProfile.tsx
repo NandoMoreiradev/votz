@@ -474,7 +474,8 @@ function timeAgo(iso: string) {
   return `${Math.floor(d / 30)}m`
 }
 
-function formatCnpj(cnpj: string) {
+function formatCnpj(cnpj: string | null): string | null {
+  if (!cnpj) return null
   const d = cnpj.replace(/\D/g, '')
   return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
 }
@@ -601,7 +602,7 @@ export function EntityProfile() {
                 <MetaRow>
                   <Tag>{ENTITY_TYPE_LABELS[entity.type] ?? entity.type}</Tag>
                   {entity.verified && <Tag $variant="verified">✓ Verificada</Tag>}
-                  <Tag $variant="cnpj">{formatCnpj(entity.cnpj)}</Tag>
+                  {entity.cnpj && <Tag $variant="cnpj">{formatCnpj(entity.cnpj)}</Tag>}
                 </MetaRow>
                 <MetaRow>
                   {entity.city && (
@@ -617,6 +618,22 @@ export function EntityProfile() {
                   <ReportCta to={`/novo?recipientType=ENTITY&recipientId=${entity.id}&recipientName=${encodeURIComponent(entity.legalName)}`}>
                     + Criar relato
                   </ReportCta>
+                  {isOwner && (
+                    <ReportCta
+                      to={`/entidade/${entity.id}/editar`}
+                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
+                    >
+                      Editar perfil
+                    </ReportCta>
+                  )}
+                  {!entity.verified && currentUser && !isOwner && (
+                    <ReportCta
+                      to={`/reivindicar/entidade/${entity.id}`}
+                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
+                    >
+                      Reivindicar perfil
+                    </ReportCta>
+                  )}
                 </CtaRow>
               </HeaderInfo>
             </HeaderTop>

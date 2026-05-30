@@ -29,6 +29,9 @@ import { PublicApiModule } from './public-api/public-api.module'
 import { StorageModule } from './storage/storage.module'
 import { HealthModule } from './health/health.module'
 import { CompaniesModule } from './companies/companies.module'
+import { CamaraSyncModule } from './camara-sync/camara-sync.module'
+import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
+import { SenadoSyncModule } from './senado-sync/senado-sync.module'
 
 @Module({
   imports: [
@@ -91,6 +94,9 @@ import { CompaniesModule } from './companies/companies.module'
     PublicApiModule,
     HealthModule,
     CompaniesModule,
+    CamaraSyncModule,
+    IbgeSyncModule,
+    SenadoSyncModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

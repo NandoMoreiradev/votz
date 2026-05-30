@@ -50,12 +50,17 @@ export class RegistrationRequestsService {
   async create(requesterId: string, dto: CreateRegistrationRequestDto) {
     const sanitized = this.sanitizePayload(dto.payload) as unknown as Prisma.InputJsonValue
 
-    // Verificação de duplicidade antes de criar o request
-    await this.checkForDuplicate(dto.type as RegistrationRequestType, dto.payload)
+    if (dto.claimTargetId) {
+      // Fluxo de reivindicação: verifica se o perfil existe e ainda não tem dono
+      await this.checkClaimEligibility(dto.type as RegistrationRequestType, dto.claimTargetId, requesterId)
+    } else {
+      await this.checkForDuplicate(dto.type as RegistrationRequestType, dto.payload)
+    }
 
     return this.repo.create(requesterId, {
       type: dto.type as unknown as RegistrationRequestType,
       payload: sanitized,
+      claimTargetId: dto.claimTargetId,
       ...(dto.note && { note: DOMPurify.sanitize(dto.note) }),
     })
   }
@@ -80,28 +85,42 @@ export class RegistrationRequestsService {
     const payload = request.payload as Record<string, unknown>
     let approvedOrgId: string | undefined
     let approvedOrgType: OrgType | undefined
+    let orgName = ''
 
-    if (request.type === RegistrationRequestType.ENTITY) {
-      const entity = await this.createEntityFromPayload(payload, request.requester.id)
-      approvedOrgId = entity.id
-      approvedOrgType = OrgType.ENTITY
-    } else if (request.type === RegistrationRequestType.POLITICIAN) {
-      const politician = await this.createPoliticianFromPayload(payload, request.requester.id)
-      approvedOrgId = politician.id
-      approvedOrgType = OrgType.POLITICIAN
-    } else if (request.type === RegistrationRequestType.COMPANY) {
-      const company = await this.createCompanyFromPayload(payload, request.requester.id)
-      approvedOrgId = company.id
-      approvedOrgType = OrgType.COMPANY
+    if ((request as any).claimTargetId) {
+      // ── Fluxo de reivindicação: perfil já existe, só transfere ownership ──
+      const result = await this.claimExistingOrg(
+        (request as any).claimTargetId,
+        request.type as RegistrationRequestType,
+        request.requester.id,
+      )
+      approvedOrgId  = result.id
+      approvedOrgType = result.orgType
+      orgName = result.name
+    } else {
+      // ── Fluxo padrão: cria o perfil do zero ──
+      if (request.type === RegistrationRequestType.ENTITY) {
+        const entity = await this.createEntityFromPayload(payload, request.requester.id)
+        approvedOrgId = entity.id
+        approvedOrgType = OrgType.ENTITY
+      } else if (request.type === RegistrationRequestType.POLITICIAN) {
+        const politician = await this.createPoliticianFromPayload(payload, request.requester.id)
+        approvedOrgId = politician.id
+        approvedOrgType = OrgType.POLITICIAN
+      } else if (request.type === RegistrationRequestType.COMPANY) {
+        const company = await this.createCompanyFromPayload(payload, request.requester.id)
+        approvedOrgId = company.id
+        approvedOrgType = OrgType.COMPANY
+      }
+
+      orgName = (
+        request.type === RegistrationRequestType.POLITICIAN
+          ? payload['name']
+          : payload['legalName']
+      ) as string ?? ''
     }
 
     const reviewed = await this.repo.review(id, reviewerId, RegistrationRequestStatus.APPROVED, reviewNote, approvedOrgId, approvedOrgType)
-
-    const orgName = (
-      request.type === RegistrationRequestType.POLITICIAN
-        ? payload['name']
-        : payload['legalName']
-    ) as string ?? ''
 
     this.mail.sendRegistrationApproved(
       request.requester.email,
@@ -146,6 +165,111 @@ export class RegistrationRequestsService {
       }
     }
     return result
+  }
+
+  // ─────────────────────────────────────────────
+  // REIVINDICAÇÃO (CLAIM)
+  // ─────────────────────────────────────────────
+
+  private async checkClaimEligibility(
+    type: RegistrationRequestType,
+    claimTargetId: string,
+    requesterId: string,
+  ) {
+    const orgType = type === RegistrationRequestType.ENTITY ? 'entity'
+      : type === RegistrationRequestType.POLITICIAN ? 'politician'
+      : 'company'
+
+    const org = await (this.prisma[orgType] as any).findUnique({
+      where: { id: claimTargetId },
+      select: { id: true, verified: true },
+    })
+    if (!org) throw new NotFoundException('Perfil não encontrado')
+
+    // Verifica se já há dono ativo
+    const existingOwner = await this.prisma.orgMembership.findFirst({
+      where: { orgType: type as unknown as OrgType, orgId: claimTargetId, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    if (existingOwner) {
+      throw new BadRequestException('Este perfil já possui um representante ativo.')
+    }
+
+    // Verifica se o usuário já tem uma solicitação pendente para este perfil
+    const existingRequest = await this.prisma.registrationRequest.findFirst({
+      where: {
+        claimTargetId,
+        requesterId,
+        status: RegistrationRequestStatus.PENDING,
+      },
+      select: { id: true },
+    })
+    if (existingRequest) {
+      throw new BadRequestException('Você já tem uma solicitação pendente para este perfil.')
+    }
+  }
+
+  private async claimExistingOrg(
+    claimTargetId: string,
+    type: RegistrationRequestType,
+    requesterId: string,
+  ): Promise<{ id: string; orgType: OrgType; name: string }> {
+    const orgType = type === RegistrationRequestType.ENTITY ? OrgType.ENTITY
+      : type === RegistrationRequestType.POLITICIAN ? OrgType.POLITICIAN
+      : OrgType.COMPANY
+
+    const prismaModel = orgType === OrgType.ENTITY ? 'entity'
+      : orgType === OrgType.POLITICIAN ? 'politician'
+      : 'company'
+
+    const org = await (this.prisma[prismaModel] as any).findUnique({
+      where: { id: claimTargetId },
+    })
+    if (!org) throw new NotFoundException('Perfil a reivindicar não encontrado')
+
+    return this.prisma.$transaction(async (tx) => {
+      // Cria as roles padrão se ainda não existem
+      const existingRoles = await tx.orgRole.findMany({
+        where: { orgType, orgId: claimTargetId },
+      })
+      let ownerRole = existingRoles.find((r: any) => r.name === 'OWNER')
+
+      if (!ownerRole) {
+        ownerRole = await this.seedDefaultRoles(tx, orgType, claimTargetId)
+      }
+
+      // Cria membership do solicitante como OWNER
+      await tx.orgMembership.create({
+        data: {
+          userId:  requesterId,
+          orgType,
+          orgId:   claimTargetId,
+          roleId:  ownerRole.id,
+        },
+      })
+
+      // Marca o perfil como verificado
+      await (tx[prismaModel] as any).update({
+        where: { id: claimTargetId },
+        data:  { verified: true },
+      })
+
+      // Atualiza o tipo do usuário
+      const userType = orgType === OrgType.ENTITY ? UserType.ENTITY
+        : orgType === OrgType.POLITICIAN ? UserType.POLITICIAN
+        : UserType.COMPANY
+
+      await tx.user.update({
+        where: { id: requesterId },
+        data:  { type: userType },
+      })
+
+      return {
+        id: claimTargetId,
+        orgType,
+        name: org.legalName ?? org.name ?? '',
+      }
+    })
   }
 
   // ─────────────────────────────────────────────

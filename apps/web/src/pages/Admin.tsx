@@ -543,8 +543,21 @@ function RequestsTab() {
       )}
       {requests.map((req: any) => {
         const payload = req.payload as Record<string, unknown>
+        const isClaim = !!req.claimTargetId
         const hasDocs = !!(payload?.['documents'] && typeof payload['documents'] === 'object' && Object.keys(payload['documents'] as object).length > 0)
         const displayPayload = Object.entries(payload).filter(([k]) => k !== 'documents').slice(0, 5)
+
+        const typeColor = req.type === 'ENTITY' ? { bg: '#dbeafe', text: '#1e40af' }
+          : req.type === 'POLITICIAN' ? { bg: '#ede9fe', text: '#5b21b6' }
+          : { bg: '#dcfce7', text: '#166534' }
+
+        const typeLabel = {
+          ENTITY: 'Entidade', POLITICIAN: 'Político', COMPANY: 'Empresa',
+        }[req.type as string] ?? req.type
+
+        const profilePath = isClaim
+          ? (req.type === 'POLITICIAN' ? `/politico/${req.claimTargetId}` : `/entidade/${req.claimTargetId}`)
+          : null
 
         return (
           <div key={req.id} style={{
@@ -553,25 +566,57 @@ function RequestsTab() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ marginBottom: 8 }}>
+                {/* Badges de tipo e modo */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                   <span style={{
                     fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
-                    background: req.type === 'ENTITY' ? '#dbeafe' : req.type === 'POLITICIAN' ? '#ede9fe' : '#dcfce7',
-                    color: req.type === 'ENTITY' ? '#1e40af' : req.type === 'POLITICIAN' ? '#5b21b6' : '#166534',
-                    padding: '2px 8px', borderRadius: 99, marginRight: 8,
-                  }}>{req.type}</span>
+                    background: typeColor.bg, color: typeColor.text,
+                    padding: '2px 8px', borderRadius: 99,
+                  }}>{typeLabel}</span>
+                  {isClaim && (
+                    <span style={{
+                      fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
+                      background: '#FEF3C7', color: '#92400E',
+                      padding: '2px 8px', borderRadius: 99,
+                    }}>REIVINDICAÇÃO</span>
+                  )}
                   <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
                     por {req.requester?.name} · {new Date(req.createdAt).toLocaleDateString('pt-BR')}
                   </span>
                 </div>
-                <div style={{ marginBottom: 8 }}>
-                  {displayPayload.map(([k, v]) => (
-                    <span key={k} style={{ fontSize: '0.8125rem', marginRight: 16, color: '#374151' }}>
-                      <b>{k}:</b> {String(v)}
-                    </span>
-                  ))}
-                </div>
+
+                {/* Perfil sendo reivindicado (claim) ou dados do novo cadastro */}
+                {isClaim ? (
+                  <div style={{ marginBottom: 8, fontSize: '0.875rem', color: '#374151' }}>
+                    <b>Perfil:</b>{' '}
+                    {profilePath ? (
+                      <a href={profilePath} target="_blank" rel="noopener noreferrer"
+                        style={{ color: '#1A1A2E', textDecoration: 'underline' }}>
+                        Ver perfil reivindicado ↗
+                      </a>
+                    ) : (
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.8125rem', color: '#6B7280' }}>
+                        {req.claimTargetId}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 8 }}>
+                    {displayPayload.map(([k, v]) => (
+                      <span key={k} style={{ fontSize: '0.8125rem', marginRight: 16, color: '#374151' }}>
+                        <b>{k}:</b> {String(v)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {hasDocs && <DocViewer requestId={req.id} />}
+
+                {req.note && (
+                  <div style={{ marginTop: 8, fontSize: '0.8125rem', color: '#6B7280', fontStyle: 'italic' }}>
+                    "{req.note}"
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                 <button onClick={() => approve.mutate(req.id)} disabled={approve.isPending}

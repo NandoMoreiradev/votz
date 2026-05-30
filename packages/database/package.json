@@ -11,10 +11,12 @@
     "db:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- ts-node prisma/seed.ts",
+    "db:import": "dotenv -e ../../.env -- ts-node prisma/import-public-data.ts",
     "db:reset": "dotenv -e ../../.env -- prisma migrate reset"
   },
   "dependencies": {
-    "@prisma/client": "^5.19.1"
+    "@prisma/client": "^5.19.1",
+    "fast-xml-parser": "^5.7.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
