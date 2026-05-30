@@ -25,6 +25,10 @@ export class EntitiesService {
     return this.repo.create(userId, { ...dto, cnpj })
   }
 
+  findCities(state?: string) {
+    return this.repo.findCities(state)
+  }
+
   async findAll(query: ListEntitiesDto) {
     return this.repo.findAll({
       type: query.type,

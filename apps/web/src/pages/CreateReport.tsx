@@ -1,9 +1,9 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
-import { Category } from '@votz/shared-types'
+import { Category, EntityType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
@@ -503,11 +503,13 @@ const ClearBtn = styled.button`
 
 function EntitySearch({
   onSelect,
+  initialValue = null,
 }: {
   onSelect: (entity: EntityListItem | null) => void
+  initialValue?: EntityListItem | null
 }) {
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<EntityListItem | null>(null)
+  const [selected, setSelected] = useState<EntityListItem | null>(initialValue)
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -572,11 +574,13 @@ function EntitySearch({
 
 function PoliticianSearch({
   onSelect,
+  initialValue = null,
 }: {
   onSelect: (p: Politician | null) => void
+  initialValue?: Politician | null
 }) {
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<Politician | null>(null)
+  const [selected, setSelected] = useState<Politician | null>(initialValue)
   const [open, setOpen] = useState(false)
 
   const { data } = useQuery({
@@ -604,7 +608,7 @@ function PoliticianSearch({
   if (selected) {
     return (
       <SelectedEntity>
-        <SelectedName>{selected.name} — {selected.party.abbreviation}</SelectedName>
+        <SelectedName>{selected.name}{selected.party?.abbreviation ? ` — ${selected.party.abbreviation}` : ''}</SelectedName>
         <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
       </SelectedEntity>
     )
@@ -670,11 +674,29 @@ interface FormValues {
 
 export function CreateReport() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
   const { mutate: createReport, isPending, error } = useCreateReport()
-  const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>('entity')
-  const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(null)
-  const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(null)
+
+  const initRecipientType = searchParams.get('recipientType')
+  const initRecipientId = searchParams.get('recipientId')
+  const initRecipientName = searchParams.get('recipientName')
+
+  const initEntity: EntityListItem | null =
+    initRecipientType === 'ENTITY' && initRecipientId && initRecipientName
+      ? { id: initRecipientId, legalName: initRecipientName, cnpj: null, ibgeCode: null, type: 'MUNICIPAL' as EntityType, verified: false, votzScore: 0, slaHours: null, city: null, state: null, logoUrl: null, website: null, createdAt: '' }
+      : null
+
+  const initPolitician: Politician | null =
+    initRecipientType === 'POLITICIAN' && initRecipientId && initRecipientName
+      ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, mandatometer: null, createdAt: '' }
+      : null
+
+  const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>(
+    initRecipientType === 'POLITICIAN' ? 'politician' : 'entity'
+  )
+  const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(initEntity)
+  const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(initPolitician)
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
   // ── Location state ─────────────────────────────────────────────────────────
@@ -891,8 +913,8 @@ export function CreateReport() {
                 </RecipientTab>
               </RecipientTabs>
               {recipientTab === 'entity'
-                ? <EntitySearch onSelect={setSelectedEntity} />
-                : <PoliticianSearch onSelect={setSelectedPolitician} />
+                ? <EntitySearch onSelect={setSelectedEntity} initialValue={initEntity} />
+                : <PoliticianSearch onSelect={setSelectedPolitician} initialValue={initPolitician} />
               }
             </Field>
 

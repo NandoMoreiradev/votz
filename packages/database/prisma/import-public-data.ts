@@ -456,11 +456,17 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
 
   // Apenas titulares
   const titulares = parlamentares.filter((p) => {
-    const mandatos: any[] = p.Mandatos?.Mandato ?? []
-    return mandatos.some((m: any) => m.DescricaoParticipacao === 'Titular')
+    const mandato = Array.isArray(p.Mandato) ? p.Mandato[0] : p.Mandato
+    return mandato?.DescricaoParticipacao === 'Titular'
   })
 
   console.log(`  ${titulares.length} senadores titulares encontrados`)
+
+  // Senado usa siglas legadas que diferem das registradas pela Câmara
+  const SENADO_SIGLA_MAP: Record<string, string> = {
+    'PODEMOS': 'PODE',
+    'PATRI':   'PATRIOTA',
+  }
 
   const allParties = await prisma.party.findMany({ select: { id: true, abbreviation: true } })
   const partyMap   = new Map(allParties.map(p => [p.abbreviation, p.id]))
@@ -473,7 +479,8 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
     const id = p.IdentificacaoParlamentar
     const tseId = `SEN-${id.CodigoParlamentar}`
 
-    const partyId = partyMap.get(id.SiglaPartidoParlamentar)
+    const sigla = SENADO_SIGLA_MAP[id.SiglaPartidoParlamentar] ?? id.SiglaPartidoParlamentar
+    const partyId = partyMap.get(sigla)
     const party = partyId ? { id: partyId } : null
 
     if (!party) {
@@ -482,8 +489,7 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
       continue
     }
 
-    const mandatos: any[] = p.Mandatos?.Mandato ?? []
-    const mandato = mandatos.find((m: any) => m.DescricaoParticipacao === 'Titular')
+    const mandato = Array.isArray(p.Mandato) ? p.Mandato[0] : p.Mandato
 
     const termStart = mandato?.PrimeiraLegislatura?.DataInicio
       ? new Date(mandato.PrimeiraLegislatura.DataInicio)
@@ -503,7 +509,7 @@ async function syncSenadores(): Promise<{ created: number; updated: number; skip
       electoralZone: id.UfParlamentar,
       termStart,
       termEnd,
-      avatarUrl:     id.UrlFotoParlamentar ?? null,
+      avatarUrl:     `https://www.senado.leg.br/senadores/img/fotos-oficiais/senador${id.CodigoParlamentar}.jpg`,
     }
 
     const existing = await prisma.politician.findUnique({

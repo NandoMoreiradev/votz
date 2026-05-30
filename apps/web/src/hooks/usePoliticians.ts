@@ -34,6 +34,15 @@ interface UsePoliticiansParams {
   page?: number
 }
 
+export function usePoliticianCities(state?: string) {
+  return useQuery({
+    queryKey: ['politician-cities', state],
+    queryFn: () =>
+      api.get<string[]>('/politicians/cities', { params: state ? { state } : undefined }).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function usePoliticians(params: UsePoliticiansParams = {}) {
   const { enabled = true, ...queryParams } = params
   return useQuery({

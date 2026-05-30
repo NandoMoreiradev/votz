@@ -43,6 +43,13 @@ export class EntitiesController {
     return this.entitiesService.findAll(query)
   }
 
+  @Get('cities')
+  @ApiOperation({ summary: 'List distinct cities that have entities, optionally filtered by state' })
+  @ApiQuery({ name: 'state', required: false })
+  findCities(@Query('state') state?: string) {
+    return this.entitiesService.findCities(state)
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get entity public profile with stats' })
   findById(@Param('id') id: string) {

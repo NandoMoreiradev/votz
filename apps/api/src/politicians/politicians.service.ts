@@ -30,6 +30,10 @@ export class PoliticiansService {
     })
   }
 
+  findCities(state?: string) {
+    return this.repo.findCities(state)
+  }
+
   async findAll(query: ListPoliticiansDto) {
     return this.repo.findAll({
       state: query.state,

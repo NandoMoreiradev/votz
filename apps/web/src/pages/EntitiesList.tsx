@@ -2,7 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
-import { useEntities } from '../hooks/useEntities'
+import { useEntities, useEntityCities } from '../hooks/useEntities'
 import { EntityType } from '@votz/shared-types'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ const SearchInput = styled.input`
   &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
   &::placeholder { color: ${({ theme }) => theme.colors.muted}; }
 `
+
 
 const Select = styled.select`
   height: 40px;
@@ -300,13 +301,17 @@ export function EntitiesList() {
   const [search, setSearch] = useState('')
   const [type, setType] = useState<EntityType | ''>('')
   const [state, setState] = useState('')
+  const [city, setCity] = useState('')
   const [verified, setVerified] = useState(false)
   const [page, setPage] = useState(1)
+
+  const { data: cities } = useEntityCities(state || undefined)
 
   const { data, isLoading } = useEntities({
     search: search || undefined,
     type: type || undefined,
     state: state || undefined,
+    city: city || undefined,
     verified: verified || undefined,
     page,
   })
@@ -314,6 +319,7 @@ export function EntitiesList() {
   function handleSearch(v: string) { setSearch(v); setPage(1) }
   function handleType(v: string) { setType(v as EntityType | ''); setPage(1) }
   function handleState(v: string) { setState(v); setPage(1) }
+  function handleCity(v: string) { setCity(v); setPage(1) }
   function toggleVerified() { setVerified((v) => !v); setPage(1) }
 
   return (
@@ -341,6 +347,12 @@ export function EntitiesList() {
             <option value="">Todos os estados</option>
             {BR_STATES.map((uf) => (
               <option key={uf} value={uf}>{uf}</option>
+            ))}
+          </Select>
+          <Select value={city} onChange={(e) => handleCity(e.target.value)}>
+            <option value="">Todos os municípios</option>
+            {cities?.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
           </Select>
           <VerifiedBtn $active={verified} onClick={toggleVerified}>
@@ -405,7 +417,7 @@ export function EntitiesList() {
           </>
         ) : (
           <Empty>
-            {search || type || state || verified
+            {search || type || state || city || verified
               ? 'Nenhuma entidade encontrada com esses filtros.'
               : 'Nenhuma entidade cadastrada ainda.'}
           </Empty>

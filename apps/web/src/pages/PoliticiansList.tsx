@@ -2,7 +2,7 @@
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
-import { usePoliticians, useParties } from '../hooks/usePoliticians'
+import { usePoliticians, useParties, usePoliticianCities } from '../hooks/usePoliticians'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -61,6 +61,7 @@ const SearchInput = styled.input`
   &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
   &::placeholder { color: ${({ theme }) => theme.colors.muted}; }
 `
+
 
 const Select = styled.select`
   height: 40px;
@@ -300,6 +301,7 @@ const Empty = styled.div`
 export function PoliticiansList() {
   const [search, setSearch] = useState('')
   const [state, setState] = useState('')
+  const [city, setCity] = useState('')
   const [party, setParty] = useState('')
   const [office, setOffice] = useState('')
   const [verified, setVerified] = useState(false)
@@ -308,16 +310,19 @@ export function PoliticiansList() {
   const { data, isLoading } = usePoliticians({
     search: search || undefined,
     state: state || undefined,
+    city: city || undefined,
     party: party || undefined,
     office: office || undefined,
     verified: verified || undefined,
     page,
   })
 
+  const { data: cities } = usePoliticianCities(state || undefined)
   const { data: parties } = useParties()
 
   function handleSearch(v: string) { setSearch(v); setPage(1) }
   function handleState(v: string) { setState(v); setPage(1) }
+  function handleCity(v: string) { setCity(v); setPage(1) }
   function handleParty(v: string) { setParty(v); setPage(1) }
   function handleOffice(v: string) { setOffice(v); setPage(1) }
   function toggleVerified() { setVerified((v) => !v); setPage(1) }
@@ -353,6 +358,12 @@ export function PoliticiansList() {
             <option value="">Todos os estados</option>
             {BR_STATES.map((uf) => (
               <option key={uf} value={uf}>{uf}</option>
+            ))}
+          </Select>
+          <Select value={city} onChange={(e) => handleCity(e.target.value)}>
+            <option value="">Todos os municípios</option>
+            {cities?.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
           </Select>
           <VerifiedBtn $active={verified} onClick={toggleVerified}>
@@ -430,7 +441,7 @@ export function PoliticiansList() {
           </>
         ) : (
           <Empty>
-            {search || state || party || office || verified
+            {search || state || city || party || office || verified
               ? 'Nenhum político encontrado com esses filtros.'
               : 'Nenhum político cadastrado ainda.'}
           </Empty>

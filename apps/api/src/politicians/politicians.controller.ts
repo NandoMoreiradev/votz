@@ -33,6 +33,13 @@ export class PoliticiansController {
     return this.service.findAll(query)
   }
 
+  @Get('cities')
+  @ApiOperation({ summary: 'List distinct cities that have politicians, optionally filtered by state' })
+  @ApiQuery({ name: 'state', required: false })
+  findCities(@Query('state') state?: string) {
+    return this.service.findCities(state)
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get politician public profile with Mandatômetro stats' })
   findById(@Param('id') id: string) {

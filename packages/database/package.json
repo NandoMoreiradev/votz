@@ -12,9 +12,11 @@
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- ts-node prisma/seed.ts",
     "db:import": "dotenv -e ../../.env -- ts-node prisma/import-public-data.ts",
+    "db:import-fotos": "dotenv -e ../../.env -- ts-node prisma/import-fotos-tse.ts",
     "db:reset": "dotenv -e ../../.env -- prisma migrate reset"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1057.0",
     "@prisma/client": "^5.19.1",
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",

@@ -89,6 +89,16 @@ export class EntitiesRepository {
     }
   }
 
+  async findCities(state?: string): Promise<string[]> {
+    const rows = await this.prisma.entity.findMany({
+      where: { city: { not: null }, ...(state && { state }) },
+      select: { city: true },
+      distinct: ['city'],
+      orderBy: { city: 'asc' },
+    })
+    return rows.map((r) => r.city).filter(Boolean) as string[]
+  }
+
   update(id: string, data: Prisma.EntityUpdateInput) {
     return this.prisma.entity.update({
       where: { id },

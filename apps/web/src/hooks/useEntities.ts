@@ -22,6 +22,15 @@ interface UseEntitiesParams {
   page?: number
 }
 
+export function useEntityCities(state?: string) {
+  return useQuery({
+    queryKey: ['entity-cities', state],
+    queryFn: () =>
+      api.get<string[]>('/entities/cities', { params: state ? { state } : undefined }).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function useEntities(params: UseEntitiesParams = {}) {
   const { enabled = true, ...queryParams } = params
   return useQuery({
