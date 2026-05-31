@@ -41,14 +41,18 @@ export class SubscricoesService {
 
     const webUrl = this.config.getOrThrow('WEB_URL')
 
+    const isOneTime = plan === 'CAMPANHA'
     const session = await this.stripe.checkout.sessions.create({
       customer: stripeCustomerId,
-      mode: 'subscription',
+      mode: isOneTime ? 'payment' : 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${webUrl}/pagamento/sucesso?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${webUrl}/planos`,
       metadata: { orgId, orgType, plan },
-      subscription_data: { metadata: { orgId, orgType, plan } },
+      ...(isOneTime
+        ? { payment_intent_data: { metadata: { orgId, orgType, plan } } }
+        : { subscription_data: { metadata: { orgId, orgType, plan } } }
+      ),
     })
 
     return { url: session.url }
@@ -80,13 +84,23 @@ export class SubscricoesService {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
-        if (session.mode === 'subscription' && session.metadata?.orgId) {
-          await this.ativarPlano(
-            session.metadata.orgId,
-            session.metadata.orgType as OrgType,
-            session.metadata.plan,
-            session.subscription as string,
-          )
+        if (session.metadata?.orgId) {
+          if (session.mode === 'subscription') {
+            await this.ativarPlano(
+              session.metadata.orgId,
+              session.metadata.orgType as OrgType,
+              session.metadata.plan,
+              session.subscription as string,
+            )
+          } else if (session.mode === 'payment') {
+            // Pagamento único (ex: Campanha) — sem subscriptionId
+            await this.ativarPlano(
+              session.metadata.orgId,
+              session.metadata.orgType as OrgType,
+              session.metadata.plan,
+              session.payment_intent as string,
+            )
+          }
         }
         break
       }
