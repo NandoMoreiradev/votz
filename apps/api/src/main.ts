@@ -9,7 +9,7 @@ import { PublicApiModule } from './public-api/public-api.module'
 import { RedisIoAdapter } from './notifications/redis-io.adapter'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true })
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true })
 
   // Confiar no primeiro proxy reverso (Render, Nginx) para obter IP real do cliente
   app.getHttpAdapter().getInstance().set('trust proxy', 1)

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import styled from 'styled-components'
+import { useNavigate } from 'react-router-dom'
+import { useAuthStore } from '../store/auth.store'
+import { api } from '../lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,6 +15,7 @@ interface PlanFeature {
 
 interface Plan {
   name: string
+  planKey: string | null  // null = plano grátis
   price: string
   priceNote?: string
   highlight?: boolean
@@ -24,6 +28,7 @@ interface Plan {
 const ENTITY_PLANS: Plan[] = [
   {
     name: 'Básico',
+    planKey: null,
     price: 'Grátis',
     features: [
       { text: 'Perfil verificado público' },
@@ -38,6 +43,7 @@ const ENTITY_PLANS: Plan[] = [
   },
   {
     name: 'Gestão',
+    planKey: 'GESTAO',
     price: 'R$ 1.200',
     priceNote: '/mês',
     highlight: true,
@@ -55,6 +61,7 @@ const ENTITY_PLANS: Plan[] = [
   },
   {
     name: 'Pro',
+    planKey: 'PRO',
     price: 'R$ 3.200',
     priceNote: '/mês',
     features: [
@@ -70,6 +77,7 @@ const ENTITY_PLANS: Plan[] = [
   },
   {
     name: 'Enterprise',
+    planKey: null,
     price: 'Sob consulta',
     features: [
       { text: 'Tudo do Pro' },
@@ -85,6 +93,7 @@ const ENTITY_PLANS: Plan[] = [
 const POLITICIAN_PLANS: Plan[] = [
   {
     name: 'Básico',
+    planKey: null,
     price: 'Grátis',
     features: [
       { text: 'Perfil público com mandato e partido' },
@@ -99,6 +108,7 @@ const POLITICIAN_PLANS: Plan[] = [
   },
   {
     name: 'Mandatômetro Pro',
+    planKey: 'MANDATOMETRO_PRO',
     price: 'R$ 800',
     priceNote: '/mês',
     highlight: true,
@@ -115,6 +125,7 @@ const POLITICIAN_PLANS: Plan[] = [
   },
   {
     name: 'Campanha',
+    planKey: 'CAMPANHA',
     price: 'R$ 5.000',
     priceNote: 'pagamento único',
     features: [
@@ -132,6 +143,7 @@ const POLITICIAN_PLANS: Plan[] = [
 const COMPANY_PLANS: Plan[] = [
   {
     name: 'Starter',
+    planKey: 'STARTER',
     price: 'R$ 300',
     priceNote: '/mês',
     features: [
@@ -147,6 +159,7 @@ const COMPANY_PLANS: Plan[] = [
   },
   {
     name: 'Business',
+    planKey: 'BUSINESS',
     price: 'R$ 1.200',
     priceNote: '/mês',
     highlight: true,
@@ -164,6 +177,7 @@ const COMPANY_PLANS: Plan[] = [
   },
   {
     name: 'Enterprise',
+    planKey: 'ENTERPRISE',
     price: 'R$ 3.500+',
     priceNote: '/mês',
     features: [
@@ -177,6 +191,7 @@ const COMPANY_PLANS: Plan[] = [
   },
   {
     name: 'White-label',
+    planKey: null,
     price: 'Sob consulta',
     features: [
       { text: 'Tudo do Enterprise' },
@@ -200,7 +215,7 @@ const FAQ = [
   },
   {
     q: 'Como funciona o pagamento?',
-    a: 'Por enquanto, os planos são ativados mediante contato com a equipe do Votz. A integração de pagamento automático está em desenvolvimento.',
+    a: 'O pagamento é feito via Stripe, com cartão de crédito. Ao clicar em Assinar, você é redirecionado para o checkout seguro do Stripe e volta ao Votz automaticamente após a confirmação.',
   },
   {
     q: 'Posso cancelar a qualquer momento?',
@@ -210,11 +225,52 @@ const FAQ = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const TAB_ORG_TYPE: Record<Tab, string> = {
+  entidades: 'ENTITY',
+  politicos: 'POLITICIAN',
+  empresas: 'COMPANY',
+}
+
 export function Planos() {
   const [activeTab, setActiveTab] = useState<Tab>('entidades')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const { user, activeContext } = useAuthStore()
+  const navigate = useNavigate()
 
   const plans = activeTab === 'entidades' ? ENTITY_PLANS : activeTab === 'politicos' ? POLITICIAN_PLANS : COMPANY_PLANS
+
+  async function handleCheckout(planKey: string | null, planName: string) {
+    if (!planKey) {
+      navigate('/solicitar-cadastro')
+      return
+    }
+    if (!user) {
+      navigate('/entrar')
+      return
+    }
+    if (!activeContext) {
+      alert('Selecione o perfil da sua organização antes de assinar.')
+      return
+    }
+    if (activeContext.type.toUpperCase() !== TAB_ORG_TYPE[activeTab]) {
+      alert('Mude para o perfil correto antes de assinar este plano.')
+      return
+    }
+    setLoadingPlan(planKey)
+    try {
+      const { data } = await api.post('/subscricoes/checkout', {
+        orgId: activeContext.id,
+        orgType: activeContext.type.toUpperCase(),
+        plan: planKey,
+      })
+      window.location.href = data.url
+    } catch {
+      alert('Erro ao iniciar checkout. Tente novamente.')
+    } finally {
+      setLoadingPlan(null)
+    }
+  }
 
   return (
     <Page>
@@ -276,12 +332,13 @@ export function Planos() {
                 </FeatureItem>
               ))}
             </FeatureList>
-            <PlanCta
+            <PlanCtaBtn
               highlight={plan.highlight}
-              href={`mailto:contato@votz.com.br?subject=Plano ${plan.name} — ${activeTab}`}
+              disabled={loadingPlan === plan.planKey}
+              onClick={() => handleCheckout(plan.planKey, plan.name)}
             >
-              {plan.cta}
-            </PlanCta>
+              {loadingPlan === plan.planKey ? 'Aguarde...' : plan.cta}
+            </PlanCtaBtn>
           </PlanCard>
         ))}
       </PlansGrid>
@@ -481,20 +538,23 @@ const FeatureIcon = styled.span<{ locked?: boolean }>`
   margin-top: 2px;
 `
 
-const PlanCta = styled.a<{ highlight?: boolean }>`
+const PlanCtaBtn = styled.button<{ highlight?: boolean }>`
   display: block;
+  width: 100%;
   text-align: center;
   font-family: ${({ theme }) => theme.fonts.body};
   font-weight: 600;
   font-size: ${({ theme }) => theme.fontSizes.sm};
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
   border-radius: 8px;
-  text-decoration: none;
+  border: none;
+  cursor: pointer;
   background: ${({ theme, highlight }) => highlight ? theme.colors.action : theme.colors.primary};
   color: ${({ theme }) => theme.colors.white};
   transition: opacity 0.15s;
 
-  &:hover { opacity: 0.88; }
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
 
 const FaqSection = styled.section`

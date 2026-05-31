@@ -1,11 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
 // ==================== ENUMS ====================
@@ -269,6 +271,9 @@ model Report {
   recipientType    RecipientType?
   recipientId      String?
 
+  // Similarity search via pgvector — populated async by BullMQ job
+  embedding        Unsupported("vector(768)")?
+
   // Author (null if anonymous — link exists in DB but never exposed in public queries)
   authorId         String?
   author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
@@ -324,9 +329,11 @@ model Entity {
   ibgeCode        String?    @unique  // código IBGE do município — identifica prefeituras importadas
   type            EntityType
   verified        Boolean    @default(false)
-  votzScore       Float      @default(0)
-  plan            EntityPlan @default(BASICO)
-  slaHours        Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
+  votzScore            Float      @default(0)
+  plan                 EntityPlan @default(BASICO)
+  stripeCustomerId     String?    @unique
+  stripeSubscriptionId String?    @unique
+  slaHours             Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
   city            String?
   state           String?
   logoUrl         String?
@@ -367,9 +374,11 @@ model Politician {
   city            String?
   avatarUrl       String?
   website         String?
-  verified        Boolean        @default(false)
-  plan            PoliticianPlan @default(BASICO)
-  mandatometer    Json?          // snapshot: { resolved, ignored, advocated }
+  verified             Boolean        @default(false)
+  plan                 PoliticianPlan @default(BASICO)
+  stripeCustomerId     String?        @unique
+  stripeSubscriptionId String?        @unique
+  mandatometer         Json?          // snapshot: { resolved, ignored, advocated }
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -385,9 +394,11 @@ model Company {
   cnpj      String        @unique
   sector    CompanySector
   size      CompanySize
-  verified  Boolean       @default(false)
-  plan      CompanyPlan   @default(STARTER)
-  votzScore Float         @default(0)
+  verified             Boolean       @default(false)
+  plan                 CompanyPlan   @default(STARTER)
+  stripeCustomerId     String?       @unique
+  stripeSubscriptionId String?       @unique
+  votzScore            Float         @default(0)
   slaHours  Int           @default(48)
   logoUrl   String?
   website   String?

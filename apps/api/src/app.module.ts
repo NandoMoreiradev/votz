@@ -35,6 +35,7 @@ import { SenadoSyncModule } from './senado-sync/senado-sync.module'
 import { TseSyncModule } from './tse-sync/tse-sync.module'
 import { PropostasModule } from './propostas/propostas.module'
 import { TranscriptionModule } from './transcription/transcription.module'
+import { SubscricoesModule } from './subscricoes/subscricoes.module'
 
 @Module({
   imports: [
@@ -117,6 +118,7 @@ import { TranscriptionModule } from './transcription/transcription.module'
     TseSyncModule,
     PropostasModule,
     TranscriptionModule,
+    SubscricoesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

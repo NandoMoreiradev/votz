@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "vector";
+
 -- CreateEnum
 CREATE TYPE "UserType" AS ENUM ('CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY', 'PRESS', 'NGO', 'RESEARCHER', 'MODERATOR', 'ADMIN');
 
@@ -124,6 +126,7 @@ CREATE TABLE "reports" (
     "neighborhood" TEXT,
     "media" TEXT[],
     "pressureScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "embedding" vector(768),
     "recipientType" "RecipientType",
     "recipientId" TEXT,
     "authorId" TEXT,

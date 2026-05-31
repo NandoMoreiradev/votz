@@ -388,8 +388,8 @@ export function PoliticiansList() {
                 return (
                   <Card key={p.id} to={`/politico/${p.id}`}>
                     <CardTop>
-                      <Avatar $src={null}>
-                        {p.name.charAt(0).toUpperCase()}
+                      <Avatar $src={p.avatarUrl ?? null}>
+                        {!p.avatarUrl && p.name.charAt(0).toUpperCase()}
                       </Avatar>
                       <CardInfo>
                         <CardName>{p.name}</CardName>
