@@ -21,15 +21,13 @@ const PRICE_IDS: Record<string, string | undefined> = {
 
 @Injectable()
 export class SubscricoesService {
-  private stripe: Stripe
+  private stripe: InstanceType<typeof Stripe>
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.stripe = new Stripe(this.config.getOrThrow('STRIPE_SECRET_KEY'), {
-      apiVersion: '2025-04-30.basil',
-    })
+    this.stripe = new Stripe(this.config.getOrThrow('STRIPE_SECRET_KEY'))
   }
 
   async criarCheckout(orgId: string, orgType: OrgType, plan: string, userEmail: string) {
@@ -73,7 +71,8 @@ export class SubscricoesService {
 
   async handleWebhook(payload: Buffer, signature: string) {
     const secret = this.config.getOrThrow('STRIPE_WEBHOOK_SECRET')
-    let event: Stripe.Event
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let event: any
 
     try {
       event = this.stripe.webhooks.constructEvent(payload, signature, secret)
@@ -83,7 +82,7 @@ export class SubscricoesService {
 
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session
+        const session = event.data.object
         if (session.metadata?.orgId) {
           if (session.mode === 'subscription') {
             await this.ativarPlano(
@@ -93,7 +92,6 @@ export class SubscricoesService {
               session.subscription as string,
             )
           } else if (session.mode === 'payment') {
-            // Pagamento único (ex: Campanha) — sem subscriptionId
             await this.ativarPlano(
               session.metadata.orgId,
               session.metadata.orgType as OrgType,
@@ -106,7 +104,7 @@ export class SubscricoesService {
       }
 
       case 'customer.subscription.updated': {
-        const sub = event.data.object as Stripe.Subscription
+        const sub = event.data.object
         const { orgId, orgType, plan } = sub.metadata
         if (orgId && orgType && plan && sub.status === 'active') {
           await this.ativarPlano(orgId, orgType as OrgType, plan, sub.id)
@@ -115,7 +113,7 @@ export class SubscricoesService {
       }
 
       case 'customer.subscription.deleted': {
-        const sub = event.data.object as Stripe.Subscription
+        const sub = event.data.object
         const { orgId, orgType } = sub.metadata
         if (orgId && orgType) {
           await this.rebaixarParaBasico(orgId, orgType as OrgType)
@@ -124,8 +122,7 @@ export class SubscricoesService {
       }
 
       case 'invoice.payment_failed': {
-        // Logado para acompanhamento — não rebaixa imediatamente
-        const invoice = event.data.object as Stripe.Invoice
+        const invoice = event.data.object
         console.warn(`Pagamento falhou para customer ${invoice.customer}`)
         break
       }
