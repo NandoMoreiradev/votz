@@ -62,12 +62,12 @@ export function useUpdateEntity(id: string) {
   })
 }
 
-export function useEntityReports(entityId: string, page = 1, status?: string) {
+export function useEntityReports(entityId: string, page = 1, status?: string, from?: string) {
   return useQuery({
-    queryKey: ['entity-reports', entityId, page, status],
+    queryKey: ['entity-reports', entityId, page, status, from],
     queryFn: () =>
       api
-        .get<UserReportsResponse>(`/entities/${entityId}/reports`, { params: { page, limit: 10, status } })
+        .get<UserReportsResponse>(`/entities/${entityId}/reports`, { params: { page, limit: 10, status, from } })
         .then((r) => r.data),
     enabled: !!entityId,
     staleTime: 30_000,

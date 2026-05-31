@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import logoSrc from '../../assets/logo.png'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
@@ -443,9 +444,16 @@ export function Navbar() {
     navigate('/')
   }
 
-  function handleProfileSelect(contextType: string, contextId?: string) {
-    switchContext({ contextType, contextId }, {
-      onSuccess: () => setShowProfileModal(false),
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false)
+
+  function handleProfileSelect(contextType: string, contextId?: string, mfaCode?: string) {
+    setMfaSetupRequired(false)
+    switchContext({ contextType, contextId, mfaCode }, {
+      onSuccess: (data) => {
+        if ('requiresMfaSetup' in data) { setMfaSetupRequired(true); return }
+        if ('requiresMfa' in data) return
+        setShowProfileModal(false)
+      },
     })
   }
 
@@ -457,7 +465,7 @@ export function Navbar() {
       <Nav>
         <Inner>
           <Logo to="/">
-            <span>◆</span> VOTZ
+            <img src={logoSrc} alt="Votz" style={{ height: 36, width: 'auto', display: 'block' }} />
           </Logo>
 
           <NavLinks>
@@ -556,6 +564,7 @@ export function Navbar() {
           profiles={profiles}
           loading={switchPending}
           error={switchError}
+          mfaSetupRequired={mfaSetupRequired}
           onSelect={handleProfileSelect}
         />
       )}

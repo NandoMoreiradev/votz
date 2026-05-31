@@ -1,7 +1,17 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-import { AuthResponse, LoginResponse, MfaEnableForcedResponse, MfaSetupResponse, MyProfilesResponse, SwitchContextResponse } from '../types/api'
+import {
+  AuthResponse,
+  AuthUser,
+  LoginResponse,
+  MfaEnableForcedResponse,
+  MfaEnableResponse,
+  MfaRegenerateBackupCodesResponse,
+  MfaSetupResponse,
+  MyProfilesResponse,
+  SwitchContextResponse,
+} from '../types/api'
 
 export function useLogin() {
   return useMutation({
@@ -88,11 +98,56 @@ export function useSwitchContext() {
   const applyContext = useAuthStore((s) => s.applyContext)
 
   return useMutation({
-    mutationFn: (data: { contextType: string; contextId?: string }) =>
+    mutationFn: (data: { contextType: string; contextId?: string; mfaCode?: string }) =>
       api.post<SwitchContextResponse>('/auth/switch-context', data).then((r) => r.data),
-    onSuccess: ({ accessToken, ctx }) => {
-      applyContext(accessToken, ctx)
+    onSuccess: (data) => {
+      if ('accessToken' in data) {
+        applyContext(data.accessToken, data.ctx)
+      }
     },
+  })
+}
+
+export function useMe() {
+  return useQuery<AuthUser>({
+    queryKey: ['auth/me'],
+    queryFn: () => api.get<AuthUser>('/auth/me').then((r) => r.data),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useMfaSetup() {
+  return useMutation({
+    mutationFn: () => api.post<MfaSetupResponse>('/auth/mfa/setup').then((r) => r.data),
+  })
+}
+
+export function useMfaEnable() {
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post<MfaEnableResponse>('/auth/mfa/enable', { code }).then((r) => r.data),
+  })
+}
+
+export function useMfaDisable() {
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post('/auth/mfa/disable', { code }).then((r) => r.data),
+  })
+}
+
+export function useMfaResetDevice() {
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post<MfaSetupResponse>('/auth/mfa/reset-device', { code }).then((r) => r.data),
+  })
+}
+
+export function useMfaRegenerateBackupCodes() {
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post<MfaRegenerateBackupCodesResponse>('/auth/mfa/backup-codes/regenerate', { code }).then((r) => r.data),
   })
 }
 

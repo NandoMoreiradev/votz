@@ -168,10 +168,15 @@ export function Login() {
     })
   }
 
-  function onProfileSelect(contextType: string, contextId?: string) {
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false)
+
+  function onProfileSelect(contextType: string, contextId?: string, mfaCode?: string) {
     if (!pendingAuth) return
-    switchContext({ contextType, contextId }, {
-      onSuccess: () => {
+    setMfaSetupRequired(false)
+    switchContext({ contextType, contextId, mfaCode }, {
+      onSuccess: (data) => {
+        if ('requiresMfaSetup' in data) { setMfaSetupRequired(true); return }
+        if ('requiresMfa' in data) return
         setPendingAuth(null)
         navigate(redirect, { replace: true })
       },
@@ -318,6 +323,7 @@ export function Login() {
               profiles={profiles}
               loading={switchPending}
               error={switchError}
+              mfaSetupRequired={mfaSetupRequired}
               onSelect={onProfileSelect}
             />
           )}
@@ -364,6 +370,8 @@ export function Login() {
           <ProfileSelectModal
             profiles={profiles}
             loading={switchPending}
+            error={switchError}
+            mfaSetupRequired={mfaSetupRequired}
             onSelect={onProfileSelect}
           />
         )}
@@ -425,6 +433,8 @@ export function Login() {
         <ProfileSelectModal
           profiles={profiles}
           loading={switchPending}
+          error={switchError}
+          mfaSetupRequired={mfaSetupRequired}
           onSelect={onProfileSelect}
         />
       )}

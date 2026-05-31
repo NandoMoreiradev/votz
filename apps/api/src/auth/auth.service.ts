@@ -41,6 +41,7 @@ const USER_PUBLIC_SELECT = {
   reputation: true,
   avatarUrl: true,
   emailVerified: true,
+  mfaEnabled: true,
   createdAt: true,
 } as const
 
@@ -160,7 +161,7 @@ export class AuthService {
     const publicUser = {
       id: user.id, name: user.name, email: user.email, type: user.type,
       verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified, createdAt: user.createdAt,
+      emailVerified: user.emailVerified, mfaEnabled: user.mfaEnabled, createdAt: user.createdAt,
     }
 
     return { requiresMfa: false, user: publicUser, accessToken, refreshToken }
@@ -287,7 +288,7 @@ export class AuthService {
       const publicUser = {
         id: user.id, name: user.name, email: user.email, type: user.type,
         verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-        emailVerified: user.emailVerified, createdAt: user.createdAt,
+        emailVerified: user.emailVerified, mfaEnabled: true, createdAt: user.createdAt,
       }
       return { backupCodes: plainCodes, accessToken, refreshToken, user: publicUser }
     }
@@ -335,7 +336,7 @@ export class AuthService {
     const publicUser = {
       id: user.id, name: user.name, email: user.email, type: user.type,
       verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified, createdAt: user.createdAt,
+      emailVerified: user.emailVerified, mfaEnabled: user.mfaEnabled, createdAt: user.createdAt,
     }
 
     return { user: publicUser, accessToken, refreshToken }
@@ -348,7 +349,7 @@ export class AuthService {
   async mfaDisable(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, type: true, mfaEnabled: true, mfaSecret: true },
+      select: { id: true, type: true, mfaEnabled: true, mfaSecret: true, mfaBackupCodes: true },
     })
     if (!user || !user.mfaEnabled || !user.mfaSecret) {
       throw new BadRequestException('MFA is not enabled')
@@ -358,8 +359,12 @@ export class AuthService {
       throw new ForbiddenException('MFA cannot be disabled for this account type')
     }
 
-    const { valid: isValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
-    if (!isValid) throw new UnauthorizedException('Invalid TOTP code')
+    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+
+    if (!totpValid) {
+      const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
+      if (backupIndex === -1) throw new UnauthorizedException('Invalid MFA code')
+    }
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -367,6 +372,70 @@ export class AuthService {
     })
 
     return { message: 'MFA disabled' }
+  }
+
+  // ─────────────────────────────────────────────
+  // MFA — RESET DEVICE (trocar aparelho autenticador)
+  // ─────────────────────────────────────────────
+
+  async mfaResetDevice(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, mfaEnabled: true, mfaSecret: true, mfaBackupCodes: true },
+    })
+    if (!user || !user.mfaEnabled || !user.mfaSecret) {
+      throw new BadRequestException('MFA is not enabled')
+    }
+
+    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+
+    if (!totpValid) {
+      const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
+      if (backupIndex === -1) throw new UnauthorizedException('Invalid MFA code')
+    }
+
+    // Gera novo secret e suspende MFA até confirmar com o novo dispositivo
+    const newSecret = generateSecret({ length: 20 })
+    const otpauthUrl = generateURI({ issuer: 'Votz', label: user.email, secret: newSecret })
+    const qrCode = await QRCode.toDataURL(otpauthUrl)
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaEnabled: false, mfaSecret: newSecret, mfaBackupCodes: [] },
+    })
+
+    return { secret: newSecret, otpauthUrl, qrCode }
+  }
+
+  // ─────────────────────────────────────────────
+  // MFA — REGENERATE BACKUP CODES
+  // ─────────────────────────────────────────────
+
+  async mfaRegenerateBackupCodes(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, mfaEnabled: true, mfaSecret: true },
+    })
+    if (!user || !user.mfaEnabled || !user.mfaSecret) {
+      throw new BadRequestException('MFA is not enabled')
+    }
+
+    const { valid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    if (!valid) throw new UnauthorizedException('Invalid TOTP code')
+
+    const plainCodes = Array.from({ length: 8 }, () =>
+      randomBytes(5).toString('hex').toUpperCase(),
+    )
+    const hashedCodes = await Promise.all(plainCodes.map((c) => bcrypt.hash(c, 6)))
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaBackupCodes: hashedCodes },
+    })
+
+    await this.mail.sendMfaBackupCodes(user.email, user.name, plainCodes)
+
+    return { backupCodes: plainCodes }
   }
 
   // ─────────────────────────────────────────────

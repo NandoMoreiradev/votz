@@ -173,6 +173,98 @@ const DividerLabel = styled.div`
   padding: 4px 4px 0;
 `
 
+// ── MFA Step ────────────────────────────────────────────────────────────────
+
+const MfaBody = styled.div`
+  padding: 28px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+`
+
+const MfaOrgRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.neutral};
+`
+
+const MfaHint = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.5;
+  margin: 0;
+`
+
+const MfaInput = styled.input`
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 1.5rem;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  letter-spacing: 0.25em;
+  text-align: center;
+  color: ${({ theme }) => theme.colors.text};
+  box-sizing: border-box;
+
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.primary};
+  }
+`
+
+const MfaActions = styled.div`
+  display: flex;
+  gap: 10px;
+`
+
+const MfaBackBtn = styled.button`
+  flex: 1;
+  height: 44px;
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const MfaConfirmBtn = styled.button`
+  flex: 2;
+  height: 44px;
+  border: none;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+  transition: opacity 0.15s;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`
+
+const MfaSetupWarning = styled.div`
+  padding: 14px 16px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.action + '10'};
+  border: 1px solid ${({ theme }) => theme.colors.action + '30'};
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.action};
+  line-height: 1.5;
+`
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 function orgTypeLabel(type: string) {
   if (type === 'ENTITY') return 'Entidade pública'
   if (type === 'POLITICIAN') return 'Político'
@@ -194,21 +286,116 @@ function userTypeLabel(type: UserType) {
   return map[type] ?? type
 }
 
+// ── Tipos ────────────────────────────────────────────────────────────────────
+
 interface Props {
   profiles: MyProfilesResponse
   loading?: boolean
   error?: boolean
-  onSelect: (contextType: string, contextId?: string) => void
+  mfaSetupRequired?: boolean
+  onSelect: (contextType: string, contextId?: string, mfaCode?: string) => void
 }
 
-export function ProfileSelectModal({ profiles, loading, error, onSelect }: Props) {
-  const [selected, setSelected] = useState<string | null>(null)
+// ── Componente ───────────────────────────────────────────────────────────────
 
-  function handleSelect(contextType: string, contextId?: string) {
-    const key = contextId ? `${contextType}:${contextId}` : 'personal'
-    setSelected(key)
-    onSelect(contextType, contextId)
+export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired, onSelect }: Props) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [pendingOrg, setPendingOrg] = useState<OrgProfile | null>(null)
+  const [mfaCode, setMfaCode] = useState('')
+
+  function handlePersonal() {
+    setSelected('personal')
+    onSelect('personal')
   }
+
+  function handleOrgClick(org: OrgProfile) {
+    setPendingOrg(org)
+    setMfaCode('')
+  }
+
+  function handleMfaBack() {
+    setPendingOrg(null)
+    setMfaCode('')
+  }
+
+  function handleMfaConfirm() {
+    if (!pendingOrg || mfaCode.length < 6) return
+    const key = `${pendingOrg.type.toLowerCase()}:${pendingOrg.id}`
+    setSelected(key)
+    onSelect(pendingOrg.type.toLowerCase(), pendingOrg.id, mfaCode)
+  }
+
+  // ── Passo MFA ──────────────────────────────────────────────────────────────
+
+  if (pendingOrg) {
+    return (
+      <Overlay>
+        <Modal>
+          <Header>
+            <Logo><span>◆</span> VOTZ</Logo>
+            <Title>Confirme sua identidade</Title>
+            <Subtitle>Para acessar este perfil, você precisa do autenticador.</Subtitle>
+          </Header>
+
+          <MfaBody>
+            <MfaOrgRow>
+              <AvatarBox $src={pendingOrg.logoUrl} $color="#E63946">
+                {!pendingOrg.logoUrl && pendingOrg.name.charAt(0).toUpperCase()}
+              </AvatarBox>
+              <ProfileInfo>
+                <ProfileName>{pendingOrg.name}</ProfileName>
+                <ProfileMeta>{orgTypeLabel(pendingOrg.type)}</ProfileMeta>
+              </ProfileInfo>
+            </MfaOrgRow>
+
+            {mfaSetupRequired ? (
+              <MfaSetupWarning>
+                Você ainda não configurou o autenticador de dois fatores.
+                Acesse <strong>Editar perfil → Segurança</strong> para ativar antes de usar este perfil.
+              </MfaSetupWarning>
+            ) : (
+              <>
+                <MfaHint>
+                  Digite o código de 6 dígitos do seu app autenticador (Google Authenticator, Authy, etc.).
+                </MfaHint>
+
+                {error && (
+                  <ErrorBanner>Código inválido ou expirado. Tente novamente.</ErrorBanner>
+                )}
+
+                <MfaInput
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="000000"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleMfaConfirm()}
+                  autoFocus
+                />
+              </>
+            )}
+
+            <MfaActions>
+              <MfaBackBtn onClick={handleMfaBack} disabled={loading}>
+                Voltar
+              </MfaBackBtn>
+              {!mfaSetupRequired && (
+                <MfaConfirmBtn
+                  onClick={handleMfaConfirm}
+                  disabled={loading || mfaCode.length < 6}
+                >
+                  {loading ? 'Verificando…' : 'Confirmar'}
+                </MfaConfirmBtn>
+              )}
+            </MfaActions>
+          </MfaBody>
+        </Modal>
+      </Overlay>
+    )
+  }
+
+  // ── Lista de perfis ────────────────────────────────────────────────────────
 
   const personalKey = 'personal'
 
@@ -232,7 +419,7 @@ export function ProfileSelectModal({ profiles, loading, error, onSelect }: Props
           <ProfileCard
             disabled={loading}
             $active={selected === personalKey}
-            onClick={() => handleSelect('personal')}
+            onClick={handlePersonal}
           >
             <AvatarBox $color="#1A1A2E">
               {profiles.personal.name.charAt(0).toUpperCase()}
@@ -257,7 +444,7 @@ export function ProfileSelectModal({ profiles, loading, error, onSelect }: Props
                     disabled={loading}
                     $active={selected === key}
                     $isOrg
-                    onClick={() => handleSelect(org.type.toLowerCase(), org.id)}
+                    onClick={() => handleOrgClick(org)}
                   >
                     <AvatarBox $src={org.logoUrl} $color="#E63946">
                       {!org.logoUrl && org.name.charAt(0).toUpperCase()}

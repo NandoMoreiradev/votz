@@ -137,9 +137,27 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Disable MFA (requires current TOTP code)' })
+  @ApiOperation({ summary: 'Disable MFA (accepts TOTP code or backup code)' })
   mfaDisable(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
     return this.authService.mfaDisable(user.id, dto.code)
+  }
+
+  @Post('mfa/reset-device')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reset authenticator device — validates current code (TOTP or backup), returns new QR to re-enroll; confirm with POST /auth/mfa/enable' })
+  mfaResetDevice(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
+    return this.authService.mfaResetDevice(user.id, dto.code)
+  }
+
+  @Post('mfa/backup-codes/regenerate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Regenerate backup codes (requires TOTP code, invalidates previous codes)' })
+  mfaRegenerateBackupCodes(@CurrentUser() user: { id: string }, @Body() dto: MfaCodeDto) {
+    return this.authService.mfaRegenerateBackupCodes(user.id, dto.code)
   }
 
   @Post('refresh')

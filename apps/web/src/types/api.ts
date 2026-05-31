@@ -22,9 +22,17 @@ export interface MyProfilesResponse {
   orgs: OrgProfile[]
 }
 
-export interface SwitchContextResponse {
-  accessToken: string
-  ctx: ActiveContext | null
+export type SwitchContextResponse =
+  | { requiresMfa: true }
+  | { requiresMfaSetup: true }
+  | { accessToken: string; ctx: ActiveContext | null }
+
+export interface MfaEnableResponse {
+  backupCodes: string[]
+}
+
+export interface MfaRegenerateBackupCodesResponse {
+  backupCodes: string[]
 }
 
 export interface Author {
@@ -119,6 +127,7 @@ export interface AuthUser {
   reputation: number
   avatarUrl: string | null
   emailVerified: boolean
+  mfaEnabled: boolean
   createdAt: string
 }
 

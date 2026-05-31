@@ -69,10 +69,10 @@ export class EntitiesService {
     return { ...entity, stats, monthlyVolume, metrics }
   }
 
-  async findReports(entityId: string, page: number, limit: number, status?: string) {
+  async findReports(entityId: string, page: number, limit: number, status?: string, from?: string) {
     const entity = await this.repo.findByIdFull(entityId)
     if (!entity) throw new NotFoundException('Entity not found')
-    return this.repo.findReports(entityId, page, limit, status)
+    return this.repo.findReports(entityId, page, limit, status, from ? new Date(from) : undefined)
   }
 
   async update(id: string, userId: string, dto: UpdateEntityDto) {

@@ -388,6 +388,29 @@ const PageBtn = styled.button<{ $active?: boolean }>`
   &:disabled { opacity: 0.4; cursor: not-allowed; }
 `
 
+const FilterRow = styled.div`
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+`
+
+const PeriodTab = styled.button<{ $active: boolean }>`
+  padding: 4px 11px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $active, theme }) => $active ? theme.colors.primary + '80' : theme.colors.border};
+  background: ${({ $active, theme }) => $active ? theme.colors.primary + '12' : 'transparent'};
+  color: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.muted};
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.primary + '80'};
+    color: ${({ theme }) => theme.colors.primary};
+  }
+`
+
 const Skeleton = styled.div`
   background: ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.md};
@@ -484,16 +507,34 @@ const STATUS_TABS = [
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
+const PERIOD_OPTIONS = [
+  { label: 'Todos', days: 0 },
+  { label: '30 dias', days: 30 },
+  { label: '3 meses', days: 90 },
+  { label: '6 meses', days: 180 },
+  { label: '1 ano', days: 365 },
+]
+
+function periodToFrom(days: number): string | undefined {
+  if (!days) return undefined
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString()
+}
+
 export function PoliticianProfile() {
   const { id } = useParams<{ id: string }>()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
+  const [periodDays, setPeriodDays] = useState(0)
   const [activeTab, setActiveTab] = useState<'relatos' | 'propostas'>('relatos')
   const [propostaPage, setPropostaPage] = useState(1)
   const [propostaStatusFilter, setPropostaStatusFilter] = useState('')
   const { user: currentUser, activeContext } = useAuthStore()
   const { data: politician, isLoading } = usePolitician(id!)
-  const { data: reports, isLoading: loadingReports } = usePoliticianReports(id!, page, statusFilter || undefined)
+  const { data: reports, isLoading: loadingReports } = usePoliticianReports(
+    id!, page, statusFilter || undefined, periodToFrom(periodDays),
+  )
   const { data: propostas, isLoading: loadingPropostas } = usePoliticianPropostas(
     id!,
     propostaPage,
@@ -512,6 +553,11 @@ export function PoliticianProfile() {
 
   function handleTabChange(value: string) {
     setStatusFilter(value)
+    setPage(1)
+  }
+
+  function handlePeriodChange(days: number) {
+    setPeriodDays(days)
     setPage(1)
   }
 
@@ -683,6 +729,18 @@ export function PoliticianProfile() {
                         ))}
                       </StatusTabs>
                     </SectionHeader>
+
+                    <FilterRow>
+                      {PERIOD_OPTIONS.map((p) => (
+                        <PeriodTab
+                          key={p.days}
+                          $active={periodDays === p.days}
+                          onClick={() => handlePeriodChange(p.days)}
+                        >
+                          {p.label}
+                        </PeriodTab>
+                      ))}
+                    </FilterRow>
 
                     {loadingReports ? (
                       <ReportList>

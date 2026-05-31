@@ -3,15 +3,16 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { setToken } from '../lib/token'
 import { useAuthStore } from '../store/auth.store'
+import { useSwitchContext } from '../hooks/useAuth'
 import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
-import { MyProfilesResponse, SwitchContextResponse } from '../types/api'
+import { MyProfilesResponse } from '../types/api'
 
 export function GoogleCallback() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
-  const applyContext = useAuthStore((s) => s.applyContext)
   const [profiles, setProfiles] = useState<MyProfilesResponse | null>(null)
-  const [switching, setSwitching] = useState(false)
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false)
+  const { mutate: switchContext, isPending: switching, isError: switchError } = useSwitchContext()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -37,17 +38,16 @@ export function GoogleCallback() {
     })
   }, [])
 
-  function handleProfileSelect(contextType: string, contextId?: string) {
-    setSwitching(true)
-    api.post<SwitchContextResponse>('/auth/switch-context', { contextType, contextId })
-      .then(({ data }) => {
-        applyContext(data.accessToken, data.ctx)
+  function handleProfileSelect(contextType: string, contextId?: string, mfaCode?: string) {
+    setMfaSetupRequired(false)
+    switchContext({ contextType, contextId, mfaCode }, {
+      onSuccess: (data) => {
+        if ('requiresMfaSetup' in data) { setMfaSetupRequired(true); return }
+        if ('requiresMfa' in data) return
         navigate('/', { replace: true })
-      })
-      .catch(() => {
-        navigate('/', { replace: true })
-      })
-      .finally(() => setSwitching(false))
+      },
+      onError: () => navigate('/', { replace: true }),
+    })
   }
 
   if (profiles) {
@@ -56,6 +56,8 @@ export function GoogleCallback() {
         <ProfileSelectModal
           profiles={profiles}
           loading={switching}
+          error={switchError}
+          mfaSetupRequired={mfaSetupRequired}
           onSelect={handleProfileSelect}
         />
       </div>

@@ -73,10 +73,10 @@ export class PoliticiansService {
     return { ...politician, mandatometer, monthlyVolume, metrics }
   }
 
-  async findReports(politicianId: string, page: number, limit: number, status?: string) {
+  async findReports(politicianId: string, page: number, limit: number, status?: string, from?: string) {
     const p = await this.repo.findById(politicianId)
     if (!p) throw new NotFoundException('Politician not found')
-    return this.repo.findReports(politicianId, page, limit, status)
+    return this.repo.findReports(politicianId, page, limit, status, from ? new Date(from) : undefined)
   }
 
   async update(id: string, userId: string, dto: UpdatePoliticianDto) {

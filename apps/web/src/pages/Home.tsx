@@ -431,18 +431,31 @@ const CardWrap = styled.article<{ $highPressure?: boolean }>`
     box-shadow: 0 4px 14px rgba(0,0,0,.04);
   }
 `
-const CardImg = styled.div<{ $category: Category }>`
+const CardImg = styled.div<{ $category: Category; $coverUrl?: string }>`
   width: 168px;
   flex-shrink: 0;
   position: relative;
-  background: ${({ $category }) => CAT_CFG[$category].gradient};
+  background: ${({ $category, $coverUrl }) =>
+    $coverUrl
+      ? `url('${$coverUrl}') center / cover no-repeat`
+      : CAT_CFG[$category].gradient};
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: ${({ $coverUrl }) => ($coverUrl ? 'rgba(0,0,0,0.48)' : 'transparent')};
+    pointer-events: none;
+    z-index: 0;
+  }
   &::after {
     content: '';
     position: absolute;
     inset: 0;
-    background-image:
-      linear-gradient(45deg, rgba(255,255,255,.03) 25%, transparent 25%),
-      linear-gradient(-45deg, rgba(255,255,255,.03) 25%, transparent 25%);
+    background-image: ${({ $coverUrl }) =>
+      $coverUrl
+        ? 'none'
+        : `linear-gradient(45deg, rgba(255,255,255,.03) 25%, transparent 25%),
+           linear-gradient(-45deg, rgba(255,255,255,.03) 25%, transparent 25%)`};
     background-size: 14px 14px;
     pointer-events: none;
   }
@@ -949,9 +962,13 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
     [report.city, report.state].filter(Boolean).join(' · '),
   ].filter(Boolean)
 
+  const coverUrl = report.media.find(
+    (url) => !/\.(mp4|mov|webm|pdf)$/i.test(url)
+  )
+
   return (
     <CardWrap onClick={handleCard} $highPressure={report.pressureScore >= 8}>
-      <CardImg $category={report.category}>
+      <CardImg $category={report.category} $coverUrl={coverUrl}>
         <CatTag>{CAT_CFG[report.category].label}</CatTag>
         {report.media.length > 0 && (
           <PhotoCount

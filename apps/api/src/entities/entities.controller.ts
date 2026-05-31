@@ -61,13 +61,15 @@ export class EntitiesController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'from', required: false, description: 'ISO date — filter reports created on or after this date' })
   findReports(
     @Param('id') id: string,
     @Query('page') page = '1',
     @Query('limit') limit = '10',
     @Query('status') status?: string,
+    @Query('from') from?: string,
   ) {
-    return this.entitiesService.findReports(id, Number(page), Math.min(Number(limit), 50), status)
+    return this.entitiesService.findReports(id, Number(page), Math.min(Number(limit), 50), status, from)
   }
 
   @Patch(':id')

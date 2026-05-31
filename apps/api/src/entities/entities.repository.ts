@@ -107,11 +107,12 @@ export class EntitiesRepository {
     })
   }
 
-  async findReports(entityId: string, page: number, limit: number, status?: string) {
+  async findReports(entityId: string, page: number, limit: number, status?: string, from?: Date) {
     const where: Prisma.ReportWhereInput = {
       recipientType: 'ENTITY',
       recipientId: entityId,
       ...(status && { status: status as any }),
+      ...(from && { createdAt: { gte: from } }),
     }
     const [data, total] = await this.prisma.$transaction([
       this.prisma.report.findMany({

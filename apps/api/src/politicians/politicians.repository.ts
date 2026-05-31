@@ -113,11 +113,12 @@ export class PoliticiansRepository {
     })
   }
 
-  async findReports(politicianId: string, page: number, limit: number, status?: string) {
+  async findReports(politicianId: string, page: number, limit: number, status?: string, from?: Date) {
     const where: Prisma.ReportWhereInput = {
       recipientType: 'POLITICIAN',
       recipientId: politicianId,
       ...(status && { status: status as any }),
+      ...(from && { createdAt: { gte: from } }),
     }
     const [data, total] = await this.prisma.$transaction([
       this.prisma.report.findMany({

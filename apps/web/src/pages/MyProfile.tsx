@@ -7,8 +7,9 @@ import { Button } from '../components/ui/Button'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-import { useMyProfiles } from '../hooks/useAuth'
+import { useMe, useMyProfiles, useMfaSetup, useMfaEnable, useMfaDisable, useMfaResetDevice, useMfaRegenerateBackupCodes } from '../hooks/useAuth'
 import { AuthenticatedUser } from '@votz/shared-types'
+import { MfaSetupResponse } from '../types/api'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -498,9 +499,481 @@ export function MyProfile() {
           </form>
         </Card>
 
+        <MfaSection />
         <PrivacySection />
       </Content>
     </Page>
+  )
+}
+
+// ── MFA Section ───────────────────────────────────────────────────────────
+
+const MfaCard = styled.div`
+  margin-top: 24px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 28px 32px;
+`
+
+const MfaTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 6px;
+`
+
+const MfaDesc = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 20px;
+  line-height: 1.5;
+`
+
+const MfaStatusBadge = styled.span<{ $enabled: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  background: ${({ $enabled, theme }) => $enabled ? theme.colors.positive + '18' : theme.colors.border};
+  color: ${({ $enabled, theme }) => $enabled ? theme.colors.positive : theme.colors.muted};
+  margin-bottom: 20px;
+
+  &::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+`
+
+const MfaRowGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+`
+
+const MfaRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const MfaRowInfo = styled.div`
+  flex: 1;
+`
+
+const MfaRowLabel = styled.div`
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 4px;
+`
+
+const MfaRowHint = styled.div`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.4;
+`
+
+const MfaQrBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.neutral};
+`
+
+const MfaQrImg = styled.img`
+  width: 180px;
+  height: 180px;
+  border-radius: ${({ theme }) => theme.radii.sm};
+`
+
+const MfaSecretBox = styled.div`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.875rem;
+  background: ${({ theme }) => theme.colors.border};
+  padding: 8px 14px;
+  border-radius: ${({ theme }) => theme.radii.sm};
+  word-break: break-all;
+  text-align: center;
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const BackupGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 16px;
+  background: ${({ theme }) => theme.colors.neutral};
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const BackupCode = styled.div`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  text-align: center;
+  padding: 6px;
+  background: ${({ theme }) => theme.colors.white};
+  border-radius: ${({ theme }) => theme.radii.sm};
+`
+
+type MfaModal =
+  | null
+  | { type: 'setup'; step: 'qr'; data: MfaSetupResponse }
+  | { type: 'setup'; step: 'code' }
+  | { type: 'setup'; step: 'backup'; codes: string[] }
+  | { type: 'reset'; step: 'code' }
+  | { type: 'reset'; step: 'qr'; data: MfaSetupResponse }
+  | { type: 'disable'; step: 'code' }
+  | { type: 'regen'; step: 'code' }
+  | { type: 'regen'; step: 'codes'; codes: string[] }
+
+function MfaSection() {
+  const { data: me, refetch: refetchMe } = useMe()
+  const [modal, setModal] = useState<MfaModal>(null)
+  const [code, setCode] = useState('')
+  const [feedback, setFeedback] = useState<{ msg: string; error: boolean } | null>(null)
+
+  const { mutate: setup, isPending: setupPending } = useMfaSetup()
+  const { mutate: enable, isPending: enablePending } = useMfaEnable()
+  const { mutate: disable, isPending: disablePending } = useMfaDisable()
+  const { mutate: resetDevice, isPending: resetPending } = useMfaResetDevice()
+  const { mutate: regenCodes, isPending: regenPending } = useMfaRegenerateBackupCodes()
+
+  const mfaEnabled = me?.mfaEnabled ?? false
+
+  function openModal(m: MfaModal) {
+    setModal(m)
+    setCode('')
+    setFeedback(null)
+  }
+
+  function closeModal() {
+    setModal(null)
+    setCode('')
+    setFeedback(null)
+  }
+
+  function handleSetupStart() {
+    setup(undefined, {
+      onSuccess: (data) => openModal({ type: 'setup', step: 'qr', data }),
+      onError: () => setFeedback({ msg: 'Erro ao iniciar configuração. MFA pode já estar ativo.', error: true }),
+    })
+  }
+
+  function handleSetupConfirm() {
+    enable(code, {
+      onSuccess: (data) => setModal({ type: 'setup', step: 'backup', codes: data.backupCodes }),
+      onError: () => setFeedback({ msg: 'Código inválido. Tente novamente.', error: true }),
+    })
+  }
+
+  function handleDisable() {
+    disable(code, {
+      onSuccess: () => { closeModal(); refetchMe() },
+      onError: () => setFeedback({ msg: 'Código inválido ou expirado.', error: true }),
+    })
+  }
+
+  function handleResetStart() {
+    openModal({ type: 'reset', step: 'code' })
+  }
+
+  function handleResetValidate() {
+    resetDevice(code, {
+      onSuccess: (data) => setModal({ type: 'reset', step: 'qr', data }),
+      onError: () => setFeedback({ msg: 'Código inválido. Use TOTP ou um código de backup.', error: true }),
+    })
+  }
+
+  function handleResetConfirm() {
+    enable(code, {
+      onSuccess: (data) => { setModal({ type: 'setup', step: 'backup', codes: data.backupCodes }); refetchMe() },
+      onError: () => setFeedback({ msg: 'Código inválido. Verifique se escaneou o QR corretamente.', error: true }),
+    })
+  }
+
+  function handleRegenStart() {
+    openModal({ type: 'regen', step: 'code' })
+  }
+
+  function handleRegen() {
+    regenCodes(code, {
+      onSuccess: (data) => setModal({ type: 'regen', step: 'codes', codes: data.backupCodes }),
+      onError: () => setFeedback({ msg: 'Código TOTP inválido.', error: true }),
+    })
+  }
+
+  const anyPending = setupPending || enablePending || disablePending || resetPending || regenPending
+
+  return (
+    <MfaCard>
+      <MfaTitle>Autenticação em dois fatores</MfaTitle>
+      <MfaDesc>
+        O autenticador protege sua conta e é obrigatório para acessar perfis institucionais (político, entidade, empresa).
+      </MfaDesc>
+
+      <MfaStatusBadge $enabled={mfaEnabled}>
+        {mfaEnabled ? 'Ativo' : 'Inativo'}
+      </MfaStatusBadge>
+
+      {feedback && !modal && (
+        <FeedbackMsg $error={feedback.error}>{feedback.msg}</FeedbackMsg>
+      )}
+
+      <MfaRowGrid>
+        {!mfaEnabled ? (
+          <MfaRow>
+            <MfaRowInfo>
+              <MfaRowLabel>Ativar autenticador</MfaRowLabel>
+              <MfaRowHint>Use Google Authenticator, Authy ou qualquer app TOTP compatível.</MfaRowHint>
+            </MfaRowInfo>
+            <PrivacyBtn onClick={handleSetupStart} disabled={anyPending}>
+              {setupPending ? 'Aguarde…' : 'Configurar'}
+            </PrivacyBtn>
+          </MfaRow>
+        ) : (
+          <>
+            <MfaRow>
+              <MfaRowInfo>
+                <MfaRowLabel>Trocar dispositivo</MfaRowLabel>
+                <MfaRowHint>Trocou de celular ou perdeu o app autenticador? Vincule um novo dispositivo usando seu código atual ou um código de backup.</MfaRowHint>
+              </MfaRowInfo>
+              <PrivacyBtn onClick={handleResetStart} disabled={anyPending}>
+                Trocar dispositivo
+              </PrivacyBtn>
+            </MfaRow>
+
+            <MfaRow>
+              <MfaRowInfo>
+                <MfaRowLabel>Regenerar códigos de backup</MfaRowLabel>
+                <MfaRowHint>Gera 8 novos códigos de emergência e invalida os anteriores. Requer o código TOTP atual.</MfaRowHint>
+              </MfaRowInfo>
+              <PrivacyBtn onClick={handleRegenStart} disabled={anyPending}>
+                Regenerar
+              </PrivacyBtn>
+            </MfaRow>
+
+            <MfaRow>
+              <MfaRowInfo>
+                <MfaRowLabel>Desativar autenticador</MfaRowLabel>
+                <MfaRowHint>Você não poderá mais acessar perfis institucionais sem reativar. Aceita código TOTP ou de backup.</MfaRowHint>
+              </MfaRowInfo>
+              <PrivacyBtn $danger onClick={() => openModal({ type: 'disable', step: 'code' })} disabled={anyPending}>
+                Desativar
+              </PrivacyBtn>
+            </MfaRow>
+          </>
+        )}
+      </MfaRowGrid>
+
+      {/* ── Modals ── */}
+
+      {modal && (
+        <ModalOverlay onClick={closeModal}>
+          <Modal onClick={(e) => e.stopPropagation()}>
+
+            {/* Setup: QR */}
+            {modal.type === 'setup' && modal.step === 'qr' && (
+              <>
+                <ModalTitle>Escaneie o QR code</ModalTitle>
+                <ModalText>Abra seu app autenticador e escaneie o código abaixo. Não consegue escanear? Use o código manual.</ModalText>
+                <MfaQrBox>
+                  <MfaQrImg src={modal.data.qrCode} alt="QR Code MFA" />
+                  <MfaSecretBox>{modal.data.secret}</MfaSecretBox>
+                </MfaQrBox>
+                <ModalActions style={{ marginTop: 20 }}>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={() => { setModal({ type: 'setup', step: 'code' }); setCode('') }}>
+                    Já escaniei →
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Setup: código de confirmação */}
+            {modal.type === 'setup' && modal.step === 'code' && (
+              <>
+                <ModalTitle>Confirme o código</ModalTitle>
+                <ModalText>Digite o código de 6 dígitos que aparece no app autenticador para ativar o MFA.</ModalText>
+                <ModalInput
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSetupConfirm()}
+                  autoFocus
+                />
+                {feedback && <FeedbackMsg $error>{feedback.msg}</FeedbackMsg>}
+                <ModalActions>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={handleSetupConfirm} disabled={anyPending || code.length < 6}>
+                    {enablePending ? 'Verificando…' : 'Ativar MFA'}
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Setup / Reset: backup codes */}
+            {modal.type === 'setup' && modal.step === 'backup' && (
+              <>
+                <ModalTitle>Guarde seus códigos de backup</ModalTitle>
+                <ModalText>Estes 8 códigos servem de emergência se você perder o acesso ao autenticador. Cada código pode ser usado uma única vez. Eles também foram enviados por e-mail.</ModalText>
+                <BackupGrid>
+                  {modal.codes.map((c) => <BackupCode key={c}>{c}</BackupCode>)}
+                </BackupGrid>
+                <ModalActions style={{ marginTop: 20 }}>
+                  <ModalConfirmBtn onClick={() => { closeModal(); refetchMe() }}>
+                    Entendi, já guardei
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Reset: validar código atual */}
+            {modal.type === 'reset' && modal.step === 'code' && (
+              <>
+                <ModalTitle>Trocar dispositivo</ModalTitle>
+                <ModalText>Para vincular um novo dispositivo, confirme sua identidade com o código TOTP atual ou um código de backup.</ModalText>
+                <ModalInput
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="000000 ou código de backup"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/[^A-Fa-f0-9]/g, '').toUpperCase())}
+                  onKeyDown={(e) => e.key === 'Enter' && handleResetValidate()}
+                  autoFocus
+                />
+                {feedback && <FeedbackMsg $error>{feedback.msg}</FeedbackMsg>}
+                <ModalActions>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={handleResetValidate} disabled={anyPending || code.length < 6}>
+                    {resetPending ? 'Verificando…' : 'Continuar'}
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Reset: novo QR */}
+            {modal.type === 'reset' && modal.step === 'qr' && (
+              <>
+                <ModalTitle>Escaneie com o novo dispositivo</ModalTitle>
+                <ModalText>Abra o app autenticador no seu novo celular e escaneie o QR abaixo. Depois confirme com o código gerado.</ModalText>
+                <MfaQrBox>
+                  <MfaQrImg src={modal.data.qrCode} alt="Novo QR Code MFA" />
+                  <MfaSecretBox>{modal.data.secret}</MfaSecretBox>
+                </MfaQrBox>
+                <ModalInput
+                  style={{ marginTop: 16 }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="Código do novo dispositivo"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleResetConfirm()}
+                  autoFocus
+                />
+                {feedback && <FeedbackMsg $error>{feedback.msg}</FeedbackMsg>}
+                <ModalActions>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={handleResetConfirm} disabled={anyPending || code.length < 6}>
+                    {enablePending ? 'Confirmando…' : 'Confirmar novo dispositivo'}
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Disable */}
+            {modal.type === 'disable' && modal.step === 'code' && (
+              <>
+                <ModalTitle>Desativar autenticador</ModalTitle>
+                <ModalText>
+                  Você não poderá acessar perfis institucionais sem o MFA ativo.
+                  <br /><br />
+                  Digite seu código TOTP atual ou um código de backup para confirmar.
+                </ModalText>
+                <ModalInput
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="000000 ou código de backup"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/[^A-Fa-f0-9]/g, '').toUpperCase())}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDisable()}
+                  autoFocus
+                />
+                {feedback && <FeedbackMsg $error>{feedback.msg}</FeedbackMsg>}
+                <ModalActions>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={handleDisable} disabled={anyPending || code.length < 6}>
+                    {disablePending ? 'Desativando…' : 'Confirmar desativação'}
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Regen: código TOTP */}
+            {modal.type === 'regen' && modal.step === 'code' && (
+              <>
+                <ModalTitle>Regenerar códigos de backup</ModalTitle>
+                <ModalText>Os códigos atuais serão invalidados. Confirme com seu código TOTP (não aceita código de backup).</ModalText>
+                <ModalInput
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRegen()}
+                  autoFocus
+                />
+                {feedback && <FeedbackMsg $error>{feedback.msg}</FeedbackMsg>}
+                <ModalActions>
+                  <ModalCancelBtn onClick={closeModal}>Cancelar</ModalCancelBtn>
+                  <ModalConfirmBtn onClick={handleRegen} disabled={anyPending || code.length < 6}>
+                    {regenPending ? 'Gerando…' : 'Regenerar'}
+                  </ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+            {/* Regen: novos códigos */}
+            {modal.type === 'regen' && modal.step === 'codes' && (
+              <>
+                <ModalTitle>Novos códigos de backup</ModalTitle>
+                <ModalText>Guarde-os em lugar seguro. Os códigos anteriores não funcionam mais. Eles também foram enviados por e-mail.</ModalText>
+                <BackupGrid>
+                  {modal.codes.map((c) => <BackupCode key={c}>{c}</BackupCode>)}
+                </BackupGrid>
+                <ModalActions style={{ marginTop: 20 }}>
+                  <ModalConfirmBtn onClick={closeModal}>Entendi, já guardei</ModalConfirmBtn>
+                </ModalActions>
+              </>
+            )}
+
+          </Modal>
+        </ModalOverlay>
+      )}
+    </MfaCard>
   )
 }
 
