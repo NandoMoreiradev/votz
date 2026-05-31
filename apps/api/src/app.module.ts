@@ -69,7 +69,21 @@ import { TranscriptionModule } from './transcription/transcription.module'
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        connection: { url: config.get<string>('REDIS_URL') },
+        connection: {
+          url: config.get<string>('REDIS_URL'),
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+          retryStrategy: (times: number) => {
+            if (times > 5) return null
+            return Math.min(times * 1000, 10000)
+          },
+        },
+        defaultJobOptions: {
+          removeOnComplete: 50,
+          removeOnFail: 100,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+        },
       }),
     }),
 

@@ -18,11 +18,14 @@ import { ApiKeyGuard } from './guards/api-key.guard'
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const url = config.get<string>('REDIS_URL') ?? 'redis://localhost:6379'
-        return new Redis(url, {
+        const client = new Redis(url, {
           maxRetriesPerRequest: 3,
           enableReadyCheck: false,
-          lazyConnect: false,
+          lazyConnect: true,
+          retryStrategy: (times: number) => (times > 5 ? null : Math.min(times * 1000, 10000)),
         })
+        client.on('error', (err) => console.error('[Redis PublicAPI]', err.message))
+        return client
       },
     },
     ApiKeysService,

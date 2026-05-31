@@ -35,7 +35,12 @@ async function bootstrap() {
     }),
   )
   const redisIoAdapter = new RedisIoAdapter(app)
-  await redisIoAdapter.connectToRedis(process.env.REDIS_URL ?? 'redis://localhost:6379')
+  try {
+    await redisIoAdapter.connectToRedis(process.env.REDIS_URL ?? 'redis://localhost:6379')
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn(`[Bootstrap] Redis indisponível, continuando sem adapter: ${msg}`)
+  }
   app.useWebSocketAdapter(redisIoAdapter)
   app.use(cookieParser())
 

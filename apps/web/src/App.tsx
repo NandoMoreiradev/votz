@@ -77,7 +77,10 @@ function AuthInit() {
               contextType: savedContext.type.toLowerCase(),
               contextId: savedContext.id,
             })
-            .then(({ data: ctx }) => applyContext(ctx.accessToken, ctx.ctx))
+            .then(({ data: res }) => {
+              if ('accessToken' in res) applyContext(res.accessToken, res.ctx)
+              else applyContext(token, null)
+            })
             .catch(() => applyContext(token, null))
         }
       })
