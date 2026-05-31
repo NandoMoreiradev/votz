@@ -10,12 +10,15 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { EntityPlan, OrgType } from '@prisma/client'
 import { UserType } from '@votz/shared-types'
 import { EntitiesService } from './entities.service'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
 import { ListEntitiesDto } from './dto/list-entities.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
+import { PlanGuard } from '../auth/guards/plan.guard'
+import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
 @ApiTags('entities')
@@ -94,5 +97,18 @@ export class EntitiesController {
     @CurrentUser() user: { id: string },
   ) {
     return this.entitiesService.advocate(id, reportId, user.id)
+  }
+
+  @Get(':id/export')
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequiresPlan(EntityPlan.GESTAO, OrgType.ENTITY)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Export entity reports as JSON (requires Gestão plan or higher)' })
+  exportReports(
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+  ) {
+    return this.entitiesService.findReports(id, 1, 1000, status, from)
   }
 }

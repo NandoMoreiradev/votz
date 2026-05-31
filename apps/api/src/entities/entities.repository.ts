@@ -10,6 +10,7 @@ const ENTITY_PUBLIC_SELECT = {
   type: true,
   verified: true,
   votzScore: true,
+  plan: true,
   slaHours: true,
   city: true,
   state: true,

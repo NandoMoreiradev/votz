@@ -1,11 +1,14 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { OrgType, PoliticianPlan } from '@prisma/client'
 import { UserType } from '@votz/shared-types'
 import { PoliticiansService } from './politicians.service'
 import { CreatePoliticianDto } from './dto/create-politician.dto'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'
 import { ListPoliticiansDto } from './dto/list-politicians.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
+import { PlanGuard } from '../auth/guards/plan.guard'
+import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
 @ApiTags('politicians')
@@ -84,5 +87,18 @@ export class PoliticiansController {
     @CurrentUser() user: { id: string },
   ) {
     return this.service.advocate(id, reportId, user.id)
+  }
+
+  @Get(':id/export')
+  @UseGuards(JwtAuthGuard, PlanGuard)
+  @RequiresPlan(PoliticianPlan.MANDATOMETRO_PRO, OrgType.POLITICIAN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Export politician reports as JSON (requires Mandatômetro Pro plan or higher)' })
+  exportReports(
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+  ) {
+    return this.service.findReports(id, 1, 1000, status, from)
   }
 }

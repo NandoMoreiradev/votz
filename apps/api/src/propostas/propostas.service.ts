@@ -18,6 +18,11 @@ export class PropostasService {
     const politician = await this.repository.findPoliticianByUserId(user.id)
     if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
 
+    const PROPOSTA_PLANS = ['MANDATOMETRO_PRO', 'CAMPANHA']
+    if (!PROPOSTA_PLANS.includes(politician.plan)) {
+      throw new ForbiddenException('Criar propostas requer o plano Mandatômetro Pro ou superior')
+    }
+
     const sanitizedTitulo = DOMPurify.sanitize(dto.titulo).trim()
     const sanitizedDescricao = DOMPurify.sanitize(dto.descricao)
 

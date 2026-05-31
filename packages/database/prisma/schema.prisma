@@ -92,6 +92,19 @@ enum CompanyPlan {
   WHITE_LABEL
 }
 
+enum EntityPlan {
+  BASICO
+  GESTAO
+  PRO
+  ENTERPRISE
+}
+
+enum PoliticianPlan {
+  BASICO
+  MANDATOMETRO_PRO
+  CAMPANHA
+}
+
 enum RecipientType {
   ENTITY
   COMPANY
@@ -256,12 +269,6 @@ model Report {
   recipientType    RecipientType?
   recipientId      String?
 
-  // Similarity search — populated async, queried via $queryRaw
-  embedding        Unsupported("vector(768)")?
-  // Coluna gerada pelo PostgreSQL (GENERATED ALWAYS AS) — gerenciada fora do Prisma via SQL manual
-  /// @Ignored
-  search_vector    Unsupported("tsvector")?
-
   // Author (null if anonymous — link exists in DB but never exposed in public queries)
   authorId         String?
   author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
@@ -318,6 +325,7 @@ model Entity {
   type            EntityType
   verified        Boolean    @default(false)
   votzScore       Float      @default(0)
+  plan            EntityPlan @default(BASICO)
   slaHours        Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
   city            String?
   state           String?
@@ -359,8 +367,9 @@ model Politician {
   city            String?
   avatarUrl       String?
   website         String?
-  verified        Boolean    @default(false)
-  mandatometer    Json?      // snapshot: { resolved, ignored, advocated }
+  verified        Boolean        @default(false)
+  plan            PoliticianPlan @default(BASICO)
+  mandatometer    Json?          // snapshot: { resolved, ignored, advocated }
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

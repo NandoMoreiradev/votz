@@ -83,6 +83,10 @@ export class AdminRepository {
     return this.prisma.entity.update({ where: { id }, data: { verified }, select: { id: true, verified: true } })
   }
 
+  async setEntityPlan(id: string, plan: string) {
+    return this.prisma.entity.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
+  }
+
   // ── Politicians ───────────────────────────────────────────────────────────
 
   async listPoliticians(params: { verified?: boolean; page: number; limit: number }) {
@@ -103,6 +107,14 @@ export class AdminRepository {
 
   async setPoliticianVerified(id: string, verified: boolean) {
     return this.prisma.politician.update({ where: { id }, data: { verified }, select: { id: true, verified: true } })
+  }
+
+  async setPoliticianPlan(id: string, plan: string) {
+    return this.prisma.politician.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
+  }
+
+  async setCompanyPlan(id: string, plan: string) {
+    return this.prisma.company.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ const POLITICIAN_PUBLIC_SELECT = {
   state: true,
   city: true,
   verified: true,
+  plan: true,
   mandatometer: true,
   avatarUrl: true,
   website: true,
@@ -174,8 +175,9 @@ export class PoliticiansRepository {
     const resolved = byStatus['RESOLVED'] ?? 0
     const inProgress = byStatus['IN_PROGRESS'] ?? 0
     const open = byStatus['OPEN'] ?? 0
+    const disputed = byStatus['DISPUTED'] ?? 0
 
-    return { total, resolved, inProgress, open, ignored: open, byStatus, byCategory }
+    return { total, resolved, inProgress, open, disputed, byStatus, byCategory }
   }
 
   updateMandatometer(id: string, mandatometer: object) {

@@ -112,7 +112,7 @@ const MetaRow = styled.div`
   margin-bottom: 6px;
 `
 
-const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' }>`
+const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' | 'plan' | 'campanha' }>`
   font-size: 0.75rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   padding: 2px 9px;
@@ -121,11 +121,15 @@ const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' 
     $variant === 'party' ? theme.colors.action + '18' :
     $variant === 'verified' ? theme.colors.positive + '18' :
     $variant === 'number' ? theme.colors.neutral :
+    $variant === 'plan' ? theme.colors.action + '18' :
+    $variant === 'campanha' ? theme.colors.primary + '18' :
     theme.colors.primary + '12'};
   color: ${({ $variant, theme }) =>
     $variant === 'party' ? theme.colors.action :
     $variant === 'verified' ? theme.colors.positive :
     $variant === 'number' ? theme.colors.muted :
+    $variant === 'plan' ? theme.colors.action :
+    $variant === 'campanha' ? theme.colors.primary :
     theme.colors.primary};
   text-transform: ${({ $variant }) => $variant === 'number' ? 'none' : 'uppercase'};
   letter-spacing: ${({ $variant }) => $variant === 'number' ? '0' : '0.04em'};
@@ -544,8 +548,8 @@ export function PoliticianProfile() {
   const canEdit = !!activeContext && activeContext.type === 'POLITICIAN' && activeContext.id === id
 
   const m = politician?.mandatometer
-  const resolutionPct = m && m.total > 0 ? Math.round((m.resolved / m.total) * 100) : 0
-  const ignoredPct = m && m.total > 0 ? Math.round((m.ignored / m.total) * 100) : 0
+  const ignoredPct = m && m.total > 0 ? Math.round((m.open / m.total) * 100) : 0
+  const disputedPct = m && m.total > 0 ? Math.round((m.disputed / m.total) * 100) : 0
   const termPct = politician ? mandateProgress(politician.termStart, politician.termEnd) : 0
 
   const topCategories: CategoryStat[] = m?.byCategory?.slice(0, 5) ?? []
@@ -597,6 +601,12 @@ export function PoliticianProfile() {
                   <Tag $variant="party">{politician.party.abbreviation}</Tag>
                   <Tag $variant="number">Nº {politician.party.number}</Tag>
                   {politician.verified && <Tag $variant="verified">✓ Verificado</Tag>}
+                  {politician.plan === 'MANDATOMETRO_PRO' && (
+                    <Tag $variant="plan">★ Mandatômetro Pro</Tag>
+                  )}
+                  {politician.plan === 'CAMPANHA' && (
+                    <Tag $variant="campanha">🗳 Candidato Comprometido</Tag>
+                  )}
                   {politician.metrics && (
                     <TrustBadge
                       classification={politician.metrics.classification}
@@ -674,16 +684,20 @@ export function PoliticianProfile() {
               <MCard $color="#2DC653">
                 <MValue $color="#2DC653">{m?.resolved ?? 0}</MValue>
                 <MLabel>Resolvidos</MLabel>
-                <MBar $pct={resolutionPct} $color="#2DC653" />
               </MCard>
               <MCard $color="#3B82F6">
                 <MValue $color="#3B82F6">{m?.inProgress ?? 0}</MValue>
                 <MLabel>Em andamento</MLabel>
               </MCard>
               <MCard $color="#E63946">
-                <MValue $color="#E63946">{m?.ignored ?? 0}</MValue>
+                <MValue $color="#E63946">{m?.open ?? 0}</MValue>
                 <MLabel>Sem resposta</MLabel>
                 <MBar $pct={ignoredPct} $color="#E63946" />
+              </MCard>
+              <MCard $color="#F59E0B">
+                <MValue $color="#F59E0B">{m?.disputed ?? 0}</MValue>
+                <MLabel>Contestados</MLabel>
+                <MBar $pct={disputedPct} $color="#F59E0B" />
               </MCard>
             </MGrid>
 

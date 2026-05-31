@@ -155,7 +155,12 @@ export class PropostasRepository {
       where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
       select: { orgId: true },
     })
-    return membership ? { id: membership.orgId } : null
+    if (!membership) return null
+    const politician = await this.prisma.politician.findUnique({
+      where: { id: membership.orgId },
+      select: { id: true, plan: true },
+    })
+    return politician
   }
 
   async upsertVoto(propostaId: string, usuarioId: string, apoio: boolean) {

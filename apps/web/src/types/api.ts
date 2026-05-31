@@ -188,6 +188,9 @@ export interface ProfileMetrics {
   classification: string
 }
 
+export type EntityPlan = 'BASICO' | 'GESTAO' | 'PRO' | 'ENTERPRISE'
+export type PoliticianPlan = 'BASICO' | 'MANDATOMETRO_PRO' | 'CAMPANHA'
+
 export interface Entity {
   id: string
   legalName: string
@@ -196,6 +199,7 @@ export interface Entity {
   type: EntityType
   verified: boolean
   votzScore: number
+  plan: EntityPlan
   slaHours: Record<string, number> | null
   city: string | null
   state: string | null
@@ -224,7 +228,7 @@ export interface Mandatometer {
   resolved: number
   inProgress: number
   open: number
-  ignored: number
+  disputed: number
   byStatus: Record<string, number>
   byCategory: CategoryStat[]
 }
@@ -250,6 +254,7 @@ export interface Politician {
   avatarUrl: string | null
   website: string | null
   verified: boolean
+  plan: PoliticianPlan
   mandatometer: Mandatometer | null
   monthlyVolume?: MonthlyVolumeDatum[]
   metrics?: ProfileMetrics

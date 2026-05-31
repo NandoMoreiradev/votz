@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "prisma": {
+    "schema": "packages/database/prisma/schema.prisma",
     "seed": "dotenv -e .env -- ts-node --project packages/database/tsconfig.json packages/database/prisma/seed.ts"
   },
   "scripts": {

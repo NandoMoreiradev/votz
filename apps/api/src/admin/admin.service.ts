@@ -42,4 +42,16 @@ export class AdminService {
   async verifyPolitician(id: string, verified: boolean) {
     return this.repo.setPoliticianVerified(id, verified)
   }
+
+  async setEntityPlan(id: string, plan: string) {
+    return this.repo.setEntityPlan(id, plan)
+  }
+
+  async setPoliticianPlan(id: string, plan: string) {
+    return this.repo.setPoliticianPlan(id, plan)
+  }
+
+  async setCompanyPlan(id: string, plan: string) {
+    return this.repo.setCompanyPlan(id, plan)
+  }
 }

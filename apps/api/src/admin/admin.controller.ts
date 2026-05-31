@@ -1,9 +1,10 @@
 import {
   Controller, Get, Delete, Patch, Param, Query, Body,
-  UseGuards, ParseIntPipe, DefaultValuePipe, ParseBoolPipe,
+  UseGuards, ParseIntPipe, DefaultValuePipe,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
-import { IsEnum, IsOptional, IsString } from 'class-validator'
+import { IsEnum } from 'class-validator'
+import { EntityPlan, PoliticianPlan, CompanyPlan } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -21,6 +22,21 @@ class SetTypeDto {
 
 class SetVerifiedDto {
   verified: boolean
+}
+
+class SetEntityPlanDto {
+  @IsEnum(EntityPlan)
+  plan: EntityPlan
+}
+
+class SetPoliticianPlanDto {
+  @IsEnum(PoliticianPlan)
+  plan: PoliticianPlan
+}
+
+class SetCompanyPlanDto {
+  @IsEnum(CompanyPlan)
+  plan: CompanyPlan
 }
 
 @ApiTags('admin')
@@ -97,6 +113,13 @@ export class AdminController {
     return this.service.verifyEntity(id, dto.verified)
   }
 
+  @Patch('entities/:id/plan')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Set plan for an entity (admin only)' })
+  setEntityPlan(@Param('id') id: string, @Body() dto: SetEntityPlanDto) {
+    return this.service.setEntityPlan(id, dto.plan)
+  }
+
   // ── Politicians ───────────────────────────────────────────────────────────
 
   @Get('politicians')
@@ -114,5 +137,21 @@ export class AdminController {
   @ApiOperation({ summary: 'Verify or unverify a politician' })
   verifyPolitician(@Param('id') id: string, @Body() dto: SetVerifiedDto) {
     return this.service.verifyPolitician(id, dto.verified)
+  }
+
+  @Patch('politicians/:id/plan')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Set plan for a politician (admin only)' })
+  setPoliticianPlan(@Param('id') id: string, @Body() dto: SetPoliticianPlanDto) {
+    return this.service.setPoliticianPlan(id, dto.plan)
+  }
+
+  // ── Companies ─────────────────────────────────────────────────────────────
+
+  @Patch('companies/:id/plan')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Set plan for a company (admin only)' })
+  setCompanyPlan(@Param('id') id: string, @Body() dto: SetCompanyPlanDto) {
+    return this.service.setCompanyPlan(id, dto.plan)
   }
 }

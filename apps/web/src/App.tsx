@@ -38,6 +38,7 @@ import { Imprensa } from './pages/Imprensa'
 import { PropostasList } from './pages/PropostasList'
 import { PropostaDetail } from './pages/PropostaDetail'
 import { CreateProposta } from './pages/CreateProposta'
+import { Planos } from './pages/Planos'
 import { Footer } from './components/layout/Footer'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
@@ -131,6 +132,7 @@ function App() {
               <Route path="/propostas" element={<PropostasList />} />
               <Route path="/propostas/:id" element={<PropostaDetail />} />
               <Route path="/proposta/nova" element={<CreateProposta />} />
+              <Route path="/planos" element={<Planos />} />
             </Routes>
             <Footer />
           </BrowserRouter>

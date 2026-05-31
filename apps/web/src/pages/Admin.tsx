@@ -345,6 +345,11 @@ function EntitiesTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-entities'] }),
   })
 
+  const setPlan = useMutation({
+    mutationFn: ({ id, plan }: { id: string; plan: string }) => api.patch(`/admin/entities/${id}/plan`, { plan }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-entities'] }),
+  })
+
   return (
     <div>
       <FilterRow>
@@ -355,7 +360,7 @@ function EntitiesTab() {
       {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhuma entidade encontrada.</Empty> : (
         <Table>
           <thead>
-            <tr><Th>Nome</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Estado</Th><Th>Status</Th><Th>Ações</Th></tr>
+            <tr><Th>Nome</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Estado</Th><Th>Status</Th><Th>Plano</Th><Th>Ações</Th></tr>
           </thead>
           <tbody>
             {data.data.map((e: any) => (
@@ -367,6 +372,18 @@ function EntitiesTab() {
                 <Td><Badge>{e.type}</Badge></Td>
                 <Td>{e.state}</Td>
                 <Td>{e.verified ? <Badge $color="#2DC653">Verificada</Badge> : <Badge $color="#F59E0B">Pendente</Badge>}</Td>
+                <Td>
+                  <select
+                    value={e.plan ?? 'BASICO'}
+                    onChange={(ev) => setPlan.mutate({ id: e.id, plan: ev.target.value })}
+                    style={{ fontSize: '0.8125rem', padding: '2px 6px', borderRadius: 4, border: '1px solid #E5E5E5' }}
+                  >
+                    <option value="BASICO">Básico</option>
+                    <option value="GESTAO">Gestão</option>
+                    <option value="PRO">Pro</option>
+                    <option value="ENTERPRISE">Enterprise</option>
+                  </select>
+                </Td>
                 <Td>
                   <ActionBtn
                     $variant={e.verified ? 'danger' : 'success'}
@@ -395,6 +412,11 @@ function PoliticiansTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-politicians'] }),
   })
 
+  const setPlan = useMutation({
+    mutationFn: ({ id, plan }: { id: string; plan: string }) => api.patch(`/admin/politicians/${id}/plan`, { plan }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-politicians'] }),
+  })
+
   return (
     <div>
       <FilterRow>
@@ -405,7 +427,7 @@ function PoliticiansTab() {
       {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhum político encontrado.</Empty> : (
         <Table>
           <thead>
-            <tr><Th>Nome</Th><Th>E-mail</Th><Th>Partido</Th><Th>Cargo</Th><Th>Estado</Th><Th>Status</Th><Th>Ações</Th></tr>
+            <tr><Th>Nome</Th><Th>Partido</Th><Th>Cargo</Th><Th>Estado</Th><Th>Status</Th><Th>Plano</Th><Th>Ações</Th></tr>
           </thead>
           <tbody>
             {data.data.map((p: any) => (
@@ -413,11 +435,21 @@ function PoliticiansTab() {
                 <Td>
                   <Link to={`/politico/${p.id}`} style={{ color: 'inherit', textDecoration: 'underline' }}>{p.name}</Link>
                 </Td>
-                <Td style={{ color: '#6B7280' }}>{p.office}</Td>
-                <Td><Badge>{p.party.abbreviation}</Badge></Td>
+                <Td><Badge>{p.party?.abbreviation}</Badge></Td>
                 <Td>{p.office}</Td>
                 <Td>{p.state}</Td>
                 <Td>{p.verified ? <Badge $color="#2DC653">Verificado</Badge> : <Badge $color="#F59E0B">Pendente</Badge>}</Td>
+                <Td>
+                  <select
+                    value={p.plan ?? 'BASICO'}
+                    onChange={(ev) => setPlan.mutate({ id: p.id, plan: ev.target.value })}
+                    style={{ fontSize: '0.8125rem', padding: '2px 6px', borderRadius: 4, border: '1px solid #E5E5E5' }}
+                  >
+                    <option value="BASICO">Básico</option>
+                    <option value="MANDATOMETRO_PRO">Mandatômetro Pro</option>
+                    <option value="CAMPANHA">Campanha</option>
+                  </select>
+                </Td>
                 <Td>
                   <ActionBtn
                     $variant={p.verified ? 'danger' : 'success'}

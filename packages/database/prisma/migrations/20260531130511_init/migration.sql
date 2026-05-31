@@ -1,11 +1,11 @@
 -- CreateEnum
-CREATE TYPE "UserType" AS ENUM ('CITIZEN', 'ENTITY', 'POLITICIAN', 'PRESS', 'NGO', 'RESEARCHER', 'MODERATOR', 'ADMIN');
+CREATE TYPE "UserType" AS ENUM ('CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY', 'PRESS', 'NGO', 'RESEARCHER', 'MODERATOR', 'ADMIN');
 
 -- CreateEnum
 CREATE TYPE "ReportStatus" AS ENUM ('OPEN', 'UNDER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'DISPUTED', 'ARCHIVED');
 
 -- CreateEnum
-CREATE TYPE "EventType" AS ENUM ('CREATED', 'RESPONDED', 'STATUS_CHANGED', 'DISPUTED', 'RESOLVED', 'ARCHIVED');
+CREATE TYPE "EventType" AS ENUM ('CREATED', 'RESPONDED', 'STATUS_CHANGED', 'UPDATE', 'DISPUTED', 'RESOLVED', 'ARCHIVED');
 
 -- CreateEnum
 CREATE TYPE "Category" AS ENUM ('HEALTH', 'MOBILITY', 'SAFETY', 'EDUCATION', 'SANITATION', 'HOUSING', 'ENVIRONMENT', 'INFRASTRUCTURE', 'URBAN_SERVICES', 'CORRUPTION', 'ACCESSIBILITY', 'SOCIAL_WELFARE', 'OTHER');
@@ -21,6 +21,12 @@ CREATE TYPE "CompanySize" AS ENUM ('MEI', 'SMALL', 'MEDIUM', 'LARGE');
 
 -- CreateEnum
 CREATE TYPE "CompanyPlan" AS ENUM ('STARTER', 'BUSINESS', 'ENTERPRISE', 'WHITE_LABEL');
+
+-- CreateEnum
+CREATE TYPE "EntityPlan" AS ENUM ('BASICO', 'GESTAO', 'PRO', 'ENTERPRISE');
+
+-- CreateEnum
+CREATE TYPE "PoliticianPlan" AS ENUM ('BASICO', 'MANDATOMETRO_PRO', 'CAMPANHA');
 
 -- CreateEnum
 CREATE TYPE "RecipientType" AS ENUM ('ENTITY', 'COMPANY', 'BRANCH', 'POLITICIAN');
@@ -45,6 +51,21 @@ CREATE TYPE "RegistrationRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTE
 
 -- CreateEnum
 CREATE TYPE "NotificationType" AS ENUM ('NEW_COMMENT', 'STATUS_CHANGED', 'SURTO_DETECTED');
+
+-- CreateEnum
+CREATE TYPE "ApiKeyTier" AS ENUM ('FREE', 'PAID');
+
+-- CreateEnum
+CREATE TYPE "FollowerActorType" AS ENUM ('POLITICIAN', 'ENTITY');
+
+-- CreateEnum
+CREATE TYPE "PropostaStatus" AS ENUM ('DRAFT', 'PRESENTED', 'IN_VOTE', 'APPROVED', 'REJECTED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "PropostaEventType" AS ENUM ('CREATED', 'STATUS_CHANGED', 'UPDATED');
+
+-- CreateEnum
+CREATE TYPE "CommentMediaType" AS ENUM ('TEXT', 'AUDIO', 'VIDEO');
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -138,12 +159,14 @@ CREATE TABLE "timeline_events" (
 -- CreateTable
 CREATE TABLE "entities" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
+    "createdByUserId" TEXT,
     "legalName" TEXT NOT NULL,
-    "cnpj" TEXT NOT NULL,
+    "cnpj" TEXT,
+    "ibgeCode" TEXT,
     "type" "EntityType" NOT NULL,
     "verified" BOOLEAN NOT NULL DEFAULT false,
     "votzScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "plan" "EntityPlan" NOT NULL DEFAULT 'BASICO',
     "slaHours" JSONB,
     "city" TEXT,
     "state" TEXT,
@@ -172,7 +195,10 @@ CREATE TABLE "parties" (
 -- CreateTable
 CREATE TABLE "politicians" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
+    "createdByUserId" TEXT,
+    "name" TEXT NOT NULL DEFAULT '',
+    "cpf" TEXT,
+    "tseId" TEXT,
     "partyId" TEXT NOT NULL,
     "office" TEXT NOT NULL,
     "termStart" TIMESTAMP(3) NOT NULL,
@@ -180,7 +206,10 @@ CREATE TABLE "politicians" (
     "electoralZone" TEXT NOT NULL,
     "state" TEXT NOT NULL,
     "city" TEXT,
+    "avatarUrl" TEXT,
+    "website" TEXT,
     "verified" BOOLEAN NOT NULL DEFAULT false,
+    "plan" "PoliticianPlan" NOT NULL DEFAULT 'BASICO',
     "mandatometer" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -254,8 +283,11 @@ CREATE TABLE "registration_requests" (
     "status" "RegistrationRequestStatus" NOT NULL DEFAULT 'PENDING',
     "requesterId" TEXT NOT NULL,
     "payload" JSONB NOT NULL,
+    "claimTargetId" TEXT,
     "reviewerId" TEXT,
     "reviewNote" TEXT,
+    "approvedOrgId" TEXT,
+    "approvedOrgType" "OrgType",
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -269,6 +301,11 @@ CREATE TABLE "comments" (
     "authorId" TEXT NOT NULL,
     "content" TEXT NOT NULL,
     "parentId" TEXT,
+    "mediaType" "CommentMediaType" NOT NULL DEFAULT 'TEXT',
+    "mediaUrl" TEXT,
+    "mediaKey" TEXT,
+    "mediaDuration" INTEGER,
+    "transcript" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -318,6 +355,33 @@ CREATE TABLE "surtos" (
 );
 
 -- CreateTable
+CREATE TABLE "report_followers" (
+    "id" TEXT NOT NULL,
+    "reportId" TEXT NOT NULL,
+    "actorType" "FollowerActorType" NOT NULL,
+    "actorId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "report_followers_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "api_keys" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "keyHash" TEXT NOT NULL,
+    "prefix" TEXT NOT NULL,
+    "tier" "ApiKeyTier" NOT NULL DEFAULT 'FREE',
+    "userId" TEXT NOT NULL,
+    "lastUsedAt" TIMESTAMP(3),
+    "revokedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "api_keys_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "member_invites" (
     "id" TEXT NOT NULL,
     "orgType" "OrgType" NOT NULL,
@@ -332,6 +396,45 @@ CREATE TABLE "member_invites" (
     CONSTRAINT "member_invites_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "propostas" (
+    "id" TEXT NOT NULL,
+    "titulo" TEXT NOT NULL,
+    "descricao" TEXT NOT NULL,
+    "status" "PropostaStatus" NOT NULL DEFAULT 'DRAFT',
+    "categorias" "Category"[],
+    "linkExterno" TEXT,
+    "politicoId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "propostas_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "proposta_timeline" (
+    "id" TEXT NOT NULL,
+    "propostaId" TEXT NOT NULL,
+    "tipo" "PropostaEventType" NOT NULL,
+    "conteudo" TEXT NOT NULL,
+    "autorId" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "proposta_timeline_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "proposta_votos" (
+    "id" TEXT NOT NULL,
+    "propostaId" TEXT NOT NULL,
+    "usuarioId" TEXT NOT NULL,
+    "apoio" BOOLEAN NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "proposta_votos_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
@@ -342,10 +445,10 @@ CREATE UNIQUE INDEX "users_googleId_key" ON "users"("googleId");
 CREATE UNIQUE INDEX "users_emailVerificationToken_key" ON "users"("emailVerificationToken");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "entities_userId_key" ON "entities"("userId");
+CREATE UNIQUE INDEX "entities_cnpj_key" ON "entities"("cnpj");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "entities_cnpj_key" ON "entities"("cnpj");
+CREATE UNIQUE INDEX "entities_ibgeCode_key" ON "entities"("ibgeCode");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "parties_abbreviation_key" ON "parties"("abbreviation");
@@ -354,7 +457,10 @@ CREATE UNIQUE INDEX "parties_abbreviation_key" ON "parties"("abbreviation");
 CREATE UNIQUE INDEX "parties_number_key" ON "parties"("number");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "politicians_userId_key" ON "politicians"("userId");
+CREATE UNIQUE INDEX "politicians_cpf_key" ON "politicians"("cpf");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "politicians_tseId_key" ON "politicians"("tseId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "companies_cnpj_key" ON "companies"("cnpj");
@@ -372,7 +478,22 @@ CREATE UNIQUE INDEX "org_memberships_userId_orgType_orgId_key" ON "org_membershi
 CREATE UNIQUE INDEX "surtos_category_city_key" ON "surtos"("category", "city");
 
 -- CreateIndex
+CREATE INDEX "report_followers_actorType_actorId_idx" ON "report_followers"("actorType", "actorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "report_followers_reportId_actorType_actorId_key" ON "report_followers"("reportId", "actorType", "actorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "api_keys_keyHash_key" ON "api_keys"("keyHash");
+
+-- CreateIndex
+CREATE INDEX "api_keys_userId_idx" ON "api_keys"("userId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "member_invites_token_key" ON "member_invites"("token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "proposta_votos_propostaId_usuarioId_key" ON "proposta_votos"("propostaId", "usuarioId");
 
 -- AddForeignKey
 ALTER TABLE "reports" ADD CONSTRAINT "reports_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -388,12 +509,6 @@ ALTER TABLE "timeline_events" ADD CONSTRAINT "timeline_events_reportId_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "timeline_events" ADD CONSTRAINT "timeline_events_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "entities" ADD CONSTRAINT "entities_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "politicians" ADD CONSTRAINT "politicians_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "politicians" ADD CONSTRAINT "politicians_partyId_fkey" FOREIGN KEY ("partyId") REFERENCES "parties"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -433,3 +548,24 @@ ALTER TABLE "org_memberships" ADD CONSTRAINT "org_memberships_userId_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "org_memberships" ADD CONSTRAINT "org_memberships_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "org_roles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "report_followers" ADD CONSTRAINT "report_followers_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "propostas" ADD CONSTRAINT "propostas_politicoId_fkey" FOREIGN KEY ("politicoId") REFERENCES "politicians"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "proposta_timeline" ADD CONSTRAINT "proposta_timeline_propostaId_fkey" FOREIGN KEY ("propostaId") REFERENCES "propostas"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "proposta_timeline" ADD CONSTRAINT "proposta_timeline_autorId_fkey" FOREIGN KEY ("autorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "proposta_votos" ADD CONSTRAINT "proposta_votos_propostaId_fkey" FOREIGN KEY ("propostaId") REFERENCES "propostas"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "proposta_votos" ADD CONSTRAINT "proposta_votos_usuarioId_fkey" FOREIGN KEY ("usuarioId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
