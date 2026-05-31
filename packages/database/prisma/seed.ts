@@ -85,14 +85,15 @@ async function main() {
   ])
 
   // ── Entidades ──────────────────────────────────────────────────────────────
+  // CNPJs armazenados sem formatação — consistente com o que o service faz
 
   const prefeitura = await prisma.entity.upsert({
-    where: { cnpj: '46.395.000/0001-39' },
+    where: { cnpj: '46395000000139' },
     update: {},
     create: {
-      userId: uPref.id,
+      createdByUserId: uPref.id,
       legalName: 'Prefeitura Municipal de São Paulo',
-      cnpj: '46.395.000/0001-39',
+      cnpj: '46395000000139',
       type: EntityType.CITY_HALL,
       verified: true,
       votzScore: 62,
@@ -104,12 +105,12 @@ async function main() {
   })
 
   const hospital = await prisma.entity.upsert({
-    where: { cnpj: '60.979.457/0001-00' },
+    where: { cnpj: '60979457000100' },
     update: {},
     create: {
-      userId: uHosp.id,
+      createdByUserId: uHosp.id,
       legalName: 'Hospital das Clínicas da FMUSP',
-      cnpj: '60.979.457/0001-00',
+      cnpj: '60979457000100',
       type: EntityType.HOSPITAL,
       verified: true,
       votzScore: 78,
@@ -183,40 +184,46 @@ async function main() {
   ])
 
   // ── Políticos ──────────────────────────────────────────────────────────────
+  // Politician não tem userId único — vínculo com usuário é via OrgMembership.
+  // Usamos findFirst + create para evitar duplicatas no seed.
 
-  const [pol1, pol2] = await Promise.all([
-    prisma.politician.upsert({
-      where: { userId: uVer.id },
-      update: {},
-      create: {
-        userId: uVer.id,
-        partyId: partyMap['MDB'],
-        office: 'Vereador',
-        termStart: new Date('2025-01-01'),
-        termEnd: new Date('2028-12-31'),
-        electoralZone: 'Zona Sul',
-        state: 'SP',
-        city: 'São Paulo',
-        verified: true,
-        mandatometer: { total: 12, resolved: 5, inProgress: 3, ignored: 4 },
-      },
-    }),
-    prisma.politician.upsert({
-      where: { userId: uDep.id },
-      update: {},
-      create: {
-        userId: uDep.id,
-        partyId: partyMap['PT'],
-        office: 'Deputada Estadual',
-        termStart: new Date('2023-02-01'),
-        termEnd: new Date('2027-01-31'),
-        electoralZone: 'Circunscrição SP',
-        state: 'SP',
-        verified: false,
-        mandatometer: { total: 4, resolved: 1, inProgress: 2, ignored: 1 },
-      },
-    }),
-  ])
+  async function upsertPolitician(data: Parameters<typeof prisma.politician.create>[0]['data'], ownerUserId: string) {
+    const existing = await prisma.orgMembership.findFirst({
+      where: { userId: ownerUserId, orgType: OrgType.POLITICIAN },
+    })
+    if (existing) {
+      return prisma.politician.findUnique({ where: { id: existing.orgId } })
+    }
+    return prisma.politician.create({ data })
+  }
+
+  const pol1 = await upsertPolitician({
+    createdByUserId: uVer.id,
+    name: 'Ricardo Souza',
+    partyId: partyMap['MDB'],
+    office: 'Vereador',
+    termStart: new Date('2025-01-01'),
+    termEnd: new Date('2028-12-31'),
+    electoralZone: 'Zona Sul',
+    state: 'SP',
+    city: 'São Paulo',
+    verified: true,
+    mandatometer: { total: 12, resolved: 5, inProgress: 3, ignored: 4 },
+  }, uVer.id)
+
+  const pol2 = await upsertPolitician({
+    createdByUserId: uDep.id,
+    name: 'Marta Ferreira',
+    partyId: partyMap['PT'],
+    office: 'Deputada Estadual',
+    termStart: new Date('2023-02-01'),
+    termEnd: new Date('2027-01-31'),
+    electoralZone: 'Circunscrição SP',
+    state: 'SP',
+    verified: false,
+    mandatometer: { total: 4, resolved: 1, inProgress: 2, ignored: 1 },
+  }, uDep.id)
+
   console.log('✅ Políticos criados')
 
   // ── Relatos ────────────────────────────────────────────────────────────────
@@ -243,7 +250,7 @@ async function main() {
       description: 'Toda a extensão da Rua dos Pinheiros, do número 100 ao 800, está completamente sem iluminação há uma semana. À noite fica perigoso, já houve relato de assalto no trecho escuro. A situação piora nos dias de chuva.',
       category: Category.SAFETY, status: ReportStatus.IN_PROGRESS,
       city: 'São Paulo', state: 'SP', latitude: -23.5672, longitude: -46.6891,
-      authorId: c3.id, recipientType: 'POLITICIAN' as const, recipientId: pol1.id,
+      authorId: c3.id, recipientType: 'POLITICIAN' as const, recipientId: pol1?.id,
       pressureScore: 56,
     },
     {
@@ -456,7 +463,6 @@ async function main() {
     },
   ]
 
-  // Helper: seed roles for an org and add owner membership
   async function seedOrgRoles(orgType: OrgType, orgId: string, ownerUserId: string) {
     const roleMap: Record<string, string> = {}
     for (const r of DEFAULT_ROLES) {
@@ -471,7 +477,6 @@ async function main() {
       roleMap[r.name] = created.id
     }
 
-    // Add owner membership
     const ownerRoleId = roleMap['Proprietário']
     await prisma.orgMembership.upsert({
       where: { userId_orgType_orgId: { userId: ownerUserId, orgType, orgId } },
@@ -482,8 +487,8 @@ async function main() {
 
   await seedOrgRoles(OrgType.ENTITY, prefeitura.id, uPref.id)
   await seedOrgRoles(OrgType.ENTITY, hospital.id, uHosp.id)
-  await seedOrgRoles(OrgType.POLITICIAN, pol1.id, uVer.id)
-  await seedOrgRoles(OrgType.POLITICIAN, pol2.id, uDep.id)
+  if (pol1) await seedOrgRoles(OrgType.POLITICIAN, pol1.id, uVer.id)
+  if (pol2) await seedOrgRoles(OrgType.POLITICIAN, pol2.id, uDep.id)
   console.log('✅ Roles e memberships criados')
 
   // ── Resumo ──────────────────────────────────────────────────────────────────
