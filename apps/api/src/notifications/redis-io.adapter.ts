@@ -8,11 +8,11 @@ export class RedisIoAdapter extends IoAdapter {
 
   async connectToRedis(redisUrl: string): Promise<void> {
     const opts = {
-      maxRetriesPerRequest: 0,
+      maxRetriesPerRequest: null,
       enableReadyCheck: false,
       lazyConnect: true,
       retryStrategy: (times: number) => {
-        if (times > 3) return null // para de tentar após 3 falhas
+        if (times > 3) return null
         return Math.min(times * 500, 2000)
       },
     }
