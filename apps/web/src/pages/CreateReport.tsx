@@ -684,12 +684,12 @@ export function CreateReport() {
 
   const initEntity: EntityListItem | null =
     initRecipientType === 'ENTITY' && initRecipientId && initRecipientName
-      ? { id: initRecipientId, legalName: initRecipientName, cnpj: null, ibgeCode: null, type: 'MUNICIPAL' as EntityType, verified: false, votzScore: 0, slaHours: null, city: null, state: null, logoUrl: null, website: null, createdAt: '' }
+      ? { id: initRecipientId, legalName: initRecipientName, cnpj: null, ibgeCode: null, type: 'MUNICIPAL' as EntityType, verified: false, votzScore: 0, plan: 'BASICO', slaHours: null, city: null, state: null, logoUrl: null, website: null, createdAt: '' }
       : null
 
   const initPolitician: Politician | null =
     initRecipientType === 'POLITICIAN' && initRecipientId && initRecipientName
-      ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, mandatometer: null, createdAt: '' }
+      ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, plan: 'BASICO', mandatometer: null, createdAt: '' }
       : null
 
   const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>(
