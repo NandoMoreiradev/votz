@@ -17,7 +17,10 @@
     "test": "turbo run test",
     "db:generate": "turbo run db:generate",
     "db:migrate": "turbo run db:migrate",
-    "db:studio": "npm run db:studio --workspace=packages/database"
+    "db:studio": "npm run db:studio --workspace=packages/database",
+    "db:seed": "npx prisma db seed",
+    "db:import-public": "dotenv -e .env -- npx ts-node --project packages/database/tsconfig.json packages/database/prisma/import-public-data.ts",
+    "db:import-fotos": "dotenv -e .env -- npx ts-node --project packages/database/tsconfig.json packages/database/prisma/import-fotos-tse.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
