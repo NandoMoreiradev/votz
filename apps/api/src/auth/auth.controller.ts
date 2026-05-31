@@ -192,7 +192,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Switch active profile context and get a new access token' })
   switchContext(@CurrentUser() user: { id: string }, @Body() dto: SwitchContextDto) {
-    return this.authService.switchContext(user.id, dto.contextType, dto.contextId)
+    return this.authService.switchContext(user.id, dto.contextType, dto.contextId, dto.mfaCode)
   }
 
   // ── Google OAuth ────────────────────────────────────────────────────────

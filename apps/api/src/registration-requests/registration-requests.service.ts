@@ -12,7 +12,6 @@ import {
   EntityType,
   OrgType,
   OrgPermission,
-  UserType,
   Prisma,
   PrismaClient,
 } from '@prisma/client'
@@ -254,16 +253,6 @@ export class RegistrationRequestsService {
         data:  { verified: true },
       })
 
-      // Atualiza o tipo do usuário
-      const userType = orgType === OrgType.ENTITY ? UserType.ENTITY
-        : orgType === OrgType.POLITICIAN ? UserType.POLITICIAN
-        : UserType.COMPANY
-
-      await tx.user.update({
-        where: { id: requesterId },
-        data:  { type: userType },
-      })
-
       return {
         id: claimTargetId,
         orgType,
@@ -366,11 +355,6 @@ export class RegistrationRequestsService {
         },
       })
 
-      await tx.user.update({
-        where: { id: requesterId },
-        data:  { type: UserType.ENTITY },
-      })
-
       return entity
     })
   }
@@ -425,11 +409,6 @@ export class RegistrationRequestsService {
           orgId:   politician.id,
           roleId:  ownerRole.id,
         },
-      })
-
-      await tx.user.update({
-        where: { id: requesterId },
-        data:  { type: UserType.POLITICIAN },
       })
 
       return politician

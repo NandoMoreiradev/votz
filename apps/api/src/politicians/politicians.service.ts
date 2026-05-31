@@ -48,12 +48,29 @@ export class PoliticiansService {
   }
 
   async findById(id: string) {
-    const [politician, mandatometer] = await Promise.all([
+    const [politician, mandatometer, monthlyVolume] = await Promise.all([
       this.repo.findById(id),
       this.repo.mandatometerStats(id),
+      this.repo.monthlyVolume(id),
     ])
     if (!politician) throw new NotFoundException('Politician not found')
-    return { ...politician, mandatometer }
+
+    const { total, resolved, open } = mandatometer
+    const disputed = mandatometer.byStatus['DISPUTED'] ?? 0
+
+    const responseRate = total > 0 ? Math.round(((total - open) / total) * 100) : 0
+    const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0
+    const contestationRate = (resolved + disputed) > 0
+      ? Math.round((disputed / (resolved + disputed)) * 100) : 0
+    const trustBadge = responseRate >= 60 && resolutionRate >= 50
+
+    const classification =
+      resolutionRate >= 60 ? 'Político Ativo' :
+      resolutionRate >= 30 ? 'Político Regular' : 'Político Inativo'
+
+    const metrics = { responseRate, resolutionRate, contestationRate, trustBadge, classification }
+
+    return { ...politician, mandatometer, monthlyVolume, metrics }
   }
 
   async findReports(politicianId: string, page: number, limit: number, status?: string) {

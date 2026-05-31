@@ -10,6 +10,9 @@ import { useAuthStore } from '../store/auth.store'
 import { Button } from '../components/ui/Button'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
+import { VolumeChart } from '../components/profile/VolumeChart'
+import { MetricsBar } from '../components/profile/MetricsBar'
+import { TrustBadge } from '../components/profile/TrustBadge'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 
@@ -548,6 +551,12 @@ export function PoliticianProfile() {
                   <Tag $variant="party">{politician.party.abbreviation}</Tag>
                   <Tag $variant="number">Nº {politician.party.number}</Tag>
                   {politician.verified && <Tag $variant="verified">✓ Verificado</Tag>}
+                  {politician.metrics && (
+                    <TrustBadge
+                      classification={politician.metrics.classification}
+                      trustBadge={politician.metrics.trustBadge}
+                    />
+                  )}
                 </MetaRow>
                 <MetaRow>
                   <Location>
@@ -631,6 +640,8 @@ export function PoliticianProfile() {
                 <MBar $pct={ignoredPct} $color="#E63946" />
               </MCard>
             </MGrid>
+
+            {politician.metrics && <MetricsBar metrics={politician.metrics} />}
           </HeaderCard>
         ) : (
           <Empty>Político não encontrado.</Empty>
@@ -799,6 +810,14 @@ export function PoliticianProfile() {
                   </PartyInfo>
                 </PartyCard>
               </SideCard>
+
+              {/* Volume mensal */}
+              {politician.monthlyVolume && politician.monthlyVolume.length > 0 && (
+                <SideCard>
+                  <SideTitle>Volume mensal</SideTitle>
+                  <VolumeChart data={politician.monthlyVolume} />
+                </SideCard>
+              )}
 
               {/* Categorias mais reclamadas */}
               {topCategories.length > 0 && (

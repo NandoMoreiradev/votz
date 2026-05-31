@@ -42,12 +42,31 @@ export class EntitiesService {
   }
 
   async findById(id: string) {
-    const [entity, stats] = await Promise.all([
+    const [entity, stats, monthlyVolume] = await Promise.all([
       this.repo.findByIdFull(id),
       this.repo.stats(id),
+      this.repo.monthlyVolume(id),
     ])
     if (!entity) throw new NotFoundException('Entity not found')
-    return { ...entity, stats }
+
+    const { total, resolved, byStatus } = stats
+    const open = byStatus[ReportStatus.OPEN] ?? 0
+    const disputed = byStatus[ReportStatus.DISPUTED] ?? 0
+
+    const responseRate = total > 0 ? Math.round(((total - open) / total) * 100) : 0
+    const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0
+    const contestationRate = (resolved + disputed) > 0
+      ? Math.round((disputed / (resolved + disputed)) * 100) : 0
+    const trustBadge = responseRate >= 70 && resolutionRate >= 50
+
+    const classification =
+      responseRate >= 80 && resolutionRate >= 60 ? 'Entidade Comprometida' :
+      responseRate >= 60 ? 'Entidade Regular' :
+      responseRate >= 30 ? 'Entidade Omissa' : 'Entidade em Alerta'
+
+    const metrics = { responseRate, resolutionRate, contestationRate, trustBadge, classification }
+
+    return { ...entity, stats, monthlyVolume, metrics }
   }
 
   async findReports(entityId: string, page: number, limit: number, status?: string) {

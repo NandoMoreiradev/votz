@@ -166,6 +166,19 @@ export interface CategoryStat {
   count: number
 }
 
+export interface MonthlyVolumeDatum {
+  month: string
+  count: number
+}
+
+export interface ProfileMetrics {
+  responseRate: number
+  resolutionRate: number
+  contestationRate: number
+  trustBadge: boolean
+  classification: string
+}
+
 export interface Entity {
   id: string
   legalName: string
@@ -186,9 +199,11 @@ export interface Entity {
     byStatus: Record<string, number>
     byCategory: CategoryStat[]
   }
+  monthlyVolume?: MonthlyVolumeDatum[]
+  metrics?: ProfileMetrics
 }
 
-export interface EntityListItem extends Omit<Entity, 'stats'> {}
+export interface EntityListItem extends Omit<Entity, 'stats' | 'monthlyVolume' | 'metrics'> {}
 
 export interface EntitiesResponse {
   data: EntityListItem[]
@@ -227,6 +242,8 @@ export interface Politician {
   website: string | null
   verified: boolean
   mandatometer: Mandatometer | null
+  monthlyVolume?: MonthlyVolumeDatum[]
+  metrics?: ProfileMetrics
   createdAt: string
 }
 

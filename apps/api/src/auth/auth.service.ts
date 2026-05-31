@@ -24,8 +24,8 @@ import { ActiveContextPayload } from './strategies/jwt.strategy'
 
 const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock skew)
 
-// Perfis que exigem MFA obrigatório conforme escopo (seção 16.2)
-const MFA_REQUIRED_TYPES = ['ENTITY', 'POLITICIAN', 'COMPANY', 'ADMIN'] as const
+// Apenas ADMIN exige MFA no login — políticos/entidades/empresas exigem MFA na troca de contexto
+const MFA_REQUIRED_TYPES = ['ADMIN'] as const
 type MfaRequiredType = (typeof MFA_REQUIRED_TYPES)[number]
 
 function requiresMandatoryMfa(type: string): type is MfaRequiredType {
@@ -535,10 +535,10 @@ export class AuthService {
     }
   }
 
-  async switchContext(userId: string, contextType: ContextType, contextId?: string) {
+  async switchContext(userId: string, contextType: ContextType, contextId?: string, mfaCode?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, type: true },
+      select: { email: true, type: true, mfaEnabled: true, mfaSecret: true },
     })
     if (!user) throw new UnauthorizedException()
 
@@ -551,6 +551,18 @@ export class AuthService {
     }
 
     if (!contextId) throw new BadRequestException('contextId é obrigatório')
+
+    // Contextos elevados exigem MFA — o risco está em agir como político/entidade/empresa
+    if (!user.mfaEnabled) {
+      return { requiresMfaSetup: true }
+    }
+
+    if (!mfaCode) {
+      return { requiresMfa: true }
+    }
+
+    const { valid } = await otpVerify({ token: mfaCode, secret: user.mfaSecret!, epochTolerance: OTP_EPOCH_TOLERANCE })
+    if (!valid) throw new UnauthorizedException('Código MFA inválido')
 
     const ctx = await this.resolveOrgContext(userId, contextType, contextId)
     const accessToken = await this.jwt.signAsync(

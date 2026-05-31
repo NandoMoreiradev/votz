@@ -14,6 +14,8 @@ const POLITICIAN_PUBLIC_SELECT = {
   city: true,
   verified: true,
   mandatometer: true,
+  avatarUrl: true,
+  website: true,
   createdAt: true,
   party: { select: { id: true, name: true, abbreviation: true, number: true, logoUrl: true } },
 } as const
@@ -128,6 +130,32 @@ export class PoliticiansRepository {
       this.prisma.report.count({ where }),
     ])
     return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
+  }
+
+  async monthlyVolume(politicianId: string): Promise<{ month: string; count: number }[]> {
+    const since = new Date()
+    since.setMonth(since.getMonth() - 11)
+    since.setDate(1)
+    since.setHours(0, 0, 0, 0)
+
+    const reports = await this.prisma.report.findMany({
+      where: { recipientType: 'POLITICIAN', recipientId: politicianId, createdAt: { gte: since } },
+      select: { createdAt: true },
+    })
+
+    const months: Record<string, number> = {}
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      months[key] = 0
+    }
+    for (const r of reports) {
+      const d = new Date(r.createdAt)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (key in months) months[key]++
+    }
+    return Object.entries(months).map(([month, count]) => ({ month, count }))
   }
 
   async mandatometerStats(politicianId: string) {

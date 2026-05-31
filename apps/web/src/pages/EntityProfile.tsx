@@ -8,6 +8,9 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { useEntity, useEntityReports } from '../hooks/useEntities'
 import { useAuthStore } from '../store/auth.store'
 import { TeamPanel } from '../components/org/TeamPanel'
+import { VolumeChart } from '../components/profile/VolumeChart'
+import { MetricsBar } from '../components/profile/MetricsBar'
+import { TrustBadge } from '../components/profile/TrustBadge'
 import { EntityType, ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 import { api } from '../lib/api'
@@ -603,6 +606,12 @@ export function EntityProfile() {
                   <Tag>{ENTITY_TYPE_LABELS[entity.type] ?? entity.type}</Tag>
                   {entity.verified && <Tag $variant="verified">✓ Verificada</Tag>}
                   {entity.cnpj && <Tag $variant="cnpj">{formatCnpj(entity.cnpj)}</Tag>}
+                  {entity.metrics && (
+                    <TrustBadge
+                      classification={entity.metrics.classification}
+                      trustBadge={entity.metrics.trustBadge}
+                    />
+                  )}
                 </MetaRow>
                 <MetaRow>
                   {entity.city && (
@@ -659,6 +668,8 @@ export function EntityProfile() {
                 <MiniBar $pct={resolutionRate} $color="#2DC653" />
               </StatBox>
             </StatsRow>
+
+            {entity.metrics && <MetricsBar metrics={entity.metrics} />}
           </HeaderCard>
         ) : (
           <Empty>Entidade não encontrada.</Empty>
@@ -755,6 +766,14 @@ export function EntityProfile() {
                     : 'Desempenho abaixo do esperado. Muitos relatos sem resposta.'}
                 </ScoreDesc>
               </SideCard>
+
+              {/* Volume mensal */}
+              {entity.monthlyVolume && entity.monthlyVolume.length > 0 && (
+                <SideCard>
+                  <SideTitle>Volume mensal</SideTitle>
+                  <VolumeChart data={entity.monthlyVolume} />
+                </SideCard>
+              )}
 
               {/* Categorias mais reclamadas */}
               {topCategories.length > 0 && (
