@@ -465,7 +465,7 @@ export function Navbar() {
       <Nav>
         <Inner>
           <Logo to="/">
-            <img src={logoSrc} alt="Votz" style={{ height: 36, width: 'auto', display: 'block' }} />
+            <img src={logoSrc} alt="Votz" style={{ height: 28, width: 'auto', display: 'block' }} />
           </Logo>
 
           <NavLinks>
