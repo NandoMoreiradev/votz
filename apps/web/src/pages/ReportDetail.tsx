@@ -17,6 +17,8 @@ import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { TimelineEvent } from '../types/api'
+import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
+import { useEntities } from '../hooks/useEntities'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -714,6 +716,33 @@ export function ReportDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['report', id] }),
   })
 
+  const [showReatribuir, setShowReatribuir] = useState(false)
+  const [reatribuirSearch, setReatribuirSearch] = useState('')
+  const [reatribuirType, setReatribuirType] = useState<'POLITICIAN' | 'ENTITY'>('POLITICIAN')
+  const { data: politiciansSearch } = usePoliticians({
+    search: reatribuirSearch.length >= 2 ? reatribuirSearch : undefined,
+    status: 'ATIVO',
+    enabled: showReatribuir && reatribuirType === 'POLITICIAN',
+  })
+
+  const { data: entitiesSearch } = useEntities({
+    search: reatribuirSearch.length >= 2 ? reatribuirSearch : undefined,
+    enabled: showReatribuir && reatribuirType === 'ENTITY',
+  })
+
+  const recipientPoliticianId = report?.recipientType === RecipientType.POLITICIAN ? report.recipientId : null
+  const { data: recipientPolitician } = usePolitician(recipientPoliticianId ?? '')
+
+  const updateRecipientMutation = useMutation({
+    mutationFn: ({ recipientType, recipientId }: { recipientType: string; recipientId: string }) =>
+      api.patch(`/reports/${id}/recipient`, { recipientType, recipientId }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['report', id] })
+      setShowReatribuir(false)
+      setReatribuirSearch('')
+    },
+  })
+
   if (isLoading) {
     return (
       <Page>
@@ -925,6 +954,107 @@ export function ReportDetail() {
                 </VoteBtn>
               </VoteButtons>
             </SideCard>
+
+            {(() => {
+              if (report.recipientType !== RecipientType.POLITICIAN || !recipientPolitician) return null
+              if (recipientPolitician.status === 'ATIVO') return null
+              const isAuthor = user?.id === report.author?.id && !report.anonymous
+              const label = recipientPolitician.status === 'ENCERRADO' ? 'Mandato encerrado' : 'Político afastado'
+
+              return (
+                <SideCard>
+                  <SideTitle style={{ color: '#6B7280' }}>Destinatário</SideTitle>
+                  <p style={{ fontSize: '0.8125rem', color: '#6B7280', lineHeight: 1.5, marginBottom: isAuthor ? 12 : 0 }}>
+                    {label}: {recipientPolitician.name}. Este relato pode ser reatribuído a um novo destinatário.
+                  </p>
+                  {isAuthor && !showReatribuir && (
+                    <DisputeBtn
+                      style={{ background: '#1A1A2E', color: '#fff', marginTop: 8 }}
+                      onClick={() => setShowReatribuir(true)}
+                    >
+                      Reatribuir destinatário
+                    </DisputeBtn>
+                  )}
+                  {isAuthor && showReatribuir && (
+                    <>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 10, marginTop: 8 }}>
+                        {(['POLITICIAN', 'ENTITY'] as const).map((t) => (
+                          <button
+                            key={t}
+                            style={{
+                              flex: 1, padding: '5px 10px', borderRadius: 8,
+                              border: reatribuirType === t ? '1.5px solid #1A1A2E' : '1px solid #E5E5E5',
+                              background: reatribuirType === t ? '#1A1A2E12' : 'transparent',
+                              cursor: 'pointer', fontSize: '0.8125rem',
+                              color: reatribuirType === t ? '#1A1A2E' : '#6B7280',
+                            }}
+                            onClick={() => { setReatribuirType(t); setReatribuirSearch('') }}
+                          >
+                            {t === 'POLITICIAN' ? 'Político' : 'Entidade'}
+                          </button>
+                        ))}
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder={reatribuirType === 'POLITICIAN' ? 'Buscar político ativo…' : 'Buscar entidade…'}
+                        value={reatribuirSearch}
+                        onChange={(e) => setReatribuirSearch(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #E5E5E5', borderRadius: 8, fontSize: '0.8125rem', marginBottom: 6, boxSizing: 'border-box' }}
+                      />
+
+                      {reatribuirSearch.length >= 2 && (
+                        <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid #E5E5E5', borderRadius: 8, marginBottom: 8 }}>
+                          {reatribuirType === 'POLITICIAN' && (() => {
+                            const items = politiciansSearch?.data ?? []
+                            if (items.length === 0) return (
+                              <p style={{ padding: '10px 12px', fontSize: '0.8125rem', color: '#6B7280' }}>Nenhum político encontrado</p>
+                            )
+                            return items.map((p) => (
+                              <button
+                                key={p.id}
+                                disabled={updateRecipientMutation.isPending}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', borderBottom: '1px solid #F0F0F0' }}
+                                onClick={() => updateRecipientMutation.mutate({ recipientType: 'POLITICIAN', recipientId: p.id })}
+                              >
+                                <strong>{p.name}</strong> — {p.office}, {p.party.abbreviation}
+                              </button>
+                            ))
+                          })()}
+
+                          {reatribuirType === 'ENTITY' && (() => {
+                            const items = entitiesSearch?.data ?? []
+                            if (items.length === 0) return (
+                              <p style={{ padding: '10px 12px', fontSize: '0.8125rem', color: '#6B7280' }}>Nenhuma entidade encontrada</p>
+                            )
+                            return items.map((e) => (
+                              <button
+                                key={e.id}
+                                disabled={updateRecipientMutation.isPending}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.8125rem', borderBottom: '1px solid #F0F0F0' }}
+                                onClick={() => updateRecipientMutation.mutate({ recipientType: 'ENTITY', recipientId: e.id })}
+                              >
+                                <strong>{e.legalName}</strong>{e.city ? ` — ${e.city}` : ''}
+                              </button>
+                            ))
+                          })()}
+                        </div>
+                      )}
+
+                      {updateRecipientMutation.isPending && (
+                        <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginBottom: 6 }}>Reatribuindo…</p>
+                      )}
+                      {updateRecipientMutation.isError && (
+                        <p style={{ fontSize: '0.8125rem', color: '#E63946', marginBottom: 6 }}>Não foi possível reatribuir. Tente novamente.</p>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => { setShowReatribuir(false); setReatribuirSearch('') }}>
+                        Cancelar
+                      </Button>
+                    </>
+                  )}
+                </SideCard>
+              )
+            })()}
 
             {(() => {
               const actorType = activeContext?.type as 'POLITICIAN' | 'ENTITY' | undefined

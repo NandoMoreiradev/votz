@@ -3,16 +3,18 @@ import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
 import { ReportsRepository, SimilarReportRow } from './reports.repository'
+import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
+import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
-import { FollowerActorType } from '@prisma/client'
+import { FollowerActorType, PoliticianStatus } from '@prisma/client'
 import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
 
 @Injectable()
@@ -25,11 +27,23 @@ export class ReportsService {
     private readonly notifications: NotificationsService,
     private readonly alerts: AlertsService,
     private readonly embedding: EmbeddingService,
+    private readonly prisma: PrismaService,
     @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
     if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
+
+    if (dto.recipientType === RecipientType.POLITICIAN && dto.recipientId) {
+      const politician = await this.prisma.politician.findUnique({
+        where: { id: dto.recipientId },
+        select: { status: true },
+      })
+      if (!politician) throw new BadRequestException('Político destinatário não encontrado')
+      if (politician.status !== PoliticianStatus.ATIVO) {
+        throw new BadRequestException('Este político não possui mandato ativo e não pode receber novos relatos')
+      }
+    }
 
     const sanitizedDescription = DOMPurify.sanitize(dto.description)
     const cleanTitle = DOMPurify.sanitize(dto.title).trim().replace(/\s+/g, ' ')
@@ -151,6 +165,9 @@ export class ReportsService {
     } else if (userType === UserType.POLITICIAN) {
       const politician = await this.repository.findPoliticianByUserId(user.id)
       if (politician) {
+        if (politician.status !== PoliticianStatus.ATIVO) {
+          throw new ForbiddenException('Este político não possui mandato ativo')
+        }
         actorId = politician.id
         isRecipient = report.recipientType === RecipientType.POLITICIAN && report.recipientId === politician.id
       }
@@ -221,6 +238,62 @@ export class ReportsService {
       metadata: { media: dto.media ?? [] },
     })
     return { id: reportId, status: report.status }
+  }
+
+  async updateRecipient(reportId: string, dto: UpdateRecipientDto, userId: string) {
+    const meta = await this.repository.findAuthorIdByReport(reportId)
+    if (!meta) throw new NotFoundException('Relato não encontrado')
+    if (meta.authorId !== userId) throw new ForbiddenException('Apenas o autor do relato pode reatribuir o destinatário')
+
+    const ASSIGNABLE: ReportStatus[] = [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW, ReportStatus.IN_PROGRESS]
+    if (!ASSIGNABLE.includes(meta.status as ReportStatus)) {
+      throw new BadRequestException('Apenas relatos em aberto podem ter o destinatário reatribuído')
+    }
+
+    if (dto.recipientType === RecipientType.POLITICIAN) {
+      const politician = await this.prisma.politician.findUnique({
+        where: { id: dto.recipientId },
+        select: { status: true },
+      })
+      if (!politician) throw new BadRequestException('Político destinatário não encontrado')
+      if (politician.status !== PoliticianStatus.ATIVO) {
+        throw new BadRequestException('Apenas políticos com mandato ativo podem ser destinatários')
+      }
+    }
+
+    if (dto.recipientType === RecipientType.ENTITY) {
+      const entity = await this.prisma.entity.findUnique({
+        where: { id: dto.recipientId },
+        select: { id: true },
+      })
+      if (!entity) throw new BadRequestException('Entidade destinatária não encontrada')
+    }
+
+    if (dto.recipientType === RecipientType.BRANCH) {
+      const branch = await this.prisma.branch.findUnique({
+        where: { id: dto.recipientId },
+        select: { id: true },
+      })
+      if (!branch) throw new BadRequestException('Filial destinatária não encontrada')
+    }
+
+    await this.repository.updateRecipient(reportId, dto.recipientType, dto.recipientId)
+
+    await this.timeline.record({
+      reportId,
+      type: EventType.UPDATE,
+      content: 'Destinatário atualizado pelo autor. Relato reatribuído.',
+      authorId: userId,
+      metadata: {
+        action: 'recipient_updated',
+        previousRecipientType: meta.recipientType,
+        previousRecipientId: meta.recipientId,
+        newRecipientType: dto.recipientType,
+        newRecipientId: dto.recipientId,
+      },
+    })
+
+    return this.repository.findById(reportId)
   }
 
   // ── Follow ───────────────────────────────────────────────────────────────────

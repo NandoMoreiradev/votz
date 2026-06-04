@@ -36,6 +36,7 @@ import { TseSyncModule } from './tse-sync/tse-sync.module'
 import { PropostasModule } from './propostas/propostas.module'
 import { TranscriptionModule } from './transcription/transcription.module'
 import { SubscricoesModule } from './subscricoes/subscricoes.module'
+import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
 
 @Module({
   imports: [
@@ -119,6 +120,7 @@ import { SubscricoesModule } from './subscricoes/subscricoes.module'
     PropostasModule,
     TranscriptionModule,
     SubscricoesModule,
+    MandateExpiryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

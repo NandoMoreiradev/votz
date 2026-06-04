@@ -107,6 +107,12 @@ enum PoliticianPlan {
   CAMPANHA
 }
 
+enum PoliticianStatus {
+  ATIVO
+  ENCERRADO
+  AFASTADO
+}
+
 enum RecipientType {
   ENTITY
   COMPANY
@@ -374,11 +380,12 @@ model Politician {
   city            String?
   avatarUrl       String?
   website         String?
-  verified             Boolean        @default(false)
-  plan                 PoliticianPlan @default(BASICO)
-  stripeCustomerId     String?        @unique
-  stripeSubscriptionId String?        @unique
-  mandatometer         Json?          // snapshot: { resolved, ignored, advocated }
+  verified             Boolean          @default(false)
+  status               PoliticianStatus @default(ATIVO)
+  plan                 PoliticianPlan   @default(BASICO)
+  stripeCustomerId     String?          @unique
+  stripeSubscriptionId String?          @unique
+  mandatometer         Json?            // snapshot: { resolved, ignored, advocated }
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

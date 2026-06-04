@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { Prisma } from '@prisma/client'
+import { Prisma, PoliticianStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { VoteType } from '@votz/shared-types'
 
@@ -7,6 +7,7 @@ const POLITICIAN_PUBLIC_SELECT = {
   id: true,
   name: true,
   office: true,
+  status: true,
   termStart: true,
   termEnd: true,
   electoralZone: true,
@@ -67,6 +68,7 @@ export class PoliticiansRepository {
     office?: string
     search?: string
     verified?: boolean
+    status?: PoliticianStatus
     page: number
     limit: number
   }) {
@@ -77,6 +79,7 @@ export class PoliticiansRepository {
       ...(params.office && { office: { contains: params.office, mode: 'insensitive' } }),
       ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
       ...(params.verified !== undefined && { verified: params.verified }),
+      ...(params.status && { status: params.status }),
     }
 
     const [data, total] = await this.prisma.$transaction([

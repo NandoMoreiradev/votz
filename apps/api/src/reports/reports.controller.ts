@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ReportsService } from './reports.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
+import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { ListReportsQueryDto } from './dto/list-reports-query.dto'
@@ -49,6 +50,18 @@ export class ReportsController {
   @ApiOperation({ summary: 'Get report by ID with timeline' })
   findById(@Param('id') id: string) {
     return this.reportsService.findById(id)
+  }
+
+  @Patch(':id/recipient')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reatribuir destinatário do relato — apenas o autor pode chamar' })
+  updateRecipient(
+    @Param('id') id: string,
+    @Body() dto: UpdateRecipientDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.reportsService.updateRecipient(id, dto, user.id)
   }
 
   @Patch(':id/status')

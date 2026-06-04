@@ -5,7 +5,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common'
-import { OrgPermission } from '@prisma/client'
+import { OrgPermission, PoliticianStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { PoliticiansRepository } from './politicians.repository'
@@ -42,6 +42,7 @@ export class PoliticiansService {
       office: query.office,
       search: query.search,
       verified: query.verified,
+      status: query.status,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     })
@@ -93,7 +94,20 @@ export class PoliticiansService {
     return this.repo.update(id, data)
   }
 
+  private async assertPoliticianAtivo(politicianId: string): Promise<void> {
+    const p = await this.prisma.politician.findUnique({
+      where: { id: politicianId },
+      select: { status: true },
+    })
+    if (!p) throw new NotFoundException('Politician not found')
+    if (p.status !== PoliticianStatus.ATIVO) {
+      throw new ForbiddenException('Este político não possui mandato ativo')
+    }
+  }
+
   async advocate(politicianId: string, reportId: string, userId: string) {
+    await this.assertPoliticianAtivo(politicianId)
+
     const membership = await this.prisma.orgMembership.findFirst({
       where: { userId, orgType: 'POLITICIAN', orgId: politicianId, status: 'ACTIVE' },
     })

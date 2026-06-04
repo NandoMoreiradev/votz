@@ -112,7 +112,7 @@ const MetaRow = styled.div`
   margin-bottom: 6px;
 `
 
-const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' | 'plan' | 'campanha' }>`
+const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' | 'plan' | 'campanha' | 'encerrado' | 'afastado' }>`
   font-size: 0.75rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   padding: 2px 9px;
@@ -123,6 +123,8 @@ const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' 
     $variant === 'number' ? theme.colors.neutral :
     $variant === 'plan' ? theme.colors.action + '18' :
     $variant === 'campanha' ? theme.colors.primary + '18' :
+    $variant === 'encerrado' ? '#6B728018' :
+    $variant === 'afastado' ? '#F59E0B18' :
     theme.colors.primary + '12'};
   color: ${({ $variant, theme }) =>
     $variant === 'party' ? theme.colors.action :
@@ -130,10 +132,23 @@ const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' 
     $variant === 'number' ? theme.colors.muted :
     $variant === 'plan' ? theme.colors.action :
     $variant === 'campanha' ? theme.colors.primary :
+    $variant === 'encerrado' ? '#6B7280' :
+    $variant === 'afastado' ? '#F59E0B' :
     theme.colors.primary};
   text-transform: ${({ $variant }) => $variant === 'number' ? 'none' : 'uppercase'};
   letter-spacing: ${({ $variant }) => $variant === 'number' ? '0' : '0.04em'};
   ${({ $variant }) => $variant === 'number' && 'font-family: "JetBrains Mono", monospace;'}
+`
+
+const EncerradoBanner = styled.div`
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: #6B728012;
+  border: 1px solid #6B728030;
+  font-size: 0.875rem;
+  color: #6B7280;
+  line-height: 1.5;
 `
 
 const Location = styled.span`
@@ -600,14 +615,20 @@ export function PoliticianProfile() {
                   <Tag $variant="office">{politician.office}</Tag>
                   <Tag $variant="party">{politician.party.abbreviation}</Tag>
                   <Tag $variant="number">Nº {politician.party.number}</Tag>
+                  {politician.status === 'ENCERRADO' && (
+                    <Tag $variant="encerrado">Mandato Encerrado</Tag>
+                  )}
+                  {politician.status === 'AFASTADO' && (
+                    <Tag $variant="afastado">Afastado</Tag>
+                  )}
                   {politician.verified && <Tag $variant="verified">✓ Verificado</Tag>}
-                  {politician.plan === 'MANDATOMETRO_PRO' && (
+                  {politician.plan === 'MANDATOMETRO_PRO' && politician.status === 'ATIVO' && (
                     <Tag $variant="plan">★ Mandatômetro Pro</Tag>
                   )}
-                  {politician.plan === 'CAMPANHA' && (
+                  {politician.plan === 'CAMPANHA' && politician.status === 'ATIVO' && (
                     <Tag $variant="campanha">🗳 Candidato Comprometido</Tag>
                   )}
-                  {politician.metrics && (
+                  {politician.metrics && politician.status === 'ATIVO' && (
                     <TrustBadge
                       classification={politician.metrics.classification}
                       trustBadge={politician.metrics.trustBadge}
@@ -633,9 +654,19 @@ export function PoliticianProfile() {
                   Mandato: {formatDate(politician.termStart)} → {formatDate(politician.termEnd)}
                 </Term>
                 <CtaRow>
-                  <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.name)}`}>
-                    + Criar relato
-                  </ReportCta>
+                  {politician.status === 'ATIVO' ? (
+                    <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.name)}`}>
+                      + Criar relato
+                    </ReportCta>
+                  ) : (
+                    <ReportCta
+                      to="#"
+                      onClick={(e) => e.preventDefault()}
+                      style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}
+                    >
+                      + Criar relato
+                    </ReportCta>
+                  )}
                   {canEdit && (
                     <Button
                       as={Link as any}
@@ -646,7 +677,7 @@ export function PoliticianProfile() {
                       Editar perfil
                     </Button>
                   )}
-                  {canEdit && (
+                  {canEdit && politician.status === 'ATIVO' && (
                     <ReportCta
                       to="/proposta/nova"
                       style={{ background: '#2DC653' }}
@@ -666,11 +697,23 @@ export function PoliticianProfile() {
               </Info>
             </HeaderTop>
 
+            {/* Mandate status banner */}
+            {politician.status === 'ENCERRADO' && (
+              <EncerradoBanner>
+                Mandato encerrado em {formatDate(politician.termEnd)}. Os dados do Mandatômetro abaixo refletem o registro histórico do período de exercício.
+              </EncerradoBanner>
+            )}
+            {politician.status === 'AFASTADO' && (
+              <EncerradoBanner style={{ background: '#F59E0B12', borderColor: '#F59E0B30', color: '#B45309' }}>
+                Político afastado do exercício do mandato.
+              </EncerradoBanner>
+            )}
+
             {/* Mandate progress */}
             <MandateProgress>
               <ProgressLabel>
-                <span>Progresso do mandato</span>
-                <span>{termPct}% cumprido</span>
+                <span>{politician.status === 'ENCERRADO' ? 'Período do mandato' : 'Progresso do mandato'}</span>
+                <span>{politician.status === 'ENCERRADO' ? 'Encerrado' : `${termPct}% cumprido`}</span>
               </ProgressLabel>
               <ProgressTrack $pct={termPct} />
             </MandateProgress>

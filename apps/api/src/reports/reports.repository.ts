@@ -187,6 +187,21 @@ export class ReportsRepository {
     })
   }
 
+  updateRecipient(reportId: string, recipientType: string, recipientId: string) {
+    return this.prisma.report.update({
+      where: { id: reportId },
+      data: { recipientType: recipientType as any, recipientId },
+      select: { id: true, recipientType: true, recipientId: true },
+    })
+  }
+
+  findAuthorIdByReport(reportId: string) {
+    return this.prisma.report.findUnique({
+      where: { id: reportId },
+      select: { authorId: true, status: true, recipientType: true, recipientId: true },
+    })
+  }
+
   // ── Recipient resolution (for updateStatus authorization) ───────────────────
 
   async findEntityByUserId(userId: string) {
@@ -202,7 +217,12 @@ export class ReportsRepository {
       where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
       select: { orgId: true },
     })
-    return membership ? { id: membership.orgId } : null
+    if (!membership) return null
+    const politician = await this.prisma.politician.findUnique({
+      where: { id: membership.orgId },
+      select: { id: true, status: true },
+    })
+    return politician ?? null
   }
 
   // ── Followers ────────────────────────────────────────────────────────────────

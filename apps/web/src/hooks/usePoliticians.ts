@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { Politician, PoliticiansResponse, UserReportsResponse } from '../types/api'
+import { Politician, PoliticiansResponse, PoliticianStatus, UserReportsResponse } from '../types/api'
 
 export interface Party {
   id: string
@@ -30,6 +30,7 @@ interface UsePoliticiansParams {
   office?: string
   search?: string
   verified?: boolean
+  status?: PoliticianStatus
   enabled?: boolean
   page?: number
 }
@@ -50,7 +51,7 @@ export function usePoliticians(params: UsePoliticiansParams = {}) {
     queryFn: () =>
       api.get<PoliticiansResponse>('/politicians', { params: { ...queryParams, limit: 20 } }).then((r) => r.data),
     staleTime: 60_000,
-    enabled,
+    enabled: enabled !== false,
   })
 }
 

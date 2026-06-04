@@ -190,6 +190,7 @@ export interface ProfileMetrics {
 
 export type EntityPlan = 'BASICO' | 'GESTAO' | 'PRO' | 'ENTERPRISE'
 export type PoliticianPlan = 'BASICO' | 'MANDATOMETRO_PRO' | 'CAMPANHA'
+export type PoliticianStatus = 'ATIVO' | 'ENCERRADO' | 'AFASTADO'
 
 export interface Entity {
   id: string
@@ -246,6 +247,7 @@ export interface Politician {
   name: string
   party: PoliticianParty
   office: string
+  status: PoliticianStatus
   termStart: string
   termEnd: string
   electoralZone: string

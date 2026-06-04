@@ -689,7 +689,7 @@ export function CreateReport() {
 
   const initPolitician: Politician | null =
     initRecipientType === 'POLITICIAN' && initRecipientId && initRecipientName
-      ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, plan: 'BASICO', mandatometer: null, createdAt: '' }
+      ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', status: 'ATIVO' as const, termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, plan: 'BASICO', mandatometer: null, createdAt: '' }
       : null
 
   const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>(

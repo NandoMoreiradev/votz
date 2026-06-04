@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { usePoliticians, useParties, usePoliticianCities } from '../hooks/usePoliticians'
+import type { PoliticianStatus } from '../types/api'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,28 @@ const Select = styled.select`
   padding-right: 30px;
   transition: border-color 0.15s;
   &:focus { outline: none; border-color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const StatusToggle = styled.div`
+  display: flex;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  overflow: hidden;
+  height: 40px;
+`
+
+const ToggleBtn = styled.button<{ $active: boolean }>`
+  padding: 0 14px;
+  border: none;
+  background: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.white};
+  color: ${({ $active, theme }) => $active ? '#fff' : theme.colors.muted};
+  font-size: 0.875rem;
+  font-weight: ${({ $active }) => $active ? 600 : 400};
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  &:not(:last-child) { border-right: 1px solid ${({ theme }) => theme.colors.border}; }
+  &:hover { background: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.neutral}; }
 `
 
 const VerifiedBtn = styled.button<{ $active: boolean }>`
@@ -305,6 +328,7 @@ export function PoliticiansList() {
   const [party, setParty] = useState('')
   const [office, setOffice] = useState('')
   const [verified, setVerified] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<PoliticianStatus | ''>('ATIVO')
   const [page, setPage] = useState(1)
 
   const { data, isLoading } = usePoliticians({
@@ -314,6 +338,7 @@ export function PoliticiansList() {
     party: party || undefined,
     office: office || undefined,
     verified: verified || undefined,
+    status: (statusFilter as PoliticianStatus) || undefined,
     page,
   })
 
@@ -326,6 +351,7 @@ export function PoliticiansList() {
   function handleParty(v: string) { setParty(v); setPage(1) }
   function handleOffice(v: string) { setOffice(v); setPage(1) }
   function toggleVerified() { setVerified((v) => !v); setPage(1) }
+  function handleStatus(v: PoliticianStatus | '') { setStatusFilter(v); setPage(1) }
 
   return (
     <Page>
@@ -369,6 +395,11 @@ export function PoliticiansList() {
           <VerifiedBtn $active={verified} onClick={toggleVerified}>
             ✓ Somente verificados
           </VerifiedBtn>
+          <StatusToggle>
+            <ToggleBtn $active={statusFilter === 'ATIVO'} onClick={() => handleStatus('ATIVO')}>Ativos</ToggleBtn>
+            <ToggleBtn $active={statusFilter === 'ENCERRADO'} onClick={() => handleStatus('ENCERRADO')}>Encerrados</ToggleBtn>
+            <ToggleBtn $active={statusFilter === ''} onClick={() => handleStatus('')}>Todos</ToggleBtn>
+          </StatusToggle>
         </Filters>
 
         {isLoading ? (
@@ -397,6 +428,11 @@ export function PoliticiansList() {
                           <Badge>{p.party.abbreviation}</Badge>
                           <Badge>{p.office}</Badge>
                           {p.verified && <VerifiedDot>✓</VerifiedDot>}
+                          {p.status === 'ENCERRADO' && (
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: '#6B728018', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              Encerrado
+                            </span>
+                          )}
                         </CardMeta>
                       </CardInfo>
                     </CardTop>

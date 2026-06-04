@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
 import { Transform, Type } from 'class-transformer'
+import { PoliticianStatus } from '@prisma/client'
 
 export class ListPoliticiansDto {
   @ApiPropertyOptional()
@@ -33,6 +34,11 @@ export class ListPoliticiansDto {
   @Transform(({ value }) => value === undefined ? undefined : value === 'true')
   @IsBoolean()
   verified?: boolean
+
+  @ApiPropertyOptional({ enum: PoliticianStatus, description: 'Filter by mandate status (ATIVO, ENCERRADO, AFASTADO)' })
+  @IsOptional()
+  @IsEnum(PoliticianStatus)
+  status?: PoliticianStatus
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
