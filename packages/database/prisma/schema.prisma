@@ -195,6 +195,32 @@ enum CommentMediaType {
   VIDEO
 }
 
+enum DebateStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum ParticipantRole {
+  MODERATOR
+  DEBATER
+}
+
+enum InviteStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+}
+
+enum ReactionType {
+  APPLAUSE
+  FIRE
+  POSITIVE
+  QUESTION
+  DISAGREEMENT
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -247,6 +273,11 @@ model User {
   apiKeys              ApiKey[]
   propostaTimeline     PropostaTimeline[]
   propostaVotos        PropostaVoto[]
+
+  politicianFollows    UserPoliticianFollower[]
+  debateQuestions      DebateQuestion[]
+  debateMessages       DebateMessage[]
+  debatePollVotes      DebatePollVote[]
 
   @@map("users")
 }
@@ -389,7 +420,10 @@ model Politician {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  propostas       Proposta[]
+  propostas            Proposta[]
+  debatesCreated       Debate[]             @relation("DebatesCreated")
+  debateParticipations DebateParticipant[]
+  followers            UserPoliticianFollower[]
 
   @@map("politicians")
 }
@@ -647,4 +681,141 @@ model PropostaVoto {
 
   @@unique([propostaId, usuarioId])
   @@map("proposta_votos")
+}
+
+// ==================== DEBATES ====================
+
+model Debate {
+  id               String       @id @default(cuid())
+  title            String
+  description      String?
+  scheduledFor     DateTime
+  status           DebateStatus @default(SCHEDULED)
+  livekitRoomName  String?      @unique
+  hlsUrl           String?
+  recordingUrl     String?
+  egressId         String?
+  viewerCount      Int          @default(0)
+  chatCooldownSecs Int          @default(5)
+
+  creatorId        String
+  creator          Politician   @relation("DebatesCreated", fields: [creatorId], references: [id])
+
+  participants     DebateParticipant[]
+  questions        DebateQuestion[]
+  reactions        DebateReaction[]
+  messages         DebateMessage[]
+  polls            DebatePoll[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("debates")
+}
+
+model DebateParticipant {
+  id           String          @id @default(cuid())
+  debateId     String
+  politicianId String
+  role         ParticipantRole @default(DEBATER)
+  inviteStatus InviteStatus    @default(PENDING)
+  createdAt    DateTime        @default(now())
+
+  debate       Debate     @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  politician   Politician @relation(fields: [politicianId], references: [id])
+
+  @@unique([debateId, politicianId])
+  @@map("debate_participants")
+}
+
+model DebateQuestion {
+  id        String   @id @default(cuid())
+  debateId  String
+  authorId  String
+  text      String   @db.VarChar(500)
+  upvotes   Int      @default(0)
+  answered  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  debate    Debate @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  author    User   @relation(fields: [authorId], references: [id])
+
+  @@map("debate_questions")
+}
+
+model DebateReaction {
+  id        String       @id @default(cuid())
+  debateId  String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  debate    Debate @relation(fields: [debateId], references: [id], onDelete: Cascade)
+
+  @@map("debate_reactions")
+}
+
+model DebateMessage {
+  id        String   @id @default(cuid())
+  debateId  String
+  authorId  String
+  text      String   @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  debate    Debate @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  author    User   @relation(fields: [authorId], references: [id])
+
+  @@map("debate_messages")
+}
+
+model DebatePoll {
+  id        String             @id @default(cuid())
+  debateId  String
+  question  String
+  active    Boolean            @default(true)
+  createdAt DateTime           @default(now())
+
+  debate    Debate             @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  options   DebatePollOption[]
+  votes     DebatePollVote[]
+
+  @@map("debate_polls")
+}
+
+model DebatePollOption {
+  id         String           @id @default(cuid())
+  pollId     String
+  text       String
+  totalVotes Int              @default(0)
+
+  poll       DebatePoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes      DebatePollVote[]
+
+  @@map("debate_poll_options")
+}
+
+model DebatePollVote {
+  id       String @id @default(cuid())
+  pollId   String
+  optionId String
+  userId   String
+
+  poll     DebatePoll       @relation(fields: [pollId], references: [id])
+  option   DebatePollOption @relation(fields: [optionId], references: [id])
+  user     User             @relation(fields: [userId], references: [id])
+
+  @@unique([pollId, userId])
+  @@map("debate_poll_votes")
+}
+
+model UserPoliticianFollower {
+  id           String     @id @default(cuid())
+  userId       String
+  politicianId String
+  createdAt    DateTime   @default(now())
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  politician   Politician @relation(fields: [politicianId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, politicianId])
+  @@map("user_politician_followers")
 }

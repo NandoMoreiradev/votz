@@ -6,6 +6,7 @@ import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
 import { usePoliticianPropostas, PublicProposta } from '../hooks/usePropostas'
+import { useDebates, useFollowPolitician, useIsFollowingPolitician } from '../hooks/useDebates'
 import { useAuthStore } from '../store/auth.store'
 import { Button } from '../components/ui/Button'
 import { TeamPanel } from '../components/org/TeamPanel'
@@ -546,7 +547,8 @@ export function PoliticianProfile() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
   const [periodDays, setPeriodDays] = useState(0)
-  const [activeTab, setActiveTab] = useState<'relatos' | 'propostas'>('relatos')
+  const [activeTab, setActiveTab] = useState<'relatos' | 'propostas' | 'debates'>('relatos')
+  const [followingOverride, setFollowingOverride] = useState<boolean | null>(null)
   const [propostaPage, setPropostaPage] = useState(1)
   const [propostaStatusFilter, setPropostaStatusFilter] = useState('')
   const { user: currentUser, activeContext } = useAuthStore()
@@ -561,6 +563,10 @@ export function PoliticianProfile() {
   )
 
   const canEdit = !!activeContext && activeContext.type === 'POLITICIAN' && activeContext.id === id
+  const { data: debates } = useDebates({ politicianId: id! })
+  const followMutation = useFollowPolitician()
+  const { data: followStatus } = useIsFollowingPolitician(id!, !!currentUser && !canEdit)
+  const following = followingOverride ?? followStatus?.following ?? false
 
   const m = politician?.mandatometer
   const ignoredPct = m && m.total > 0 ? Math.round((m.open / m.total) * 100) : 0
@@ -693,6 +699,23 @@ export function PoliticianProfile() {
                       Reivindicar perfil
                     </ReportCta>
                   )}
+                  {currentUser && !canEdit && (
+                    <ReportCta
+                      to="#"
+                      onClick={async (e) => {
+                        e.preventDefault()
+                        const res = await followMutation.mutateAsync(politician.id)
+                        setFollowingOverride(res.following)
+                      }}
+                      style={{
+                        background: following ? 'transparent' : '#1A1A2E',
+                        color: following ? '#1A1A2E' : '#fff',
+                        border: '1.5px solid #1A1A2E',
+                      }}
+                    >
+                      {following ? '✓ Seguindo' : 'Seguir'}
+                    </ReportCta>
+                  )}
                 </CtaRow>
               </Info>
             </HeaderTop>
@@ -766,6 +789,9 @@ export function PoliticianProfile() {
                   </MainTab>
                   <MainTab $active={activeTab === 'propostas'} onClick={() => setActiveTab('propostas')}>
                     Propostas
+                  </MainTab>
+                  <MainTab $active={activeTab === 'debates'} onClick={() => setActiveTab('debates')}>
+                    Debates {debates?.meta.total ? `(${debates.meta.total})` : ''}
                   </MainTab>
                 </MainTabs>
 
@@ -905,6 +931,60 @@ export function PoliticianProfile() {
                           ? 'Nenhuma proposta com este status.'
                           : 'Nenhuma proposta publicada ainda.'}
                       </Empty>
+                    )}
+                  </>
+                )}
+
+                {/* ── Aba Debates ── */}
+                {activeTab === 'debates' && (
+                  <>
+                    {!debates?.data.length ? (
+                      <div style={{ textAlign: 'center', padding: '40px 0', color: '#6B7280', fontSize: '0.9375rem' }}>
+                        Nenhum debate registrado ainda.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {debates.data.map((d) => (
+                          <Link
+                            key={d.id}
+                            to={`/debates/${d.id}`}
+                            style={{ textDecoration: 'none' }}
+                          >
+                            <div style={{
+                              background: '#fff',
+                              border: '1px solid #e5e5e5',
+                              borderRadius: 10,
+                              padding: '14px 18px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              gap: 12,
+                            }}>
+                              <div>
+                                <p style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#0D0D0D', marginBottom: 4 }}>
+                                  {d.title}
+                                </p>
+                                <p style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
+                                  {new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(d.scheduledFor))}
+                                  {' · '}
+                                  {d.participants.filter((p) => p.inviteStatus === 'CONFIRMED').map((p) => p.politician.name).join(' vs ')}
+                                </p>
+                              </div>
+                              <span style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '3px 10px',
+                                borderRadius: 999,
+                                background: d.status === 'LIVE' ? '#E6394618' : '#1A1A2E12',
+                                color: d.status === 'LIVE' ? '#E63946' : '#1A1A2E',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {d.status === 'LIVE' ? '🔴 Ao Vivo' : d.status === 'SCHEDULED' ? 'Agendado' : 'Encerrado'}
+                              </span>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
                     )}
                   </>
                 )}

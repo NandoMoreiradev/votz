@@ -37,6 +37,7 @@ import { PropostasModule } from './propostas/propostas.module'
 import { TranscriptionModule } from './transcription/transcription.module'
 import { SubscricoesModule } from './subscricoes/subscricoes.module'
 import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
+import { DebatesModule } from './debates/debates.module'
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
     TranscriptionModule,
     SubscricoesModule,
     MandateExpiryModule,
+    DebatesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

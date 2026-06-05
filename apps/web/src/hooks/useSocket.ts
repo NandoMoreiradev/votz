@@ -37,6 +37,12 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
     })
 
+    socket.on('debate:live', (data: { debateId: string; title: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['debates'] })
+      // toast is handled by components that listen to this query cache update
+      console.info(`[debate] ao vivo: ${data.title} — /debates/${data.debateId}`)
+    })
+
     socket.on('connect_error', (err) => {
       console.warn('[ws] connection error:', err.message)
     })

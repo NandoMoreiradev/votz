@@ -10,6 +10,8 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.21",
+    "@livekit/components-styles": "^1.2.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-dropdown-menu": "^2.1.1",
@@ -18,7 +20,9 @@
     "@votz/shared-types": "*",
     "@votz/zod-schemas": "*",
     "axios": "^1.7.7",
+    "hls.js": "^1.6.16",
     "libphonenumber-js": "^1.13.2",
+    "livekit-client": "^2.19.1",
     "maplibre-gl": "^4.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

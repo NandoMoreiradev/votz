@@ -94,6 +94,27 @@ export class PoliticiansService {
     return this.repo.update(id, data)
   }
 
+  async isFollowing(politicianId: string, userId: string) {
+    const record = await this.prisma.userPoliticianFollower.findUnique({
+      where: { userId_politicianId: { userId, politicianId } },
+    })
+    return { following: !!record }
+  }
+
+  async followToggle(politicianId: string, userId: string) {
+    const existing = await this.prisma.userPoliticianFollower.findUnique({
+      where: { userId_politicianId: { userId, politicianId } },
+    })
+    if (existing) {
+      await this.prisma.userPoliticianFollower.delete({
+        where: { userId_politicianId: { userId, politicianId } },
+      })
+      return { following: false }
+    }
+    await this.prisma.userPoliticianFollower.create({ data: { userId, politicianId } })
+    return { following: true }
+  }
+
   private async assertPoliticianAtivo(politicianId: string): Promise<void> {
     const p = await this.prisma.politician.findUnique({
       where: { id: politicianId },

@@ -354,3 +354,83 @@ export interface FollowersResponse {
   politicians: FollowerPolitician[]
   entities: FollowerEntity[]
 }
+
+// ==================== DEBATES ====================
+
+export type DebateStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED'
+export type InviteStatus = 'PENDING' | 'CONFIRMED' | 'DECLINED'
+export type ParticipantRole = 'MODERATOR' | 'DEBATER'
+export type ReactionType = 'APPLAUSE' | 'FIRE' | 'POSITIVE' | 'QUESTION' | 'DISAGREEMENT'
+
+export interface DebateParticipantPolitician {
+  id: string
+  name: string
+  avatarUrl: string | null
+  office: string
+  party: { abbreviation: string }
+}
+
+export interface DebateParticipant {
+  id: string
+  politicianId: string
+  role: ParticipantRole
+  inviteStatus: InviteStatus
+  createdAt: string
+  politician: DebateParticipantPolitician
+}
+
+export interface DebateQuestion {
+  id: string
+  debateId: string
+  text: string
+  upvotes: number
+  answered: boolean
+  createdAt: string
+  author: { id: string; name: string; avatarUrl: string | null }
+}
+
+export interface DebateMessage {
+  id: string
+  debateId: string
+  text: string
+  createdAt: string
+  author: { id: string; name: string; avatarUrl: string | null }
+}
+
+export interface DebatePollOption {
+  id: string
+  text: string
+  totalVotes: number
+}
+
+export interface DebatePoll {
+  id: string
+  debateId: string
+  question: string
+  active: boolean
+  createdAt: string
+  options: DebatePollOption[]
+}
+
+export interface Debate {
+  id: string
+  title: string
+  description: string | null
+  scheduledFor: string
+  status: DebateStatus
+  livekitRoomName: string | null
+  hlsUrl: string | null
+  recordingUrl: string | null
+  viewerCount: number
+  chatCooldownSecs: number
+  creatorId: string
+  creator: DebateParticipantPolitician
+  participants: DebateParticipant[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DebatesResponse {
+  data: Debate[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}

@@ -101,4 +101,20 @@ export class PoliticiansController {
   ) {
     return this.service.findReports(id, 1, 1000, status, from)
   }
+
+  @Post(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Seguir ou deixar de seguir um político (toggle)' })
+  follow(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.service.followToggle(id, user.id)
+  }
+
+  @Get(':id/is-following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar se o usuário atual segue este político' })
+  isFollowing(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.service.isFollowing(id, user.id)
+  }
 }

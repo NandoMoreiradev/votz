@@ -40,6 +40,8 @@ import { PropostaDetail } from './pages/PropostaDetail'
 import { CreateProposta } from './pages/CreateProposta'
 import { Planos } from './pages/Planos'
 import { PagamentoSucesso } from './pages/PagamentoSucesso'
+import DebatesList from './pages/DebatesList'
+import DebateWatch from './pages/DebateWatch'
 import { Footer } from './components/layout/Footer'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
@@ -135,6 +137,8 @@ function App() {
               <Route path="/proposta/nova" element={<CreateProposta />} />
               <Route path="/planos" element={<Planos />} />
               <Route path="/pagamento/sucesso" element={<PagamentoSucesso />} />
+              <Route path="/debates" element={<DebatesList />} />
+              <Route path="/debates/:id" element={<DebateWatch />} />
             </Routes>
             <Footer />
           </BrowserRouter>
