@@ -26,6 +26,7 @@ describe('LgpdProcessor', () => {
       userPoliticianFollower: { findMany: jest.fn().mockResolvedValue([]) },
       apiKey: { findMany: jest.fn().mockResolvedValue([]) },
       registrationRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      accessLog: { findMany: jest.fn().mockResolvedValue([]) },
     }
     storage = {
       uploadJson: jest.fn().mockResolvedValue(undefined),
@@ -96,6 +97,7 @@ describe('LgpdProcessor', () => {
     prisma.userPoliticianFollower.findMany.mockResolvedValue([{ createdAt: now, politician: { id: 'pol1', name: 'Fulano', office: 'Deputado', state: 'SE' } }])
     prisma.apiKey.findMany.mockResolvedValue([{ name: 'Minha chave', prefix: 'votz_abc1234', tier: 'FREE', lastUsedAt: null, revokedAt: null, createdAt: now }])
     prisma.registrationRequest.findMany.mockResolvedValue([{ type: 'ENTITY', status: 'PENDING', createdAt: now, reviewNote: null }])
+    prisma.accessLog.findMany.mockResolvedValue([{ event: 'LOGIN', ip: '187.10.20.30', createdAt: now }])
 
     await processor.process({
       name: 'export-data',
@@ -129,6 +131,10 @@ describe('LgpdProcessor', () => {
     expect(payload.politicianFollows.total).toBe(1)
     expect(payload.apiKeys.total).toBe(1)
     expect(payload.registrationRequests.total).toBe(1)
+    expect(payload.accessLogs).toEqual({
+      total: 1,
+      items: [{ event: 'LOGIN', ip: '187.10.20.30', createdAt: now }],
+    })
 
     // Ensure no secret fields are selected or exported
     const serialized = JSON.stringify(payload)

@@ -137,6 +137,26 @@ export class UsersService {
       }
     }
 
+    await this.eraseUserData(userId, user.avatarUrl)
+
+    return { message: 'Conta encerrada com sucesso.' }
+  }
+
+  /**
+   * Apaga/anonimiza dados pessoais do usuário no banco e limpa objetos no R2.
+   * Reutilizado pelo encerramento voluntário e pela anonimização por inatividade (24 meses).
+   */
+  async eraseUserData(userId: string, knownAvatarUrl?: string | null): Promise<void> {
+    let avatarUrl = knownAvatarUrl
+    if (avatarUrl === undefined) {
+      const target = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { avatarUrl: true },
+      })
+      if (!target) return
+      avatarUrl = target.avatarUrl
+    }
+
     // Collect verification document R2 keys and avatar R2 key before deleting requests
     const reqs = await this.prisma.registrationRequest.findMany({
       where: { requesterId: userId },
@@ -152,7 +172,7 @@ export class UsersService {
       }
     }
 
-    const avatarKey = this.storage.extractKeyFromUrl?.(user.avatarUrl)
+    const avatarKey = this.storage.extractKeyFromUrl?.(avatarUrl ?? null)
     if (avatarKey) r2Keys.push(avatarKey)
 
     // Database cleanup in interactive transaction (order matters for FK constraints)
@@ -210,6 +230,7 @@ export class UsersService {
       await tx.orgMembership.deleteMany({ where: { userId } })
       await tx.registrationRequest.deleteMany({ where: { requesterId: userId } })
 
+      // AccessLog NÃO é apagado: guarda legal obrigatória por 6 meses (Marco Civil, art. 15).
       await tx.user.delete({ where: { id: userId } })
     })
 
@@ -217,7 +238,5 @@ export class UsersService {
     for (const key of new Set(r2Keys)) {
       this.storage.delete(key).catch(() => {})
     }
-
-    return { message: 'Conta encerrada com sucesso.' }
   }
 }

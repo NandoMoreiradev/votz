@@ -14,6 +14,9 @@ Os textos legais já publicados prometem:
 
 ## 2. Fatos do código que você precisa saber
 
+- **Ambiente atual:** o banco é um PostgreSQL **local** (Docker Compose) e o **Cloudflare R2 ainda não está configurado**. Nos testes unitários, use **mocks** de `StorageService` e `MailService`. Não tente testar remoção de arquivos reais no R2.
+- **Ordem de execução:** este é o **Brief 2C**. Execute **depois** do Brief 2B (ele refatora `UsersService.deleteAccount` para um método reutilizável, `eraseUserData`; este brief depende dessa exclusão estar estável). Não rode os dois em paralelo.
+
 - **Relato anônimo NÃO guarda o autor.** `Report.authorId = null` quando `anonymous = true` (`apps/api/src/reports/reports.service.ts` ~linha 53; `reports.repository.ts` ~linha 95). Logo, **não há para quem avisar** num relato anônimo (pule o aviso, sem erro). **Nada que você criar pode registrar ou permitir ligar um usuário a um relato anônimo.**
 - **Remoção de relato está quebrada.** `AdminRepository.deleteReport` (`apps/api/src/admin/admin.repository.ts` ~linha 60) faz `prisma.report.delete({ where: { id } })`. Todo relato tem pelo menos um `TimelineEvent` (CREATED) e há outras relações obrigatórias sem `onDelete` (padrão `Restrict`): `TimelineEvent`, `Vote`, `Comment`, `Notification`, `ReportFollower`. **O delete falha por chave estrangeira.** Confirme com um teste antes de corrigir.
 - `DELETE /admin/reports/:id` é só `ADMIN` (`@Roles(UserType.ADMIN)`). Moderador não consegue remover relato.

@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy'
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy'
 import { GoogleStrategy } from './strategies/google.strategy'
 import { MailModule } from '../mail/mail.module'
+import { AccessLogModule } from '../access-log/access-log.module'
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MailModule } from '../mail/mail.module'
       }),
     }),
     MailModule,
+    AccessLogModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, GoogleStrategy],

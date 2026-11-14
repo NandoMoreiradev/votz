@@ -57,4 +57,15 @@ describe('MailService', () => {
     sendMailMock.mockRejectedValueOnce(new Error('SMTP down'))
     await expect(service.sendVerificationEmail('ana@votz.app', 'Ana', 'tok-2')).resolves.toBeUndefined()
   })
+
+  it('sends inactivity notice email explaining 30-day deadline and login link', async () => {
+    await service.sendInactivityNotice('ana@votz.app', 'Ana')
+    expect(sendMailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'ana@votz.app',
+        subject: expect.stringContaining('30 dias'),
+        html: expect.stringContaining('http://localhost:5173/login'),
+      }),
+    )
+  })
 })

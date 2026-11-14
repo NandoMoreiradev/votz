@@ -25,6 +25,8 @@ Os textos legais (Termos, Privacidade, Cookies, Diretrizes) estão em `apps/web/
 
 ## 2. Confirmar e completar
 
+- **Infraestrutura de produção ainda não existe.** Hoje o banco é local e o R2 não está configurado. A Política de Privacidade (seção "Com quem compartilhamos") lista **Render, Neon, Redis e Cloudflare R2** com base no `render.yaml`. **Antes de publicar, confira a lista com a infraestrutura real** e ajuste a tabela. Quando o banco e o R2 forem configurados: regra de ciclo de vida do R2 para `exports/` (7 dias) e retenção de backup do banco (30 dias).
+
 - **Provedor SMTP em produção:** a tabela de suboperadores diz "a definir". Informe o provedor real (o `.env.example` sugere Gmail).
 - **Regiões:** Neon, Redis e LiveKit estão como "Exterior". Se souber a região de cada um, detalhe.
 - **E-mail institucional:** o contato do encarregado é o e-mail pessoal provisório (`LEGAL_ENTITY.email` em `apps/web/src/legal/types.ts`). Crie um endereço do domínio (ex.: `privacidade@…`) e troque em um lugar só.

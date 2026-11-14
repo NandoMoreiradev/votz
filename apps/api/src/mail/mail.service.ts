@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
 
@@ -161,6 +161,25 @@ export class MailService {
         <p><a href="${link}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver minhas solicitações</a></p>
       `,
     }).catch((err) => this.logger.error('Failed to send registration rejected email', err))
+  }
+
+  async sendInactivityNotice(email: string, name: string): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/login`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: 'Sua conta no Votz será anonimizada em 30 dias',
+      html: `
+        <h2>Olá, ${name}!</h2>
+        <p>Notamos que você não acessa sua conta no Votz há mais de 24 meses.</p>
+        <p>Conforme nossa Política de Privacidade, se você não entrar nos próximos <strong>30 dias</strong>, sua conta será anonimizada: seus dados pessoais, comentários e apoios serão apagados, e eventuais relatos publicados permanecerão sem o seu nome.</p>
+        <p>Para manter sua conta ativa, basta fazer login usando seu e-mail e senha (ou sua conta Google) pelo link abaixo:</p>
+        <p><a href="${link}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Entrar no Votz</a></p>
+        <p>Se você quiser que sua conta seja encerrada e anonimizada, não precisa fazer nada.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send inactivity notice email', err))
   }
 
   async sendMfaBackupCodes(email: string, name: string, codes: string[]): Promise<void> {

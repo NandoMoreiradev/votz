@@ -14,10 +14,11 @@ import * as bcrypt from 'bcrypt'
 import { randomBytes, randomUUID } from 'crypto'
 import { generateSecret, generateURI, verify as otpVerify } from 'otplib'
 import * as QRCode from 'qrcode'
-import { OrgPermission, MembershipStatus } from '@prisma/client'
+import { AccessEvent, OrgPermission, MembershipStatus } from '@prisma/client'
 import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
+import { AccessLogService } from '../access-log/access-log.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 import { ContextType } from './dto/switch-context.dto'
@@ -94,13 +95,14 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly accessLog: AccessLogService,
   ) {}
 
   // ─────────────────────────────────────────────
   // REGISTER
   // ─────────────────────────────────────────────
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, ip = 'unknown') {
     if (dto.confirmAge18 !== true) {
       throw new BadRequestException(`É preciso ter ${MIN_AGE} anos ou mais para criar uma conta.`)
     }
@@ -152,6 +154,7 @@ export class AuthService {
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, String(user.type))
     await this.storeRefreshHash(user.id, refreshToken)
+    void this.accessLog.record(user.id, AccessEvent.REGISTER, ip)
 
     return { user, accessToken, refreshToken }
   }
@@ -160,7 +163,7 @@ export class AuthService {
   // LOGIN
   // ─────────────────────────────────────────────
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip = 'unknown') {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
 
     if (!user || !user.password) throw new UnauthorizedException('Invalid credentials')
@@ -195,7 +198,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
+      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null, failedLoginAttempts: 0, lockedUntil: null },
     })
 
     // Se MFA habilitado → emite token temporário de 5 min para verificação
@@ -218,6 +221,7 @@ export class AuthService {
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
+    void this.accessLog.record(user.id, AccessEvent.LOGIN, ip)
 
     const publicUser = toPublicUser(user)
 
@@ -228,9 +232,14 @@ export class AuthService {
   // REFRESH / LOGOUT / ME
   // ─────────────────────────────────────────────
 
-  async refresh(userId: string, email: string, type: string) {
+  async refresh(userId: string, email: string, type: string, ip = 'unknown') {
     const { accessToken, refreshToken } = await this.generateTokens(userId, email, type)
     await this.storeRefreshHash(userId, refreshToken)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
+    })
+    void this.accessLog.record(userId, AccessEvent.TOKEN_REFRESH, ip)
     return { accessToken, refreshToken }
   }
 
@@ -314,7 +323,7 @@ export class AuthService {
   // MFA — ENABLE (confirma com primeiro código)
   // ─────────────────────────────────────────────
 
-  async mfaEnable(userId: string, code: string, fromSetupFlow = false) {
+  async mfaEnable(userId: string, code: string, fromSetupFlow = false, ip = 'unknown') {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { ...USER_PUBLIC_SELECT, mfaSecret: true },
@@ -343,6 +352,11 @@ export class AuthService {
     if (fromSetupFlow) {
       const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
       await this.storeRefreshHash(user.id, refreshToken)
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
+      })
+      void this.accessLog.record(user.id, AccessEvent.MFA_LOGIN, ip)
       const publicUser = toPublicUser({ ...user, mfaEnabled: true })
       return { backupCodes: plainCodes, accessToken, refreshToken, user: publicUser }
     }
@@ -354,7 +368,7 @@ export class AuthService {
   // MFA — VERIFY (durante o login)
   // ─────────────────────────────────────────────
 
-  async mfaVerifyLogin(mfaToken: string, code: string) {
+  async mfaVerifyLogin(mfaToken: string, code: string, ip = 'unknown') {
     let payload: { sub: string; type: string }
     try {
       payload = await this.jwt.verifyAsync(mfaToken, {
@@ -386,6 +400,11 @@ export class AuthService {
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
+    })
+    void this.accessLog.record(user.id, AccessEvent.MFA_LOGIN, ip)
 
     const publicUser = toPublicUser(user)
 
@@ -492,7 +511,7 @@ export class AuthService {
   // GOOGLE OAUTH
   // ─────────────────────────────────────────────
 
-  async googleLogin(profile: { googleId: string; email: string; name: string; avatarUrl: string | null }) {
+  async googleLogin(profile: { googleId: string; email: string; name: string; avatarUrl: string | null }, ip = 'unknown') {
     let user = await this.prisma.user.findFirst({
       where: { OR: [{ googleId: profile.googleId }, { email: profile.email }] },
       select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
@@ -519,11 +538,12 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
     })
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
+    void this.accessLog.record(user.id, AccessEvent.GOOGLE_LOGIN, ip)
 
     return { user: toPublicUser(user), accessToken, refreshToken }
   }

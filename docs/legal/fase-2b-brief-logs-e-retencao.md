@@ -18,6 +18,9 @@ Este brief implementa as três.
 
 ## 2. Fatos do código que você precisa saber
 
+- **Ambiente atual:** o banco é um PostgreSQL **local** (Docker Compose) e o **Cloudflare R2 ainda não está configurado**. Nos testes unitários, use **mocks** de `StorageService` e `MailService`. Não tente testar upload/exclusão reais no R2.
+- **Ordem de execução:** este é o **Brief 2B**. Execute **antes** do Brief 2C (ambos alteram `schema.prisma` e `UsersService`; rodar em paralelo gera conflito de migration).
+
 - **Relato anônimo NÃO guarda o autor.** Em `apps/api/src/reports/reports.service.ts` (~linha 53) e `reports.repository.ts` (~linha 95), `authorId` é gravado como `null` quando `anonymous = true` (e o evento CREATED da linha do tempo também). Essa é a garantia de anonimato que o texto legal descreve. **Nada que você criar pode permitir ligar um usuário a um relato anônimo** (ver T1, regra de ouro).
 - `main.ts` já faz `trust proxy = 1` (Render), então `req.ip` é o IP real do cliente.
 - Padrão de job agendado do projeto: `apps/api/src/mandate-expiry/` (`*.cron.ts` com `@Cron` do `@nestjs/schedule` → `service.enqueue()` → fila BullMQ → `*.processor.ts`). **Siga esse padrão.**
@@ -102,8 +105,7 @@ Job diário (`@Cron('0 4 * * *')`, fila BullMQ própria, padrão `mandate-expiry
 
 ## 4. Fora de escopo
 
-- Regra de ciclo de vida do R2 para `exports/` (7 dias): é configuração manual no painel do Cloudflare, não código. Liste no seu relatório como ação humana pendente.
-- Retenção de backup do Neon (30 dias): conferir no painel, ação humana.
+- Regra de ciclo de vida do R2 para `exports/` (7 dias) e retenção de backup do banco (30 dias): são configurações de infraestrutura de produção, não código. Hoje **o R2 ainda não está configurado e o banco é local** (não está no Neon). Liste no seu relatório como ação humana pendente para o lançamento.
 - Qualquer mudança nos textos legais.
 - Botão de sinalizar/denunciar e avisos de moderação: é o **Brief 2C**.
 

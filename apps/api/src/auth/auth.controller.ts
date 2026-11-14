@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Post,
   Res,
   UseGuards,
@@ -47,8 +48,8 @@ export class AuthController {
   @Post('register')
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Register new citizen' })
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const { user, accessToken, refreshToken } = await this.authService.register(dto)
+  async register(@Body() dto: RegisterDto, @Ip() ip: string, @Res({ passthrough: true }) res: Response) {
+    const { user, accessToken, refreshToken } = await this.authService.register(dto, ip)
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
     return { user, accessToken }
   }
@@ -57,8 +58,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.login(dto)
+  async login(@Body() dto: LoginDto, @Ip() ip: string, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto, ip)
     if (result.requiresMfa) return { requiresMfa: true, mfaToken: result.mfaToken }
     if (result.requiresMfaSetup) return { requiresMfaSetup: true, mfaSetupToken: result.mfaSetupToken }
     res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
@@ -116,9 +117,10 @@ export class AuthController {
   async mfaEnableForced(
     @CurrentUser() user: { id: string; fromSetupFlow: boolean },
     @Body() dto: MfaCodeDto,
+    @Ip() ip: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.mfaEnable(user.id, dto.code, true)
+    const result = await this.authService.mfaEnable(user.id, dto.code, true, ip)
     res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
     return { backupCodes: result.backupCodes, accessToken: result.accessToken, user: result.user }
   }
@@ -127,8 +129,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Complete login by verifying TOTP code after password step' })
-  async mfaVerifyLogin(@Body() dto: MfaVerifyLoginDto, @Res({ passthrough: true }) res: Response) {
-    const { user, accessToken, refreshToken } = await this.authService.mfaVerifyLogin(dto.mfaToken, dto.code)
+  async mfaVerifyLogin(@Body() dto: MfaVerifyLoginDto, @Ip() ip: string, @Res({ passthrough: true }) res: Response) {
+    const { user, accessToken, refreshToken } = await this.authService.mfaVerifyLogin(dto.mfaToken, dto.code, ip)
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
     return { user, accessToken }
   }
@@ -166,9 +168,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Rotate refresh token and get new access token' })
   async refresh(
     @CurrentUser() user: { id: string; email: string; type: string },
+    @Ip() ip: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.authService.refresh(user.id, user.email, user.type)
+    const { accessToken, refreshToken } = await this.authService.refresh(user.id, user.email, user.type, ip)
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
     return { accessToken }
   }
@@ -227,9 +230,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(
     @CurrentUser() profile: { googleId: string; email: string; name: string; avatarUrl: string | null },
+    @Ip() ip: string,
     @Res() res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.authService.googleLogin(profile)
+    const { accessToken, refreshToken } = await this.authService.googleLogin(profile, ip)
     const appUrl = this.config.get('APP_URL', 'http://localhost:5173')
 
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)

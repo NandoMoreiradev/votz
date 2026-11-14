@@ -38,6 +38,9 @@ import { TranscriptionModule } from './transcription/transcription.module'
 import { SubscricoesModule } from './subscricoes/subscricoes.module'
 import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
 import { DebatesModule } from './debates/debates.module'
+import { AccessLogModule } from './access-log/access-log.module'
+import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
+import { InactivityModule } from './inactivity/inactivity.module'
 
 @Module({
   imports: [
@@ -123,6 +126,9 @@ import { DebatesModule } from './debates/debates.module'
     SubscricoesModule,
     MandateExpiryModule,
     DebatesModule,
+    AccessLogModule,
+    VerificationRetentionModule,
+    InactivityModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

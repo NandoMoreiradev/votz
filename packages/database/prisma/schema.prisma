@@ -253,7 +253,8 @@ model User {
   mfaEnabled           Boolean   @default(false)
   mfaSecret            String?
   mfaBackupCodes       String[]
-  lastLoginAt          DateTime?
+  lastLoginAt              DateTime?
+  inactivityNoticeSentAt   DateTime?
   refreshTokenHash     String?
   failedLoginAttempts      Int       @default(0)
   lockedUntil              DateTime?
@@ -822,4 +823,24 @@ model UserPoliticianFollower {
 
   @@unique([userId, politicianId])
   @@map("user_politician_followers")
+}
+
+enum AccessEvent {
+  REGISTER
+  LOGIN
+  GOOGLE_LOGIN
+  MFA_LOGIN
+  TOKEN_REFRESH
+}
+
+model AccessLog {
+  id        String      @id @default(uuid())
+  userId    String?     // SEM relação/FK: o log precisa sobreviver à exclusão da conta (obrigação legal)
+  event     AccessEvent
+  ip        String
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("access_logs")
 }

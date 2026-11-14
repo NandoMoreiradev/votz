@@ -127,11 +127,12 @@ async function main() {
     for (const entry of entries) {
       if (entry.isDirectory) continue
 
-      const filename = entry.name.toLowerCase()
+      const filename = entry.name.split(/[/\\]/).pop()?.toLowerCase() ?? ''
       if (!filename.endsWith('.jpg') && !filename.endsWith('.jpeg')) continue
 
-      const sq = filename.replace(/\.(jpg|jpeg)$/, '')
-      if (!sqSet.has(sq)) continue
+      const sqMatch = filename.match(/^(?:f[a-z]{2})?(\d+)(?:_div)?\.(?:jpg|jpeg)$/)
+      const sq = sqMatch?.[1]
+      if (!sq || !sqSet.has(sq)) continue
 
       const politician = byId.get(sq)
       if (!politician) continue

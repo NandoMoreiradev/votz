@@ -11,11 +11,13 @@ import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
 import { validate } from 'class-validator'
 import { plainToInstance } from 'class-transformer'
+import { AccessEvent } from '@prisma/client'
 import { TERMS_VERSION, PRIVACY_VERSION } from '@votz/shared-types'
 import { AuthService } from './auth.service'
 import { RegisterDto } from './dto/register.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
+import { AccessLogService } from '../access-log/access-log.service'
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('$2b$12$hashed'),
@@ -63,6 +65,10 @@ const mockMail = {
   sendMfaBackupCodes: jest.fn().mockResolvedValue(undefined),
 }
 
+const mockAccessLog = {
+  record: jest.fn().mockResolvedValue(undefined),
+}
+
 function makeUser(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'user-1',
@@ -98,6 +104,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwt },
         { provide: ConfigService, useValue: mockConfig },
         { provide: MailService, useValue: mockMail },
+        { provide: AccessLogService, useValue: mockAccessLog },
       ],
     }).compile()
 
@@ -111,6 +118,7 @@ describe('AuthService', () => {
     mockPrismaUser.update.mockResolvedValue({})
     mockMail.sendVerificationEmail.mockResolvedValue(undefined)
     mockMail.sendMfaBackupCodes.mockResolvedValue(undefined)
+    mockAccessLog.record.mockResolvedValue(undefined)
     mockConfig.getOrThrow.mockImplementation((key: string) => {
       const cfg: Record<string, string> = {
         JWT_SECRET: 'test-secret',
@@ -436,6 +444,96 @@ describe('AuthService', () => {
         expect.objectContaining({ data: expect.objectContaining({ emailVerified: true }) }),
       )
       expect(result.message).toBe('Email verified successfully')
+    })
+  })
+
+  // ──────────────────────────────────────────────
+  // Access logs & inactivityNoticeSentAt reset
+  // ──────────────────────────────────────────────
+
+  describe('access logs & inactivity reset', () => {
+    it('records REGISTER event with IP on registration', async () => {
+      mockPrismaUser.findUnique.mockResolvedValue(null)
+      mockPrismaUser.create.mockResolvedValue(makeUser({ id: 'u-reg' }))
+
+      await service.register(
+        {
+          name: 'Ana',
+          email: 'ana@example.com',
+          password: 'Senha@123',
+          acceptedTermsVersion: TERMS_VERSION,
+          acceptedPrivacyVersion: PRIVACY_VERSION,
+          confirmAge18: true,
+        } as any,
+        '200.10.20.30',
+      )
+
+      expect(mockAccessLog.record).toHaveBeenCalledTimes(1)
+      expect(mockAccessLog.record).toHaveBeenCalledWith('u-reg', AccessEvent.REGISTER, '200.10.20.30')
+    })
+
+    it('records LOGIN and resets inactivityNoticeSentAt on password login without MFA', async () => {
+      mockPrismaUser.findUnique.mockResolvedValue(makeUser({ id: 'u-log' }))
+
+      await service.login({ email: 'test@example.com', password: 'Senha@123' }, '189.1.2.3')
+
+      expect(mockPrismaUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-log' },
+          data: expect.objectContaining({
+            lastLoginAt: expect.any(Date),
+            inactivityNoticeSentAt: null,
+          }),
+        }),
+      )
+      expect(mockAccessLog.record).toHaveBeenCalledWith('u-log', AccessEvent.LOGIN, '189.1.2.3')
+    })
+
+    it('records MFA_LOGIN on mfaVerifyLogin and resets inactivityNoticeSentAt', async () => {
+      mockJwt.verifyAsync.mockResolvedValue({ sub: 'u-mfa', type: 'mfa_pending' })
+      mockPrismaUser.findUnique.mockResolvedValue(
+        makeUser({ id: 'u-mfa', mfaEnabled: true, mfaSecret: 'SECRET' }),
+      )
+
+      await service.mfaVerifyLogin('mfa-token', '123456', '177.2.3.4')
+
+      expect(mockPrismaUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-mfa' },
+          data: expect.objectContaining({
+            lastLoginAt: expect.any(Date),
+            inactivityNoticeSentAt: null,
+          }),
+        }),
+      )
+      expect(mockAccessLog.record).toHaveBeenCalledWith('u-mfa', AccessEvent.MFA_LOGIN, '177.2.3.4')
+    })
+
+    it('records GOOGLE_LOGIN and resets inactivityNoticeSentAt on googleLogin', async () => {
+      mockPrismaUser.findFirst.mockResolvedValue(makeUser({ id: 'u-goo', googleId: 'g-1' }))
+
+      await service.googleLogin(
+        { googleId: 'g-1', email: 'test@example.com', name: 'Test', avatarUrl: null },
+        '179.3.4.5',
+      )
+
+      expect(mockPrismaUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-goo' },
+          data: { lastLoginAt: expect.any(Date), inactivityNoticeSentAt: null },
+        }),
+      )
+      expect(mockAccessLog.record).toHaveBeenCalledWith('u-goo', AccessEvent.GOOGLE_LOGIN, '179.3.4.5')
+    })
+
+    it('records TOKEN_REFRESH and resets inactivityNoticeSentAt on refresh', async () => {
+      await service.refresh('u-ref', 'test@example.com', 'CITIZEN', '191.5.6.7')
+
+      expect(mockPrismaUser.update).toHaveBeenCalledWith({
+        where: { id: 'u-ref' },
+        data: { lastLoginAt: expect.any(Date), inactivityNoticeSentAt: null },
+      })
+      expect(mockAccessLog.record).toHaveBeenCalledWith('u-ref', AccessEvent.TOKEN_REFRESH, '191.5.6.7')
     })
   })
 })

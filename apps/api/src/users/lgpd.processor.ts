@@ -57,6 +57,7 @@ export class LgpdProcessor extends WorkerHost {
       politicianFollows,
       apiKeys,
       registrationRequests,
+      accessLogs,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -161,6 +162,11 @@ export class LgpdProcessor extends WorkerHost {
         select: { type: true, status: true, createdAt: true, reviewNote: true },
         orderBy: { createdAt: 'desc' },
       }),
+      this.prisma.accessLog.findMany({
+        where: { userId },
+        select: { event: true, ip: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
     ])
 
     let decryptedCpf: string | null = null
@@ -190,6 +196,7 @@ export class LgpdProcessor extends WorkerHost {
       politicianFollows: { total: politicianFollows.length, items: politicianFollows },
       apiKeys: { total: apiKeys.length, items: apiKeys },
       registrationRequests: { total: registrationRequests.length, items: registrationRequests },
+      accessLogs: { total: accessLogs.length, items: accessLogs },
     }
 
     const key = `exports/${userId}/${randomUUID()}.json`

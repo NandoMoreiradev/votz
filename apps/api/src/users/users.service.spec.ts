@@ -194,6 +194,10 @@ describe('UsersService', () => {
         vote: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         notification: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         orgMembership: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        accessLog: {
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+          delete: jest.fn(),
+        },
         user: { delete: jest.fn().mockResolvedValue({ id: 'u1' }) },
         ...overrides,
       }
@@ -314,7 +318,29 @@ describe('UsersService', () => {
       expect(storage.delete).toHaveBeenCalledWith('comments/voice-1.webm')
       expect(storage.delete).toHaveBeenCalledWith('avatars/u1.png')
       expect(storage.delete).toHaveBeenCalledTimes(3)
+      expect(tx.accessLog.deleteMany).not.toHaveBeenCalled()
+      expect(tx.accessLog.delete).not.toHaveBeenCalled()
       expect(res.message).toContain('sucesso')
+    })
+
+    it('exposes reusable eraseUserData that looks up user avatar and preserves AccessLog', async () => {
+      prisma.user = { findUnique: jest.fn().mockResolvedValue({ avatarUrl: 'https://pub-r2.dev/avatars/u2.png' }) }
+      prisma.registrationRequest.findMany.mockResolvedValue([])
+      storage.extractKeyFromUrl.mockReturnValue('avatars/u2.png')
+
+      const tx = buildTxMock()
+      prisma.$transaction.mockImplementation((fn: any) => fn(tx))
+
+      await service.eraseUserData('u2')
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'u2' },
+        select: { avatarUrl: true },
+      })
+      expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: 'u2' } })
+      expect(tx.accessLog.deleteMany).not.toHaveBeenCalled()
+      expect(tx.accessLog.delete).not.toHaveBeenCalled()
+      expect(storage.delete).toHaveBeenCalledWith('avatars/u2.png')
     })
   })
 })
