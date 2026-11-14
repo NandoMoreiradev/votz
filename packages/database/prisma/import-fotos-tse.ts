@@ -34,6 +34,7 @@ function createS3Client(): S3Client {
   return new S3Client({
     region: 'auto',
     endpoint: ENDPOINT,
+    forcePathStyle: ENDPOINT.startsWith('http://') || process.env.S3_FORCE_PATH_STYLE === 'true',
     credentials: {
       accessKeyId: ACCESS_KEY,
       secretAccessKey: SECRET_KEY,

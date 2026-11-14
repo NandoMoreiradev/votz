@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
 import {
@@ -46,6 +46,29 @@ export interface RegisterPayload {
   state?: string
   latitude?: number
   longitude?: number
+  acceptedTermsVersion: string
+  acceptedPrivacyVersion: string
+  confirmAge18: boolean
+}
+
+export interface AcceptConsentPayload {
+  acceptedTermsVersion: string
+  acceptedPrivacyVersion: string
+  confirmAge18: boolean
+}
+
+export function useAcceptConsent() {
+  const setUser = useAuthStore((s) => s.setUser)
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: AcceptConsentPayload) =>
+      api.post<AuthUser>('/users/me/consent', data).then((r) => r.data),
+    onSuccess: (user) => {
+      setUser(user)
+      queryClient.invalidateQueries({ queryKey: ['auth/me'] })
+    },
+  })
 }
 
 export function useRegister() {

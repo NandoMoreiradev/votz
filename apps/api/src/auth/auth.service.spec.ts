@@ -9,7 +9,11 @@ import {
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
+import { validate } from 'class-validator'
+import { plainToInstance } from 'class-transformer'
+import { TERMS_VERSION, PRIVACY_VERSION } from '@votz/shared-types'
 import { AuthService } from './auth.service'
+import { RegisterDto } from './dto/register.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 
@@ -127,6 +131,12 @@ describe('AuthService', () => {
       name: 'João Silva',
       email: 'joao@example.com',
       password: 'Senha@123',
+      phone: '+5511999999999',
+      zipCode: '01310100',
+      streetNumber: '1000',
+      acceptedTermsVersion: TERMS_VERSION,
+      acceptedPrivacyVersion: PRIVACY_VERSION,
+      confirmAge18: true,
     } as any
 
     it('throws ConflictException when email is already registered', async () => {
@@ -135,20 +145,66 @@ describe('AuthService', () => {
       await expect(service.register(dto)).rejects.toThrow(ConflictException)
     })
 
-    it('creates user, sends verification email, and returns tokens', async () => {
+    it('throws BadRequestException when confirmAge18 is not true', async () => {
+      await expect(service.register({ ...dto, confirmAge18: false })).rejects.toThrow(BadRequestException)
+      expect(mockPrismaUser.create).not.toHaveBeenCalled()
+    })
+
+    it('throws ConflictException (409) when terms or privacy version is outdated', async () => {
+      await expect(
+        service.register({ ...dto, acceptedTermsVersion: '2020-01-01' }),
+      ).rejects.toThrow(ConflictException)
+
+      await expect(
+        service.register({ ...dto, acceptedPrivacyVersion: '2020-01-01' }),
+      ).rejects.toThrow(ConflictException)
+      expect(mockPrismaUser.create).not.toHaveBeenCalled()
+    })
+
+    it('creates user with consent timestamps and versions, sends verification email, and returns tokens', async () => {
       mockPrismaUser.findUnique.mockResolvedValue(null)
-      mockPrismaUser.create.mockResolvedValue(makeUser({ email: dto.email }))
+      mockPrismaUser.create.mockResolvedValue(
+        makeUser({
+          email: dto.email,
+          termsVersion: TERMS_VERSION,
+          privacyVersion: PRIVACY_VERSION,
+          termsAcceptedAt: new Date(),
+          ageConfirmedAt: new Date(),
+        }),
+      )
 
       const result = await service.register(dto)
 
-      expect(mockPrismaUser.create).toHaveBeenCalledTimes(1)
+      expect(mockPrismaUser.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            termsVersion: TERMS_VERSION,
+            privacyVersion: PRIVACY_VERSION,
+            termsAcceptedAt: expect.any(Date),
+            ageConfirmedAt: expect.any(Date),
+          }),
+        }),
+      )
       expect(mockMail.sendVerificationEmail).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(String),
         expect.any(String),
       )
       expect(result).toHaveProperty('accessToken')
-      expect(result).toHaveProperty('user')
+      expect(result.user).toEqual(
+        expect.objectContaining({
+          termsVersion: TERMS_VERSION,
+          privacyVersion: PRIVACY_VERSION,
+          hasPassword: true,
+        }),
+      )
+    })
+
+    it('rejects RegisterDto with confirmAge18 = false (400 validation)', async () => {
+      const instance = plainToInstance(RegisterDto, { ...dto, confirmAge18: false })
+      const errors = await validate(instance)
+      const ageErr = errors.find((e) => e.property === 'confirmAge18')
+      expect(ageErr).toBeDefined()
     })
   })
 

@@ -83,9 +83,14 @@ export class StorageService {
     const pub = this.config.get<string>('CLOUDFLARE_R2_PUBLIC_URL', '')
     this.publicBase = pub ? pub.replace(/\/$/, '') : `${this.endpoint}/${this.bucket}`
 
+    const forcePathStyle =
+      this.endpoint.startsWith('http://') ||
+      this.config.get<string>('S3_FORCE_PATH_STYLE') === 'true'
+
     this.client = new S3Client({
       region: 'auto',
       endpoint: this.endpoint,
+      forcePathStyle,
       credentials: {
         accessKeyId: this.config.getOrThrow<string>('CLOUDFLARE_R2_ACCESS_KEY'),
         secretAccessKey: this.config.getOrThrow<string>('CLOUDFLARE_R2_SECRET_KEY'),
@@ -149,6 +154,17 @@ export class StorageService {
       mimeType,
       size: buffer.byteLength,
     }
+  }
+
+  extractKeyFromUrl(url: string | null | undefined): string | null {
+    if (!url) return null
+    const prefixes = [`${this.publicBase}/`, `${this.endpoint}/${this.bucket}/`]
+    for (const prefix of prefixes) {
+      if (url.startsWith(prefix)) {
+        return url.slice(prefix.length)
+      }
+    }
+    return null
   }
 
   async delete(key: string): Promise<void> {

@@ -15,6 +15,7 @@ import { randomBytes, randomUUID } from 'crypto'
 import { generateSecret, generateURI, verify as otpVerify } from 'otplib'
 import * as QRCode from 'qrcode'
 import { OrgPermission, MembershipStatus } from '@prisma/client'
+import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 import { RegisterDto } from './dto/register.dto'
@@ -42,8 +43,49 @@ const USER_PUBLIC_SELECT = {
   avatarUrl: true,
   emailVerified: true,
   mfaEnabled: true,
+  termsAcceptedAt: true,
+  termsVersion: true,
+  privacyVersion: true,
+  ageConfirmedAt: true,
   createdAt: true,
+  password: true,
 } as const
+
+function toPublicUser<T extends {
+  id: string
+  name: string
+  email: string
+  type: unknown
+  verified: boolean
+  reputation: number
+  avatarUrl: string | null
+  emailVerified: boolean
+  mfaEnabled: boolean
+  termsAcceptedAt?: Date | null
+  termsVersion?: string | null
+  privacyVersion?: string | null
+  ageConfirmedAt?: Date | null
+  createdAt: Date
+  password?: string | null
+}>(user: T) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    type: user.type,
+    verified: user.verified,
+    reputation: user.reputation,
+    avatarUrl: user.avatarUrl,
+    emailVerified: user.emailVerified,
+    mfaEnabled: user.mfaEnabled,
+    hasPassword: Boolean(user.password),
+    termsAcceptedAt: user.termsAcceptedAt ?? null,
+    termsVersion: user.termsVersion ?? null,
+    privacyVersion: user.privacyVersion ?? null,
+    ageConfirmedAt: user.ageConfirmedAt ?? null,
+    createdAt: user.createdAt,
+  }
+}
 
 @Injectable()
 export class AuthService {
@@ -59,14 +101,27 @@ export class AuthService {
   // ─────────────────────────────────────────────
 
   async register(dto: RegisterDto) {
+    if (dto.confirmAge18 !== true) {
+      throw new BadRequestException(`É preciso ter ${MIN_AGE} anos ou mais para criar uma conta.`)
+    }
+    if (
+      dto.acceptedTermsVersion !== TERMS_VERSION ||
+      dto.acceptedPrivacyVersion !== PRIVACY_VERSION
+    ) {
+      throw new ConflictException(
+        'Os Termos foram atualizados. Recarregue a página e aceite novamente.',
+      )
+    }
+
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (existing) throw new ConflictException('Email already registered')
 
     const passwordHash = await bcrypt.hash(dto.password, 12)
     const verificationToken = randomUUID()
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const now = new Date()
 
-    const user = await this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
@@ -83,13 +138,19 @@ export class AuthService {
         state: dto.state,
         latitude: dto.latitude,
         longitude: dto.longitude,
+        termsAcceptedAt: now,
+        ageConfirmedAt: now,
+        termsVersion: dto.acceptedTermsVersion,
+        privacyVersion: dto.acceptedPrivacyVersion,
       },
       select: USER_PUBLIC_SELECT,
     })
 
+    const user = toPublicUser(created)
+
     await this.mail.sendVerificationEmail(user.email, user.name, verificationToken)
 
-    const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
+    const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, String(user.type))
     await this.storeRefreshHash(user.id, refreshToken)
 
     return { user, accessToken, refreshToken }
@@ -158,11 +219,7 @@ export class AuthService {
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
 
-    const publicUser = {
-      id: user.id, name: user.name, email: user.email, type: user.type,
-      verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified, mfaEnabled: user.mfaEnabled, createdAt: user.createdAt,
-    }
+    const publicUser = toPublicUser(user)
 
     return { requiresMfa: false, user: publicUser, accessToken, refreshToken }
   }
@@ -185,7 +242,8 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    return this.prisma.user.findUnique({ where: { id: userId }, select: USER_PUBLIC_SELECT })
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: USER_PUBLIC_SELECT })
+    return user ? toPublicUser(user) : null
   }
 
   // ─────────────────────────────────────────────
@@ -259,7 +317,7 @@ export class AuthService {
   async mfaEnable(userId: string, code: string, fromSetupFlow = false) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, type: true, verified: true, reputation: true, avatarUrl: true, emailVerified: true, createdAt: true, mfaEnabled: true, mfaSecret: true },
+      select: { ...USER_PUBLIC_SELECT, mfaSecret: true },
     })
     if (!user) throw new NotFoundException('User not found')
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled')
@@ -285,11 +343,7 @@ export class AuthService {
     if (fromSetupFlow) {
       const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
       await this.storeRefreshHash(user.id, refreshToken)
-      const publicUser = {
-        id: user.id, name: user.name, email: user.email, type: user.type,
-        verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-        emailVerified: user.emailVerified, mfaEnabled: true, createdAt: user.createdAt,
-      }
+      const publicUser = toPublicUser({ ...user, mfaEnabled: true })
       return { backupCodes: plainCodes, accessToken, refreshToken, user: publicUser }
     }
 
@@ -315,9 +369,9 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
-        id: true, email: true, name: true, type: true, verified: true,
-        reputation: true, avatarUrl: true, emailVerified: true, createdAt: true,
-        mfaSecret: true, mfaBackupCodes: true, mfaEnabled: true,
+        ...USER_PUBLIC_SELECT,
+        mfaSecret: true,
+        mfaBackupCodes: true,
       },
     })
     if (!user || !user.mfaEnabled || !user.mfaSecret) throw new UnauthorizedException()
@@ -333,11 +387,7 @@ export class AuthService {
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
 
-    const publicUser = {
-      id: user.id, name: user.name, email: user.email, type: user.type,
-      verified: user.verified, reputation: user.reputation, avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified, mfaEnabled: user.mfaEnabled, createdAt: user.createdAt,
-    }
+    const publicUser = toPublicUser(user)
 
     return { user: publicUser, accessToken, refreshToken }
   }
@@ -475,7 +525,7 @@ export class AuthService {
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     await this.storeRefreshHash(user.id, refreshToken)
 
-    return { user, accessToken, refreshToken }
+    return { user: toPublicUser(user), accessToken, refreshToken }
   }
 
   // ─────────────────────────────────────────────

@@ -13,6 +13,38 @@ const PUBLIC_USER_SELECT = {
   createdAt: true,
 } as const
 
+const ME_USER_SELECT = {
+  ...PUBLIC_USER_SELECT,
+  email: true,
+  emailVerified: true,
+  mfaEnabled: true,
+  password: true,
+  termsAcceptedAt: true,
+  termsVersion: true,
+  privacyVersion: true,
+  ageConfirmedAt: true,
+  phone: true,
+  zipCode: true,
+  street: true,
+  streetNumber: true,
+  complement: true,
+  neighborhood: true,
+  city: true,
+  state: true,
+  country: true,
+  latitude: true,
+  longitude: true,
+  _count: {
+    select: { reports: true, votes: true, comments: true },
+  },
+} as const
+
+function toMeUser<T extends { password?: string | null }>(user: T | null) {
+  if (!user) return null
+  const { password, ...rest } = user
+  return { ...rest, hasPassword: Boolean(password) }
+}
+
 const REPORT_LIST_SELECT = {
   id: true,
   title: true,
@@ -55,30 +87,29 @@ export class UsersRepository {
     })
   }
 
-  findMe(id: string) {
-    return this.prisma.user.findUnique({
+  async findMe(id: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        ...PUBLIC_USER_SELECT,
-        email: true,
-        emailVerified: true,
-        mfaEnabled: true,
-        phone: true,
-        zipCode: true,
-        street: true,
-        streetNumber: true,
-        complement: true,
-        neighborhood: true,
-        city: true,
-        state: true,
-        country: true,
-        latitude: true,
-        longitude: true,
-        _count: {
-          select: { reports: true, votes: true, comments: true },
-        },
-      },
+      select: ME_USER_SELECT,
     })
+    return toMeUser(user)
+  }
+
+  async acceptConsent(
+    id: string,
+    data: {
+      termsAcceptedAt: Date
+      ageConfirmedAt: Date
+      termsVersion: string
+      privacyVersion: string
+    },
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id },
+      data,
+      select: ME_USER_SELECT,
+    })
+    return toMeUser(user)
   }
 
   async findUserReports(authorId: string, page: number, limit: number) {

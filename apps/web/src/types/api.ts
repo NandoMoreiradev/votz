@@ -128,6 +128,11 @@ export interface AuthUser {
   avatarUrl: string | null
   emailVerified: boolean
   mfaEnabled: boolean
+  hasPassword?: boolean
+  termsAcceptedAt?: string | null
+  termsVersion?: string | null
+  privacyVersion?: string | null
+  ageConfirmedAt?: string | null
   createdAt: string
 }
 

@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import { UsersService } from './users.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
+import { AcceptConsentDto } from './dto/accept-consent.dto'
+import { DeleteAccountDto } from './dto/delete-account.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
@@ -17,6 +19,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Get own profile (private data included)' })
   getMe(@CurrentUser() user: { id: string }) {
     return this.usersService.findMe(user.id)
+  }
+
+  @Post('me/consent')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Record acceptance of current Terms of Use, Privacy Policy, and minimum age confirmation' })
+  acceptConsent(
+    @CurrentUser() user: { id: string },
+    @Body() dto: AcceptConsentDto,
+  ) {
+    return this.usersService.acceptConsent(user.id, dto)
   }
 
   @Post('me/data-export')
@@ -34,12 +48,12 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Throttle({ short: { limit: 1, ttl: 10_000 }, medium: { limit: 3, ttl: 3_600_000 }, long: { limit: 5, ttl: 86_400_000 } })
-  @ApiOperation({ summary: 'Permanently delete own account (LGPD erasure). Requires password confirmation.' })
+  @ApiOperation({ summary: 'Permanently delete own account (LGPD erasure). Requires password or e-mail confirmation.' })
   deleteAccount(
     @CurrentUser() user: { id: string },
-    @Body('password') password: string,
+    @Body() dto: DeleteAccountDto,
   ) {
-    return this.usersService.deleteAccount(user.id, password)
+    return this.usersService.deleteAccount(user.id, dto)
   }
 
   @Get(':id')

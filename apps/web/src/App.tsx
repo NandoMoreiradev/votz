@@ -42,6 +42,11 @@ import { Planos } from './pages/Planos'
 import { PagamentoSucesso } from './pages/PagamentoSucesso'
 import DebatesList from './pages/DebatesList'
 import DebateWatch from './pages/DebateWatch'
+import { Termos } from './pages/Termos'
+import { Privacidade } from './pages/Privacidade'
+import { Cookies } from './pages/Cookies'
+import { Diretrizes } from './pages/Diretrizes'
+import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
@@ -139,7 +144,12 @@ function App() {
               <Route path="/pagamento/sucesso" element={<PagamentoSucesso />} />
               <Route path="/debates" element={<DebatesList />} />
               <Route path="/debates/:id" element={<DebateWatch />} />
+              <Route path="/termos" element={<Termos />} />
+              <Route path="/privacidade" element={<Privacidade />} />
+              <Route path="/cookies" element={<Cookies />} />
+              <Route path="/diretrizes" element={<Diretrizes />} />
             </Routes>
+            <ConsentGate />
             <Footer />
           </BrowserRouter>
         </MediaViewerProvider>

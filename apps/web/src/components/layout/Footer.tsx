@@ -109,18 +109,6 @@ const Slogan = styled.span`
   letter-spacing: 0.04em;
 `
 
-const LgpdBadge = styled.span`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  padding: 3px 8px;
-  border-radius: 4px;
-`
-
 export function Footer() {
   const year = new Date().getFullYear()
 
@@ -136,7 +124,6 @@ export function Footer() {
             <Tagline>
               Transformando reclamação em registro, registro em pressão e pressão em ação.
             </Tagline>
-            <LgpdBadge>LGPD Compliant</LgpdBadge>
           </Brand>
 
           {/* Plataforma */}
@@ -166,10 +153,11 @@ export function Footer() {
           <Col>
             <ColTitle>Legal</ColTitle>
             <NavList>
-              <NavItem><NavA href="#">Termos de uso</NavA></NavItem>
-              <NavItem><NavA href="#">Política de privacidade</NavA></NavItem>
-              <NavItem><NavA href="mailto:contato@votz.app">Contato</NavA></NavItem>
-              <NavItem><NavA href="mailto:suporte@votz.app">Reportar problema</NavA></NavItem>
+              <NavItem><NavLink to="/termos">Termos de uso</NavLink></NavItem>
+              <NavItem><NavLink to="/privacidade">Política de privacidade</NavLink></NavItem>
+              <NavItem><NavLink to="/cookies">Cookies</NavLink></NavItem>
+              <NavItem><NavLink to="/diretrizes">Diretrizes da comunidade</NavLink></NavItem>
+              <NavItem><NavA href="mailto:fernandomoreira.dev@gmail.com">Contato</NavA></NavItem>
             </NavList>
           </Col>
         </Grid>

@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
   IsEmail, IsString, MinLength, Matches, IsOptional,
-  IsNumber, Min, Max, MaxLength,
+  IsNumber, Min, Max, MaxLength, IsBoolean, Equals,
 } from 'class-validator'
 import { Transform } from 'class-transformer'
 import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
+import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE } from '@votz/shared-types'
 
 function normalizePhone(value: unknown): string {
   const raw = String(value ?? '').trim()
@@ -98,4 +99,17 @@ export class RegisterDto {
   @Min(-180)
   @Max(180)
   longitude?: number
+
+  @ApiProperty({ example: TERMS_VERSION, description: 'Versão dos Termos de Uso aceitos' })
+  @IsString()
+  acceptedTermsVersion: string
+
+  @ApiProperty({ example: PRIVACY_VERSION, description: 'Versão da Política de Privacidade aceita' })
+  @IsString()
+  acceptedPrivacyVersion: string
+
+  @ApiProperty({ example: true, description: `Confirmação de idade mínima (${MIN_AGE} anos)` })
+  @IsBoolean({ message: `É preciso ter ${MIN_AGE} anos ou mais para criar uma conta.` })
+  @Equals(true, { message: `É preciso ter ${MIN_AGE} anos ou mais para criar uma conta.` })
+  confirmAge18: boolean
 }

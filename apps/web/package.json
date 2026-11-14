@@ -10,6 +10,9 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
     "@livekit/components-react": "^2.9.21",
     "@livekit/components-styles": "^1.2.0",
     "@phosphor-icons/react": "^2.1.10",

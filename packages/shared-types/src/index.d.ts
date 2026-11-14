@@ -4,4 +4,5 @@ export * from './user';
 export * from './pagination';
 export * from './proposta';
 export * from './election';
+export * from './legal';
 //# sourceMappingURL=index.d.ts.map

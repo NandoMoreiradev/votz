@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
@@ -105,6 +106,35 @@ const ErrorMsg = styled.span`
   color: ${({ theme }) => theme.colors.action};
 `
 
+const ConsentBox = styled.label<{ $error?: boolean }>`
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: ${({ theme }) => theme.colors.text};
+  cursor: pointer;
+  padding: 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1.5px solid ${({ $error, theme }) => ($error ? theme.colors.action : theme.colors.border)};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+
+  input {
+    margin-top: 3px;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: ${({ theme }) => theme.colors.primary};
+    cursor: pointer;
+  }
+
+  a {
+    color: ${({ theme }) => theme.colors.primary};
+    font-weight: ${({ theme }) => theme.fontWeights.semibold};
+    text-decoration: underline;
+  }
+`
+
 const Footer = styled.p`
   text-align: center;
   font-size: 0.875rem;
@@ -149,6 +179,8 @@ export function Register() {
   const [showManual, setShowManual] = useState(false)
   const [street, setStreet] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
+  const [acceptedLegal, setAcceptedLegal] = useState(false)
+  const [legalError, setLegalError] = useState('')
 
   useEffect(() => {
     if (user) navigate(redirect, { replace: true })
@@ -182,6 +214,13 @@ export function Register() {
       hasError = true
     }
 
+    if (!acceptedLegal) {
+      setLegalError(`Confirme que você tem ${MIN_AGE} anos ou mais e concorda com os termos para continuar.`)
+      hasError = true
+    } else {
+      setLegalError('')
+    }
+
     if (hasError) return
 
     const payload: RegisterPayload = {
@@ -198,6 +237,9 @@ export function Register() {
       state: address!.state,
       latitude: address!.latitude,
       longitude: address!.longitude,
+      acceptedTermsVersion: TERMS_VERSION,
+      acceptedPrivacyVersion: PRIVACY_VERSION,
+      confirmAge18: true,
     }
 
     register_(payload, { onSuccess: () => navigate(redirect, { replace: true }) })
@@ -321,8 +363,34 @@ export function Register() {
             </Field>
           </TwoCol>
 
+          {/* ── Aceite legal e idade mínima ── */}
+          <Field>
+            <ConsentBox $error={!!legalError}>
+              <input
+                type="checkbox"
+                checked={acceptedLegal}
+                onChange={(e) => {
+                  setAcceptedLegal(e.target.checked)
+                  if (e.target.checked) setLegalError('')
+                }}
+              />
+              <span>
+                Tenho {MIN_AGE} anos ou mais e li e concordo com os{' '}
+                <Link to="/termos" target="_blank" rel="noopener noreferrer">Termos de Uso</Link>{' '}
+                e a{' '}
+                <Link to="/privacidade" target="_blank" rel="noopener noreferrer">Política de Privacidade</Link>.
+              </span>
+            </ConsentBox>
+            {legalError && <ErrorMsg>{legalError}</ErrorMsg>}
+          </Field>
+
           {/* ── Erro geral ── */}
-          {error && <ErrorMsg>Este e-mail já está cadastrado.</ErrorMsg>}
+          {error && (
+            <ErrorMsg>
+              {(error as { response?: { data?: { message?: string } } })?.response?.data?.message
+                ?? 'Não foi possível criar a conta. Verifique os dados e tente novamente.'}
+            </ErrorMsg>
+          )}
 
           <Button variant="action" fullWidth disabled={isPending}>
             {isPending ? 'Criando conta...' : 'Criar conta grátis'}

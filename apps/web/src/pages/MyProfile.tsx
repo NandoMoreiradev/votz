@@ -1133,45 +1133,67 @@ const FeedbackMsg = styled.p<{ $error?: boolean }>`
 `
 
 function PrivacySection() {
-  const { logout } = useAuthStore()
+  const { user, logout } = useAuthStore()
+  const { data: me } = useMe()
   const navigate = useNavigate()
 
+  const hasPassword = me?.hasPassword ?? user?.hasPassword ?? true
+
   const [exportStatus, setExportStatus] = useState<{ msg: string; error: boolean } | null>(null)
-  const [exportLoading, setExportLoading] = useState(false)
 
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [password, setPassword] = useState('')
-  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
   const [deleteError, setDeleteError] = useState('')
 
-  const handleExport = useCallback(async () => {
-    setExportLoading(true)
-    setExportStatus(null)
-    try {
-      await api.post('/users/me/data-export')
+  const exportMutation = useMutation({
+    mutationFn: () => api.post('/users/me/data-export').then((r) => r.data),
+    onSuccess: () => {
       setExportStatus({ msg: 'Solicitação enviada! Você receberá um e-mail em breve com o link de download.', error: false })
-    } catch {
+    },
+    onError: () => {
       setExportStatus({ msg: 'Erro ao solicitar exportação. Tente novamente.', error: true })
-    } finally {
-      setExportLoading(false)
-    }
-  }, [])
+    },
+  })
 
-  const handleDelete = useCallback(async () => {
-    if (!password) { setDeleteError('Digite sua senha para confirmar.'); return }
-    setDeleteLoading(true)
-    setDeleteError('')
-    try {
-      await api.delete('/users/me', { data: { password } })
+  const deleteMutation = useMutation({
+    mutationFn: (payload: { password?: string; confirmEmail?: string }) =>
+      api.delete('/users/me', { data: payload }).then((r) => r.data),
+    onSuccess: () => {
       logout()
       navigate('/', { replace: true })
-    } catch (err: unknown) {
+    },
+    onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setDeleteError(msg ?? 'Erro ao encerrar conta. Verifique sua senha e tente novamente.')
-    } finally {
-      setDeleteLoading(false)
+      setDeleteError(
+        msg ?? (hasPassword
+          ? 'Erro ao encerrar conta. Verifique sua senha e tente novamente.'
+          : 'Erro ao encerrar conta. Verifique seu e-mail e tente novamente.'),
+      )
+    },
+  })
+
+  const handleExport = useCallback(() => {
+    setExportStatus(null)
+    exportMutation.mutate()
+  }, [exportMutation])
+
+  const handleDelete = useCallback(() => {
+    if (!confirmation.trim()) {
+      setDeleteError(hasPassword ? 'Digite sua senha para confirmar.' : 'Digite seu e-mail para confirmar.')
+      return
     }
-  }, [password, logout, navigate])
+    setDeleteError('')
+    deleteMutation.mutate(hasPassword ? { password: confirmation } : { confirmEmail: confirmation.trim() })
+  }, [confirmation, hasPassword, deleteMutation])
+
+  const exportLoading = exportMutation.isPending
+  const deleteLoading = deleteMutation.isPending
+
+  function closeDeleteModal() {
+    setDeleteOpen(false)
+    setConfirmation('')
+    setDeleteError('')
+  }
 
   return (
     <PrivacyCard>
@@ -1206,28 +1228,30 @@ function PrivacySection() {
       </PrivacyRow>
 
       {deleteOpen && (
-        <ModalOverlay onClick={() => { setDeleteOpen(false); setPassword(''); setDeleteError('') }}>
+        <ModalOverlay onClick={closeDeleteModal}>
           <Modal onClick={(e) => e.stopPropagation()}>
             <ModalTitle>Encerrar conta</ModalTitle>
             <ModalText>
               Esta ação é permanente e irreversível. Seus dados pessoais serão removidos e seus relatos serão anonimizados.
               <br /><br />
-              Digite sua senha para confirmar.
+              {hasPassword
+                ? 'Digite sua senha para confirmar.'
+                : `Sua conta usa login pelo Google. Digite seu e-mail (${me?.email ?? user?.email ?? ''}) para confirmar.`}
             </ModalText>
             <ModalInput
-              type="password"
-              placeholder="Sua senha atual"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type={hasPassword ? 'password' : 'email'}
+              placeholder={hasPassword ? 'Sua senha atual' : 'Seu e-mail cadastrado'}
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleDelete()}
               autoFocus
             />
             {deleteError && <FeedbackMsg $error>{deleteError}</FeedbackMsg>}
             <ModalActions>
-              <ModalCancelBtn onClick={() => { setDeleteOpen(false); setPassword(''); setDeleteError('') }}>
+              <ModalCancelBtn onClick={closeDeleteModal}>
                 Cancelar
               </ModalCancelBtn>
-              <ModalConfirmBtn onClick={handleDelete} disabled={deleteLoading || !password}>
+              <ModalConfirmBtn onClick={handleDelete} disabled={deleteLoading || !confirmation.trim()}>
                 {deleteLoading ? 'Encerrando…' : 'Confirmar encerramento'}
               </ModalConfirmBtn>
             </ModalActions>

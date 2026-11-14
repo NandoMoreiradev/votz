@@ -186,26 +186,38 @@ async function resolveOrCreateParty(
   return null
 }
 
+const POLITICIAN_REF_SELECT = {
+  id: true,
+  tseId: true,
+  name: true,
+  office: true,
+  state: true,
+  city: true,
+  status: true,
+  termStart: true,
+  termEnd: true,
+  avatarUrl: true,
+} as const
+
+function indexPolitician(
+  ref: PoliticianRef,
+  byTseId: Map<string, PoliticianRef>,
+  byReconcile: Map<string, PoliticianRef>,
+  extraKey?: string,
+) {
+  if (ref.tseId) byTseId.set(ref.tseId, ref)
+  byReconcile.set(reconcileKey(ref.state, ref.office, ref.name, ref.city), ref)
+  if (extraKey) byReconcile.set(extraKey, ref)
+}
+
 async function loadPoliticianIndex() {
   const all = await prisma.politician.findMany({
-    select: {
-      id: true,
-      tseId: true,
-      name: true,
-      office: true,
-      state: true,
-      city: true,
-      status: true,
-      termStart: true,
-      termEnd: true,
-      avatarUrl: true,
-    },
+    select: POLITICIAN_REF_SELECT,
   })
   const byTseId = new Map<string, PoliticianRef>()
   const byReconcile = new Map<string, PoliticianRef>()
   for (const p of all) {
-    if (p.tseId) byTseId.set(p.tseId, p)
-    byReconcile.set(reconcileKey(p.state, p.office, p.name, p.city), p)
+    indexPolitician(p, byTseId, byReconcile)
   }
   return { byTseId, byReconcile }
 }
@@ -300,7 +312,7 @@ async function syncDeputados(dryRun: boolean): Promise<{ created: number; update
         const keepStart = existing.termStart <= now && existing.termEnd >= now && leg.start > now
         const nextAvatar = d.urlFoto || existing.avatarUrl || null
         if (!dryRun) {
-          await prisma.politician.update({
+          const saved = await prisma.politician.update({
             where: { id: existing.id },
             data: {
               tseId,
@@ -314,12 +326,16 @@ async function syncDeputados(dryRun: boolean): Promise<{ created: number; update
               termEnd: leg.end > existing.termEnd ? leg.end : existing.termEnd,
               ...(nextAvatar !== null && { avatarUrl: nextAvatar }),
             },
+            select: POLITICIAN_REF_SELECT,
           })
+          indexPolitician(saved, byTseId, byReconcile, key)
+        } else {
+          indexPolitician({ ...existing, tseId }, byTseId, byReconcile, key)
         }
         updated++
       } else {
         if (!dryRun) {
-          await prisma.politician.create({
+          const createdRecord = await prisma.politician.create({
             data: {
               tseId,
               name: d.nome,
@@ -333,7 +349,27 @@ async function syncDeputados(dryRun: boolean): Promise<{ created: number; update
               verified: false,
               status: PoliticianStatus.ATIVO,
             },
+            select: POLITICIAN_REF_SELECT,
           })
+          indexPolitician(createdRecord, byTseId, byReconcile, key)
+        } else {
+          indexPolitician(
+            {
+              id: `dry-${tseId}`,
+              tseId,
+              name: d.nome,
+              office: 'Deputado Federal',
+              state: d.siglaUf,
+              city: null,
+              status: PoliticianStatus.ATIVO,
+              termStart: leg.start,
+              termEnd: leg.end,
+              avatarUrl: d.urlFoto || null,
+            },
+            byTseId,
+            byReconcile,
+            key,
+          )
         }
         created++
       }
@@ -407,17 +443,18 @@ async function syncSenadores(dryRun: boolean): Promise<{ created: number; update
       id.UrlFotoParlamentar ??
       `https://www.senado.leg.br/senadores/img/fotos-oficiais/senador${id.CodigoParlamentar}.jpg`
 
+    const extraKey = id.NomeCompletoParlamentar
+      ? reconcileKey(id.UfParlamentar, office, id.NomeCompletoParlamentar)
+      : undefined
     const existing =
       byTseId.get(tseId) ??
       byReconcile.get(reconcileKey(id.UfParlamentar, office, id.NomeParlamentar)) ??
-      (id.NomeCompletoParlamentar
-        ? byReconcile.get(reconcileKey(id.UfParlamentar, office, id.NomeCompletoParlamentar))
-        : undefined)
+      (extraKey ? byReconcile.get(extraKey) : undefined)
 
     if (existing) {
       const nextAvatar = officialPhoto || existing.avatarUrl || null
       if (!dryRun) {
-        await prisma.politician.update({
+        const saved = await prisma.politician.update({
           where: { id: existing.id },
           data: {
             tseId,
@@ -428,15 +465,19 @@ async function syncSenadores(dryRun: boolean): Promise<{ created: number; update
             electoralZone: id.UfParlamentar,
             status: PoliticianStatus.ATIVO,
             termStart: existing.termStart < termStart ? existing.termStart : termStart,
-            termEnd: termEnd > existing.termEnd ? termEnd : existing.termEnd,
+            termEnd: termEnd > existing.termEnd ? termEnd : termEnd,
             ...(nextAvatar !== null && { avatarUrl: nextAvatar }),
           },
+          select: POLITICIAN_REF_SELECT,
         })
+        indexPolitician(saved, byTseId, byReconcile, extraKey)
+      } else {
+        indexPolitician({ ...existing, tseId }, byTseId, byReconcile, extraKey)
       }
       updated++
     } else {
       if (!dryRun) {
-        await prisma.politician.create({
+        const createdRecord = await prisma.politician.create({
           data: {
             tseId,
             name: id.NomeParlamentar,
@@ -450,7 +491,27 @@ async function syncSenadores(dryRun: boolean): Promise<{ created: number; update
             verified: false,
             status: PoliticianStatus.ATIVO,
           },
+          select: POLITICIAN_REF_SELECT,
         })
+        indexPolitician(createdRecord, byTseId, byReconcile, extraKey)
+      } else {
+        indexPolitician(
+          {
+            id: `dry-${tseId}`,
+            tseId,
+            name: id.NomeParlamentar,
+            office,
+            state: id.UfParlamentar,
+            city: null,
+            status: PoliticianStatus.ATIVO,
+            termStart,
+            termEnd,
+            avatarUrl: officialPhoto,
+          },
+          byTseId,
+          byReconcile,
+          extraKey,
+        )
       }
       created++
     }

@@ -259,6 +259,10 @@ model User {
   lockedUntil              DateTime?
   emailVerificationToken   String?   @unique
   emailVerificationExpires DateTime?
+  termsAcceptedAt          DateTime?
+  termsVersion             String?
+  privacyVersion           String?
+  ageConfirmedAt           DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

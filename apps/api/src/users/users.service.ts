@@ -1,13 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import * as bcrypt from 'bcrypt'
 import { UserType } from '@prisma/client'
+import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
 import { UsersRepository } from './users.repository'
 import { UpdateProfileDto } from './dto/update-profile.dto'
+import { AcceptConsentDto } from './dto/accept-consent.dto'
+import { DeleteAccountDto } from './dto/delete-account.dto'
 import { LGPD_QUEUE, LgpdExportJob } from './lgpd.processor'
+
+const SUPPORT_EMAIL = 'fernandomoreira.dev@gmail.com'
 
 @Injectable()
 export class UsersService {
@@ -57,6 +62,31 @@ export class UsersService {
     })
   }
 
+  async acceptConsent(userId: string, dto: AcceptConsentDto) {
+    if (dto.confirmAge18 !== true) {
+      throw new BadRequestException(`É preciso ter ${MIN_AGE} anos ou mais para continuar.`)
+    }
+    if (
+      dto.acceptedTermsVersion !== TERMS_VERSION ||
+      dto.acceptedPrivacyVersion !== PRIVACY_VERSION
+    ) {
+      throw new ConflictException(
+        'Os Termos foram atualizados. Recarregue a página e aceite novamente.',
+      )
+    }
+
+    const existing = await this.repo.findById(userId)
+    if (!existing) throw new NotFoundException('User not found')
+
+    const now = new Date()
+    return this.repo.acceptConsent(userId, {
+      termsAcceptedAt: now,
+      ageConfirmedAt: now,
+      termsVersion: dto.acceptedTermsVersion,
+      privacyVersion: dto.acceptedPrivacyVersion,
+    })
+  }
+
   async requestDataExport(userId: string) {
     const user = await this.repo.findWithPassword(userId)
     if (!user) throw new NotFoundException('User not found')
@@ -72,16 +102,14 @@ export class UsersService {
     return { message: 'Exportação iniciada. Você receberá um e-mail em breve com o link de download.' }
   }
 
-  async deleteAccount(userId: string, password: string) {
-    if (!password || typeof password !== 'string' || password.trim() === '') {
-      throw new BadRequestException('Senha é obrigatória para confirmar o encerramento da conta')
-    }
-
+  async deleteAccount(userId: string, dto: DeleteAccountDto) {
     const user = await this.repo.findWithPassword(userId)
     if (!user) throw new NotFoundException('User not found')
 
     if (([UserType.ADMIN, UserType.MODERATOR] as string[]).includes(user.type)) {
-      throw new BadRequestException('Contas de moderadores e administradores não podem ser encerradas pelo portal. Entre em contato com o suporte.')
+      throw new BadRequestException(
+        `Contas de moderadores e administradores não podem ser encerradas pelo portal. Entre em contato pelo e-mail ${SUPPORT_EMAIL}.`,
+      )
     }
 
     const hasOrgMembership = await this.prisma.orgMembership.findFirst({
@@ -89,17 +117,27 @@ export class UsersService {
     })
 
     if (hasOrgMembership) {
-      throw new BadRequestException('Contas vinculadas a perfis de político ou entidade não podem ser encerradas pelo portal. Entre em contato com o suporte.')
+      throw new BadRequestException(
+        `Contas vinculadas a perfis de político ou entidade não podem ser encerradas pelo portal. Entre em contato pelo e-mail ${SUPPORT_EMAIL}.`,
+      )
     }
 
-    if (!user.password) {
-      throw new BadRequestException('Esta conta usa login pelo Google. Para encerrá-la, desconecte pelo Google e entre em contato com o suporte.')
+    if (user.password) {
+      if (!dto.password || typeof dto.password !== 'string' || dto.password.trim() === '') {
+        throw new BadRequestException('Senha é obrigatória para confirmar o encerramento da conta')
+      }
+      const valid = await bcrypt.compare(dto.password, user.password)
+      if (!valid) throw new ForbiddenException('Senha incorreta')
+    } else {
+      if (!dto.confirmEmail || typeof dto.confirmEmail !== 'string' || dto.confirmEmail.trim() === '') {
+        throw new BadRequestException('Digite seu e-mail para confirmar o encerramento da conta.')
+      }
+      if (dto.confirmEmail.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+        throw new ForbiddenException('E-mail de confirmação incorreto.')
+      }
     }
 
-    const valid = await bcrypt.compare(password, user.password)
-    if (!valid) throw new ForbiddenException('Senha incorreta')
-
-    // Collect verification document R2 keys before deleting requests
+    // Collect verification document R2 keys and avatar R2 key before deleting requests
     const reqs = await this.prisma.registrationRequest.findMany({
       where: { requesterId: userId },
       select: { payload: true },
@@ -114,25 +152,58 @@ export class UsersService {
       }
     }
 
+    const avatarKey = this.storage.extractKeyFromUrl?.(user.avatarUrl)
+    if (avatarKey) r2Keys.push(avatarKey)
+
     // Database cleanup in interactive transaction (order matters for FK constraints)
     await this.prisma.$transaction(async (tx) => {
-      // Get IDs of this user's comments to orphan other users' replies
-      const userCommentIds = await tx.comment.findMany({
+      // Collect comment IDs (to orphan replies) and audio mediaKeys (to clean R2 after commit)
+      const userComments = await tx.comment.findMany({
         where: { authorId: userId },
-        select: { id: true },
+        select: { id: true, mediaKey: true },
       })
-      if (userCommentIds.length > 0) {
+      if (userComments.length > 0) {
+        const commentIds = userComments.map((c) => c.id)
+        for (const c of userComments) {
+          if (c.mediaKey) r2Keys.push(c.mediaKey)
+        }
         await tx.comment.updateMany({
-          where: { parentId: { in: userCommentIds.map((c) => c.id) } },
+          where: { parentId: { in: commentIds } },
           data: { parentId: null },
         })
       }
 
-      // Anonymize reports and timeline events (nullable FKs — civic record preserved)
+      // Anonymize optional user references (civic record preserved)
       await tx.report.updateMany({ where: { authorId: userId }, data: { authorId: null, anonymous: true } })
       await tx.timelineEvent.updateMany({ where: { authorId: userId }, data: { authorId: null } })
+      await tx.propostaTimeline.updateMany({ where: { autorId: userId }, data: { autorId: null } })
+      await tx.registrationRequest.updateMany({ where: { reviewerId: userId }, data: { reviewerId: null } })
 
-      // Hard-delete user-owned data (non-public)
+      // Decrement debate poll option counters before deleting user poll votes
+      const pollVotes = await tx.debatePollVote.findMany({
+        where: { userId },
+        select: { optionId: true },
+      })
+      if (pollVotes.length > 0) {
+        const countsByOption = new Map<string, number>()
+        for (const pv of pollVotes) {
+          countsByOption.set(pv.optionId, (countsByOption.get(pv.optionId) ?? 0) + 1)
+        }
+        for (const [optionId, count] of countsByOption) {
+          await tx.debatePollOption.update({
+            where: { id: optionId },
+            data: { totalVotes: { decrement: count } },
+          })
+        }
+        await tx.debatePollVote.deleteMany({ where: { userId } })
+      }
+
+      // Hard-delete user-owned records (all required FK relations to User)
+      await tx.debateQuestion.deleteMany({ where: { authorId: userId } })
+      await tx.debateMessage.deleteMany({ where: { authorId: userId } })
+      await tx.propostaVoto.deleteMany({ where: { usuarioId: userId } })
+      await tx.apiKey.deleteMany({ where: { userId } })
+      await tx.userPoliticianFollower.deleteMany({ where: { userId } })
       await tx.comment.deleteMany({ where: { authorId: userId } })
       await tx.vote.deleteMany({ where: { userId } })
       await tx.notification.deleteMany({ where: { userId } })
@@ -143,7 +214,7 @@ export class UsersService {
     })
 
     // Delete R2 files after DB transaction succeeds (fire-and-forget)
-    for (const key of r2Keys) {
+    for (const key of new Set(r2Keys)) {
       this.storage.delete(key).catch(() => {})
     }
 
