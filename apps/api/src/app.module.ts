@@ -41,6 +41,7 @@ import { DebatesModule } from './debates/debates.module'
 import { AccessLogModule } from './access-log/access-log.module'
 import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
 import { InactivityModule } from './inactivity/inactivity.module'
+import { ModerationModule } from './moderation/moderation.module'
 
 @Module({
   imports: [
@@ -129,6 +130,7 @@ import { InactivityModule } from './inactivity/inactivity.module'
     AccessLogModule,
     VerificationRetentionModule,
     InactivityModule,
+    ModerationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

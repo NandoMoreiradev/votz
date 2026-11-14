@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { ModerationActionType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
@@ -25,8 +26,31 @@ export class AdminRepository {
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
   }
 
-  async setBan(id: string, banned: boolean) {
-    return this.prisma.user.update({ where: { id }, data: { banned }, select: { id: true, banned: true } })
+  async findUserForBan(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, email: true, type: true, banned: true },
+    })
+  }
+
+  async setBan(id: string, banned: boolean, actorId: string | null, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data: { banned },
+        select: { id: true, banned: true },
+      })
+      const action = await tx.moderationAction.create({
+        data: {
+          action: banned ? ModerationActionType.USER_BANNED : ModerationActionType.USER_UNBANNED,
+          targetType: 'USER',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+      return { user, actionId: action.id }
+    })
   }
 
   async setUserType(id: string, type: string) {
@@ -57,8 +81,52 @@ export class AdminRepository {
     return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
   }
 
-  async deleteReport(id: string) {
-    return this.prisma.report.delete({ where: { id } })
+  async deleteReport(id: string, actorId: string | null, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.report.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          anonymous: true,
+          authorId: true,
+          media: true,
+          author: { select: { name: true, email: true } },
+        },
+      })
+      if (!report) return null
+
+      const comments = await tx.comment.findMany({
+        where: { reportId: id },
+        select: { mediaKey: true },
+      })
+
+      await tx.notification.deleteMany({ where: { reportId: id } })
+      await tx.vote.deleteMany({ where: { reportId: id } })
+      await tx.comment.updateMany({ where: { reportId: id }, data: { parentId: null } })
+      await tx.comment.deleteMany({ where: { reportId: id } })
+      await tx.reportFollower.deleteMany({ where: { reportId: id } })
+      await tx.timelineEvent.deleteMany({ where: { reportId: id } })
+      await tx.report.delete({ where: { id } })
+
+      const action = await tx.moderationAction.create({
+        data: {
+          action: ModerationActionType.REPORT_REMOVED,
+          targetType: 'REPORT',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+
+      return {
+        actionId: action.id,
+        reportMedia: report.media ?? [],
+        commentMediaKeys: comments
+          .map((c) => c.mediaKey)
+          .filter((k): k is string => typeof k === 'string' && k.length > 0),
+        author: !report.anonymous && report.authorId && report.author ? report.author : null,
+      }
+    })
   }
 
   // ── Entities ──────────────────────────────────────────────────────────────

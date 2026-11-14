@@ -68,4 +68,33 @@ describe('MailService', () => {
       }),
     )
   })
+
+  it('sends moderation notice with reason, guidelines link, and appeal email, and returns true/false', async () => {
+    const ok = await service.sendModerationNotice(
+      'ana@votz.app',
+      'Ana',
+      'REPORT_REMOVED',
+      'Conteúdo com dados pessoais expostos.',
+    )
+    expect(ok).toBe(true)
+    expect(sendMailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'ana@votz.app',
+        subject: expect.stringContaining('relato foi removido'),
+        html: expect.stringContaining('Conteúdo com dados pessoais expostos.'),
+      }),
+    )
+    const sentHtml = sendMailMock.mock.calls[0][0].html as string
+    expect(sentHtml).toContain('http://localhost:5173/diretrizes')
+    expect(sentHtml).toContain('fernandomoreira.dev@gmail.com')
+
+    sendMailMock.mockRejectedValueOnce(new Error('SMTP offline'))
+    const failed = await service.sendModerationNotice(
+      'ana@votz.app',
+      'Ana',
+      'ACCOUNT_BANNED',
+      'Violação grave repetida.',
+    )
+    expect(failed).toBe(false)
+  })
 })

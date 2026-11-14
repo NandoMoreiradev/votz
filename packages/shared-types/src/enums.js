@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
+exports.FlagStatus = exports.FlagReason = exports.FlagTargetType = exports.ModerationActionType = exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
 var UserType;
 (function (UserType) {
     UserType["CITIZEN"] = "CITIZEN";
@@ -95,4 +95,33 @@ var VoteType;
     VoteType["SUPPORT"] = "SUPPORT";
     VoteType["ME_TOO"] = "ME_TOO";
 })(VoteType || (exports.VoteType = VoteType = {}));
+var ModerationActionType;
+(function (ModerationActionType) {
+    ModerationActionType["REPORT_REMOVED"] = "REPORT_REMOVED";
+    ModerationActionType["COMMENT_REMOVED"] = "COMMENT_REMOVED";
+    ModerationActionType["USER_BANNED"] = "USER_BANNED";
+    ModerationActionType["USER_UNBANNED"] = "USER_UNBANNED";
+})(ModerationActionType || (exports.ModerationActionType = ModerationActionType = {}));
+var FlagTargetType;
+(function (FlagTargetType) {
+    FlagTargetType["REPORT"] = "REPORT";
+    FlagTargetType["COMMENT"] = "COMMENT";
+})(FlagTargetType || (exports.FlagTargetType = FlagTargetType = {}));
+var FlagReason;
+(function (FlagReason) {
+    FlagReason["FALSE_INFO"] = "FALSE_INFO";
+    FlagReason["OFFENSIVE"] = "OFFENSIVE";
+    FlagReason["PERSONAL_DATA"] = "PERSONAL_DATA";
+    FlagReason["SEXUAL_OR_VIOLENT"] = "SEXUAL_OR_VIOLENT";
+    FlagReason["SPAM_OR_ADS"] = "SPAM_OR_ADS";
+    FlagReason["FAKE_PROFILE"] = "FAKE_PROFILE";
+    FlagReason["COPYRIGHT"] = "COPYRIGHT";
+    FlagReason["OTHER"] = "OTHER";
+})(FlagReason || (exports.FlagReason = FlagReason = {}));
+var FlagStatus;
+(function (FlagStatus) {
+    FlagStatus["OPEN"] = "OPEN";
+    FlagStatus["ACTIONED"] = "ACTIONED";
+    FlagStatus["DISMISSED"] = "DISMISSED";
+})(FlagStatus || (exports.FlagStatus = FlagStatus = {}));
 //# sourceMappingURL=enums.js.map

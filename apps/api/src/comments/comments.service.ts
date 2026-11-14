@@ -1,22 +1,29 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
 import { CommentsRepository } from './comments.repository'
 import { NotificationsService } from '../notifications/notifications.service'
 import { PressureService } from '../press/pressure.service'
 import { TranscriptionService } from '../transcription/transcription.service'
+import { StorageService } from '../storage/storage.service'
+import { MailService } from '../mail/mail.service'
+import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
 import { CreateCommentDto, CommentMediaType } from './dto/create-comment.dto'
 import { UpdateCommentDto } from './dto/update-comment.dto'
 import { UserType } from '@votz/shared-types'
 
 @Injectable()
 export class CommentsService {
+  private readonly logger = new Logger(CommentsService.name)
+
   constructor(
     private readonly repo: CommentsRepository,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly pressure: PressureService,
     private readonly transcription: TranscriptionService,
+    private readonly storage: StorageService,
+    private readonly mail: MailService,
   ) {}
 
   async create(
@@ -121,7 +128,7 @@ export class CommentsService {
     return this.repo.update(id, content)
   }
 
-  async delete(id: string, requesterId: string, requesterType: string) {
+  async delete(id: string, requesterId: string, requesterType: string, reason?: string) {
     const comment = await this.repo.findById(id)
     if (!comment) throw new NotFoundException('Comment not found')
 
@@ -130,6 +137,22 @@ export class CommentsService {
 
     if (!isOwner && !canModerate) throw new ForbiddenException()
 
-    return this.repo.delete(id)
+    if (!isOwner && canModerate) {
+      const auditReason = reason?.trim() || 'Removido pela moderação'
+      const { actionId } = await this.repo.deleteWithAudit(id, requesterId, auditReason)
+      cleanupR2Keys(this.storage, [comment.mediaKey], this.logger)
+      await deliverModerationNotice(this.mail, this.prisma, this.logger, {
+        actionId,
+        email: comment.author?.email,
+        name: comment.author?.name,
+        kind: 'COMMENT_REMOVED',
+        reason: auditReason,
+      })
+      return { deleted: true }
+    }
+
+    const deleted = await this.repo.delete(id)
+    cleanupR2Keys(this.storage, [comment.mediaKey], this.logger)
+    return deleted
   }
 }

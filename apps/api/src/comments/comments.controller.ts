@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { CommentsService } from './comments.service'
 import { CreateCommentDto } from './dto/create-comment.dto'
 import { UpdateCommentDto } from './dto/update-comment.dto'
+import { DeleteCommentDto } from './dto/delete-comment.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
@@ -49,7 +50,8 @@ export class CommentsController {
   delete(
     @Param('commentId') commentId: string,
     @CurrentUser() user: { id: string; type: string },
+    @Body() dto?: DeleteCommentDto,
   ) {
-    return this.commentsService.delete(commentId, user.id, user.type)
+    return this.commentsService.delete(commentId, user.id, user.type, dto?.reason)
   }
 }

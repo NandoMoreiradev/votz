@@ -9,7 +9,36 @@
 ## Ambiente
 Banco PostgreSQL **local** (Docker Compose); R2 não configurado (use mocks de `StorageService`). Nada está em produção, então **invalidar as sessões atuais é aceitável** (todos terão que entrar de novo).
 
-Ordem: **T1 → T2 → T3 → T4 → T5 → T6**.
+Ordem: **T0 → T1 → T2 → T3 → T4 → T5 → T6**.
+
+---
+
+## T0 — Correções encontradas na revisão do Brief 2B
+
+Três ajustes no que o 2B entregou. Fazem parte deste brief porque tocam em `mail.service.ts` e `auth.service.ts`, que o 2C e o T2 também alteram.
+
+### T0.1 — Aviso de inatividade que falha em silêncio (risco real)
+
+**Problema:** `MailService.sendInactivityNotice` termina com `.catch((err) => this.logger.error(...))`, como os outros envios: **o erro de SMTP é engolido**. `InactivityService.sendInactivityNotices` então grava `inactivityNoticeSentAt = now` e conta como avisado. Se o SMTP estiver fora do ar ou mal configurado, a pessoa é marcada como avisada **sem ter recebido o e-mail** e é **anonimizada 30 dias depois**, quebrando a promessa da Política de Privacidade ("avisando por e-mail antes"). O teste unitário não pega isso, porque o mock do e-mail rejeita, enquanto o `MailService` real nunca rejeita.
+
+**Correção:**
+- `sendInactivityNotice` **não pode engolir o erro**: remova o `.catch` (deixe a exceção subir) ou retorne `Promise<boolean>`. Só este método; não mude os demais envios.
+- `InactivityService` só grava `inactivityNoticeSentAt` e só incrementa `notified` quando o envio **teve sucesso**. Em falha, mantém `null` (tenta de novo no dia seguinte) e registra um aviso no log.
+- Escape o `name` no HTML do e-mail (veja o T4 do brief 3B; se `escapeHtml` ainda não existir, crie um helper simples aqui).
+
+**Aceite:** teste em que o envio **lança erro**: `inactivityNoticeSentAt` continua nulo, o usuário **não** é contado como avisado e **não** é anonimizado nos 30 dias seguintes.
+
+### T0.2 — Não registrar `TOKEN_REFRESH` no log de acesso
+
+**Problema:** `AuthService.refresh` chama `accessLog.record(userId, AccessEvent.TOKEN_REFRESH, ip)`. O `refresh` roda **a cada ~15 minutos** de uso ativo (vida do access token): até ~96 linhas por usuário por dia, guardadas por 6 meses. Com 10 mil usuários ativos por dia, são centenas de milhões de linhas, sem benefício: o Marco Civil pede o registro do **acesso/uso da aplicação**, e o início de sessão (`LOGIN`, `GOOGLE_LOGIN`, `MFA_LOGIN`, `REGISTER`) já cobre isso. A falha de desenho foi do brief 2B, não do Gemini.
+
+**Correção:** remova a chamada de `TOKEN_REFRESH` em `refresh`. **Não** remova o valor do enum (evita migration). Ajuste o teste do `auth.service.spec.ts` e atualize o comentário do `AccessLogService` dizendo que só eventos de **início de sessão** são registrados. No T2 abaixo (refresh em tabela), **também não** registre log em `POST /auth/refresh`.
+
+### T0.3 — Paginação com cursor sobre conjunto que encolhe (baixa)
+
+**Problema:** em `InactivityService.sendInactivityNotices`/`anonymizeInactiveUsers` e `VerificationRetentionService.purgeExpiredDocuments`, os jobs paginam com `cursor + skip: 1` sobre um filtro cujos resultados **saem do conjunto ao serem processados** (aviso enviado, conta apagada, documento purgado). A linha do cursor deixa de existir ou de casar com o filtro, e o `skip: 1` pode **pular um registro válido**, ou a próxima página vir vazia, limitando o processamento a ~100 por dia.
+
+**Correção:** como as linhas processadas saem do filtro, repita `findMany({ where, take: BATCH_SIZE })` **sem cursor** até vir vazio, guardando num `Set` os ids que **falharam** nesta rodada (excluídos por `id: { notIn: [...] }`) para não entrar em laço infinito. **Aceite:** teste com mais de `BATCH_SIZE` registros elegíveis em que todos são processados numa única execução.
 
 ---
 
@@ -63,7 +92,7 @@ model RefreshToken {
 6. Revogação em massa também em: troca de senha (se existir), **banimento** (`AdminService.banUser`) e exclusão de conta (cascade).
 7. Limpeza: job diário (padrão `mandate-expiry`, BullMQ) que apaga `RefreshToken` com `expiresAt` anterior a 30 dias.
 8. Remova `User.refreshTokenHash` do schema (migration) depois de migrar o código. Manter uma sessão ativa por aparelho é o novo comportamento esperado.
-9. **Mantenha** o que o brief 2B adicionou nesses fluxos (`AccessLog`, `inactivityNoticeSentAt`, `lastLoginAt`).
+9. **Mantenha** o que o brief 2B adicionou nesses fluxos (`inactivityNoticeSentAt`, `lastLoginAt`, e `AccessLog` apenas em **início de sessão**: login, registro, Google, MFA; **não** em `refresh`, ver T0.2).
 
 **Aceite (testes):**
 - Token usado duas vezes → segunda vez 401 **e a família inteira é revogada** (o token novo emitido na primeira troca também deixa de valer).

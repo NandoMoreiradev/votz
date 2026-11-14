@@ -1,6 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
+import { SUPPORT_EMAIL } from '../common/legal.constants'
+
+export type ModerationNoticeKind = 'REPORT_REMOVED' | 'COMMENT_REMOVED' | 'ACCOUNT_BANNED'
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 @Injectable()
 export class MailService {
@@ -197,5 +209,53 @@ export class MailService {
         <p><strong>Não compartilhe estes códigos com ninguém.</strong></p>
       `,
     }).catch((err) => this.logger.error('Failed to send MFA backup codes email', err))
+  }
+
+  async sendModerationNotice(
+    email: string,
+    name: string,
+    kind: ModerationNoticeKind,
+    reason: string,
+  ): Promise<boolean> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const guidelinesLink = `${baseUrl}/diretrizes`
+    const safeName = escapeHtml(name || 'usuário')
+    const safeReason = escapeHtml(reason)
+
+    const copy =
+      kind === 'REPORT_REMOVED'
+        ? {
+            subject: 'Seu relato foi removido — Votz',
+            actionText: 'Um relato publicado por você foi removido pela equipe de moderação do Votz.',
+          }
+        : kind === 'COMMENT_REMOVED'
+          ? {
+              subject: 'Seu comentário foi removido — Votz',
+              actionText: 'Um comentário publicado por você foi removido pela equipe de moderação do Votz.',
+            }
+          : {
+              subject: 'Sua conta foi banida — Votz',
+              actionText: 'Sua conta no Votz foi banida pela equipe de moderação.',
+            }
+
+    try {
+      await this.transporter.sendMail({
+        from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+        to: email,
+        subject: copy.subject,
+        html: `
+          <h2>Olá, ${safeName}!</h2>
+          <p>${copy.actionText}</p>
+          <p><strong>Motivo informado pela moderação:</strong></p>
+          <blockquote style="border-left:3px solid #E63946;margin:0;padding:8px 16px;color:#374151;">${safeReason}</blockquote>
+          <p>Nossas regras de convivência estão publicadas nas <a href="${guidelinesLink}">Diretrizes da Comunidade</a>.</p>
+          <p>Se você acha que houve um engano e quer contestar esta decisão, envie uma mensagem para <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a> explicando seu ponto de vista.</p>
+        `,
+      })
+      return true
+    } catch (err) {
+      this.logger.error('Failed to send moderation notice email', err)
+      return false
+    }
   }
 }

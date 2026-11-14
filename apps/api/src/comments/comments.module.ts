@@ -10,5 +10,6 @@ import { TranscriptionModule } from '../transcription/transcription.module'
   imports: [NotificationsModule, PressModule, TranscriptionModule],
   controllers: [CommentsController],
   providers: [CommentsService, CommentsRepository],
+  exports: [CommentsService],
 })
 export class CommentsModule {}

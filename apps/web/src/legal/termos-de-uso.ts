@@ -155,7 +155,7 @@ export const termosDeUso: LegalDoc = {
           ul: [
             '**Ordem judicial:** removemos o conteúdo apontado em decisão judicial específica.',
             '**Imagens íntimas sem consentimento:** removemos assim que a pessoa afetada nos avisar, sem precisar de ordem judicial.',
-            '**Avisos de terceiros:** quem se sentir lesado pode pedir a remoção pelo e-mail de contato. Analisamos caso a caso, em prazo razoável.',
+            '**Avisos de terceiros:** quem se sentir lesado pode usar o botão **Sinalizar** no conteúdo ou pedir a remoção pelo e-mail de contato. Analisamos caso a caso, em prazo razoável.',
             '**Se discordar:** você pode contestar uma decisão pelo mesmo e-mail. Reavaliamos com outra pessoa da equipe.',
           ],
         },

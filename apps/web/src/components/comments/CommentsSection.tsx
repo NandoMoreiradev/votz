@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom'
 import { Comment } from '../../types/api'
 import { useComments, useCreateComment, useEditComment, useDeleteComment, useUploadCommentAudio } from '../../hooks/useComments'
 import { useAuthStore } from '../../store/auth.store'
-import { UserType } from '@votz/shared-types'
+import { FlagTargetType, UserType } from '@votz/shared-types'
 import { VoiceRecorder } from './VoiceRecorder'
 import { VoiceCommentPlayer } from './VoiceCommentPlayer'
+import { FlagContentModal } from '../moderation/FlagContentModal'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -395,6 +396,7 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
   const [showReplyForm, setShowReplyForm] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(comment.content)
+  const [flagOpen, setFlagOpen] = useState(false)
   const { mutate: edit, isPending: saving } = useEditComment(reportId)
   const { mutate: del, isPending: deleting } = useDeleteComment(reportId)
 
@@ -477,6 +479,11 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
                 Editar
               </ActionBtn>
             )}
+            {currentUserId && !isOwner && (
+              <ActionBtn type="button" onClick={() => setFlagOpen(true)}>
+                Sinalizar
+              </ActionBtn>
+            )}
             {(isOwner || canModerate) && (
               <ActionBtn
                 $danger
@@ -489,6 +496,13 @@ function CommentRow({ comment, reportId, currentUserId, canModerate, reply }: Co
             )}
           </CommentActions>
         )}
+
+        <FlagContentModal
+          isOpen={flagOpen}
+          targetType={FlagTargetType.COMMENT}
+          targetId={comment.id}
+          onClose={() => setFlagOpen(false)}
+        />
 
         {showReplyForm && !editing && (
           <div style={{ marginTop: 12 }}>

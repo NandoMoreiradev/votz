@@ -11,8 +11,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto'
 import { AcceptConsentDto } from './dto/accept-consent.dto'
 import { DeleteAccountDto } from './dto/delete-account.dto'
 import { LGPD_QUEUE, LgpdExportJob } from './lgpd.processor'
-
-const SUPPORT_EMAIL = 'fernandomoreira.dev@gmail.com'
+import { SUPPORT_EMAIL } from '../common/legal.constants'
 
 @Injectable()
 export class UsersService {
@@ -198,6 +197,8 @@ export class UsersService {
       await tx.timelineEvent.updateMany({ where: { authorId: userId }, data: { authorId: null } })
       await tx.propostaTimeline.updateMany({ where: { autorId: userId }, data: { autorId: null } })
       await tx.registrationRequest.updateMany({ where: { reviewerId: userId }, data: { reviewerId: null } })
+      await tx.contentFlag.updateMany({ where: { reporterId: userId }, data: { reporterId: null } })
+      await tx.moderationAction.updateMany({ where: { actorId: userId }, data: { actorId: null } })
 
       // Decrement debate poll option counters before deleting user poll votes
       const pollVotes = await tx.debatePollVote.findMany({

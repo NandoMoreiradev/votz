@@ -100,7 +100,7 @@ export const diretrizesDaComunidade: LegalDoc = {
       id: 'moderacao',
       title: 'Como funciona a moderação',
       blocks: [
-        { p: 'A equipe do Votz analisa conteúdos e denúncias. Dependendo da gravidade e de a pessoa já ter errado antes, podemos:' },
+        { p: 'A equipe do Votz analisa conteúdos e sinalizações. Dependendo da gravidade e de a pessoa já ter errado antes, podemos:' },
         {
           ul: [
             '**remover** o conteúdo;',
@@ -120,10 +120,11 @@ export const diretrizesDaComunidade: LegalDoc = {
       ],
     },
     {
-      id: 'denunciar',
-      title: 'Como avisar sobre um problema',
+      id: 'sinalizar',
+      title: 'Como sinalizar um problema',
       blocks: [
-        { p: `Escreva para [${E.email}](mailto:${E.email}) com: o **link do relato ou comentário**, o **motivo** e, se tiver, a **prova**. Em risco imediato, ligue 190, 192 ou 193.` },
+        { p: 'Quem tiver conta confirmada pode clicar no botão **Sinalizar** em qualquer relato ou comentário, escolher o motivo e explicar o que aconteceu.' },
+        { p: `Quem não tem conta ou precisar tratar de um caso especial pode escrever para [${E.email}](mailto:${E.email}) com: o **link do relato ou comentário**, o **motivo** e, se tiver, a **prova**. Em risco imediato, ligue 190, 192 ou 193.` },
       ],
     },
     {

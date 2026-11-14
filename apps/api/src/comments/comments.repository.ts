@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { ModerationActionType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 const COMMENT_SELECT = {
@@ -59,7 +60,15 @@ export class CommentsRepository {
   }
 
   findById(id: string) {
-    return this.prisma.comment.findUnique({ where: { id }, select: { id: true, authorId: true } })
+    return this.prisma.comment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        authorId: true,
+        mediaKey: true,
+        author: { select: { name: true, email: true } },
+      },
+    })
   }
 
   update(id: string, content: string) {
@@ -71,6 +80,26 @@ export class CommentsRepository {
   }
 
   delete(id: string) {
-    return this.prisma.comment.delete({ where: { id } })
+    return this.prisma.$transaction(async (tx) => {
+      await tx.comment.updateMany({ where: { parentId: id }, data: { parentId: null } })
+      return tx.comment.delete({ where: { id } })
+    })
+  }
+
+  deleteWithAudit(id: string, actorId: string, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.comment.updateMany({ where: { parentId: id }, data: { parentId: null } })
+      await tx.comment.delete({ where: { id } })
+      const action = await tx.moderationAction.create({
+        data: {
+          action: ModerationActionType.COMMENT_REMOVED,
+          targetType: 'COMMENT',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+      return { actionId: action.id }
+    })
   }
 }

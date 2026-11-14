@@ -91,3 +91,32 @@ export enum VoteType {
   SUPPORT = 'SUPPORT',
   ME_TOO = 'ME_TOO',
 }
+
+export enum ModerationActionType {
+  REPORT_REMOVED = 'REPORT_REMOVED',
+  COMMENT_REMOVED = 'COMMENT_REMOVED',
+  USER_BANNED = 'USER_BANNED',
+  USER_UNBANNED = 'USER_UNBANNED',
+}
+
+export enum FlagTargetType {
+  REPORT = 'REPORT',
+  COMMENT = 'COMMENT',
+}
+
+export enum FlagReason {
+  FALSE_INFO = 'FALSE_INFO',
+  OFFENSIVE = 'OFFENSIVE',
+  PERSONAL_DATA = 'PERSONAL_DATA',
+  SEXUAL_OR_VIOLENT = 'SEXUAL_OR_VIOLENT',
+  SPAM_OR_ADS = 'SPAM_OR_ADS',
+  FAKE_PROFILE = 'FAKE_PROFILE',
+  COPYRIGHT = 'COPYRIGHT',
+  OTHER = 'OTHER',
+}
+
+export enum FlagStatus {
+  OPEN = 'OPEN',
+  ACTIONED = 'ACTIONED',
+  DISMISSED = 'DISMISSED',
+}

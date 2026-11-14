@@ -176,6 +176,8 @@ describe('UsersService', () => {
           updateMany: jest.fn().mockResolvedValue({ count: 0 }),
           deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
+        contentFlag: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        moderationAction: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         debatePollVote: {
           findMany: jest.fn().mockResolvedValue([
             { optionId: 'opt-1' },
@@ -291,6 +293,14 @@ describe('UsersService', () => {
       expect(tx.registrationRequest.updateMany).toHaveBeenCalledWith({
         where: { reviewerId: 'u1' },
         data: { reviewerId: null },
+      })
+      expect(tx.contentFlag.updateMany).toHaveBeenCalledWith({
+        where: { reporterId: 'u1' },
+        data: { reporterId: null },
+      })
+      expect(tx.moderationAction.updateMany).toHaveBeenCalledWith({
+        where: { actorId: 'u1' },
+        data: { actorId: null },
       })
 
       expect(tx.debatePollOption.update).toHaveBeenCalledWith({

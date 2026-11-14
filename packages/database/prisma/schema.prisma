@@ -283,6 +283,8 @@ model User {
   debateQuestions      DebateQuestion[]
   debateMessages       DebateMessage[]
   debatePollVotes      DebatePollVote[]
+  moderationActions    ModerationAction[] @relation("ModerationActor")
+  contentFlags         ContentFlag[]      @relation("FlagReporter")
 
   @@map("users")
 }
@@ -843,4 +845,67 @@ model AccessLog {
   @@index([createdAt])
   @@index([userId])
   @@map("access_logs")
+}
+
+enum ModerationActionType {
+  REPORT_REMOVED
+  COMMENT_REMOVED
+  USER_BANNED
+  USER_UNBANNED
+}
+
+model ModerationAction {
+  id         String               @id @default(uuid())
+  action     ModerationActionType
+  targetType String               // "REPORT" | "COMMENT" | "USER"
+  targetId   String
+  reason     String               // motivo escrito pelo moderador (obrigatório ao remover/banir)
+  actorId    String?              // quem moderou
+  actor      User?                @relation("ModerationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  notifiedAt DateTime?            // quando o autor foi avisado (nulo se não havia a quem avisar)
+  createdAt  DateTime             @default(now())
+
+  @@index([targetType, targetId])
+  @@map("moderation_actions")
+}
+
+enum FlagTargetType {
+  REPORT
+  COMMENT
+}
+
+enum FlagReason {
+  FALSE_INFO
+  OFFENSIVE
+  PERSONAL_DATA
+  SEXUAL_OR_VIOLENT
+  SPAM_OR_ADS
+  FAKE_PROFILE
+  COPYRIGHT
+  OTHER
+}
+
+enum FlagStatus {
+  OPEN
+  ACTIONED
+  DISMISSED
+}
+
+model ContentFlag {
+  id             String         @id @default(uuid())
+  targetType     FlagTargetType
+  targetId       String
+  reason         FlagReason
+  details        String?        @db.VarChar(500)
+  status         FlagStatus     @default(OPEN)
+  reporterId     String?
+  reporter       User?          @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  resolvedById   String?
+  resolvedAt     DateTime?
+  resolutionNote String?        @db.VarChar(500)
+  createdAt      DateTime       @default(now())
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt])
+  @@map("content_flags")
 }

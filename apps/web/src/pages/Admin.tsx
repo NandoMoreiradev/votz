@@ -1,10 +1,24 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { FlagStatus, FlagTargetType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
+import {
+  ContentFlagItem,
+  FLAG_REASON_LABEL_MAP,
+  useAdminFlags,
+  useResolveFlag,
+} from '../hooks/useModeration'
+import { ModerationReasonModal } from '../components/moderation/ModerationReasonModal'
+
+function extractApiError(err: unknown, fallback: string): string {
+  const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
+  if (Array.isArray(msg)) return msg[0] || fallback
+  return msg || fallback
+}
 
 // ── Acesso ─────────────────────────────────────────────────────────────────
 
@@ -70,6 +84,9 @@ const Tabs = styled.div`
 `
 
 const Tab = styled.button<{ $active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 20px;
   border: none;
   background: none;
@@ -82,6 +99,34 @@ const Tab = styled.button<{ $active: boolean }>`
   transition: all 0.15s;
 
   &:hover { color: ${({ theme }) => theme.colors.text}; }
+`
+
+const TabCount = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.action};
+  color: ${({ theme }) => theme.colors.white};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+`
+
+const PreviewExcerpt = styled.p`
+  margin: 4px 0 0;
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.4;
+`
+
+const PreviewLink = styled(Link)`
+  color: ${({ theme }) => theme.colors.primary};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-decoration: underline;
 `
 
 const SearchInput = styled.input`
@@ -233,12 +278,21 @@ function UsersTab() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null)
+  const [banError, setBanError] = useState<string | null>(null)
   const { data, isLoading } = useAdminUsers(search, page)
 
   const ban = useMutation({
-    mutationFn: ({ id, banned }: { id: string; banned: boolean }) =>
-      api.patch(`/admin/users/${id}/ban`, { banned }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+    mutationFn: ({ id, banned, reason }: { id: string; banned: boolean; reason?: string }) =>
+      api.patch(`/admin/users/${id}/ban`, { banned, reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setBanTarget(null)
+      setBanError(null)
+    },
+    onError: (err) => {
+      setBanError(extractApiError(err, 'Não foi possível atualizar o status do usuário.'))
+    },
   })
 
   return (
@@ -266,7 +320,14 @@ function UsersTab() {
                 <Td>
                   <ActionBtn
                     $variant={u.banned ? 'success' : 'danger'}
-                    onClick={() => ban.mutate({ id: u.id, banned: !u.banned })}
+                    onClick={() => {
+                      if (u.banned) {
+                        ban.mutate({ id: u.id, banned: false })
+                      } else {
+                        setBanError(null)
+                        setBanTarget({ id: u.id, name: u.name })
+                      }
+                    }}
                   >
                     {u.banned ? 'Desbanir' : 'Banir'}
                   </ActionBtn>
@@ -276,19 +337,46 @@ function UsersTab() {
           </tbody>
         </Table>
       )}
+      <ModerationReasonModal
+        isOpen={Boolean(banTarget)}
+        title={`Banir ${banTarget?.name ?? 'usuário'}`}
+        description="O usuário será bloqueado imediatamente e receberá este motivo por e-mail com instruções para contestação."
+        confirmLabel="Confirmar banimento"
+        isPending={ban.isPending}
+        errorMessage={banError}
+        onConfirm={(reason) => {
+          if (banTarget) ban.mutate({ id: banTarget.id, banned: true, reason })
+        }}
+        onClose={() => {
+          setBanTarget(null)
+          setBanError(null)
+        }}
+      />
     </div>
   )
 }
 
-function ReportsTab({ isAdmin }: { isAdmin: boolean }) {
+function ReportsTab() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const { data, isLoading } = useAdminReports(search, page)
 
   const del = useMutation({
-    mutationFn: (id: string) => api.delete(`/admin/reports/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-reports'] }),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.delete(`/admin/reports/${id}`, { data: { reason } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-reports'] })
+      qc.invalidateQueries({ queryKey: ['admin-flags'] })
+      qc.invalidateQueries({ queryKey: ['admin-stats'] })
+      setDeleteTarget(null)
+      setDeleteError(null)
+    },
+    onError: (err) => {
+      setDeleteError(extractApiError(err, 'Não foi possível remover o relato.'))
+    },
   })
 
   const STATUS_COLORS: Record<string, string> = {
@@ -303,7 +391,7 @@ function ReportsTab({ isAdmin }: { isAdmin: boolean }) {
         <Table>
           <thead>
             <tr>
-              <Th>Título</Th><Th>Categoria</Th><Th>Status</Th><Th>Autor</Th><Th>Votos</Th>{isAdmin && <Th>Ações</Th>}
+              <Th>Título</Th><Th>Categoria</Th><Th>Status</Th><Th>Autor</Th><Th>Votos</Th><Th>Ações</Th>
             </tr>
           </thead>
           <tbody>
@@ -318,18 +406,185 @@ function ReportsTab({ isAdmin }: { isAdmin: boolean }) {
                 <Td><Badge $color={STATUS_COLORS[r.status]}>{r.status}</Badge></Td>
                 <Td>{r.anonymous ? <span style={{ color: '#9CA3AF' }}>Anônimo</span> : r.author?.name}</Td>
                 <Td style={{ fontFamily: 'monospace' }}>{r._count?.votes ?? 0}</Td>
-                {isAdmin && (
-                  <Td>
-                    <ActionBtn $variant="danger" onClick={() => { if (confirm('Excluir este relato?')) del.mutate(r.id) }}>
-                      Excluir
-                    </ActionBtn>
-                  </Td>
-                )}
+                <Td>
+                  <ActionBtn
+                    $variant="danger"
+                    onClick={() => {
+                      setDeleteError(null)
+                      setDeleteTarget({ id: r.id, title: r.title })
+                    }}
+                  >
+                    Excluir
+                  </ActionBtn>
+                </Td>
               </Tr>
             ))}
           </tbody>
         </Table>
       )}
+      <ModerationReasonModal
+        isOpen={Boolean(deleteTarget)}
+        title="Remover relato"
+        description={`Você está removendo "${deleteTarget?.title ?? ''}". O motivo será registrado em auditoria e enviado ao autor, se identificado.`}
+        confirmLabel="Remover relato"
+        isPending={del.isPending}
+        errorMessage={deleteError}
+        onConfirm={(reason) => {
+          if (deleteTarget) del.mutate({ id: deleteTarget.id, reason })
+        }}
+        onClose={() => {
+          setDeleteTarget(null)
+          setDeleteError(null)
+        }}
+      />
+    </div>
+  )
+}
+
+function FlagsTab() {
+  const [status, setStatus] = useState<FlagStatus>(FlagStatus.OPEN)
+  const [page, setPage] = useState(1)
+  const [pendingAction, setPendingAction] = useState<{
+    flag: ContentFlagItem
+    action: 'DISMISS' | 'REMOVE_CONTENT'
+  } | null>(null)
+  const [resolveError, setResolveError] = useState<string | null>(null)
+
+  const { data, isLoading } = useAdminFlags(status, page)
+  const resolveFlag = useResolveFlag()
+
+  const FLAG_STATUS_LABEL: Record<FlagStatus, string> = {
+    OPEN: 'Abertas',
+    ACTIONED: 'Removidas',
+    DISMISSED: 'Descartadas',
+  }
+
+  return (
+    <div>
+      <FilterRow>
+        {([FlagStatus.OPEN, FlagStatus.ACTIONED, FlagStatus.DISMISSED] as FlagStatus[]).map((st) => (
+          <FilterBtn
+            key={st}
+            $active={status === st}
+            onClick={() => {
+              setStatus(st)
+              setPage(1)
+            }}
+          >
+            {FLAG_STATUS_LABEL[st]}
+          </FilterBtn>
+        ))}
+      </FilterRow>
+
+      {isLoading ? (
+        <Empty>Carregando...</Empty>
+      ) : !data?.data?.length ? (
+        <Empty>Nenhuma sinalização neste filtro.</Empty>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Conteúdo</Th>
+              <Th>Motivo e detalhes</Th>
+              <Th>Sinalizado por</Th>
+              <Th>Data</Th>
+              <Th>{status === FlagStatus.OPEN ? 'Ações' : 'Observação'}</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.data.map((flag) => (
+              <Tr key={flag.id}>
+                <Td>
+                  <div>
+                    <Badge>{flag.targetType === FlagTargetType.REPORT ? 'Relato' : 'Comentário'}</Badge>
+                    {flag.targetPreview.link && (
+                      <span style={{ marginLeft: 8 }}>
+                        <PreviewLink to={flag.targetPreview.link}>Ver conteúdo</PreviewLink>
+                      </span>
+                    )}
+                  </div>
+                  {flag.targetPreview.title && (
+                    <div style={{ fontWeight: 600, marginTop: 4 }}>{flag.targetPreview.title}</div>
+                  )}
+                  <PreviewExcerpt>{flag.targetPreview.excerpt}</PreviewExcerpt>
+                </Td>
+                <Td>
+                  <div style={{ fontWeight: 600 }}>
+                    {FLAG_REASON_LABEL_MAP[flag.reason] ?? flag.reason}
+                  </div>
+                  {flag.details && <PreviewExcerpt>"{flag.details}"</PreviewExcerpt>}
+                </Td>
+                <Td>{flag.reporter?.name ?? 'Conta excluída'}</Td>
+                <Td>{new Date(flag.createdAt).toLocaleDateString('pt-BR')}</Td>
+                <Td>
+                  {status === FlagStatus.OPEN ? (
+                    <>
+                      <ActionBtn
+                        onClick={() => {
+                          setResolveError(null)
+                          setPendingAction({ flag, action: 'DISMISS' })
+                        }}
+                      >
+                        Descartar
+                      </ActionBtn>
+                      <ActionBtn
+                        $variant="danger"
+                        onClick={() => {
+                          setResolveError(null)
+                          setPendingAction({ flag, action: 'REMOVE_CONTENT' })
+                        }}
+                      >
+                        Remover conteúdo
+                      </ActionBtn>
+                    </>
+                  ) : (
+                    <PreviewExcerpt>{flag.resolutionNote ?? '—'}</PreviewExcerpt>
+                  )}
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      <ModerationReasonModal
+        isOpen={Boolean(pendingAction)}
+        title={
+          pendingAction?.action === 'REMOVE_CONTENT'
+            ? 'Remover conteúdo sinalizado'
+            : 'Descartar sinalização'
+        }
+        description={
+          pendingAction?.action === 'REMOVE_CONTENT'
+            ? 'O conteúdo será removido, a ação ficará registrada e o autor (se identificado) receberá este motivo por e-mail.'
+            : 'Registre por que esta sinalização não viola as Diretrizes da Comunidade.'
+        }
+        confirmLabel={
+          pendingAction?.action === 'REMOVE_CONTENT' ? 'Remover conteúdo' : 'Descartar sinalização'
+        }
+        danger={pendingAction?.action === 'REMOVE_CONTENT'}
+        isPending={resolveFlag.isPending}
+        errorMessage={resolveError}
+        onConfirm={(note) => {
+          if (!pendingAction) return
+          resolveFlag.mutate(
+            { id: pendingAction.flag.id, action: pendingAction.action, note },
+            {
+              onSuccess: () => {
+                setPendingAction(null)
+                setResolveError(null)
+              },
+              onError: (err) => {
+                setResolveError(extractApiError(err, 'Não foi possível concluir a análise.'))
+              },
+            },
+          )
+        }}
+        onClose={() => {
+          setPendingAction(null)
+          setResolveError(null)
+        }}
+      />
     </div>
   )
 }
@@ -668,16 +923,19 @@ function RequestsTab() {
   )
 }
 
-type TabId = 'users' | 'reports' | 'entities' | 'politicians' | 'requests'
+type TabId = 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
   const [tab, setTab] = useState<TabId>('requests')
   const { data: stats } = useAdminStats()
+  const canAccess = Boolean(user && ALLOWED.has(user.type))
+  const { data: openFlags } = useAdminFlags(FlagStatus.OPEN, 1, canAccess)
 
   if (!user || !ALLOWED.has(user.type)) return <Navigate to="/" replace />
 
   const isAdmin = user.type === 'ADMIN'
+  const openCount = openFlags?.meta?.openCount ?? 0
 
   return (
     <Page>
@@ -712,6 +970,10 @@ export function Admin() {
 
         <Tabs>
           <Tab $active={tab === 'requests'} onClick={() => setTab('requests')}>Solicitações</Tab>
+          <Tab $active={tab === 'flags'} onClick={() => setTab('flags')}>
+            Sinalizações
+            {openCount > 0 && <TabCount>{openCount}</TabCount>}
+          </Tab>
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
@@ -719,9 +981,10 @@ export function Admin() {
         </Tabs>
 
         {tab === 'requests'   && <RequestsTab />}
+        {tab === 'flags'      && <FlagsTab />}
         {tab === 'entities'   && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
-        {tab === 'reports'    && <ReportsTab isAdmin={isAdmin} />}
+        {tab === 'reports'    && <ReportsTab />}
         {tab === 'users'      && isAdmin && <UsersTab />}
       </Content>
     </Page>

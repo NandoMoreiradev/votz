@@ -8,12 +8,11 @@ import { EntityPlan, PoliticianPlan, CompanyPlan } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
+import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { UserType } from '@votz/shared-types'
 import { AdminService } from './admin.service'
-
-class SetBanDto {
-  banned: boolean
-}
+import { SetBanDto } from './dto/ban-user.dto'
+import { DeleteReportDto } from './dto/delete-report.dto'
 
 class SetTypeDto {
   @IsEnum(UserType)
@@ -65,8 +64,12 @@ export class AdminController {
 
   @Patch('users/:id/ban')
   @ApiOperation({ summary: 'Ban or unban a user' })
-  banUser(@Param('id') id: string, @Body() dto: SetBanDto) {
-    return this.service.banUser(id, dto.banned)
+  banUser(
+    @Param('id') id: string,
+    @Body() dto: SetBanDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.banUser(id, dto.banned, actor.id, dto.reason)
   }
 
   @Patch('users/:id/type')
@@ -88,10 +91,14 @@ export class AdminController {
   }
 
   @Delete('reports/:id')
-  @Roles(UserType.ADMIN)
-  @ApiOperation({ summary: 'Delete a report (admin only)' })
-  deleteReport(@Param('id') id: string) {
-    return this.service.deleteReport(id)
+  @Roles(UserType.MODERATOR, UserType.ADMIN)
+  @ApiOperation({ summary: 'Delete a report (moderator or admin)' })
+  deleteReport(
+    @Param('id') id: string,
+    @Body() dto: DeleteReportDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.deleteReport(id, actor.id, dto.reason)
   }
 
   // ── Entities ──────────────────────────────────────────────────────────────

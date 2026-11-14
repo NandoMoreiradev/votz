@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
-import { HandsClapping, UsersThree } from '@phosphor-icons/react'
-import { VoteType, EventType, ReportStatus, RecipientType, UserType } from '@votz/shared-types'
+import { HandsClapping, UsersThree, Flag } from '@phosphor-icons/react'
+import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
+import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
@@ -73,6 +74,28 @@ const Badges = styled.div`
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+`
+
+const FlagReportBtn = styled.button`
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.action};
+    border-color: ${({ theme }) => theme.colors.action};
+  }
 `
 
 const Title = styled.h1`
@@ -692,6 +715,7 @@ export function ReportDetail() {
 
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
+  const [flagOpen, setFlagOpen] = useState(false)
   const disputeMutation = useDisputeReport(id!)
 
   const isActorType = activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY'
@@ -845,7 +869,20 @@ export function ReportDetail() {
               <Badges>
                 <CategoryBadge category={report.category} />
                 <StatusBadge status={report.status} />
+                {user && !(!report.anonymous && report.author?.id === user.id) && (
+                  <FlagReportBtn type="button" onClick={() => setFlagOpen(true)}>
+                    <Flag size={14} weight="bold" />
+                    Sinalizar
+                  </FlagReportBtn>
+                )}
               </Badges>
+
+              <FlagContentModal
+                isOpen={flagOpen}
+                targetType={FlagTargetType.REPORT}
+                targetId={report.id}
+                onClose={() => setFlagOpen(false)}
+              />
 
               <Title>{report.title}</Title>
               {location && <Location>📍 {location}</Location>}
