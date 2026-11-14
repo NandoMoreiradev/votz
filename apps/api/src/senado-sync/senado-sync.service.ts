@@ -1,24 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { PoliticianStatus } from '@prisma/client'
 import { XMLParser } from 'fast-xml-parser'
+import {
+  normalizePartyAbbreviation,
+  normalizePersonName,
+} from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 
 export const SENADO_SYNC_QUEUE = 'senado-sync'
 const SENADO_URL = 'https://legis.senado.leg.br/dadosabertos/senador/lista/atual'
 
-// fast-xml-parser configurado para sempre retornar arrays nos elementos-chave
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   isArray: (tagName) => ['Parlamentar', 'Mandato'].includes(tagName),
 })
 
-// ── Tipos da API do Senado ────────────────────────────────────────────────────
-
 interface SenadoIdentificacao {
   CodigoParlamentar: number | string
   NomeParlamentar: string
-  FormaTratamento: string        // "Senador" | "Senadora"
+  NomeCompletoParlamentar?: string
+  FormaTratamento: string
   SiglaPartidoParlamentar: string
   UfParlamentar: string
   UrlFotoParlamentar?: string
@@ -26,12 +29,12 @@ interface SenadoIdentificacao {
 
 interface SenadoLegislatura {
   NumeroLegislatura?: number
-  DataInicio: string             // YYYY-MM-DD
+  DataInicio: string
   DataFim: string
 }
 
 interface SenadoMandato {
-  DescricaoParticipacao: string  // "Titular" | "1º Suplente" | "2º Suplente"
+  DescricaoParticipacao: string
   PrimeiraLegislatura?: SenadoLegislatura
   SegundaLegislatura?: SenadoLegislatura
 }
@@ -83,12 +86,26 @@ export class SenadoSyncService {
     const parlamentares = await this.fetchSenadores()
     this.logger.log(`Fetched ${parlamentares.length} senators from API`)
 
+    const allParties = await this.prisma.party.findMany({
+      select: { id: true, abbreviation: true },
+    })
+    const partyMap = new Map(allParties.map((p) => [p.abbreviation.toUpperCase(), p.id]))
+
+    const existingSen = await this.prisma.politician.findMany({
+      where: { office: { contains: 'Senador', mode: 'insensitive' } },
+      select: { id: true, tseId: true, name: true, state: true, termStart: true, termEnd: true, avatarUrl: true },
+    })
+    const byTseId = new Map(existingSen.filter((p) => p.tseId).map((p) => [p.tseId!, p]))
+    const byReconcile = new Map(
+      existingSen.map((p) => [`${p.state.toUpperCase()}|${normalizePersonName(p.name)}`, p]),
+    )
+
     let created = 0
     let updated = 0
     let skipped = 0
 
     for (const p of parlamentares) {
-      const result = await this.upsertSenador(p)
+      const result = await this.upsertSenador(p, partyMap, byTseId, byReconcile)
       if (result === 'created') created++
       else if (result === 'updated') updated++
       else skipped++
@@ -104,13 +121,11 @@ export class SenadoSyncService {
 
     this.logger.log(
       `Senado sync finished — created: ${created}, updated: ${updated}, skipped: ${skipped} ` +
-      `(${result.finishedAt.getTime() - startedAt.getTime()}ms)`,
+        `(${result.finishedAt.getTime() - startedAt.getTime()}ms)`,
     )
 
     return result
   }
-
-  // ── Fetch & parse ─────────────────────────────────────────────────────────
 
   private async fetchSenadores(): Promise<SenadoParlamentar[]> {
     const res = await fetch(SENADO_URL, {
@@ -121,76 +136,103 @@ export class SenadoSyncService {
     const xml = await res.text()
     const parsed = xmlParser.parse(xml)
 
-    // O envelope raiz pode variar — tenta os dois caminhos conhecidos
     const parlamentares: SenadoParlamentar[] =
       parsed?.ListaParlamentarEmExercicio?.Parlamentares?.Parlamentar ??
       parsed?.Parlamentares?.Parlamentar ??
       []
 
-    // Filtra apenas titulares
     return parlamentares.filter((p) => {
       const mandatos: SenadoMandato[] = p.Mandatos?.Mandato ?? []
       return mandatos.some((m) => m.DescricaoParticipacao === 'Titular')
     })
   }
 
-  // ── Upsert ────────────────────────────────────────────────────────────────
-
-  private async upsertSenador(p: SenadoParlamentar): Promise<'created' | 'updated' | 'skipped'> {
+  private async upsertSenador(
+    p: SenadoParlamentar,
+    partyMap: Map<string, string>,
+    byTseId: Map<string, { id: string; tseId: string | null; termStart: Date; termEnd: Date; avatarUrl: string | null }>,
+    byReconcile: Map<string, { id: string; tseId: string | null; termStart: Date; termEnd: Date; avatarUrl: string | null }>,
+  ): Promise<'created' | 'updated' | 'skipped'> {
     const id = p.IdentificacaoParlamentar
     const tseId = `SEN-${id.CodigoParlamentar}`
 
-    const party = await this.prisma.party.findFirst({
-      where: { abbreviation: id.SiglaPartidoParlamentar },
-      select: { id: true },
-    })
+    const sigla = normalizePartyAbbreviation(id.SiglaPartidoParlamentar)
+    const partyId =
+      partyMap.get(sigla.toUpperCase()) ?? partyMap.get(id.SiglaPartidoParlamentar.toUpperCase())
 
-    if (!party) {
-      this.logger.warn(`Skipping ${id.NomeParlamentar} — party "${id.SiglaPartidoParlamentar}" not found`)
+    if (!partyId) {
+      this.logger.warn(
+        `Skipping ${id.NomeParlamentar} — party "${id.SiglaPartidoParlamentar}" not found`,
+      )
       return 'skipped'
     }
 
-    // Pega o mandato titular para extrair datas
     const mandatos: SenadoMandato[] = p.Mandatos?.Mandato ?? []
     const mandato = mandatos.find((m) => m.DescricaoParticipacao === 'Titular')
 
-    // Início do mandato (1ª legislatura)
     const termStart = mandato?.PrimeiraLegislatura?.DataInicio
-      ? new Date(mandato.PrimeiraLegislatura.DataInicio)
-      : new Date('2023-02-01')
+      ? new Date(`${mandato.PrimeiraLegislatura.DataInicio}T00:00:00.000Z`)
+      : new Date('2023-02-01T00:00:00.000Z')
 
-    // Fim do mandato completo (8 anos = 2 legislaturas)
     const termEnd = mandato?.SegundaLegislatura?.DataFim
-      ? new Date(mandato.SegundaLegislatura.DataFim)
+      ? new Date(`${mandato.SegundaLegislatura.DataFim}T23:59:59.999Z`)
       : mandato?.PrimeiraLegislatura?.DataFim
-        ? new Date(mandato.PrimeiraLegislatura.DataFim)
-        : new Date('2031-01-31')
+        ? new Date(`${mandato.PrimeiraLegislatura.DataFim}T23:59:59.999Z`)
+        : new Date('2031-01-31T23:59:59.999Z')
 
-    // "Senador" ou "Senadora" a partir do FormaTratamento
     const office = id.FormaTratamento ?? 'Senador(a)'
+    const officialPhoto =
+      id.UrlFotoParlamentar ??
+      `https://www.senado.leg.br/senadores/img/fotos-oficiais/senador${id.CodigoParlamentar}.jpg`
+
+    const reconcileKeyParl = `${id.UfParlamentar.toUpperCase()}|${normalizePersonName(id.NomeParlamentar)}`
+    const reconcileKeyFull = id.NomeCompletoParlamentar
+      ? `${id.UfParlamentar.toUpperCase()}|${normalizePersonName(id.NomeCompletoParlamentar)}`
+      : reconcileKeyParl
+
+    const existing =
+      byTseId.get(tseId) ?? byReconcile.get(reconcileKeyParl) ?? byReconcile.get(reconcileKeyFull)
 
     const payload = {
-      name:          id.NomeParlamentar,
-      partyId:       party.id,
+      name: id.NomeParlamentar,
+      partyId,
       office,
-      state:         id.UfParlamentar,
-      electoralZone: id.UfParlamentar,  // senadores representam o estado inteiro
-      termStart,
-      termEnd,
-      avatarUrl:     id.UrlFotoParlamentar ?? null,
+      state: id.UfParlamentar,
+      electoralZone: id.UfParlamentar,
+      status: PoliticianStatus.ATIVO,
     }
 
-    const existing = await this.prisma.politician.findUnique({
-      where: { tseId },
-      select: { id: true },
-    })
-
     if (existing) {
-      await this.prisma.politician.update({ where: { tseId }, data: payload })
+      const nextAvatar = officialPhoto || existing.avatarUrl || null
+      const saved = await this.prisma.politician.update({
+        where: { id: existing.id },
+        data: {
+          ...payload,
+          tseId,
+          termStart: existing.termStart < termStart ? existing.termStart : termStart,
+          termEnd: termEnd > existing.termEnd ? termEnd : existing.termEnd,
+          ...(nextAvatar !== null && { avatarUrl: nextAvatar }),
+        },
+        select: { id: true, tseId: true, termStart: true, termEnd: true, avatarUrl: true },
+      })
+      byTseId.set(tseId, saved)
+      byReconcile.set(reconcileKeyParl, saved)
       return 'updated'
     }
 
-    await this.prisma.politician.create({ data: { ...payload, tseId, verified: false } })
+    const createdRecord = await this.prisma.politician.create({
+      data: {
+        ...payload,
+        tseId,
+        termStart,
+        termEnd,
+        avatarUrl: officialPhoto,
+        verified: false,
+      },
+      select: { id: true, tseId: true, termStart: true, termEnd: true, avatarUrl: true },
+    })
+    byTseId.set(tseId, createdRecord)
+    byReconcile.set(reconcileKeyParl, createdRecord)
     return 'created'
   }
 }

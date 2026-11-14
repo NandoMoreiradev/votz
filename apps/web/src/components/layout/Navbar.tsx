@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import logoSrc from '../../assets/logo.png'
+import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../ui/Button'
@@ -465,7 +465,7 @@ export function Navbar() {
       <Nav>
         <Inner>
           <Logo to="/">
-            <img src={logoSrc} alt="Votz" style={{ height: 28, width: 'auto', display: 'block' }} />
+            <img src={logoSrc} alt="Votz" style={{ height: 36, width: 'auto', display: 'block' }} />
           </Logo>
 
           <NavLinks>

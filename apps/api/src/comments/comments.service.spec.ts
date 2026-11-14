@@ -10,6 +10,7 @@ import { CommentsRepository } from './comments.repository'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { PressureService } from '../press/pressure.service'
+import { TranscriptionService } from '../transcription/transcription.service'
 
 const mockRepo = {
   create: jest.fn(),
@@ -22,6 +23,7 @@ const mockPrismaReport = { findUnique: jest.fn() }
 const mockPrisma = { report: mockPrismaReport }
 const mockNotifications = { notify: jest.fn() }
 const mockPressure = { enqueueReport: jest.fn().mockResolvedValue(undefined) }
+const mockTranscription = { enqueue: jest.fn().mockResolvedValue(undefined) }
 
 function makeComment(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -46,6 +48,7 @@ describe('CommentsService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: PressureService, useValue: mockPressure },
+        { provide: TranscriptionService, useValue: mockTranscription },
       ],
     }).compile()
 
@@ -64,7 +67,7 @@ describe('CommentsService', () => {
 
     it('throws NotFoundException when report does not exist', async () => {
       mockPrismaReport.findUnique.mockResolvedValue(null)
-      await expect(service.create('r1', 'u1', dto as any)).rejects.toThrow(NotFoundException)
+      await expect(service.create('r1', 'u1', 'CITIZEN', dto as any)).rejects.toThrow(NotFoundException)
     })
 
     it('creates and returns the comment', async () => {
@@ -73,7 +76,7 @@ describe('CommentsService', () => {
       const comment = makeComment({ reportId: 'r1', authorId: 'u1' })
       mockRepo.create.mockResolvedValue(comment)
 
-      const result = await service.create('r1', 'u1', dto as any)
+      const result = await service.create('r1', 'u1', 'CITIZEN', dto as any)
 
       expect(result).toEqual(comment)
       expect(mockRepo.create).toHaveBeenCalledWith(
@@ -86,7 +89,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue(report)
       mockRepo.create.mockResolvedValue(makeComment({ id: 'c1' }))
 
-      await service.create('r1', 'commenter-99', dto as any)
+      await service.create('r1', 'commenter-99', 'CITIZEN', dto as any)
 
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'owner-1', type: 'NEW_COMMENT' }),
@@ -98,7 +101,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue(report)
       mockRepo.create.mockResolvedValue(makeComment())
 
-      await service.create('r1', 'owner-1', dto as any)
+      await service.create('r1', 'owner-1', 'CITIZEN', dto as any)
 
       expect(mockNotifications.notify).not.toHaveBeenCalled()
     })
@@ -107,7 +110,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue({ id: 'r1', authorId: null, title: 'T' })
       mockRepo.create.mockResolvedValue(makeComment())
 
-      await service.create('r1', 'u1', dto as any)
+      await service.create('r1', 'u1', 'CITIZEN', dto as any)
 
       expect(mockPressure.enqueueReport).toHaveBeenCalledWith('r1')
     })

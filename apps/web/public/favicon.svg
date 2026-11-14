@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Votz">
+  <rect width="120" height="120" rx="28" fill="#1A1A2E"/>
+  <g transform="translate(-4 6)">
+    <path fill="#FFFFFF" d="M24 34H48L60 64V94H48Z"/>
+    <path fill="#E63946" d="M60 64L72 34L80 14H104L72 94H60Z"/>
+  </g>
+</svg>

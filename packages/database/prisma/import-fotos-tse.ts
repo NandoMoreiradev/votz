@@ -2,48 +2,43 @@
  * Importa fotos oficiais dos candidatos TSE para o Cloudflare R2.
  *
  * Execução:
- *   npm run db:import-fotos --workspace=packages/database
+ *   npm run db:import-fotos
+ *   npm run db:import-fotos -- --year=2026
  *
  * O que faz:
- *   - Baixa os ZIPs de fotos do CDN do TSE por UF e ano eleitoral
- *   - Faz match pelo SQ_CANDIDATO (tseId sem prefixo "TSE-")
- *   - Faz upload da foto para o R2 na pasta avatars/
- *   - Atualiza o campo avatarUrl do político no banco
- *
- * Cobertura:
- *   - Eleição 2022: Governadores + Deputados Estaduais/Distritais
- *   - Eleição 2024: Prefeitos + Vereadores
- *
- * Senadores e Deputados Federais já têm avatarUrl preenchido pelo import principal.
+ *   - Busca políticos com tseId "TSE-*" sem avatarUrl
+ *   - Deriva dinamicamente o ano eleitoral (2022, 2024, 2026, 2028...) pelo cargo e fim de mandato
+ *   - Baixa os ZIPs de fotos do CDN do TSE por UF (e BR quando disponível)
+ *   - Faz upload da foto para o R2 em avatars/ e atualiza avatarUrl no banco
  */
 
 import { PrismaClient } from '@prisma/client'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import AdmZip from 'adm-zip'
+import { deriveElectionYearFromTerm, getTseFotoZipUrl } from '@votz/shared-types'
 
 const prisma = new PrismaClient()
 
-const s3 = new S3Client({
-  region: 'auto',
-  endpoint: process.env.CLOUDFLARE_R2_ENDPOINT!,
-  credentials: {
-    accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY!,
-    secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_KEY!,
-  },
-})
-
-const BUCKET     = process.env.CLOUDFLARE_R2_BUCKET!
+const BUCKET = process.env.CLOUDFLARE_R2_BUCKET ?? ''
+const ENDPOINT = process.env.CLOUDFLARE_R2_ENDPOINT ?? ''
+const ACCESS_KEY = process.env.CLOUDFLARE_R2_ACCESS_KEY ?? ''
+const SECRET_KEY = process.env.CLOUDFLARE_R2_SECRET_KEY ?? ''
 const PUBLIC_URL = (process.env.CLOUDFLARE_R2_PUBLIC_URL ?? '').replace(/\/$/, '')
-const UFS = [
-  'AC','AL','AM','AP','BA','CE','DF','ES','GO',
-  'MA','MG','MS','MT','PA','PB','PE','PI','PR',
-  'RJ','RN','RO','RR','RS','SC','SE','SP','TO',
-]
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function zipUrl(ano: string, uf: string) {
-  return `https://cdn.tse.jus.br/estatistica/sead/eleicoes/eleicoes${ano}/fotos/foto_cand${ano}_${uf}_div.zip`
+function createS3Client(): S3Client {
+  if (!BUCKET || !ENDPOINT || !ACCESS_KEY || !SECRET_KEY || ENDPOINT.includes('placeholder')) {
+    throw new Error(
+      'Credenciais reais do Cloudflare R2 (CLOUDFLARE_R2_BUCKET, ENDPOINT, ACCESS_KEY, SECRET_KEY, PUBLIC_URL) são necessárias no .env para upload de fotos.',
+    )
+  }
+  return new S3Client({
+    region: 'auto',
+    endpoint: ENDPOINT,
+    credentials: {
+      accessKeyId: ACCESS_KEY,
+      secretAccessKey: SECRET_KEY,
+    },
+  })
 }
 
 async function downloadZip(url: string): Promise<Buffer | null> {
@@ -53,30 +48,42 @@ async function downloadZip(url: string): Promise<Buffer | null> {
   return Buffer.from(await res.arrayBuffer())
 }
 
-async function uploadToR2(key: string, data: Buffer): Promise<string> {
-  await s3.send(new PutObjectCommand({
-    Bucket: BUCKET,
-    Key: key,
-    Body: data,
-    ContentType: 'image/jpeg',
-    CacheControl: 'public, max-age=31536000, immutable',
-  }))
-  return `${PUBLIC_URL}/${key}`
+async function uploadToR2(s3: S3Client, key: string, data: Buffer): Promise<string> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: data,
+      ContentType: 'image/jpeg',
+      CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  )
+  return PUBLIC_URL ? `${PUBLIC_URL}/${key}` : `${ENDPOINT}/${BUCKET}/${key}`
 }
 
 function sleep(ms: number) {
-  return new Promise(r => setTimeout(r, ms))
+  return new Promise((r) => setTimeout(r, ms))
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+function parseExplicitYear(argv: string[]): number | undefined {
+  for (const arg of argv) {
+    if (arg.startsWith('--year=')) {
+      const n = Number(arg.split('=')[1])
+      if (!Number.isNaN(n) && n >= 2018) return n
+    }
+  }
+  return undefined
+}
 
 async function main() {
-  console.log('🖼️  Iniciando importação de fotos TSE...\n')
+  const explicitYear = parseExplicitYear(process.argv.slice(2))
+  console.log(`🖼️  Iniciando importação de fotos TSE${explicitYear ? ` (ano=${explicitYear})` : ''}...\n`)
 
-  // Buscar apenas políticos TSE sem foto
+  const s3 = createS3Client()
+
   const politicians = await prisma.politician.findMany({
     where: { tseId: { startsWith: 'TSE-' }, avatarUrl: null },
-    select: { id: true, tseId: true, state: true, termStart: true },
+    select: { id: true, tseId: true, office: true, state: true, termStart: true, termEnd: true },
   })
 
   if (politicians.length === 0) {
@@ -86,34 +93,29 @@ async function main() {
 
   console.log(`  ${politicians.length} políticos TSE sem foto encontrados\n`)
 
-  // Mapear SQ_CANDIDATO → político
-  const byId = new Map(politicians.map(p => [p.tseId!.replace('TSE-', ''), p]))
-
-  // Agrupar por (ano, UF)
+  const byId = new Map(politicians.map((p) => [p.tseId!.replace('TSE-', ''), p]))
   const groups = new Map<string, Set<string>>()
 
   for (const p of politicians) {
-    const ano = p.termStart >= new Date('2025-01-01') ? '2024' : '2022'
-    const uf  = p.state || 'BR'
-    if (uf === 'BR') continue // presidente — sem ZIP por UF
+    const ano = String(explicitYear ?? deriveElectionYearFromTerm(p.office, p.termStart, p.termEnd))
+    const uf = p.state || 'BR'
     const key = `${ano}:${uf}`
     if (!groups.has(key)) groups.set(key, new Set())
     groups.get(key)!.add(p.tseId!.replace('TSE-', ''))
   }
 
   let uploaded = 0
-  let notFound = 0
-  let errors   = 0
+  let errors = 0
 
   for (const [groupKey, sqSet] of groups) {
     const [ano, uf] = groupKey.split(':')
-    const url = zipUrl(ano, uf)
+    const url = getTseFotoZipUrl(ano, uf)
 
     process.stdout.write(`  Baixando ${ano}/${uf}... `)
 
     const zipBuf = await downloadZip(url)
     if (!zipBuf) {
-      console.log(`não encontrado`)
+      console.log('não encontrado')
       continue
     }
 
@@ -124,7 +126,6 @@ async function main() {
     for (const entry of entries) {
       if (entry.isDirectory) continue
 
-      // Nome do arquivo: {SQ_CANDIDATO}.jpg  (pode ter path dentro do zip)
       const filename = entry.name.toLowerCase()
       if (!filename.endsWith('.jpg') && !filename.endsWith('.jpeg')) continue
 
@@ -138,8 +139,8 @@ async function main() {
         const imgData = zip.readFile(entry)
         if (!imgData || imgData.length < 100) continue
 
-        const r2Key  = `avatars/tse-${sq}.jpg`
-        const pubUrl = await uploadToR2(r2Key, imgData)
+        const r2Key = `avatars/tse-${sq}.jpg`
+        const pubUrl = await uploadToR2(s3, r2Key, imgData)
 
         await prisma.politician.update({
           where: { id: politician.id },
@@ -147,7 +148,7 @@ async function main() {
         })
 
         uploaded++
-        byId.delete(sq) // evitar re-upload se aparecer em outro ZIP
+        byId.delete(sq)
       } catch (err) {
         errors++
         console.log(`\n  ⚠ Erro ao processar ${sq}: ${(err as Error).message}`)
@@ -155,16 +156,10 @@ async function main() {
     }
 
     process.stdout.write(`  ✓ ${uploaded} enviadas até agora\r`)
-    await sleep(500) // respeitar CDN
+    await sleep(500)
   }
 
-  // Presidente (sem ZIP por UF — sem foto via este método)
-  const semFoto = politicians.filter(p => p.state === '' || p.state === 'BR').length
-  if (semFoto > 0) {
-    console.log(`\n  ℹ ${semFoto} políticos nacionais (Presidente) sem cobertura de foto TSE`)
-  }
-
-  notFound = politicians.length - uploaded - errors
+  const notFound = politicians.length - uploaded - errors
 
   console.log(`
 ✅ Importação de fotos concluída
@@ -175,5 +170,8 @@ async function main() {
 }
 
 main()
-  .catch(err => { console.error('\n❌ Erro:', err); process.exit(1) })
+  .catch((err) => {
+    console.error('\n❌ Erro:', err)
+    process.exit(1)
+  })
   .finally(() => prisma.$disconnect())

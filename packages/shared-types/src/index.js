@@ -19,4 +19,5 @@ __exportStar(require("./report"), exports);
 __exportStar(require("./user"), exports);
 __exportStar(require("./pagination"), exports);
 __exportStar(require("./proposta"), exports);
+__exportStar(require("./election"), exports);
 //# sourceMappingURL=index.js.map

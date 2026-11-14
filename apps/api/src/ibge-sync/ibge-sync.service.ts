@@ -11,13 +11,20 @@ const BATCH_SIZE = 100
 interface IbgeMunicipio {
   id: number
   nome: string
-  microrregiao: {
-    mesorregiao: {
-      UF: {
-        sigla: string
+  microrregiao?: {
+    mesorregiao?: {
+      UF?: {
+        sigla?: string
       }
     }
-  }
+  } | null
+  'regiao-imediata'?: {
+    'regiao-intermediaria'?: {
+      UF?: {
+        sigla?: string
+      }
+    }
+  } | null
 }
 
 export interface IbgeSyncResult {
@@ -101,7 +108,11 @@ export class IbgeSyncService {
       await Promise.all(
         batch.map(async (m) => {
           const ibgeCode = String(m.id)
-          const state = m.microrregiao.mesorregiao.UF.sigla
+          const state =
+            m.microrregiao?.mesorregiao?.UF?.sigla ??
+            m['regiao-imediata']?.['regiao-intermediaria']?.UF?.sigla ??
+            ''
+          if (!state) return
           const legalName = `Prefeitura Municipal de ${m.nome}`
 
           const existing = await this.prisma.entity.findUnique({

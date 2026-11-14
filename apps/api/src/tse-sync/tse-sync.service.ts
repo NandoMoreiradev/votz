@@ -1,51 +1,58 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { PoliticianStatus } from '@prisma/client'
 import AdmZip from 'adm-zip'
+import {
+  TseCandidateRow,
+  TSE_OFFICE_LABEL,
+  TSE_MUNICIPAL_CARGOS,
+  filterTseElectedRows,
+  getLatestConcludedElectionYear,
+  getTermDatesForCargo,
+  getTseConsultaCandUrl,
+  normalizeOfficeCategory,
+  normalizePartyAbbreviation,
+  normalizePersonName,
+} from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 
 export const TSE_SYNC_QUEUE = 'tse-sync'
 
-const TSE_2022_URL = 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2022.zip'
-const TSE_2024_URL = 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2024.zip'
-
-// Mandatos 2022 (federal + estaduais): posse em jan/2023
-const TERM_2022_START = new Date('2023-01-01')
-const TERM_2022_END   = new Date('2026-12-31')
-
-// Mandatos 2024 (municipais): posse em jan/2025
-const TERM_2024_START = new Date('2025-01-01')
-const TERM_2024_END   = new Date('2028-12-31')
-
-// TSE SIT_TOT_TURNO que indicam candidato eleito
-const ELEITO = new Set(['ELEITO', 'ELEITO POR QP', 'ELEITO POR MÉDIA'])
-
-// Mapeamento DS_CARGO → nome do cargo para exibição
-const OFFICE_LABEL: Record<string, string> = {
-  'PRESIDENTE':                     'Presidente da República',
-  'VICE-PRESIDENTE':                'Vice-Presidente da República',
-  'GOVERNADOR':                     'Governador',
-  'GOVERNADOR DO DISTRITO FEDERAL': 'Governador',
-  'VICE-GOVERNADOR':                'Vice-Governador',
-  'DEPUTADO ESTADUAL':              'Deputado Estadual',
-  'DEPUTADO DISTRITAL':             'Deputado Distrital',
-  'PREFEITO':                       'Prefeito',
-  'VICE-PREFEITO':                  'Vice-Prefeito',
-  'VEREADOR':                       'Vereador',
-}
-
-// Cargos de nível municipal (usam NM_UE como cidade)
-const MUNICIPAL_CARGOS = new Set(['PREFEITO', 'VICE-PREFEITO', 'VEREADOR'])
+export type TseJobName =
+  | 'geral'
+  | 'municipal'
+  | 'presidente-governadores'
+  | 'prefeitos-dep-estaduais'
 
 export interface TseSyncResult {
+  electionYear: number
   created: number
   updated: number
+  reactivated: number
   skipped: number
   startedAt: Date
   finishedAt: Date
 }
 
-type TseRow = Record<string, string>
+interface CachedParty {
+  id: string
+  abbreviation: string
+  number: number
+}
+
+interface ExistingPoliticianRef {
+  id: string
+  tseId: string | null
+  name: string
+  office: string
+  state: string
+  city: string | null
+  status: PoliticianStatus
+  termStart: Date
+  termEnd: Date
+  avatarUrl: string | null
+}
 
 @Injectable()
 export class TseSyncService {
@@ -58,54 +65,100 @@ export class TseSyncService {
 
   // ── Trigger ───────────────────────────────────────────────────────────────
 
-  async triggerSync(jobName: 'presidente-governadores' | 'prefeitos-dep-estaduais'): Promise<{ message: string }> {
-    await this.queue.add(jobName, {}, {
-      jobId: `tse-${jobName}`,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 15_000 },
-      removeOnComplete: 5,
-      removeOnFail: 5,
-    })
-    this.logger.log(`TSE sync job enqueued: ${jobName}`)
-    return { message: `Sync TSE iniciado: ${jobName}` }
+  async triggerSync(jobName: TseJobName, year?: number): Promise<{ message: string }> {
+    await this.queue.add(
+      jobName,
+      { year },
+      {
+        jobId: `tse-${jobName}${year ? `-${year}` : ''}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 15_000 },
+        removeOnComplete: 5,
+        removeOnFail: 5,
+      },
+    )
+    this.logger.log(`TSE sync job enqueued: ${jobName}${year ? ` (year=${year})` : ''}`)
+    return { message: `Sync TSE iniciado: ${jobName}${year ? ` (${year})` : ''}` }
   }
 
   // ── Job handlers (chamados pelo processor) ────────────────────────────────
 
-  async syncPresidenteGovernadores(): Promise<TseSyncResult> {
+  /**
+   * Sincroniza TODOS os cargos eleitos na última eleição geral (Presidente, Governadores,
+   * Senadores, Deputados Federais, Deputados Estaduais e Distritais).
+   */
+  async syncEleicaoGeral(explicitYear?: number): Promise<TseSyncResult> {
     const startedAt = new Date()
-    this.logger.log('Syncing Presidente + Governadores from 2022 TSE data...')
-
-    const rows = await this.downloadAndFilter(TSE_2022_URL, [
+    const targetYear = explicitYear ?? getLatestConcludedElectionYear('general')
+    const cargos = [
       'PRESIDENTE',
       'GOVERNADOR',
       'GOVERNADOR DO DISTRITO FEDERAL',
-    ])
-
-    const result = await this.upsertRows(rows, TERM_2022_START, TERM_2022_END)
-    return { ...result, startedAt, finishedAt: new Date() }
-  }
-
-  async syncPrefeitosDepEstaduais(): Promise<TseSyncResult> {
-    const startedAt = new Date()
-
-    // Deputados Estaduais: eleições 2022
-    this.logger.log('Syncing Deputados Estaduais from 2022 TSE data...')
-    const rows2022 = await this.downloadAndFilter(TSE_2022_URL, [
+      'SENADOR',
+      'DEPUTADO FEDERAL',
       'DEPUTADO ESTADUAL',
       'DEPUTADO DISTRITAL',
-    ])
-    const result2022 = await this.upsertRows(rows2022, TERM_2022_START, TERM_2022_END)
+    ]
 
-    // Prefeitos + Vereadores: eleições 2024 — download único do arquivo ~60 MB
-    this.logger.log('Syncing Prefeitos + Vereadores from 2024 TSE data (single download)...')
-    const rows2024 = await this.downloadAndFilter(TSE_2024_URL, ['PREFEITO', 'VEREADOR'])
-    const result2024 = await this.upsertRows(rows2024, TERM_2024_START, TERM_2024_END)
+    const { year, rows } = await this.downloadWithFallback(targetYear, cargos, !explicitYear)
+    const stats = await this.upsertRows(rows, year)
+
+    return { electionYear: year, ...stats, startedAt, finishedAt: new Date() }
+  }
+
+  /**
+   * Sincroniza Prefeitos e Vereadores da última eleição municipal.
+   */
+  async syncEleicaoMunicipal(explicitYear?: number): Promise<TseSyncResult> {
+    const startedAt = new Date()
+    const targetYear = explicitYear ?? getLatestConcludedElectionYear('municipal')
+    const cargos = ['PREFEITO', 'VEREADOR']
+
+    const { year, rows } = await this.downloadWithFallback(targetYear, cargos, !explicitYear)
+    const stats = await this.upsertRows(rows, year)
+
+    return { electionYear: year, ...stats, startedAt, finishedAt: new Date() }
+  }
+
+  /**
+   * Mantido por compatibilidade — sincroniza Presidente + Governadores da eleição geral mais recente.
+   */
+  async syncPresidenteGovernadores(explicitYear?: number): Promise<TseSyncResult> {
+    const startedAt = new Date()
+    const targetYear = explicitYear ?? getLatestConcludedElectionYear('general')
+    const cargos = ['PRESIDENTE', 'GOVERNADOR', 'GOVERNADOR DO DISTRITO FEDERAL']
+
+    const { year, rows } = await this.downloadWithFallback(targetYear, cargos, !explicitYear)
+    const stats = await this.upsertRows(rows, year)
+
+    return { electionYear: year, ...stats, startedAt, finishedAt: new Date() }
+  }
+
+  /**
+   * Mantido por compatibilidade — sincroniza Deputados Estaduais/Distritais (eleição geral mais recente)
+   * + Prefeitos e Vereadores (eleição municipal mais recente).
+   */
+  async syncPrefeitosDepEstaduais(explicitYear?: number): Promise<TseSyncResult> {
+    const startedAt = new Date()
+    const generalYear = explicitYear ?? getLatestConcludedElectionYear('general')
+    const municipalYear = getLatestConcludedElectionYear('municipal')
+
+    const gen = await this.downloadWithFallback(
+      generalYear,
+      ['DEPUTADO ESTADUAL', 'DEPUTADO DISTRITAL'],
+      !explicitYear,
+    )
+    const statsGen = await this.upsertRows(gen.rows, gen.year)
+
+    const mun = await this.downloadWithFallback(municipalYear, ['PREFEITO', 'VEREADOR'], true)
+    const statsMun = await this.upsertRows(mun.rows, mun.year)
 
     return {
-      created:    result2022.created + result2024.created,
-      updated:    result2022.updated + result2024.updated,
-      skipped:    result2022.skipped + result2024.skipped,
+      electionYear: gen.year,
+      created: statsGen.created + statsMun.created,
+      updated: statsGen.updated + statsMun.updated,
+      reactivated: statsGen.reactivated + statsMun.reactivated,
+      skipped: statsGen.skipped + statsMun.skipped,
       startedAt,
       finishedAt: new Date(),
     }
@@ -113,7 +166,28 @@ export class TseSyncService {
 
   // ── Download + parse ──────────────────────────────────────────────────────
 
-  private async downloadAndFilter(url: string, cargos: string[]): Promise<TseRow[]> {
+  private async downloadWithFallback(
+    year: number,
+    cargos: string[],
+    allowFallback: boolean,
+  ): Promise<{ year: number; rows: TseCandidateRow[] }> {
+    try {
+      const rows = await this.downloadAndFilter(getTseConsultaCandUrl(year), cargos)
+      return { year, rows }
+    } catch (err) {
+      if (allowFallback && (err as Error).message.includes('404')) {
+        const fallbackYear = year - 4
+        this.logger.warn(
+          `TSE ZIP for ${year} returned 404 — falling back to ${fallbackYear}`,
+        )
+        const rows = await this.downloadAndFilter(getTseConsultaCandUrl(fallbackYear), cargos)
+        return { year: fallbackYear, rows }
+      }
+      throw err
+    }
+  }
+
+  private async downloadAndFilter(url: string, cargos: string[]): Promise<TseCandidateRow[]> {
     this.logger.log(`Downloading ${url} (${cargos.join(', ')})...`)
 
     const response = await fetch(url)
@@ -122,109 +196,223 @@ export class TseSyncService {
     const arrayBuffer = await response.arrayBuffer()
     const zip = new AdmZip(Buffer.from(arrayBuffer))
 
-    // O ZIP contém um arquivo BRASIL consolidado com todos os candidatos
-    const entry = zip.getEntries().find((e) =>
-      e.entryName.toUpperCase().includes('BRASIL') && e.entryName.endsWith('.csv'),
+    const entry = zip.getEntries().find(
+      (e) => e.entryName.toUpperCase().includes('BRASIL') && e.entryName.endsWith('.csv'),
     )
     if (!entry) throw new Error(`BRASIL.csv not found in ${url}`)
 
-    // ISO-8859-1 → Node.js string via latin1 (mesmo mapeamento de code points)
     const csv = zip.readFile(entry)!.toString('latin1')
-    return this.filterCSV(csv, cargos)
-  }
-
-  private filterCSV(csv: string, cargos: string[]): TseRow[] {
-    const lines = csv.split('\n')
-    const headers = lines[0].split(';').map((h) => h.trim().replace(/^"|"$/g, ''))
-
-    const cargoIdx = headers.indexOf('DS_CARGO')
-    const sitIdx   = headers.indexOf('DS_SIT_TOT_TURNO')
-    const turnoIdx = headers.indexOf('NR_TURNO')
-    const targetSet = new Set(cargos)
-    const results: TseRow[] = []
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim()
-      if (!line) continue
-
-      const cols = line.split(';').map((c) => c.trim().replace(/^"|"$/g, ''))
-      if (cols.length < headers.length - 2) continue  // linhas muito curtas são lixo
-
-      if (!targetSet.has(cols[cargoIdx])) continue
-      if (!ELEITO.has(cols[sitIdx])) continue
-
-      // DS_SIT_TOT_TURNO === 'ELEITO' só aparece no turno final — sem duplicatas
-      const row: TseRow = {}
-      headers.forEach((h, idx) => { row[h] = cols[idx] ?? '' })
-      results.push(row)
-    }
-
+    const results = filterTseElectedRows(csv, cargos)
     this.logger.log(`  → ${results.length} elected candidates found for ${cargos.join(', ')}`)
     return results
   }
 
-  // ── Upsert ────────────────────────────────────────────────────────────────
+  // ── Upsert & Reconciliation ───────────────────────────────────────────────
+
+  private async loadPartyCaches() {
+    const allParties = await this.prisma.party.findMany({
+      select: { id: true, abbreviation: true, number: true },
+    })
+    const byAbbrev = new Map<string, CachedParty>()
+    const byNumber = new Map<number, CachedParty>()
+    for (const p of allParties) {
+      byAbbrev.set(p.abbreviation.toUpperCase(), p)
+      byNumber.set(p.number, p)
+    }
+    return { byAbbrev, byNumber }
+  }
+
+  private async resolvePartyId(
+    row: TseCandidateRow,
+    byAbbrev: Map<string, CachedParty>,
+    byNumber: Map<number, CachedParty>,
+  ): Promise<string | null> {
+    const rawSigla = (row['SG_PARTIDO'] ?? '').trim()
+    if (!rawSigla) return null
+
+    const normalized = normalizePartyAbbreviation(rawSigla)
+    const foundByAbbr = byAbbrev.get(normalized.toUpperCase()) ?? byAbbrev.get(rawSigla.toUpperCase())
+    if (foundByAbbr) return foundByAbbr.id
+
+    const num = Number(row['NR_PARTIDO'])
+    if (!Number.isNaN(num) && num > 0) {
+      const foundByNum = byNumber.get(num)
+      if (foundByNum) return foundByNum.id
+
+      const created = await this.prisma.party.upsert({
+        where: { abbreviation: normalized },
+        update: {},
+        create: {
+          abbreviation: normalized,
+          name: (row['NM_PARTIDO'] ?? normalized).trim() || normalized,
+          number: num,
+          active: true,
+        },
+        select: { id: true, abbreviation: true, number: true },
+      })
+      byAbbrev.set(created.abbreviation.toUpperCase(), created)
+      byNumber.set(created.number, created)
+      return created.id
+    }
+
+    return null
+  }
+
+  private buildReconcileKey(
+    state: string,
+    office: string,
+    name: string,
+    city?: string | null,
+  ): string {
+    const cat = normalizeOfficeCategory(office)
+    const normCity = city ? normalizePersonName(city) : ''
+    return `${state.toUpperCase()}|${cat}|${normCity}|${normalizePersonName(name)}`
+  }
 
   private async upsertRows(
-    rows: TseRow[],
-    termStart: Date,
-    termEnd: Date,
-  ): Promise<{ created: number; updated: number; skipped: number }> {
-    // Cache de partidos — evita N queries individuais ao banco
-    const allParties = await this.prisma.party.findMany({ select: { id: true, abbreviation: true } })
-    const partyMap   = new Map(allParties.map((p) => [p.abbreviation, p.id]))
+    rows: TseCandidateRow[],
+    electionYear: number,
+  ): Promise<{ created: number; updated: number; reactivated: number; skipped: number }> {
+    const { byAbbrev, byNumber } = await this.loadPartyCaches()
+
+    const existingAll = await this.prisma.politician.findMany({
+      select: {
+        id: true,
+        tseId: true,
+        name: true,
+        office: true,
+        state: true,
+        city: true,
+        status: true,
+        termStart: true,
+        termEnd: true,
+        avatarUrl: true,
+      },
+    })
+
+    const byTseId = new Map<string, ExistingPoliticianRef>()
+    const byReconcileKey = new Map<string, ExistingPoliticianRef>()
+
+    for (const p of existingAll) {
+      if (p.tseId) byTseId.set(p.tseId, p)
+      const key = this.buildReconcileKey(p.state, p.office, p.name, p.city)
+      byReconcileKey.set(key, p)
+    }
 
     let created = 0
     let updated = 0
+    let reactivated = 0
     let skipped = 0
+    const now = new Date()
 
     for (const row of rows) {
-      const result = await this.upsertRow(row, termStart, termEnd, partyMap)
-      if (result === 'created') created++
-      else if (result === 'updated') updated++
-      else skipped++
+      const partyId = await this.resolvePartyId(row, byAbbrev, byNumber)
+      if (!partyId) {
+        this.logger.warn(`Skipping ${row['NM_URNA_CANDIDATO']} — party "${row['SG_PARTIDO']}" missing`)
+        skipped++
+        continue
+      }
+
+      const tseId = `TSE-${row['SQ_CANDIDATO']}`
+      const cargo = (row['DS_CARGO'] ?? '').trim().toUpperCase()
+      const uf = (row['SG_UF'] ?? '').trim()
+      const state = uf === 'BR' ? '' : uf
+      const isMunicipal = TSE_MUNICIPAL_CARGOS.has(cargo)
+      const city = isMunicipal && row['NM_UE'] ? row['NM_UE'].trim() : undefined
+      const office = TSE_OFFICE_LABEL[cargo] ?? row['DS_CARGO']
+      const displayName = (row['NM_URNA_CANDIDATO'] || row['NM_CANDIDATO'] || '').trim()
+      const fullName = (row['NM_CANDIDATO'] || displayName).trim()
+      const electoralZone = isMunicipal ? (row['NM_UE'] ?? state) : state === '' ? 'Nacional' : state
+      const { termStart, termEnd } = getTermDatesForCargo(cargo, electionYear)
+
+      const existing =
+        byTseId.get(tseId) ??
+        byReconcileKey.get(this.buildReconcileKey(state, office, displayName, city)) ??
+        byReconcileKey.get(this.buildReconcileKey(state, office, fullName, city))
+
+      if (existing) {
+        // Preserva o termStart atual caso o político esteja no meio de um mandato vigente
+        const keepCurrentStart =
+          existing.termStart <= now && existing.termEnd >= now && termStart > now
+        // Preserva IDs oficiais da Câmara (numérico) ou Senado (SEN-...)
+        const shouldUpdateTseId = !existing.tseId || existing.tseId.startsWith('TSE-')
+        const wasEnded = existing.status === PoliticianStatus.ENCERRADO
+
+        const updatedRecord = await this.prisma.politician.update({
+          where: { id: existing.id },
+          data: {
+            name: displayName,
+            partyId,
+            office,
+            state,
+            electoralZone,
+            ...(city !== undefined && { city }),
+            termStart: keepCurrentStart ? existing.termStart : termStart,
+            termEnd: termEnd > existing.termEnd ? termEnd : existing.termEnd,
+            status: PoliticianStatus.ATIVO,
+            ...(shouldUpdateTseId && { tseId }),
+          },
+          select: {
+            id: true,
+            tseId: true,
+            name: true,
+            office: true,
+            state: true,
+            city: true,
+            status: true,
+            termStart: true,
+            termEnd: true,
+            avatarUrl: true,
+          },
+        })
+
+        if (updatedRecord.tseId) byTseId.set(updatedRecord.tseId, updatedRecord)
+        byReconcileKey.set(
+          this.buildReconcileKey(state, office, displayName, city),
+          updatedRecord,
+        )
+
+        if (wasEnded) reactivated++
+        else updated++
+      } else {
+        const createdRecord = await this.prisma.politician.create({
+          data: {
+            tseId,
+            name: displayName,
+            partyId,
+            office,
+            state,
+            electoralZone,
+            ...(city !== undefined && { city }),
+            termStart,
+            termEnd,
+            avatarUrl: null,
+            verified: false,
+            status: PoliticianStatus.ATIVO,
+          },
+          select: {
+            id: true,
+            tseId: true,
+            name: true,
+            office: true,
+            state: true,
+            city: true,
+            status: true,
+            termStart: true,
+            termEnd: true,
+            avatarUrl: true,
+          },
+        })
+
+        byTseId.set(tseId, createdRecord)
+        byReconcileKey.set(
+          this.buildReconcileKey(state, office, displayName, city),
+          createdRecord,
+        )
+        created++
+      }
     }
 
-    return { created, updated, skipped }
-  }
-
-  private async upsertRow(
-    row: TseRow,
-    termStart: Date,
-    termEnd: Date,
-    partyMap: Map<string, string>,
-  ): Promise<'created' | 'updated' | 'skipped'> {
-    const tseId   = `TSE-${row['SQ_CANDIDATO']}`
-    const partyId = partyMap.get(row['SG_PARTIDO'])
-
-    if (!partyId) {
-      this.logger.warn(`Skipping ${row['NM_URNA_CANDIDATO']} — party "${row['SG_PARTIDO']}" not found`)
-      return 'skipped'
-    }
-
-    const cargo      = row['DS_CARGO']
-    const uf         = row['SG_UF']
-    const isMunicipal = MUNICIPAL_CARGOS.has(cargo)
-    const city        = isMunicipal && row['NM_UE'] ? row['NM_UE'] : undefined
-
-    const payload = {
-      name:          row['NM_URNA_CANDIDATO'] || row['NM_CANDIDATO'],
-      partyId,
-      office:        OFFICE_LABEL[cargo] ?? cargo,
-      state:         uf === 'BR' ? '' : uf,
-      electoralZone: isMunicipal ? (row['NM_UE'] ?? uf) : (uf === 'BR' ? 'Nacional' : uf),
-      termStart,
-      termEnd,
-      avatarUrl:     null,
-      ...(city !== undefined && { city }),
-    }
-
-    await this.prisma.politician.upsert({
-      where:  { tseId },
-      update: payload,
-      create: { ...payload, tseId, verified: false },
-    })
-
-    return 'created'  // upsert não distingue create/update — estatística simplificada
+    return { created, updated, reactivated, skipped }
   }
 }

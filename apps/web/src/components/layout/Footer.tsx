@@ -1,6 +1,6 @@
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
-import logoSrc from '../../assets/logo.png'
+import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 
 const Foot = styled.footer`
   background: ${({ theme }) => theme.colors.primary};
@@ -131,7 +131,7 @@ export function Footer() {
           {/* Marca */}
           <Brand>
             <Logo to="/">
-              <img src={logoSrc} alt="Votz" style={{ height: 32, width: 'auto', display: 'block' }} />
+              <img src={logoSrc} alt="Votz" style={{ height: 44, width: 'auto', display: 'block' }} />
             </Logo>
             <Tagline>
               Transformando reclamação em registro, registro em pressão e pressão em ação.

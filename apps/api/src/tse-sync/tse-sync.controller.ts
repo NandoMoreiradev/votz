@@ -1,12 +1,12 @@
-import { Controller, Post, Get, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger'
+import { Controller, Post, Get, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
 import { UserType } from '@votz/shared-types'
-import { TseSyncService, TSE_SYNC_QUEUE } from './tse-sync.service'
+import { TseSyncService, TSE_SYNC_QUEUE, TseJobName } from './tse-sync.service'
 
 @ApiTags('tse-sync')
 @Controller('tse-sync')
@@ -21,10 +21,15 @@ export class TseSyncController {
 
   @Post('trigger/:job')
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiParam({ name: 'job', enum: ['presidente-governadores', 'prefeitos-dep-estaduais'] })
-  @ApiOperation({ summary: '[Admin] Dispara sync TSE — presidente-governadores ou prefeitos-dep-estaduais' })
-  trigger(@Param('job') job: 'presidente-governadores' | 'prefeitos-dep-estaduais') {
-    return this.service.triggerSync(job)
+  @ApiParam({
+    name: 'job',
+    enum: ['geral', 'municipal', 'presidente-governadores', 'prefeitos-dep-estaduais'],
+  })
+  @ApiQuery({ name: 'year', required: false, type: Number, description: 'Ano eleitoral opcional (ex: 2026)' })
+  @ApiOperation({ summary: '[Admin] Dispara sync TSE para eleição geral (2026+) ou municipal' })
+  trigger(@Param('job') job: TseJobName, @Query('year') yearRaw?: string) {
+    const year = yearRaw ? Number(yearRaw) : undefined
+    return this.service.triggerSync(job, year && !Number.isNaN(year) ? year : undefined)
   }
 
   @Get('status')

@@ -11,14 +11,14 @@ export class CamaraSyncProcessor extends WorkerHost {
     super()
   }
 
-  async process(job: Job): Promise<void> {
+  async process(job: Job<{ legislaturaId?: number }>): Promise<void> {
     switch (job.name) {
       case 'full-sync': {
-        const result = await this.service.runSync()
+        const result = await this.service.runSync(job.data?.legislaturaId)
         this.logger.log(
-          `Sync concluído — partidos: ${result.parties}, criados: ${result.created}, ` +
-          `atualizados: ${result.updated}, ignorados: ${result.skipped} ` +
-          `(${result.finishedAt.getTime() - result.startedAt.getTime()}ms)`,
+          `Sync Leg.${result.legislaturaId} concluído — partidos: ${result.parties}, criados: ${result.created}, ` +
+            `atualizados: ${result.updated}, ignorados: ${result.skipped} ` +
+            `(${result.finishedAt.getTime() - result.startedAt.getTime()}ms)`,
         )
         return
       }

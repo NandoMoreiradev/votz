@@ -217,26 +217,26 @@ describe('AuthService', () => {
       expect(result).toEqual(expect.objectContaining({ requiresMfa: true, mfaToken: expect.any(String) }))
     })
 
-    it.each(['ENTITY', 'POLITICIAN', 'COMPANY', 'ADMIN'])(
-      'returns mfaSetupToken for %s without MFA (mandatory MFA)',
+    it('returns mfaSetupToken for ADMIN without MFA (mandatory MFA)', async () => {
+      mockPrismaUser.findUnique.mockResolvedValue(makeUser({ type: 'ADMIN' }))
+
+      const result = await service.login(dto)
+
+      expect(result).toEqual(expect.objectContaining({ requiresMfaSetup: true, mfaSetupToken: expect.any(String) }))
+    })
+
+    it.each(['CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY'])(
+      'returns access and refresh tokens for %s without MFA at login',
       async (type) => {
         mockPrismaUser.findUnique.mockResolvedValue(makeUser({ type }))
 
-        const result = await service.login(dto)
+        const result = await service.login(dto) as any
 
-        expect(result).toEqual(expect.objectContaining({ requiresMfaSetup: true, mfaSetupToken: expect.any(String) }))
+        expect(result.requiresMfa).toBe(false)
+        expect(result).toHaveProperty('accessToken')
+        expect(result).toHaveProperty('user')
       },
     )
-
-    it('returns access and refresh tokens for CITIZEN without MFA', async () => {
-      mockPrismaUser.findUnique.mockResolvedValue(makeUser({ type: 'CITIZEN' }))
-
-      const result = await service.login(dto) as any
-
-      expect(result.requiresMfa).toBe(false)
-      expect(result).toHaveProperty('accessToken')
-      expect(result).toHaveProperty('user')
-    })
 
     it('resets failedLoginAttempts on successful login', async () => {
       mockPrismaUser.findUnique.mockResolvedValue(makeUser({ failedLoginAttempts: 3 }))
@@ -318,30 +318,30 @@ describe('AuthService', () => {
       await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(BadRequestException)
     })
 
-    it.each(['ENTITY', 'POLITICIAN', 'COMPANY', 'ADMIN'])(
-      'throws ForbiddenException for %s (MFA is mandatory)',
+    it('throws ForbiddenException for ADMIN (MFA is mandatory)', async () => {
+      mockPrismaUser.findUnique.mockResolvedValue(
+        makeUser({ type: 'ADMIN', mfaEnabled: true, mfaSecret: 'SECRET' }),
+      )
+      await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(ForbiddenException)
+    })
+
+    it.each(['CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY'])(
+      'disables MFA for %s with valid TOTP code',
       async (type) => {
         mockPrismaUser.findUnique.mockResolvedValue(
           makeUser({ type, mfaEnabled: true, mfaSecret: 'SECRET' }),
         )
-        await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(ForbiddenException)
+
+        const result = await service.mfaDisable('u1', '123456')
+
+        expect(mockPrismaUser.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ mfaEnabled: false, mfaSecret: null }),
+          }),
+        )
+        expect(result).toEqual({ message: 'MFA disabled' })
       },
     )
-
-    it('disables MFA for CITIZEN with valid TOTP code', async () => {
-      mockPrismaUser.findUnique.mockResolvedValue(
-        makeUser({ type: 'CITIZEN', mfaEnabled: true, mfaSecret: 'SECRET' }),
-      )
-
-      const result = await service.mfaDisable('u1', '123456')
-
-      expect(mockPrismaUser.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ mfaEnabled: false, mfaSecret: null }),
-        }),
-      )
-      expect(result).toEqual({ message: 'MFA disabled' })
-    })
   })
 
   // ──────────────────────────────────────────────

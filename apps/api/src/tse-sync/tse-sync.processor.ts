@@ -11,22 +11,42 @@ export class TseSyncProcessor extends WorkerHost {
     super()
   }
 
-  async process(job: Job): Promise<void> {
+  async process(job: Job<{ year?: number }>): Promise<void> {
+    const year = job.data?.year
+
     switch (job.name) {
-      case 'presidente-governadores': {
-        const r = await this.service.syncPresidenteGovernadores()
+      case 'geral': {
+        const r = await this.service.syncEleicaoGeral(year)
         this.logger.log(
-          `Presidente + Governadores — criados: ${r.created}, atualizados: ${r.updated}, ` +
-          `ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
+          `Eleição Geral (${r.electionYear}) — criados: ${r.created}, atualizados: ${r.updated}, ` +
+            `reativados: ${r.reactivated}, ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
+        )
+        return
+      }
+
+      case 'municipal': {
+        const r = await this.service.syncEleicaoMunicipal(year)
+        this.logger.log(
+          `Eleição Municipal (${r.electionYear}) — criados: ${r.created}, atualizados: ${r.updated}, ` +
+            `reativados: ${r.reactivated}, ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
+        )
+        return
+      }
+
+      case 'presidente-governadores': {
+        const r = await this.service.syncPresidenteGovernadores(year)
+        this.logger.log(
+          `Presidente + Governadores (${r.electionYear}) — criados: ${r.created}, atualizados: ${r.updated}, ` +
+            `reativados: ${r.reactivated}, ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
         )
         return
       }
 
       case 'prefeitos-dep-estaduais': {
-        const r = await this.service.syncPrefeitosDepEstaduais()
+        const r = await this.service.syncPrefeitosDepEstaduais(year)
         this.logger.log(
-          `Prefeitos + Dep. Estaduais — criados: ${r.created}, atualizados: ${r.updated}, ` +
-          `ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
+          `Prefeitos + Dep. Estaduais (${r.electionYear}) — criados: ${r.created}, atualizados: ${r.updated}, ` +
+            `reativados: ${r.reactivated}, ignorados: ${r.skipped} (${r.finishedAt.getTime() - r.startedAt.getTime()}ms)`,
         )
         return
       }

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common'
+import { getQueueToken } from '@nestjs/bullmq'
 
 jest.mock('isomorphic-dompurify', () => ({
   __esModule: true,
@@ -11,6 +12,9 @@ import { ReportsRepository } from './reports.repository'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
+import { EmbeddingService } from '../embedding/embedding.service'
+import { PrismaService } from '../prisma/prisma.service'
+import { REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { ReportStatus, EventType } from '@votz/shared-types'
 import { DisputeResolution } from './dto/resolve-dispute.dto'
 import { UpdatableStatus } from './dto/update-status.dto'
@@ -23,11 +27,21 @@ const mockRepo = {
   findAuthorId: jest.fn(),
   setDisputed: jest.fn(),
   resolveDispute: jest.fn(),
+  findEntityByUserId: jest.fn(),
+  findPoliticianByUserId: jest.fn(),
+  getFollowerUserIds: jest.fn().mockResolvedValue([]),
 }
 
 const mockTimeline = { record: jest.fn() }
 const mockNotifications = { notify: jest.fn() }
-const mockAlerts = { enqueueCheck: jest.fn() }
+const mockAlerts = { enqueueCheck: jest.fn().mockResolvedValue(undefined) }
+const mockEmbedding = { embed: jest.fn().mockResolvedValue([]) }
+const mockPrisma = {
+  politician: { findUnique: jest.fn() },
+  follower: { findMany: jest.fn().mockResolvedValue([]) },
+  entity: { findUnique: jest.fn() },
+}
+const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
 
 function makeReport(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -53,6 +67,9 @@ describe('ReportsService', () => {
         { provide: TimelineService, useValue: mockTimeline },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AlertsService, useValue: mockAlerts },
+        { provide: EmbeddingService, useValue: mockEmbedding },
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: getQueueToken(REPORTS_QUEUE), useValue: mockReportsQueue },
       ],
     }).compile()
 
@@ -60,6 +77,11 @@ describe('ReportsService', () => {
     jest.clearAllMocks()
     mockNotifications.notify.mockResolvedValue(undefined)
     mockTimeline.record.mockResolvedValue(undefined)
+    mockAlerts.enqueueCheck.mockResolvedValue(undefined)
+    mockReportsQueue.add.mockResolvedValue({})
+    mockPrisma.follower.findMany.mockResolvedValue([])
+    mockRepo.findEntityByUserId.mockResolvedValue({ id: 'entity-1' })
+    mockRepo.getFollowerUserIds.mockResolvedValue([])
   })
 
   // ──────────────────────────────────────────────
@@ -147,12 +169,14 @@ describe('ReportsService', () => {
     it.each(['ENTITY', 'MODERATOR', 'ADMIN'])(
       'allows %s to update status',
       async (type) => {
-        mockRepo.findById.mockResolvedValue(makeReport())
+        mockRepo.findById
+          .mockResolvedValueOnce(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
+          .mockResolvedValueOnce(makeReport({ id: 'r1', status: ReportStatus.IN_PROGRESS }))
         mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
 
         const result = await service.updateStatus('r1', dto, { id: 'u1', type })
 
-        expect(result.status).toBe(ReportStatus.IN_PROGRESS)
+        expect(result!.status).toBe(ReportStatus.IN_PROGRESS)
         expect(mockTimeline.record).toHaveBeenCalledWith(
           expect.objectContaining({ type: EventType.STATUS_CHANGED }),
         )
@@ -171,7 +195,7 @@ describe('ReportsService', () => {
     })
 
     it('does not notify when author updates their own report', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport())
+      mockRepo.findById.mockResolvedValue(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
       mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
 
       await service.updateStatus('r1', dto, { id: 'author-1', type: 'ENTITY' })

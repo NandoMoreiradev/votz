@@ -1,5 +1,5 @@
-import { Controller, Post, Get, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Controller, Post, Get, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -21,9 +21,11 @@ export class CamaraSyncController {
 
   @Post('trigger')
   @HttpCode(HttpStatus.ACCEPTED)
+  @ApiQuery({ name: 'legislatura', required: false, type: Number, description: 'ID da legislatura (ex: 58)' })
   @ApiOperation({ summary: '[Admin] Dispara sync manual da Câmara dos Deputados' })
-  trigger() {
-    return this.service.triggerSync()
+  trigger(@Query('legislatura') legRaw?: string) {
+    const leg = legRaw ? Number(legRaw) : undefined
+    return this.service.triggerSync(leg && !Number.isNaN(leg) ? leg : undefined)
   }
 
   @Get('status')
