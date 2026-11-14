@@ -1,6 +1,6 @@
-import { PRIVACY_VERSION } from '@votz/shared-types'
-import { LegalPlaceholderPage } from '../components/legal/LegalPlaceholderPage'
+import { LegalDocument } from '../components/legal/LegalDocument'
+import { politicaDeCookies } from '../legal/politica-de-cookies'
 
 export function Cookies() {
-  return <LegalPlaceholderPage title="Política de Cookies" version={PRIVACY_VERSION} />
+  return <LegalDocument doc={politicaDeCookies} />
 }

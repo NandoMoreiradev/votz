@@ -68,7 +68,7 @@ Há **transferência internacional** de dados (Render/Frankfurt, Groq/EUA, Googl
 4. **Exclusão deixa arquivos órfãos no R2.** Só as chaves `verification/…` são apagadas. Os **áudios dos comentários** (`Comment.mediaKey`, ex.: `comments/….webm`) são removidos do banco mas **permanecem no R2**.
 5. **Conta só-Google não consegue se excluir.** `deleteAccount` recusa quem não tem senha (~linha 95) mandando "entrar em contato com o suporte". O direito ao apagamento tem que ser autoatendimento.
 6. **Exportação LGPD incompleta.** `apps/api/src/users/lgpd.processor.ts` não inclui: mensagens/perguntas/votos de enquete de debates, votos em propostas, políticos seguidos, chaves de API (metadados), solicitações de cadastro, eventos de timeline do usuário, CPF (se existir) nem campos de consentimento. Além disso aplica limites (`take: 500/1000/200`) que tornam a exportação parcial. O arquivo gerado fica no R2 mesmo depois que o link de 24 h expira.
-7. **"Relato anônimo" não é anônimo para a plataforma:** `Report.authorId` continua no banco (`schema.prisma` ~linha 314) e só é omitido nas consultas públicas. **Não mude esse comportamento** (é decisão de produto), mas ele deve ser descrito corretamente na Fase 2.
+7. ~~"Relato anônimo" mantém o autor no banco~~ **Correção (feita depois):** isso estava errado. Em relato anônimo o `authorId` é gravado como `null` (`reports.service.ts` ~linha 53 e `reports.repository.ts` ~linha 95), então o Votz **não guarda** o vínculo autor↔relato. Consequências: o autor não recebe notificações e não pode contestar relato anônimo, e a exportação LGPD não tem como incluí-lo. O texto legal da Fase 2 foi ajustado para refletir isso.
 
 ---
 

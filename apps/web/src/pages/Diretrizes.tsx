@@ -1,6 +1,6 @@
-import { TERMS_VERSION } from '@votz/shared-types'
-import { LegalPlaceholderPage } from '../components/legal/LegalPlaceholderPage'
+import { LegalDocument } from '../components/legal/LegalDocument'
+import { diretrizesDaComunidade } from '../legal/diretrizes-da-comunidade'
 
 export function Diretrizes() {
-  return <LegalPlaceholderPage title="Diretrizes da Comunidade" version={TERMS_VERSION} />
+  return <LegalDocument doc={diretrizesDaComunidade} />
 }

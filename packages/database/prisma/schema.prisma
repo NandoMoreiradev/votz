@@ -315,7 +315,7 @@ model Report {
   // Similarity search via pgvector — populated async by BullMQ job
   embedding        Unsupported("vector(768)")?
 
-  // Author (null if anonymous — link exists in DB but never exposed in public queries)
+  // Author — NULL em relato anônimo: o vínculo autor↔relato NÃO é gravado (reports.service.ts / reports.repository.ts)
   authorId         String?
   author           User?          @relation("ReportAuthor", fields: [authorId], references: [id])
 
