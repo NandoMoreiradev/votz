@@ -21,6 +21,7 @@ import { PlanGuard } from '../auth/guards/plan.guard'
 import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
+import { ActingUser } from '../auth/acting-org'
 
 @ApiTags('entities')
 @Controller('entities')
@@ -99,9 +100,9 @@ export class EntitiesController {
   advocate(
     @Param('id') id: string,
     @Param('reportId') reportId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.entitiesService.advocate(id, reportId, user.id)
+    return this.entitiesService.advocate(id, reportId, user)
   }
 
   @Get(':id/export')

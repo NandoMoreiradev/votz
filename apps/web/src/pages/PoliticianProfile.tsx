@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -8,7 +8,9 @@ import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
 import { usePoliticianPropostas, PublicProposta } from '../hooks/usePropostas'
 import { useDebates, useFollowPolitician, useIsFollowingPolitician } from '../hooks/useDebates'
 import { useAuthStore } from '../store/auth.store'
+import { useMyProfiles } from '../hooks/useAuth'
 import { Button } from '../components/ui/Button'
+import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
@@ -551,7 +553,8 @@ export function PoliticianProfile() {
   const [followingOverride, setFollowingOverride] = useState<boolean | null>(null)
   const [propostaPage, setPropostaPage] = useState(1)
   const [propostaStatusFilter, setPropostaStatusFilter] = useState('')
-  const { user: currentUser, activeContext } = useAuthStore()
+  const { user: currentUser, activeContext, sessionReady } = useAuthStore()
+  const { data: profiles } = useMyProfiles(!!currentUser && sessionReady)
   const { data: politician, isLoading } = usePolitician(id!)
   const { data: reports, isLoading: loadingReports } = usePoliticianReports(
     id!, page, statusFilter || undefined, periodToFrom(periodDays),
@@ -717,6 +720,10 @@ export function PoliticianProfile() {
                     </ReportCta>
                   )}
                 </CtaRow>
+                {!canEdit &&
+                  profiles?.orgs.some((o) => o.type === 'POLITICIAN' && o.id === politician.id) && (
+                    <OrgContextPrompt orgName={politician.name} actionLabel="responder ou criar propostas" />
+                  )}
               </Info>
             </HeaderTop>
 

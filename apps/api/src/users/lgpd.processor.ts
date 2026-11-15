@@ -159,7 +159,7 @@ export class LgpdProcessor extends WorkerHost {
       }),
       this.prisma.registrationRequest.findMany({
         where: { requesterId: userId },
-        select: { type: true, status: true, createdAt: true, reviewNote: true },
+        select: { type: true, status: true, note: true, createdAt: true, reviewNote: true },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.accessLog.findMany({

@@ -7,6 +7,8 @@ import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useEntity, useEntityReports } from '../hooks/useEntities'
 import { useAuthStore } from '../store/auth.store'
+import { useMyProfiles } from '../hooks/useAuth'
+import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
@@ -559,7 +561,8 @@ export function EntityProfile() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
   const [periodDays, setPeriodDays] = useState(0)
-  const { user: currentUser, activeContext } = useAuthStore()
+  const { user: currentUser, activeContext, sessionReady } = useAuthStore()
+  const { data: profiles } = useMyProfiles(!!currentUser && sessionReady)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
@@ -699,6 +702,10 @@ export function EntityProfile() {
                     </ReportCta>
                   )}
                 </CtaRow>
+                {!isOwner &&
+                  profiles?.orgs.some((o) => o.type === 'ENTITY' && o.id === entity.id) && (
+                    <OrgContextPrompt orgName={entity.legalName} actionLabel="responder ou gerenciar" />
+                  )}
               </HeaderInfo>
             </HeaderTop>
 

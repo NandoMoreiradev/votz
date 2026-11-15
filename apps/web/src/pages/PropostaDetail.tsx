@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, PropostaStatusBadge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import {
   useProposta,
   useMeuVotoProposta,
@@ -11,6 +12,7 @@ import {
   useRemoverVotoProposta,
   useAtualizarStatusProposta,
 } from '../hooks/usePropostas'
+import { useMyProfiles } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { Category, PropostaStatus } from '@votz/shared-types'
 
@@ -353,7 +355,8 @@ function formatDate(iso: string) {
 
 export function PropostaDetail() {
   const { id } = useParams<{ id: string }>()
-  const { user, activeContext } = useAuthStore()
+  const { user, activeContext, sessionReady } = useAuthStore()
+  const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const { data: proposta, isLoading } = useProposta(id!)
   const { data: meuVotoData } = useMeuVotoProposta(id!, !!user)
   const { mutate: votar, isPending: votando } = useVotarProposta(id!)
@@ -485,6 +488,16 @@ export function PropostaDetail() {
             </VoteCard>
 
             {/* Atualizar status (só para o político autor) */}
+            {!isOwner &&
+              proposta &&
+              (() => {
+                const matchingOrg = profiles?.orgs.find(
+                  (o) => o.type === 'POLITICIAN' && o.id === proposta.politicoId,
+                )
+                return matchingOrg ? (
+                  <OrgContextPrompt orgName={matchingOrg.name} actionLabel="atualizar esta proposta" />
+                ) : null
+              })()}
             {isOwner && (
               <UpdateStatusCard>
                 <VoteTitle>Atualizar Status</VoteTitle>

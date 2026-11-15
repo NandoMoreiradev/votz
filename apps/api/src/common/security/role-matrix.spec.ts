@@ -115,6 +115,13 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     allowedRoles: ADMIN_ONLY,
     body: { plan: 'STARTER' },
   },
+  {
+    method: 'PATCH',
+    pattern: '/admin/api-keys/:id/tier',
+    requestPath: `/admin/api-keys/${SAMPLE_UUID}/tier`,
+    allowedRoles: ADMIN_ONLY,
+    body: { tier: 'PAID', reason: 'Concessão comercial aprovada para portal parceiro.' },
+  },
 
   // AdminFlagsController
   { method: 'GET', pattern: '/admin/flags', requestPath: '/admin/flags', allowedRoles: MOD_AND_ADMIN },
@@ -336,4 +343,20 @@ describe('Role × Route Authorization Matrix (real JwtAuthGuard + RolesGuard)', 
       }
     },
   )
+
+  it('rejects mfa_setup_required token (401) on moderation routes even for ADMIN and MODERATOR', async () => {
+    for (const role of [UserType.MODERATOR, UserType.ADMIN]) {
+      const mfaSetupToken = await jwtService.signAsync({
+        sub: `user-${role}`,
+        type: 'mfa_setup_required',
+      })
+
+      for (const path of ['/admin/flags', '/registration-requests', '/admin/users']) {
+        const res = await fetch(`${baseUrl}${path}`, {
+          headers: { authorization: `Bearer ${mfaSetupToken}` },
+        })
+        expect(res.status).toBe(401)
+      }
+    }
+  })
 })

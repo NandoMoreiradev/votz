@@ -22,6 +22,7 @@ import { OrgPermission, OrgType, UserType } from '@prisma/client'
 import { PropostaStatus } from '@votz/shared-types'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../../auth/guards/roles.guard'
+import { PrismaService } from '../../prisma/prisma.service'
 import { DebatesController } from '../../debates/debates.controller'
 import { DebatesRepository } from '../../debates/debates.repository'
 import { DEBATES_QUEUE, DebatesService } from '../../debates/debates.service'
@@ -58,10 +59,33 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
   const userA = {
     id: 'user-a',
     email: 'a@votz.app',
-    type: UserType.POLITICIAN,
+    type: UserType.CITIZEN,
+    ctx: {
+      type: 'POLITICIAN',
+      id: ORG_A_ID,
+      name: 'Político A',
+      logoUrl: null,
+      permissions: [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS],
+    },
   }
 
+  let prismaMock: any
+
   beforeAll(async () => {
+    prismaMock = {
+      orgMembership: {
+        findUnique: jest.fn(async ({ where }: any) => {
+          const k = where?.userId_orgType_orgId
+          if (k?.userId === userA.id && k?.orgType === OrgType.POLITICIAN && k?.orgId === ORG_A_ID) {
+            return {
+              status: 'ACTIVE',
+              role: { permissions: [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS] },
+            }
+          }
+          return null
+        }),
+      },
+    }
     orgMembershipRepo = {
       findMembership: jest.fn(async (userId: string, orgType: OrgType, orgId: string) => {
         if (userId === userA.id && orgType === OrgType.ENTITY && orgId === ORG_A_ID) {
@@ -101,8 +125,8 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
     }
 
     propostasRepo = {
-      findPoliticianByUserId: jest.fn(async (userId: string) =>
-        userId === userA.id ? { id: ORG_A_ID, plan: 'MANDATOMETRO_PRO' } : null,
+      findPoliticianById: jest.fn(async (id: string) =>
+        id === ORG_A_ID ? { id: ORG_A_ID, plan: 'MANDATOMETRO_PRO' } : null,
       ),
       findById: jest.fn(async (id: string) => {
         if (id === PROPOSTA_B_ID) return { id: PROPOSTA_B_ID, politicoId: ORG_B_ID }
@@ -113,9 +137,6 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
     }
 
     debatesRepo = {
-      findPoliticianByUserId: jest.fn(async (userId: string) =>
-        userId === userA.id ? { orgId: ORG_A_ID } : null,
-      ),
       findById: jest.fn(async (id: string) => {
         if (id === DEBATE_B_ID) return { id: DEBATE_B_ID, creatorId: ORG_B_ID, status: 'SCHEDULED' }
         return null
@@ -139,6 +160,7 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
         OrgPermissionGuard,
         PropostasService,
         DebatesService,
+        { provide: PrismaService, useValue: prismaMock },
         { provide: OrgMembershipsRepository, useValue: orgMembershipRepo },
         { provide: OrgMembershipsService, useValue: orgMembershipsService },
         { provide: SubscricoesService, useValue: subscricoesService },

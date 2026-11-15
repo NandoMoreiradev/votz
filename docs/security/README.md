@@ -19,6 +19,7 @@ Bypass de MFA, refresh token ineficaz (agora opaco, com família e detecção de
 | 1 | **`roteiro-auditoria-nivel-a.md`** | **A pauta da auditoria.** Critérios de saída, achados abertos (A0 a A6), método por rota, módulos ainda não revisados, testes a criar e as 8 rodadas |
 | 2 | `checklist-antes-de-ir-ao-ar.md` | Configuração de produção que o código não faz sozinho (CSP com a API real, segredos, Redis, MapTiler...) |
 | 3 | `auditoria-seguranca-2026-11.md` | A primeira auditoria: achados, evidências e a comparação com o maskot |
+| 3b | **`relatorio-teste-ponta-a-ponta-2026-11-15.md`** | **Teste com a API e o front rodando (236 verificações) e achados B-1 a B-10.** Scripts em `qa-scripts/` |
 | 4 | `plano-de-incidentes.md` | O que fazer em caso de vazamento (LGPD art. 48) |
 | 5 | `audit-allowlist.md` | Vulnerabilidades de dependência aceitas, com justificativa |
 | 6 | `fase-3a`, `3a1`, `3b`, `3c` | Os briefs já executados (histórico e modelo para os próximos) |

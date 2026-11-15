@@ -214,13 +214,6 @@ export class DebatesRepository {
     })
   }
 
-  findPoliticianByUserId(userId: string) {
-    return this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
-      select: { orgId: true },
-    })
-  }
-
   followPolitician(userId: string, politicianId: string) {
     return this.prisma.userPoliticianFollower.upsert({
       where: { userId_politicianId: { userId, politicianId } },

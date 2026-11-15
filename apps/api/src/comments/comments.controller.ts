@@ -7,6 +7,7 @@ import { DeleteCommentDto } from './dto/delete-comment.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
+import { ActingUser } from '../auth/acting-org'
 
 @ApiTags('comments')
 @Controller('reports/:reportId/comments')
@@ -20,9 +21,9 @@ export class CommentsController {
   create(
     @Param('reportId') reportId: string,
     @Body() dto: CreateCommentDto,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.commentsService.create(reportId, user.id, user.type, dto)
+    return this.commentsService.create(reportId, user, dto)
   }
 
   @Public()

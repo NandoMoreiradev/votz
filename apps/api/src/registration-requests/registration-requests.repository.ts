@@ -7,6 +7,7 @@ const SELECT = {
   type: true,
   status: true,
   payload: true,
+  note: true,
   claimTargetId: true,
   reviewNote: true,
   approvedOrgId: true,

@@ -351,12 +351,29 @@ describe('AuthService', () => {
       expect(result).toEqual(expect.objectContaining({ requiresMfa: true, mfaToken: expect.any(String) }))
     })
 
-    it('returns mfaSetupToken for ADMIN without MFA (mandatory MFA)', async () => {
-      mockPrismaUser.findUnique.mockResolvedValue(makeUser({ type: 'ADMIN' }))
+    it.each(['ADMIN', 'MODERATOR'])(
+      'returns mfaSetupToken for %s without MFA (mandatory MFA)',
+      async (type) => {
+        mockPrismaUser.findUnique.mockResolvedValue(makeUser({ type }))
+
+        const result = await service.login(dto)
+
+        expect(result).toEqual(
+          expect.objectContaining({ requiresMfaSetup: true, mfaSetupToken: expect.any(String) }),
+        )
+      },
+    )
+
+    it('returns mfaToken for MODERATOR when MFA is enabled', async () => {
+      mockPrismaUser.findUnique.mockResolvedValue(
+        makeUser({ type: 'MODERATOR', mfaEnabled: true, mfaSecret: 'SECRET' }),
+      )
 
       const result = await service.login(dto)
 
-      expect(result).toEqual(expect.objectContaining({ requiresMfaSetup: true, mfaSetupToken: expect.any(String) }))
+      expect(result).toEqual(
+        expect.objectContaining({ requiresMfa: true, mfaToken: expect.any(String) }),
+      )
     })
 
     it.each(['CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY'])(
@@ -468,12 +485,15 @@ describe('AuthService', () => {
       await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(BadRequestException)
     })
 
-    it('throws ForbiddenException for ADMIN (MFA is mandatory)', async () => {
-      mockPrismaUser.findUnique.mockResolvedValue(
-        makeUser({ type: 'ADMIN', mfaEnabled: true, mfaSecret: 'SECRET' }),
-      )
-      await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(ForbiddenException)
-    })
+    it.each(['ADMIN', 'MODERATOR'])(
+      'throws ForbiddenException for %s (MFA is mandatory)',
+      async (type) => {
+        mockPrismaUser.findUnique.mockResolvedValue(
+          makeUser({ type, mfaEnabled: true, mfaSecret: 'SECRET' }),
+        )
+        await expect(service.mfaDisable('u1', '123456')).rejects.toThrow(ForbiddenException)
+      },
+    )
 
     it.each(['CITIZEN', 'ENTITY', 'POLITICIAN', 'COMPANY'])(
       'disables MFA for %s with valid TOTP code',

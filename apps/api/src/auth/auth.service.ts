@@ -33,8 +33,8 @@ const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock ske
 // sendo tratado como comprometimento e revoga toda a família.
 const REFRESH_REUSE_LEEWAY_MS = 10_000
 
-// Apenas ADMIN exige MFA no login — políticos/entidades/empresas exigem MFA na troca de contexto
-const MFA_REQUIRED_TYPES = ['ADMIN'] as const
+// ADMIN e MODERATOR exigem MFA no login — perfis organizacionais exigem MFA na troca de contexto
+const MFA_REQUIRED_TYPES = ['ADMIN', 'MODERATOR'] as const
 type MfaRequiredType = (typeof MFA_REQUIRED_TYPES)[number]
 
 function requiresMandatoryMfa(type: string): type is MfaRequiredType {

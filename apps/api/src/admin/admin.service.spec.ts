@@ -32,6 +32,8 @@ describe('AdminService', () => {
       setEntityPlan: jest.fn(),
       setPoliticianPlan: jest.fn(),
       setCompanyPlan: jest.fn(),
+      findApiKeyForTier: jest.fn(),
+      setApiKeyTier: jest.fn(),
     }
     prisma = {
       moderationAction: {
@@ -441,6 +443,90 @@ describe('AdminRepository.deleteReport (FK dependency cleanup)', () => {
     expect(result).toEqual({
       user: { id: 'u-t1', type: UserType.MODERATOR },
       actionId: 'act-type-tx',
+    })
+  })
+
+  describe('setApiKeyTier', () => {
+    it('changes key tier with audit reason and rejects missing key or short reason', async () => {
+      const repo: any = {
+        findApiKeyForTier: jest.fn(),
+        setApiKeyTier: jest.fn(),
+      }
+      const service = new AdminService(repo, {} as any, {} as any, {} as any)
+
+      await expect(
+        service.setApiKeyTier('k1', 'PAID' as any, 'adm-1', 'curto'),
+      ).rejects.toThrow(BadRequestException)
+
+      repo.findApiKeyForTier.mockResolvedValueOnce(null)
+      await expect(
+        service.setApiKeyTier('missing', 'PAID' as any, 'adm-1', 'Motivo administrativo válido.'),
+      ).rejects.toThrow(NotFoundException)
+
+      repo.findApiKeyForTier.mockResolvedValueOnce({
+        id: 'k1',
+        name: 'Portal',
+        prefix: 'vtz_12345678',
+        tier: 'FREE',
+        userId: 'u1',
+        revokedAt: null,
+      })
+      repo.setApiKeyTier.mockResolvedValueOnce({
+        apiKey: { id: 'k1', tier: 'PAID' },
+        actionId: 'act-tier-1',
+      })
+
+      const res = await service.setApiKeyTier(
+        'k1',
+        'PAID' as any,
+        'adm-1',
+        'Aprovado para contrato institucional.',
+      )
+
+      expect(res).toEqual({ id: 'k1', tier: 'PAID' })
+      expect(repo.setApiKeyTier).toHaveBeenCalledWith(
+        'k1',
+        'PAID',
+        'adm-1',
+        'FREE → PAID: Aprovado para contrato institucional.',
+      )
+    })
+
+    it('AdminRepository.setApiKeyTier updates tier and creates API_KEY_TIER_CHANGED audit atomically', async () => {
+      const tx: any = {
+        apiKey: {
+          update: jest.fn().mockResolvedValue({ id: 'k1', tier: 'PAID' }),
+        },
+        moderationAction: {
+          create: jest.fn().mockResolvedValue({ id: 'act-tier-tx' }),
+        },
+      }
+      const prismaMock: any = { $transaction: jest.fn((fn: any) => fn(tx)) }
+
+      const { AdminRepository } = require('./admin.repository')
+      const repository = new AdminRepository(prismaMock)
+      const result = await repository.setApiKeyTier(
+        'k1',
+        'PAID' as any,
+        'adm-1',
+        'FREE → PAID: Motivo auditado válido.',
+      )
+
+      expect(tx.apiKey.update).toHaveBeenCalledWith({
+        where: { id: 'k1' },
+        data: { tier: 'PAID' },
+        select: { id: true, name: true, prefix: true, tier: true, userId: true, updatedAt: true },
+      })
+      expect(tx.moderationAction.create).toHaveBeenCalledWith({
+        data: {
+          action: ModerationActionType.API_KEY_TIER_CHANGED,
+          targetType: 'API_KEY',
+          targetId: 'k1',
+          reason: 'FREE → PAID: Motivo auditado válido.',
+          actorId: 'adm-1',
+        },
+      })
+      expect(result).toEqual({ apiKey: { id: 'k1', tier: 'PAID' }, actionId: 'act-tier-tx' })
     })
   })
 })

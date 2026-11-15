@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { OrgProfile, MyProfilesResponse } from '../../types/api'
 import { UserType } from '@votz/shared-types'
@@ -29,8 +29,25 @@ const Modal = styled.div`
 `
 
 const Header = styled.div`
+  position: relative;
   background: ${({ theme }) => theme.colors.primary};
   padding: 28px 32px 24px;
+`
+
+const CloseBtn = styled.button`
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.colors.white};
+  opacity: 0.75;
+  font-size: 1.125rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: ${({ theme }) => theme.radii.sm};
+
+  &:hover { opacity: 1; }
 `
 
 const Logo = styled.div`
@@ -294,14 +311,24 @@ interface Props {
   error?: boolean
   mfaSetupRequired?: boolean
   onSelect: (contextType: string, contextId?: string, mfaCode?: string) => void
+  onClose?: () => void
 }
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired, onSelect }: Props) {
+export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired, onSelect, onClose }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
   const [pendingOrg, setPendingOrg] = useState<OrgProfile | null>(null)
   const [mfaCode, setMfaCode] = useState('')
+
+  useEffect(() => {
+    if (!onClose) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose?.()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   function handlePersonal() {
     setSelected('personal')
@@ -329,9 +356,10 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
 
   if (pendingOrg) {
     return (
-      <Overlay>
+      <Overlay onClick={(e) => { if (onClose && e.target === e.currentTarget) onClose() }}>
         <Modal>
           <Header>
+            {onClose && <CloseBtn type="button" aria-label="Fechar" onClick={onClose}>✕</CloseBtn>}
             <Logo><span>◆</span> VOTZ</Logo>
             <Title>Confirme sua identidade</Title>
             <Subtitle>Para acessar este perfil, você precisa do autenticador.</Subtitle>
@@ -400,9 +428,10 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
   const personalKey = 'personal'
 
   return (
-    <Overlay>
+    <Overlay onClick={(e) => { if (onClose && e.target === e.currentTarget) onClose() }}>
       <Modal>
         <Header>
+          {onClose && <CloseBtn type="button" aria-label="Fechar" onClick={onClose}>✕</CloseBtn>}
           <Logo><span>◆</span> VOTZ</Logo>
           <Title>Como deseja entrar?</Title>
           <Subtitle>Escolha o perfil que vai usar nesta sessão.</Subtitle>

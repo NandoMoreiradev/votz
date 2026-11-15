@@ -34,7 +34,7 @@ export class ApiKeysService {
         name:    dto.name,
         keyHash,
         prefix,
-        tier:    dto.tier ?? ApiKeyTier.FREE,
+        tier:    ApiKeyTier.FREE,
         userId,
       },
       select: {

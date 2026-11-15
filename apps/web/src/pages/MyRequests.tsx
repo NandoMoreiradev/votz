@@ -12,6 +12,7 @@ interface RegistrationRequest {
   type: 'ENTITY' | 'POLITICIAN' | 'COMPANY'
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   payload: Record<string, unknown>
+  note: string | null
   claimTargetId: string | null
   reviewNote: string | null
   approvedOrgId: string | null
@@ -152,6 +153,27 @@ const StatusBadge = styled.span<{ $status: string }>`
     $status === 'APPROVED' ? '#14532d' :
     $status === 'REJECTED' ? '#7f1d1d' :
     '#713f12'};
+`
+
+const ApplicantNote = styled.div`
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-left: 3px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surface};
+  border-radius: 0 ${({ theme }) => theme.radii.md} ${({ theme }) => theme.radii.md} 0;
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  line-height: 1.5;
+`
+
+const ApplicantNoteLabel = styled.span`
+  display: block;
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 `
 
 const ReviewNote = styled.div`
@@ -302,6 +324,13 @@ export function MyRequests() {
                       {STATUS_LABEL[req.status]}
                     </StatusBadge>
                   </CardHeader>
+
+                  {req.note && (
+                    <ApplicantNote>
+                      <ApplicantNoteLabel>Observação enviada</ApplicantNoteLabel>
+                      {req.note}
+                    </ApplicantNote>
+                  )}
 
                   {req.status === 'PENDING' && (
                     <PendingNote>

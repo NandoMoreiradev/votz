@@ -18,6 +18,7 @@ import { CreatePollDto } from './dto/create-poll.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
+import { ActingUser } from '../auth/acting-org'
 
 @ApiTags('debates')
 @Controller('debates')
@@ -28,8 +29,8 @@ export class DebatesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Criar debate e enviar convites a outros políticos' })
-  create(@Body() dto: CreateDebateDto, @CurrentUser() user: { id: string }) {
-    return this.service.create(user.id, dto)
+  create(@Body() dto: CreateDebateDto, @CurrentUser() user: ActingUser) {
+    return this.service.create(user, dto)
   }
 
   @Public()
@@ -53,9 +54,9 @@ export class DebatesController {
   update(
     @Param('id') id: string,
     @Body() dto: UpdateDebateDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.service.update(id, user.id, dto)
+    return this.service.update(id, user, dto)
   }
 
   @Post(':id/invite/:politicianId/respond')
@@ -67,33 +68,33 @@ export class DebatesController {
     @Param('id') debateId: string,
     @Param('politicianId') politicianId: string,
     @Body('accept') accept: boolean,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.service.respondInvite(debateId, politicianId, accept, user.id)
+    return this.service.respondInvite(debateId, politicianId, accept, user)
   }
 
   @Post(':id/start')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Iniciar debate ao vivo — cria sala LiveKit e inicia HLS Egress' })
-  start(@Param('id') id: string, @CurrentUser() user: { id: string }) {
-    return this.service.start(id, user.id)
+  start(@Param('id') id: string, @CurrentUser() user: ActingUser) {
+    return this.service.start(id, user)
   }
 
   @Post(':id/end')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Encerrar debate — para Egress e enfileira processamento da gravação' })
-  end(@Param('id') id: string, @CurrentUser() user: { id: string }) {
-    return this.service.end(id, user.id)
+  end(@Param('id') id: string, @CurrentUser() user: ActingUser) {
+    return this.service.end(id, user)
   }
 
   @Get(':id/token')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obter token LiveKit para transmitir (apenas participantes confirmados)' })
-  getLivekitToken(@Param('id') id: string, @CurrentUser() user: { id: string }) {
-    return this.service.getLivekitToken(id, user.id)
+  getLivekitToken(@Param('id') id: string, @CurrentUser() user: ActingUser) {
+    return this.service.getLivekitToken(id, user)
   }
 
   @Public()
@@ -144,9 +145,9 @@ export class DebatesController {
   createPoll(
     @Param('id') debateId: string,
     @Body() dto: CreatePollDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.service.createPoll(debateId, user.id, dto)
+    return this.service.createPoll(debateId, user, dto)
   }
 
   @Post(':id/polls/:pollId/vote')

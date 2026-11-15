@@ -1,0 +1,16 @@
+import { Session, req, sql, resetThrottle, check, loadState, login, PASSWORD } from './lib.mjs'
+const S = 'funcional'; resetThrottle()
+const email = 'qa.descartavel@votz.test'
+const id = sql(`select id from users where email='${email}'`)
+const rep = sql(`select id from reports where title='QA relato da conta descartavel' order by "createdAt" desc limit 1`)
+console.log('conta:', id, 'relato:', rep)
+const s = new Session('d'); const l = await login(s, email)
+const del = await req(s, 'DELETE', '/users/me', { body: { password: PASSWORD } })
+check(S, 'LGPD: excluir a própria conta com a senha correta', del.status === 200 || del.status === 204, `status ${del.status} ${del.text.slice(0, 120)}`)
+check(S, 'LGPD: usuário removido do banco', sql(`select count(*) from users where email='${email}'`) === '0')
+check(S, 'LGPD: comentários e apoios apagados', sql(`select (select count(*) from comments where "authorId"='${id}') + (select count(*) from votes where "userId"='${id}')`) === '0')
+const kept = sql(`select count(*), bool_and("authorId" is null), bool_and(anonymous) from reports where id='${rep}'`)
+check(S, 'LGPD: o relato permanece (Memória pública), sem autor e marcado anônimo', kept === '1|t|t', kept)
+check(S, 'LGPD: log de acesso preservado (obrigação legal, 6 meses)', +sql(`select count(*) from access_logs where "userId"='${id}'`) >= 1)
+check(S, 'LGPD: sessões (refresh tokens) apagadas junto', sql(`select count(*) from refresh_tokens where "userId"='${id}'`) === '0')
+const again = await req(s, 'GET', '/auth/me'); check(S, 'LGPD: o token da conta excluída deixa de valer (401)', again.status === 401, `status ${again.status}`)

@@ -182,4 +182,80 @@ describe('RegistrationRequestsService', () => {
       expect(storage.getSignedDownloadUrl).toHaveBeenCalledWith('verification/rg.pdf', 3600)
     })
   })
+
+  describe('note handling (B-4)', () => {
+    it('allows creating a request without note and omits empty/whitespace note', async () => {
+      prisma.entity.findUnique.mockResolvedValue(null)
+      prisma.registrationRequest.findFirst.mockResolvedValue(null)
+      repo.create.mockResolvedValue({ id: 'req-no-note', note: null })
+
+      await service.create('u1', {
+        type: RegistrationRequestType.ENTITY,
+        payload: { legalName: 'Autarquia Municipal', cnpj: '12345678000199' },
+      } as any)
+
+      expect(repo.create).toHaveBeenCalledWith('u1', {
+        type: RegistrationRequestType.ENTITY,
+        payload: { legalName: 'Autarquia Municipal', cnpj: '12345678000199' },
+        claimTargetId: undefined,
+      })
+
+      await service.create('u1', {
+        type: RegistrationRequestType.ENTITY,
+        payload: { legalName: 'Autarquia Municipal', cnpj: '12345678000199' },
+        note: '   <script>alert(1)</script>   ',
+      } as any)
+
+      expect(repo.create).toHaveBeenLastCalledWith('u1', {
+        type: RegistrationRequestType.ENTITY,
+        payload: { legalName: 'Autarquia Municipal', cnpj: '12345678000199' },
+        claimTargetId: undefined,
+      })
+    })
+
+    it('RegistrationRequestsRepository persists note and selects note on create, findAll, and findByRequester', async () => {
+      const { RegistrationRequestsRepository } = require('./registration-requests.repository')
+      const repoPrisma: any = {
+        registrationRequest: {
+          create: jest.fn().mockResolvedValue({ id: 'req-1', note: 'Observação do solicitante' }),
+          findMany: jest.fn().mockResolvedValue([]),
+          count: jest.fn().mockResolvedValue(0),
+        },
+        $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+      }
+
+      const repository = new RegistrationRequestsRepository(repoPrisma)
+      const created = await repository.create('u1', {
+        type: RegistrationRequestType.ENTITY,
+        payload: { legalName: 'Secretaria' },
+        note: 'Observação do solicitante',
+      })
+
+      expect(created.note).toBe('Observação do solicitante')
+      expect(repoPrisma.registrationRequest.create).toHaveBeenCalledWith({
+        data: {
+          requesterId: 'u1',
+          type: RegistrationRequestType.ENTITY,
+          payload: { legalName: 'Secretaria' },
+          note: 'Observação do solicitante',
+        },
+        select: expect.objectContaining({ note: true, reviewNote: true }),
+      })
+
+      await repository.findAll(RegistrationRequestStatus.PENDING, 1, 20)
+      expect(repoPrisma.registrationRequest.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ note: true }),
+        }),
+      )
+
+      await repository.findByRequester('u1')
+      expect(repoPrisma.registrationRequest.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { requesterId: 'u1' },
+          select: expect.objectContaining({ note: true }),
+        }),
+      )
+    })
+  })
 })

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
-import { DebateStatus, InviteStatus, ParticipantRole } from '@prisma/client'
+import { DebateStatus, InviteStatus, OrgPermission, ParticipantRole } from '@prisma/client'
 import { DebatesService } from './debates.service'
 
 const createRoomMock = jest.fn().mockResolvedValue({})
@@ -18,14 +18,26 @@ jest.mock('livekit-server-sdk', () => ({
 describe('DebatesService', () => {
   let service: DebatesService
   let repo: any
+  let prisma: any
   let config: any
   let queue: any
   let gateway: any
 
+  const polUser = (id = 'u1', orgId = 'pol-1') => ({
+    id,
+    type: 'CITIZEN',
+    ctx: {
+      type: 'POLITICIAN' as const,
+      id: orgId,
+      name: 'Pol',
+      logoUrl: null,
+      permissions: [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS],
+    },
+  })
+
   beforeEach(() => {
     jest.clearAllMocks()
     repo = {
-      findPoliticianByUserId: jest.fn(),
       create: jest.fn(),
       createParticipant: jest.fn(),
       findById: jest.fn(),
@@ -44,6 +56,14 @@ describe('DebatesService', () => {
       followPolitician: jest.fn(),
       unfollowPolitician: jest.fn(),
     }
+    prisma = {
+      orgMembership: {
+        findUnique: jest.fn().mockResolvedValue({
+          status: 'ACTIVE',
+          role: { permissions: [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS] },
+        }),
+      },
+    }
     config = {
       getOrThrow: jest.fn((k: string) => `val_${k}`),
       get: jest.fn().mockReturnValue(undefined),
@@ -56,20 +76,18 @@ describe('DebatesService', () => {
       emitPollResult: jest.fn(),
     }
 
-    service = new DebatesService(repo, config, queue, gateway)
+    service = new DebatesService(repo, prisma, config, queue, gateway)
   })
 
-  it('create forbids non-politician users and invites other politicians cleanly', async () => {
-    repo.findPoliticianByUserId.mockResolvedValueOnce(null)
-    await expect(service.create('u1', { title: 'D1', scheduledFor: '2026-10-01T18:00:00Z', invites: [] } as any)).rejects.toThrow(
-      ForbiddenException,
-    )
+  it('create forbids users without active POLITICIAN context and invites other politicians cleanly', async () => {
+    await expect(
+      service.create({ id: 'u1', type: 'POLITICIAN', ctx: null }, { title: 'D1', scheduledFor: '2026-10-01T18:00:00Z', invites: [] } as any),
+    ).rejects.toThrow(ForbiddenException)
 
-    repo.findPoliticianByUserId.mockResolvedValueOnce({ orgId: 'pol-1' })
     repo.create.mockResolvedValue({ id: 'deb-1' })
     repo.findById.mockResolvedValue({ id: 'deb-1', title: 'Debate Educação' })
 
-    const res = await service.create('u1', {
+    const res = await service.create(polUser('u1', 'pol-1'), {
       title: 'Debate Educação',
       scheduledFor: '2026-10-01T18:00:00Z',
       invites: ['pol-1', 'pol-2'],
@@ -81,13 +99,13 @@ describe('DebatesService', () => {
     expect(res!.id).toBe('deb-1')
   })
 
-  it('respondInvite validates politician representation and updates pending invite', async () => {
-    repo.findPoliticianByUserId.mockResolvedValueOnce({ orgId: 'pol-1' })
-    await expect(service.respondInvite('deb-1', 'pol-2', true, 'u1')).rejects.toThrow(ForbiddenException)
+  it('respondInvite validates active context politician and updates pending invite', async () => {
+    await expect(service.respondInvite('deb-1', 'pol-2', true, polUser('u1', 'pol-1'))).rejects.toThrow(
+      ForbiddenException,
+    )
 
-    repo.findPoliticianByUserId.mockResolvedValueOnce({ orgId: 'pol-2' })
     repo.findParticipant.mockResolvedValueOnce({ inviteStatus: InviteStatus.PENDING })
-    const res = await service.respondInvite('deb-1', 'pol-2', true, 'u2')
+    const res = await service.respondInvite('deb-1', 'pol-2', true, polUser('u2', 'pol-2'))
     expect(repo.updateParticipantInvite).toHaveBeenCalledWith('deb-1', 'pol-2', InviteStatus.CONFIRMED)
     expect(res).toEqual({ accepted: true })
   })
@@ -101,9 +119,8 @@ describe('DebatesService', () => {
       participants: [{ politicianId: 'pol-1' }, { politicianId: 'pol-2' }],
     }
     repo.findById.mockResolvedValueOnce(debate).mockResolvedValueOnce({ ...debate, status: DebateStatus.LIVE })
-    repo.findPoliticianByUserId.mockResolvedValue({ orgId: 'pol-1' })
 
-    const res = await service.start('deb-1', 'u1')
+    const res = await service.start('deb-1', polUser('u1', 'pol-1'))
 
     expect(createRoomMock).toHaveBeenCalledWith({ name: 'debate-deb-1', maxParticipants: 2000 })
     expect(repo.updateStatus).toHaveBeenCalledWith('deb-1', DebateStatus.LIVE, { livekitRoomName: 'debate-deb-1' })
@@ -117,16 +134,15 @@ describe('DebatesService', () => {
 
   it('getLivekitToken grants publish rights only to confirmed participant politicians', async () => {
     repo.findById.mockResolvedValueOnce(null)
-    await expect(service.getLivekitToken('missing', 'u1')).rejects.toThrow(NotFoundException)
+    await expect(service.getLivekitToken('missing', polUser('u1', 'pol-1'))).rejects.toThrow(NotFoundException)
 
     repo.findById.mockResolvedValueOnce({ id: 'deb-1', livekitRoomName: null })
-    await expect(service.getLivekitToken('deb-1', 'u1')).rejects.toThrow(BadRequestException)
+    await expect(service.getLivekitToken('deb-1', polUser('u1', 'pol-1'))).rejects.toThrow(BadRequestException)
 
     repo.findById.mockResolvedValueOnce({ id: 'deb-1', livekitRoomName: 'debate-deb-1' })
-    repo.findPoliticianByUserId.mockResolvedValueOnce({ orgId: 'pol-1' })
     repo.isParticipant.mockResolvedValueOnce(true)
 
-    const res = await service.getLivekitToken('deb-1', 'u1')
+    const res = await service.getLivekitToken('deb-1', polUser('u1', 'pol-1'))
     expect(addGrantMock).toHaveBeenCalledWith(
       expect.objectContaining({ room: 'debate-deb-1', canPublish: true, canSubscribe: true }),
     )

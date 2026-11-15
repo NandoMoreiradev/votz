@@ -41,6 +41,12 @@ describe('AdminController (A0 setUserType RBAC & DTO validation)', () => {
       verifyPolitician: jest.fn(),
       setPoliticianPlan: jest.fn(),
       setCompanyPlan: jest.fn(),
+      setApiKeyTier: jest.fn(async (id: string, tier: string, actorId: string, reason: string) => ({
+        id,
+        tier,
+        actorId,
+        reason,
+      })),
     }
 
     const moduleRef = await Test.createTestingModule({
@@ -126,6 +132,52 @@ describe('AdminController (A0 setUserType RBAC & DTO validation)', () => {
       UserType.MODERATOR,
       'adm-1',
       'Promovido para equipe de moderação regional.',
+    )
+  })
+
+  it('PATCH /admin/api-keys/:id/tier forbids MODERATOR (403), validates DTO (400), and allows ADMIN (200)', async () => {
+    const modRes = await fetch(`${baseUrl}/admin/api-keys/k-1/tier`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify({ id: 'mod-1', type: UserType.MODERATOR }),
+      },
+      body: JSON.stringify({
+        tier: 'PAID',
+        reason: 'Tentativa indevida por moderador.',
+      }),
+    })
+    expect(modRes.status).toBe(403)
+    expect(adminService.setApiKeyTier).not.toHaveBeenCalled()
+
+    const badRes = await fetch(`${baseUrl}/admin/api-keys/k-1/tier`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify({ id: 'adm-1', type: UserType.ADMIN }),
+      },
+      body: JSON.stringify({ tier: 'PAID', reason: 'curto' }),
+    })
+    expect(badRes.status).toBe(400)
+    expect(adminService.setApiKeyTier).not.toHaveBeenCalled()
+
+    const okRes = await fetch(`${baseUrl}/admin/api-keys/k-1/tier`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify({ id: 'adm-1', type: UserType.ADMIN }),
+      },
+      body: JSON.stringify({
+        tier: 'PAID',
+        reason: 'Concessão aprovada para portal de notícias.',
+      }),
+    })
+    expect(okRes.status).toBe(200)
+    expect(adminService.setApiKeyTier).toHaveBeenCalledWith(
+      'k-1',
+      'PAID',
+      'adm-1',
+      'Concessão aprovada para portal de notícias.',
     )
   })
 })

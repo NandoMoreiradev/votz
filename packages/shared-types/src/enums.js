@@ -101,6 +101,8 @@ var ModerationActionType;
     ModerationActionType["COMMENT_REMOVED"] = "COMMENT_REMOVED";
     ModerationActionType["USER_BANNED"] = "USER_BANNED";
     ModerationActionType["USER_UNBANNED"] = "USER_UNBANNED";
+    ModerationActionType["USER_TYPE_CHANGED"] = "USER_TYPE_CHANGED";
+    ModerationActionType["API_KEY_TIER_CHANGED"] = "API_KEY_TIER_CHANGED";
 })(ModerationActionType || (exports.ModerationActionType = ModerationActionType = {}));
 var FlagTargetType;
 (function (FlagTargetType) {

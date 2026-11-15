@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
-import { UserType } from '@prisma/client'
+import { ApiKeyTier, UserType } from '@prisma/client'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
 import { SocketSessionRegistry } from '../common/security/socket-session.registry'
 import { MailService } from '../mail/mail.service'
@@ -169,5 +169,21 @@ export class AdminService {
 
   async setCompanyPlan(id: string, plan: string) {
     return this.repo.setCompanyPlan(id, plan)
+  }
+
+  async setApiKeyTier(id: string, tier: ApiKeyTier, actorId: string, reason: string) {
+    const trimmedReason = reason?.trim()
+    if (!trimmedReason || trimmedReason.length < 10 || trimmedReason.length > 500) {
+      throw new BadRequestException('Informe um motivo entre 10 e 500 caracteres.')
+    }
+
+    const existing = await this.repo.findApiKeyForTier(id)
+    if (!existing) {
+      throw new NotFoundException('API key não encontrada.')
+    }
+
+    const auditReason = `${existing.tier} → ${tier}: ${trimmedReason}`
+    const { apiKey } = await this.repo.setApiKeyTier(id, tier, actorId, auditReason)
+    return apiKey
   }
 }

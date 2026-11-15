@@ -977,8 +977,8 @@ function RequestsTab() {
                 {hasDocs && <DocViewer requestId={req.id} />}
 
                 {req.note && (
-                  <div style={{ marginTop: 8, fontSize: '0.8125rem', color: '#6B7280', fontStyle: 'italic' }}>
-                    "{req.note}"
+                  <div style={{ marginTop: 8, fontSize: '0.8125rem', color: '#4B5563' }}>
+                    <b>Observação:</b> {req.note}
                   </div>
                 )}
               </div>

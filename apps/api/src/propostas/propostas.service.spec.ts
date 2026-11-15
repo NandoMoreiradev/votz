@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
+import { OrgPermission } from '@prisma/client'
 import { PropostaStatus, UserType } from '@votz/shared-types'
 
 jest.mock('isomorphic-dompurify', () => ({
@@ -9,9 +10,10 @@ jest.mock('isomorphic-dompurify', () => ({
 
 import { PropostasService } from './propostas.service'
 import { PropostasRepository } from './propostas.repository'
+import { PrismaService } from '../prisma/prisma.service'
 
 const mockRepo = {
-  findPoliticianByUserId: jest.fn(),
+  findPoliticianById: jest.fn(),
   create: jest.fn(),
   addTimeline: jest.fn(),
   findAll: jest.fn(),
@@ -22,6 +24,18 @@ const mockRepo = {
   findMeuVoto: jest.fn(),
 }
 
+const mockPrisma = {
+  orgMembership: { findUnique: jest.fn() },
+}
+
+const polCtx = (id = 'p1', permissions: string[] = [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS]) => ({
+  type: 'POLITICIAN' as const,
+  id,
+  name: 'Pol 1',
+  logoUrl: null,
+  permissions,
+})
+
 describe('PropostasService', () => {
   let service: PropostasService
 
@@ -30,34 +44,39 @@ describe('PropostasService', () => {
       providers: [
         PropostasService,
         { provide: PropostasRepository, useValue: mockRepo },
+        { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile()
 
     service = module.get(PropostasService)
     jest.clearAllMocks()
+    mockPrisma.orgMembership.findUnique.mockResolvedValue({
+      status: 'ACTIVE',
+      role: { permissions: [OrgPermission.MANAGE_PROFILE, OrgPermission.RESPOND_REPORTS] },
+    })
   })
 
   describe('create', () => {
     const dto = { titulo: 'PL Saúde', descricao: 'Mais médicos', categorias: ['HEALTH'] } as any
 
-    it('rejects non-politician users', async () => {
-      await expect(service.create(dto, { id: 'u1', type: UserType.CITIZEN })).rejects.toThrow(
+    it('rejects users without active POLITICIAN context (even if User.type is POLITICIAN)', async () => {
+      await expect(service.create(dto, { id: 'u1', type: UserType.POLITICIAN, ctx: null })).rejects.toThrow(
         ForbiddenException,
       )
     })
 
     it('requires MANDATOMETRO_PRO or CAMPANHA plan', async () => {
-      mockRepo.findPoliticianByUserId.mockResolvedValue({ id: 'p1', plan: 'BASICO' })
-      await expect(service.create(dto, { id: 'u1', type: UserType.POLITICIAN })).rejects.toThrow(
-        ForbiddenException,
-      )
+      mockRepo.findPoliticianById.mockResolvedValue({ id: 'p1', plan: 'BASICO' })
+      await expect(
+        service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') }),
+      ).rejects.toThrow(ForbiddenException)
     })
 
-    it('creates proposta and records CREATED timeline event', async () => {
-      mockRepo.findPoliticianByUserId.mockResolvedValue({ id: 'p1', plan: 'MANDATOMETRO_PRO' })
+    it('creates proposta for CITIZEN with active POLITICIAN context and records CREATED timeline event', async () => {
+      mockRepo.findPoliticianById.mockResolvedValue({ id: 'p1', plan: 'MANDATOMETRO_PRO' })
       mockRepo.create.mockResolvedValue({ id: 'prop-1', titulo: 'PL Saúde' })
 
-      const res = await service.create(dto, { id: 'u1', type: UserType.POLITICIAN })
+      const res = await service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') })
       expect(res.id).toBe('prop-1')
       expect(mockRepo.addTimeline).toHaveBeenCalledTimes(1)
     })
@@ -65,7 +84,6 @@ describe('PropostasService', () => {
 
   describe('updateStatus & votar', () => {
     it('rejects status change on ARCHIVED proposals', async () => {
-      mockRepo.findPoliticianByUserId.mockResolvedValue({ id: 'p1' })
       mockRepo.findById.mockResolvedValue({
         id: 'prop-1',
         politicoId: 'p1',
@@ -76,7 +94,7 @@ describe('PropostasService', () => {
         service.updateStatus(
           'prop-1',
           { status: PropostaStatus.APPROVED, conteudo: 'x' } as any,
-          { id: 'u1', type: UserType.POLITICIAN },
+          { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') },
         ),
       ).rejects.toThrow(BadRequestException)
     })

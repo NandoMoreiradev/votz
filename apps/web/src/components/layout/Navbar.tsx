@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { List, X } from '@phosphor-icons/react'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { useAuthStore } from '../../store/auth.store'
@@ -28,13 +29,23 @@ const Inner = styled.div`
   display: flex;
   align-items: center;
   gap: 32px;
+
+  @media (max-width: ${({ theme }) => theme.breakpoints.lg}) {
+    padding: 0 ${({ theme }) => theme.spacing[4]};
+    gap: ${({ theme }) => theme.spacing[3]};
+  }
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    padding: 0 ${({ theme }) => theme.spacing[3]};
+    gap: ${({ theme }) => theme.spacing[2]};
+  }
 `
 
 const Logo = styled(Link)`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 1.25rem;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: #fff;
+  color: ${({ theme }) => theme.colors.white};
   letter-spacing: -0.01em;
   display: flex;
   align-items: center;
@@ -46,11 +57,25 @@ const Logo = styled(Link)`
   }
 `
 
+const LogoImg = styled.img`
+  height: 36px;
+  width: auto;
+  display: block;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    height: 28px;
+  }
+`
+
 const NavLinks = styled.div`
   display: flex;
   align-items: center;
   gap: 4px;
   flex: 1;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    display: none;
+  }
 `
 
 const NavLink = styled(Link)`
@@ -59,10 +84,16 @@ const NavLink = styled(Link)`
   font-weight: ${({ theme }) => theme.fontWeights.medium};
   padding: 6px 12px;
   border-radius: ${({ theme }) => theme.radii.md};
+  white-space: nowrap;
   transition: all 0.15s;
 
+  @media (max-width: ${({ theme }) => theme.breakpoints.lg}) {
+    font-size: ${({ theme }) => theme.fontSizes.sm};
+    padding: 6px ${({ theme }) => theme.spacing[2]};
+  }
+
   &:hover {
-    color: #fff;
+    color: ${({ theme }) => theme.colors.white};
     background: rgba(255, 255, 255, 0.08);
   }
 `
@@ -72,10 +103,18 @@ const Actions = styled.div`
   align-items: center;
   gap: 10px;
   margin-left: auto;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    gap: ${({ theme }) => theme.spacing[2]};
+  }
 `
 
 const AvatarWrapper = styled.div`
   position: relative;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    display: none;
+  }
 `
 
 const Avatar = styled.button<{ $src?: string | null }>`
@@ -211,6 +250,14 @@ const NotifDropdown = styled.div`
   box-shadow: ${({ theme }) => theme.shadows.md};
   z-index: 200;
   overflow: hidden;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    position: fixed;
+    top: 68px;
+    right: ${({ theme }) => theme.spacing[3]};
+    left: ${({ theme }) => theme.spacing[3]};
+    width: auto;
+  }
 `
 
 const NotifHeader = styled.div`
@@ -385,6 +432,10 @@ const ContextBadge = styled.div`
   &:hover {
     background: rgba(255, 255, 255, 0.18);
   }
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    display: none;
+  }
 `
 
 const ContextAvatar = styled.div<{ $src?: string | null }>`
@@ -413,25 +464,147 @@ const ContextName = styled.span`
   text-overflow: ellipsis;
 `
 
+const MobileMenuBtn = styled.button`
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: rgba(255, 255, 255, 0.1);
+  color: ${({ theme }) => theme.colors.white};
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    display: inline-flex;
+  }
+`
+
+const MobileDrawer = styled.div`
+  display: none;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: ${({ theme }) => theme.colors.primary};
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[5]};
+  z-index: 190;
+
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+    display: flex;
+    flex-direction: column;
+    gap: ${({ theme }) => theme.spacing[1]};
+  }
+`
+
+const MobileSectionLabel = styled.span`
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[1]};
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: ${({ theme }) => theme.spacing[2]};
+`
+
+const MobileNavLink = styled(Link)<{ $highlight?: boolean }>`
+  display: block;
+  padding: ${({ theme }) => theme.spacing[3]};
+  font-size: ${({ theme }) => theme.fontSizes.md};
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ $highlight, theme }) => ($highlight ? theme.colors.action : theme.colors.white)};
+  border-radius: ${({ theme }) => theme.radii.md};
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+`
+
+const MobileDrawerAction = styled.button<{ $danger?: boolean }>`
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: ${({ theme }) => theme.spacing[3]};
+  font-size: ${({ theme }) => theme.fontSizes.md};
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.white)};
+  background: none;
+  border: none;
+  border-radius: ${({ theme }) => theme.radii.md};
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+`
+
 export function Navbar() {
   const { user, activeContext, logout, sessionReady } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
+
+  const closeMobileMenu = useCallback((restoreFocus = false) => {
+    setMobileOpen(false)
+    if (restoreFocus) {
+      requestAnimationFrame(() => menuBtnRef.current?.focus())
+    }
+  }, [])
+
+  useEffect(() => {
+    setMobileOpen(false)
+    setOpen(false)
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     function close(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setOpen(false)
       }
+      if (
+        mobileOpen &&
+        drawerRef.current &&
+        !drawerRef.current.contains(e.target as Node) &&
+        menuBtnRef.current &&
+        !menuBtnRef.current.contains(e.target as Node)
+      ) {
+        closeMobileMenu(false)
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && mobileOpen) {
+        closeMobileMenu(true)
+      }
     }
     document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [])
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [mobileOpen, closeMobileMenu])
 
   async function handleLogout() {
     try {
@@ -441,6 +614,7 @@ export function Navbar() {
     }
     logout()
     setOpen(false)
+    setMobileOpen(false)
     navigate('/')
   }
 
@@ -465,7 +639,7 @@ export function Navbar() {
       <Nav>
         <Inner>
           <Logo to="/">
-            <img src={logoSrc} alt="Votz" style={{ height: 36, width: 'auto', display: 'block' }} />
+            <LogoImg src={logoSrc} alt="Votz" />
           </Logo>
 
           <NavLinks>
@@ -556,9 +730,90 @@ export function Navbar() {
                 </ReportButton>
               </>
             )}
+
+            <MobileMenuBtn
+              ref={menuBtnRef}
+              type="button"
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-nav-drawer"
+              aria-label={mobileOpen ? 'Fechar menu de navegação' : 'Abrir menu de navegação'}
+              onClick={() => (mobileOpen ? closeMobileMenu(false) : setMobileOpen(true))}
+            >
+              {mobileOpen ? <X size={20} weight="bold" aria-hidden="true" /> : <List size={20} weight="bold" aria-hidden="true" />}
+            </MobileMenuBtn>
           </Actions>
         </Inner>
       </Nav>
+
+      {mobileOpen && (
+        <MobileDrawer id="mobile-nav-drawer" ref={drawerRef} role="navigation" aria-label="Menu mobile">
+          <MobileNavLink to="/" onClick={() => setMobileOpen(false)}>Explorar</MobileNavLink>
+          <MobileNavLink to="/entidades" onClick={() => setMobileOpen(false)}>Entidades</MobileNavLink>
+          <MobileNavLink to="/politicos" onClick={() => setMobileOpen(false)}>Políticos</MobileNavLink>
+          <MobileNavLink to="/mapa" onClick={() => setMobileOpen(false)}>Mapa</MobileNavLink>
+          <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
+          <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>Planos</MobileNavLink>
+          {!user && (
+            <MobileNavLink to="/solicitar-cadastro" onClick={() => setMobileOpen(false)}>
+              Registrar organização
+            </MobileNavLink>
+          )}
+          {!user && (
+            <MobileNavLink to="/entrar" onClick={() => setMobileOpen(false)}>
+              Entrar
+            </MobileNavLink>
+          )}
+          {isStaff && (
+            <MobileNavLink to="/admin" $highlight onClick={() => setMobileOpen(false)}>
+              Admin
+            </MobileNavLink>
+          )}
+
+          {user && (
+            <>
+              <MobileSectionLabel>
+                {activeContext ? `Atuando como ${activeContext.name}` : user.name}
+              </MobileSectionLabel>
+              <MobileNavLink to={`/perfil/${user.id}`} onClick={() => setMobileOpen(false)}>
+                Meu perfil
+              </MobileNavLink>
+              {profiles?.orgs.filter((o) => o.type === 'ENTITY').map((org) => (
+                <MobileNavLink key={org.id} to={`/entidade/${org.id}`} onClick={() => setMobileOpen(false)}>
+                  {org.name}
+                </MobileNavLink>
+              ))}
+              {profiles?.orgs.filter((o) => o.type === 'POLITICIAN').map((org) => (
+                <MobileNavLink key={org.id} to={`/politico/${org.id}`} onClick={() => setMobileOpen(false)}>
+                  {org.name}
+                </MobileNavLink>
+              ))}
+              <MobileNavLink to="/meu-perfil" onClick={() => setMobileOpen(false)}>
+                Editar perfil
+              </MobileNavLink>
+              <MobileNavLink to="/minhas-solicitacoes" onClick={() => setMobileOpen(false)}>
+                Minhas solicitações
+              </MobileNavLink>
+              <MobileNavLink to="/solicitar-cadastro" onClick={() => setMobileOpen(false)}>
+                Registrar organização
+              </MobileNavLink>
+              {hasMultipleProfiles && (
+                <MobileDrawerAction
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false)
+                    setShowProfileModal(true)
+                  }}
+                >
+                  Trocar perfil
+                </MobileDrawerAction>
+              )}
+              <MobileDrawerAction type="button" $danger onClick={handleLogout}>
+                Sair
+              </MobileDrawerAction>
+            </>
+          )}
+        </MobileDrawer>
+      )}
 
       {showProfileModal && profiles && (
         <ProfileSelectModal
@@ -567,6 +822,7 @@ export function Navbar() {
           error={switchError}
           mfaSetupRequired={mfaSetupRequired}
           onSelect={handleProfileSelect}
+          onClose={() => setShowProfileModal(false)}
         />
       )}
     </>

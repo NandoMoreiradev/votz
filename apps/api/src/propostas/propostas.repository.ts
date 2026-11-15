@@ -150,17 +150,11 @@ export class PropostasRepository {
     })
   }
 
-  async findPoliticianByUserId(userId: string) {
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
-      select: { orgId: true },
-    })
-    if (!membership) return null
-    const politician = await this.prisma.politician.findUnique({
-      where: { id: membership.orgId },
+  async findPoliticianById(politicianId: string) {
+    return this.prisma.politician.findUnique({
+      where: { id: politicianId },
       select: { id: true, plan: true },
     })
-    return politician
   }
 
   async upsertVoto(propostaId: string, usuarioId: string, apoio: boolean) {

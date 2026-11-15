@@ -17,6 +17,15 @@ Estado em 15/11/2026, depois dos briefs 3A, 3A.1 e 3B. O código está corrigido
 - [ ] **Redis em produção.** O limite de requisições passa a ser compartilhado via `REDIS_URL`. Sem Redis ele cai para memória por instância (não derruba a API).
 - [ ] **Chave da MapTiler restrita por domínio** no painel da MapTiler (a chave vai no front).
 
+## 1b. Decisões de hospedagem ao configurar a produção
+
+Detalhes e gatilhos em `docs/negocio/hospedagem-e-escala.md`.
+
+- [ ] **Região do Render: Virginia, não Frankfurt** (o `render.yaml` atual é só rascunho). A região geralmente **não muda depois de criado o serviço**. API, Redis e banco na **mesma região**.
+- [ ] **Cloudflare na frente** do site e da API (CDN, cache das listas públicas, WAF).
+- [ ] **`Dockerfile` da API** (hoje não existe), para facilitar uma migração futura.
+- [ ] Depois de definir região e fornecedores, **atualizar a Política de Privacidade** (hoje cita "Render, servidor em Frankfurt") e a `PRIVACY_VERSION`.
+
 ## 2. Infraestrutura (já listadas nas pendências legais)
 
 - [ ] Regra de ciclo de vida do R2: expirar `exports/` em 7 dias.

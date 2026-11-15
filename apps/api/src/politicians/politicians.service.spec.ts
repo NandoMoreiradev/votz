@@ -31,11 +31,23 @@ const mockRepo = {
 }
 
 const mockPrisma = {
-  orgMembership: { findFirst: jest.fn() },
+  orgMembership: { findFirst: jest.fn(), findUnique: jest.fn() },
   userPoliticianFollower: { findUnique: jest.fn(), delete: jest.fn(), create: jest.fn() },
   politician: { findUnique: jest.fn() },
   report: { findUnique: jest.fn(), update: jest.fn() },
   timelineEvent: { create: jest.fn() },
+}
+
+const polActingUser = {
+  id: 'u1',
+  type: 'CITIZEN',
+  ctx: {
+    type: 'POLITICIAN' as const,
+    id: 'p1',
+    name: 'Pol',
+    logoUrl: null,
+    permissions: [OrgPermission.RESPOND_REPORTS],
+  },
 }
 
 const mockTimeline = { record: jest.fn() }
@@ -121,36 +133,55 @@ describe('PoliticiansService', () => {
   })
 
   describe('advocate', () => {
+    it('rejects advocacy without active context', async () => {
+      await expect(
+        service.advocate('p1', 'r1', { id: 'u1', type: 'POLITICIAN', ctx: null }),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
     it('rejects advocacy when politician mandate is ENCERRADO', async () => {
+      mockPrisma.orgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
+      })
       mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ENCERRADO })
-      await expect(service.advocate('p1', 'r1', 'u1')).rejects.toThrow(ForbiddenException)
+      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(ForbiddenException)
     })
 
     it('rejects already resolved reports', async () => {
+      mockPrisma.orgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
+      })
       mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.orgMembership.findFirst.mockResolvedValue({ id: 'm1' })
       mockPrisma.report.findUnique.mockResolvedValue({
         id: 'r1',
         status: ReportStatus.RESOLVED,
         timeline: [],
       })
-      await expect(service.advocate('p1', 'r1', 'u1')).rejects.toThrow(BadRequestException)
+      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(BadRequestException)
     })
 
     it('rejects duplicate advocacy by the same politician', async () => {
+      mockPrisma.orgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
+      })
       mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.orgMembership.findFirst.mockResolvedValue({ id: 'm1' })
       mockPrisma.report.findUnique.mockResolvedValue({
         id: 'r1',
         status: ReportStatus.IN_PROGRESS,
         timeline: [{ metadata: { action: 'advocated', politicianId: 'p1' } }],
       })
-      await expect(service.advocate('p1', 'r1', 'u1')).rejects.toThrow(ConflictException)
+      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(ConflictException)
     })
 
     it('advocates report, moves status to IN_PROGRESS and updates mandatometer', async () => {
+      mockPrisma.orgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
+      })
       mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.orgMembership.findFirst.mockResolvedValue({ id: 'm1' })
       mockPrisma.report.findUnique.mockResolvedValue({
         id: 'r1',
         status: ReportStatus.OPEN,
@@ -158,7 +189,7 @@ describe('PoliticiansService', () => {
       })
       mockRepo.mandatometerStats.mockResolvedValue({ total: 1 })
 
-      const res = await service.advocate('p1', 'r1', 'u1')
+      const res = await service.advocate('p1', 'r1', polActingUser)
       expect(res).toEqual({ advocated: true })
       expect(mockPrisma.report.update).toHaveBeenCalledWith({
         where: { id: 'r1' },

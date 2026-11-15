@@ -11,6 +11,8 @@ import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.hel
 import { CreateCommentDto, CommentMediaType } from './dto/create-comment.dto'
 import { UpdateCommentDto } from './dto/update-comment.dto'
 import { UserType } from '@votz/shared-types'
+import { OrgPermission } from '@prisma/client'
+import { ActingUser, requireActingOrg } from '../auth/acting-org'
 
 @Injectable()
 export class CommentsService {
@@ -28,10 +30,10 @@ export class CommentsService {
 
   async create(
     reportId: string,
-    authorId: string,
-    userType: string,
+    user: ActingUser,
     dto: CreateCommentDto,
   ) {
+    const authorId = user.id
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
       select: { id: true, authorId: true, title: true, recipientType: true, recipientId: true },
@@ -41,25 +43,20 @@ export class CommentsService {
     const isVoice = dto.mediaType && dto.mediaType !== CommentMediaType.TEXT
 
     if (isVoice) {
-      if (userType !== UserType.POLITICIAN && userType !== UserType.ENTITY) {
-        throw new ForbiddenException('Apenas políticos e entidades podem enviar comentários de voz')
-      }
+      const acting = await requireActingOrg(
+        this.prisma,
+        user,
+        ['POLITICIAN', 'ENTITY'],
+        OrgPermission.RESPOND_REPORTS,
+      )
       if (!dto.mediaUrl || !dto.mediaKey) {
         throw new BadRequestException('mediaUrl e mediaKey são obrigatórios para comentários de voz')
       }
       this.validateCommentMedia(dto.mediaKey, dto.mediaUrl)
 
-      const orgType = userType === UserType.POLITICIAN ? 'POLITICIAN' : 'ENTITY'
-      const membership = await this.prisma.orgMembership.findFirst({
-        where: { userId: authorId, orgType, status: 'ACTIVE' },
-        select: { orgId: true },
-      })
-      if (!membership) throw new ForbiddenException('Perfil ativo não encontrado')
-
-      const orgId = membership.orgId
-      const recipientOrgType = orgType === 'POLITICIAN' ? 'POLITICIAN' : 'ENTITY'
+      const { orgType, orgId } = acting
       const isRecipient =
-        report.recipientType === recipientOrgType && report.recipientId === orgId
+        report.recipientType === orgType && report.recipientId === orgId
 
       const isFollower = await this.prisma.reportFollower.findUnique({
         where: {

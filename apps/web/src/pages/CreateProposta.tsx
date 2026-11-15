@@ -3,7 +3,9 @@ import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { Button } from '../components/ui/Button'
+import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { useCriarProposta } from '../hooks/usePropostas'
+import { useMyProfiles } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { Category } from '@votz/shared-types'
 
@@ -150,7 +152,8 @@ const CAT_LABELS: Record<string, string> = {
 
 export function CreateProposta() {
   const navigate = useNavigate()
-  const { user } = useAuthStore()
+  const { user, activeContext, sessionReady } = useAuthStore()
+  const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const { mutate, isPending, error } = useCriarProposta()
 
   const [titulo, setTitulo] = useState('')
@@ -158,7 +161,8 @@ export function CreateProposta() {
   const [categorias, setCategorias] = useState<string[]>([])
   const [linkExterno, setLinkExterno] = useState('')
 
-  const isPolitician = user?.type === 'POLITICIAN'
+  const isPolitician = activeContext?.type === 'POLITICIAN'
+  const politicianOrg = profiles?.orgs.find((o) => o.type === 'POLITICIAN')
 
   function toggleCat(cat: string) {
     setCategorias(prev =>
@@ -207,8 +211,12 @@ export function CreateProposta() {
         <Navbar />
         <Content>
           <AccessDenied>
-            <p>Apenas políticos podem criar propostas.</p>
-            <Link to="/propostas" style={{ color: '#1A1A2E', fontWeight: 600, marginTop: 12, display: 'inline-block' }}>
+            {politicianOrg ? (
+              <OrgContextPrompt orgName={politicianOrg.name} actionLabel="criar propostas" />
+            ) : (
+              <p>Apenas políticos podem criar propostas.</p>
+            )}
+            <Link to="/propostas" style={{ fontWeight: 600, marginTop: 12, display: 'inline-block' }}>
               Ver propostas
             </Link>
           </AccessDenied>

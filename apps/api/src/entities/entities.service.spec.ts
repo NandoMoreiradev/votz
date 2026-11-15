@@ -29,9 +29,21 @@ const mockRepo = {
 }
 
 const mockPrisma = {
-  orgMembership: { findFirst: jest.fn() },
+  orgMembership: { findFirst: jest.fn(), findUnique: jest.fn() },
   report: { findUnique: jest.fn(), update: jest.fn() },
   timelineEvent: { create: jest.fn() },
+}
+
+const entityActingUser = {
+  id: 'u1',
+  type: 'CITIZEN',
+  ctx: {
+    type: 'ENTITY' as const,
+    id: 'e1',
+    name: 'Pref',
+    logoUrl: null,
+    permissions: [OrgPermission.RESPOND_REPORTS],
+  },
 }
 
 const mockStorage = {
@@ -106,27 +118,34 @@ describe('EntitiesService', () => {
   })
 
   it('handles advocate validations and transitions report to IN_PROGRESS', async () => {
-    mockPrisma.orgMembership.findFirst.mockResolvedValue({ id: 'm1' })
+    await expect(service.advocate('e1', 'r1', { id: 'u1', type: 'ENTITY', ctx: null })).rejects.toThrow(
+      ForbiddenException,
+    )
+
+    mockPrisma.orgMembership.findUnique.mockResolvedValue({
+      status: 'ACTIVE',
+      role: { permissions: [OrgPermission.RESPOND_REPORTS] },
+    })
     mockPrisma.report.findUnique.mockResolvedValueOnce({
       id: 'r1',
       status: ReportStatus.RESOLVED,
       timeline: [],
     })
-    await expect(service.advocate('e1', 'r1', 'u1')).rejects.toThrow(BadRequestException)
+    await expect(service.advocate('e1', 'r1', entityActingUser)).rejects.toThrow(BadRequestException)
 
     mockPrisma.report.findUnique.mockResolvedValueOnce({
       id: 'r1',
       status: ReportStatus.IN_PROGRESS,
       timeline: [{ metadata: { action: 'advocated', entityId: 'e1' } }],
     })
-    await expect(service.advocate('e1', 'r1', 'u1')).rejects.toThrow(ConflictException)
+    await expect(service.advocate('e1', 'r1', entityActingUser)).rejects.toThrow(ConflictException)
 
     mockPrisma.report.findUnique.mockResolvedValueOnce({
       id: 'r1',
       status: ReportStatus.OPEN,
       timeline: [],
     })
-    const res = await service.advocate('e1', 'r1', 'u1')
+    const res = await service.advocate('e1', 'r1', entityActingUser)
     expect(res).toEqual({ advocated: true })
     expect(mockPrisma.report.update).toHaveBeenCalledWith({
       where: { id: 'r1' },

@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
 import { REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { ReportStatus, EventType } from '@votz/shared-types'
+import { OrgPermission } from '@prisma/client'
 import { DisputeResolution } from './dto/resolve-dispute.dto'
 import { UpdatableStatus } from './dto/update-status.dto'
 
@@ -28,9 +29,10 @@ const mockRepo = {
   findAuthorId: jest.fn(),
   setDisputed: jest.fn(),
   resolveDispute: jest.fn(),
-  findEntityByUserId: jest.fn(),
-  findPoliticianByUserId: jest.fn(),
   getFollowerUserIds: jest.fn().mockResolvedValue([]),
+  addFollower: jest.fn(),
+  removeFollower: jest.fn(),
+  findFollower: jest.fn(),
 }
 
 const mockTimeline = { record: jest.fn() }
@@ -41,6 +43,7 @@ const mockPrisma = {
   politician: { findUnique: jest.fn() },
   follower: { findMany: jest.fn().mockResolvedValue([]) },
   entity: { findUnique: jest.fn() },
+  orgMembership: { findUnique: jest.fn() },
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
 const STORAGE_BASE = 'https://cdn.votz.app'
@@ -92,7 +95,10 @@ describe('ReportsService', () => {
     mockAlerts.enqueueCheck.mockResolvedValue(undefined)
     mockReportsQueue.add.mockResolvedValue({})
     mockPrisma.follower.findMany.mockResolvedValue([])
-    mockRepo.findEntityByUserId.mockResolvedValue({ id: 'entity-1' })
+    mockPrisma.orgMembership.findUnique.mockResolvedValue({
+      status: 'ACTIVE',
+      role: { permissions: [OrgPermission.RESPOND_REPORTS, OrgPermission.MANAGE_PROFILE] },
+    })
     mockRepo.getFollowerUserIds.mockResolvedValue([])
   })
 
@@ -178,8 +184,39 @@ describe('ReportsService', () => {
       ).rejects.toThrow(ForbiddenException)
     })
 
-    it.each(['ENTITY', 'MODERATOR', 'ADMIN'])(
-      'allows %s to update status',
+    it('throws ForbiddenException when user has no active context even if User.type is ENTITY', async () => {
+      mockRepo.findById.mockResolvedValue(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
+      await expect(
+        service.updateStatus('r1', dto, { id: 'u1', type: 'ENTITY', ctx: null }),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('allows CITIZEN with active ENTITY ctx (MFA switched) to update status', async () => {
+      mockRepo.findById
+        .mockResolvedValueOnce(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
+        .mockResolvedValueOnce(makeReport({ id: 'r1', status: ReportStatus.IN_PROGRESS }))
+      mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
+
+      const result = await service.updateStatus('r1', dto, {
+        id: 'u1',
+        type: 'CITIZEN',
+        ctx: {
+          type: 'ENTITY',
+          id: 'entity-1',
+          name: 'Ent 1',
+          logoUrl: null,
+          permissions: [OrgPermission.RESPOND_REPORTS],
+        },
+      })
+
+      expect(result!.status).toBe(ReportStatus.IN_PROGRESS)
+      expect(mockTimeline.record).toHaveBeenCalledWith(
+        expect.objectContaining({ type: EventType.STATUS_CHANGED }),
+      )
+    })
+
+    it.each(['MODERATOR', 'ADMIN'])(
+      'allows %s to update status without ctx',
       async (type) => {
         mockRepo.findById
           .mockResolvedValueOnce(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
@@ -210,7 +247,17 @@ describe('ReportsService', () => {
       mockRepo.findById.mockResolvedValue(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
       mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
 
-      await service.updateStatus('r1', dto, { id: 'author-1', type: 'ENTITY' })
+      await service.updateStatus('r1', dto, {
+        id: 'author-1',
+        type: 'CITIZEN',
+        ctx: {
+          type: 'ENTITY',
+          id: 'entity-1',
+          name: 'Ent 1',
+          logoUrl: null,
+          permissions: [OrgPermission.RESPOND_REPORTS],
+        },
+      })
 
       expect(mockNotifications.notify).not.toHaveBeenCalled()
     })

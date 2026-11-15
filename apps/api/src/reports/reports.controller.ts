@@ -11,6 +11,7 @@ import { SimilarReportsQueryDto } from './dto/similar-reports-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
+import { ActingUser } from '../auth/acting-org'
 
 @ApiTags('reports')
 @Controller('reports')
@@ -75,7 +76,7 @@ export class ReportsController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateStatusDto,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
     return this.reportsService.updateStatus(id, dto, user)
   }
@@ -117,9 +118,9 @@ export class ReportsController {
   @ApiOperation({ summary: 'Verificar se o usuário atual está acompanhando o relato' })
   getFollowStatus(
     @Param('id') id: string,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.reportsService.getFollowStatus(id, user.id, user.type)
+    return this.reportsService.getFollowStatus(id, user)
   }
 
   @Post(':id/follow')
@@ -128,9 +129,9 @@ export class ReportsController {
   @ApiOperation({ summary: 'Acompanhar relato (apenas político ou entidade)' })
   follow(
     @Param('id') id: string,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.reportsService.follow(id, user.id, user.type)
+    return this.reportsService.follow(id, user)
   }
 
   @Delete(':id/follow')
@@ -139,8 +140,8 @@ export class ReportsController {
   @ApiOperation({ summary: 'Deixar de acompanhar relato' })
   unfollow(
     @Param('id') id: string,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
-    return this.reportsService.unfollow(id, user.id, user.type)
+    return this.reportsService.unfollow(id, user)
   }
 }

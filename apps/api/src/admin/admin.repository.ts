@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { ModerationActionType, UserType } from '@prisma/client'
+import { ApiKeyTier, ModerationActionType, UserType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
@@ -203,6 +203,35 @@ export class AdminRepository {
 
   async setCompanyPlan(id: string, plan: string) {
     return this.prisma.company.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
+  }
+
+  // ── API Keys ──────────────────────────────────────────────────────────────
+
+  async findApiKeyForTier(id: string) {
+    return this.prisma.apiKey.findUnique({
+      where: { id },
+      select: { id: true, name: true, prefix: true, tier: true, userId: true, revokedAt: true },
+    })
+  }
+
+  async setApiKeyTier(id: string, tier: ApiKeyTier, actorId: string, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const apiKey = await tx.apiKey.update({
+        where: { id },
+        data: { tier },
+        select: { id: true, name: true, prefix: true, tier: true, userId: true, updatedAt: true },
+      })
+      const action = await tx.moderationAction.create({
+        data: {
+          action: ModerationActionType.API_KEY_TIER_CHANGED,
+          targetType: 'API_KEY',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+      return { apiKey, actionId: action.id }
+    })
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────

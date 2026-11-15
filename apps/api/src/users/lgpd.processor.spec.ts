@@ -96,7 +96,9 @@ describe('LgpdProcessor', () => {
     prisma.propostaVoto.findMany.mockResolvedValue([{ id: 'pv1', apoio: true, createdAt: now, proposta: { id: 'pr1', titulo: 'PL 1' } }])
     prisma.userPoliticianFollower.findMany.mockResolvedValue([{ createdAt: now, politician: { id: 'pol1', name: 'Fulano', office: 'Deputado', state: 'SE' } }])
     prisma.apiKey.findMany.mockResolvedValue([{ name: 'Minha chave', prefix: 'votz_abc1234', tier: 'FREE', lastUsedAt: null, revokedAt: null, createdAt: now }])
-    prisma.registrationRequest.findMany.mockResolvedValue([{ type: 'ENTITY', status: 'PENDING', createdAt: now, reviewNote: null }])
+    prisma.registrationRequest.findMany.mockResolvedValue([
+      { type: 'ENTITY', status: 'PENDING', note: 'Sou o secretário de comunicação', createdAt: now, reviewNote: null },
+    ])
     prisma.accessLog.findMany.mockResolvedValue([{ event: 'LOGIN', ip: '187.10.20.30', createdAt: now }])
 
     await processor.process({
@@ -130,7 +132,14 @@ describe('LgpdProcessor', () => {
     expect(payload.propostaVotos.total).toBe(1)
     expect(payload.politicianFollows.total).toBe(1)
     expect(payload.apiKeys.total).toBe(1)
+    expect(prisma.registrationRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { requesterId: 'u1' },
+        select: expect.objectContaining({ note: true, reviewNote: true }),
+      }),
+    )
     expect(payload.registrationRequests.total).toBe(1)
+    expect(payload.registrationRequests.items[0].note).toBe('Sou o secretário de comunicação')
     expect(payload.accessLogs).toEqual({
       total: 1,
       items: [{ event: 'LOGIN', ip: '187.10.20.30', createdAt: now }],

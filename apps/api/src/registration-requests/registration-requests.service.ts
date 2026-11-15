@@ -56,11 +56,13 @@ export class RegistrationRequestsService {
       await this.checkForDuplicate(dto.type as RegistrationRequestType, dto.payload)
     }
 
+    const sanitizedNote = dto.note ? DOMPurify.sanitize(dto.note.trim()).trim() : ''
+
     return this.repo.create(requesterId, {
       type: dto.type as unknown as RegistrationRequestType,
       payload: sanitized,
       claimTargetId: dto.claimTargetId,
-      ...(dto.note && { note: DOMPurify.sanitize(dto.note) }),
+      ...(sanitizedNote ? { note: sanitizedNote } : {}),
     })
   }
 

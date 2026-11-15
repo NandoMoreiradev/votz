@@ -14,6 +14,7 @@ import { CreatePoliticianDto } from './dto/create-politician.dto'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'
 import { ListPoliticiansDto } from './dto/list-politicians.dto'
 import { EventType, ReportStatus } from '@votz/shared-types'
+import { ActingUser, requireActingOrg } from '../auth/acting-org'
 
 @Injectable()
 export class PoliticiansService {
@@ -131,13 +132,16 @@ export class PoliticiansService {
     }
   }
 
-  async advocate(politicianId: string, reportId: string, userId: string) {
+  async advocate(politicianId: string, reportId: string, user: ActingUser) {
+    await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.RESPOND_REPORTS,
+      { expectedOrgId: politicianId },
+    )
     await this.assertPoliticianAtivo(politicianId)
-
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'POLITICIAN', orgId: politicianId, status: 'ACTIVE' },
-    })
-    if (!membership) throw new ForbiddenException()
+    const userId = user.id
 
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },

@@ -509,6 +509,7 @@ model RegistrationRequest {
   requesterId     String
   requester       User                      @relation("RegistrationRequester", fields: [requesterId], references: [id])
   payload         Json
+  note            String?  @db.VarChar(500)
   claimTargetId   String?  // id do org existente a ser reivindicado (fluxo claim)
   reviewerId      String?
   reviewer        User?                     @relation("RegistrationReviewer", fields: [reviewerId], references: [id])
@@ -856,6 +857,7 @@ enum ModerationActionType {
   USER_BANNED
   USER_UNBANNED
   USER_TYPE_CHANGED
+  API_KEY_TIER_CHANGED
 }
 
 model ModerationAction {

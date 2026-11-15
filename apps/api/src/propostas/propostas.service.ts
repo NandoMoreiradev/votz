@@ -1,21 +1,30 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
 import DOMPurify from 'isomorphic-dompurify'
+import { OrgPermission } from '@prisma/client'
+import { PrismaService } from '../prisma/prisma.service'
 import { PropostasRepository } from './propostas.repository'
 import { CreatePropostaDto } from './dto/create-proposta.dto'
 import { UpdatePropostaStatusDto } from './dto/update-status-proposta.dto'
 import { ListPropostasQueryDto } from './dto/list-propostas-query.dto'
-import { Category, PropostaEventType, PropostaStatus, UserType } from '@votz/shared-types'
+import { Category, PropostaEventType, PropostaStatus } from '@votz/shared-types'
+import { ActingUser, requireActingOrg } from '../auth/acting-org'
 
 @Injectable()
 export class PropostasService {
-  constructor(private readonly repository: PropostasRepository) {}
+  constructor(
+    private readonly repository: PropostasRepository,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  async create(dto: CreatePropostaDto, user: { id: string; type: string }) {
-    if (user.type !== UserType.POLITICIAN) {
-      throw new ForbiddenException('Apenas políticos podem criar propostas')
-    }
+  async create(dto: CreatePropostaDto, user: ActingUser) {
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.MANAGE_PROFILE,
+    )
 
-    const politician = await this.repository.findPoliticianByUserId(user.id)
+    const politician = await this.repository.findPoliticianById(acting.orgId)
     if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
 
     const PROPOSTA_PLANS = ['MANDATOMETRO_PRO', 'CAMPANHA']
@@ -70,19 +79,19 @@ export class PropostasService {
   async updateStatus(
     id: string,
     dto: UpdatePropostaStatusDto,
-    user: { id: string; type: string },
+    user: ActingUser,
   ) {
-    if (user.type !== UserType.POLITICIAN) {
-      throw new ForbiddenException('Apenas políticos podem atualizar o status de propostas')
-    }
-
-    const politician = await this.repository.findPoliticianByUserId(user.id)
-    if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.MANAGE_PROFILE,
+    )
 
     const proposta = await this.repository.findById(id)
     if (!proposta) throw new NotFoundException('Proposta não encontrada')
 
-    if (proposta.politicoId !== politician.id) {
+    if (proposta.politicoId !== acting.orgId) {
       throw new ForbiddenException('Você não é o autor desta proposta')
     }
 

@@ -30,7 +30,7 @@ const mockRepo = {
 
 const mockPrismaReport = { findUnique: jest.fn() }
 const mockModerationAction = { update: jest.fn() }
-const mockOrgMembership = { findFirst: jest.fn() }
+const mockOrgMembership = { findFirst: jest.fn(), findUnique: jest.fn() }
 const mockReportFollower = { findUnique: jest.fn() }
 const mockPrisma = {
   report: mockPrismaReport,
@@ -38,6 +38,18 @@ const mockPrisma = {
   orgMembership: mockOrgMembership,
   reportFollower: mockReportFollower,
 }
+
+const polUser = (orgId = 'pol-1') => ({
+  id: 'u1',
+  type: 'CITIZEN',
+  ctx: {
+    type: 'POLITICIAN' as const,
+    id: orgId,
+    name: 'Pol',
+    logoUrl: null,
+    permissions: ['RESPOND_REPORTS'],
+  },
+})
 const mockNotifications = { notify: jest.fn() }
 const mockPressure = { enqueueReport: jest.fn().mockResolvedValue(undefined) }
 const mockTranscription = { enqueue: jest.fn().mockResolvedValue(undefined) }
@@ -101,7 +113,7 @@ describe('CommentsService', () => {
 
     it('throws NotFoundException when report does not exist', async () => {
       mockPrismaReport.findUnique.mockResolvedValue(null)
-      await expect(service.create('r1', 'u1', 'CITIZEN', dto as any)).rejects.toThrow(NotFoundException)
+      await expect(service.create('r1', { id: 'u1', type: 'CITIZEN' }, dto as any)).rejects.toThrow(NotFoundException)
     })
 
     it('creates and returns the comment', async () => {
@@ -110,7 +122,7 @@ describe('CommentsService', () => {
       const comment = makeComment({ reportId: 'r1', authorId: 'u1' })
       mockRepo.create.mockResolvedValue(comment)
 
-      const result = await service.create('r1', 'u1', 'CITIZEN', dto as any)
+      const result = await service.create('r1', { id: 'u1', type: 'CITIZEN' }, dto as any)
 
       expect(result).toEqual(comment)
       expect(mockRepo.create).toHaveBeenCalledWith(
@@ -123,7 +135,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue(report)
       mockRepo.create.mockResolvedValue(makeComment({ id: 'c1' }))
 
-      await service.create('r1', 'commenter-99', 'CITIZEN', dto as any)
+      await service.create('r1', { id: 'commenter-99', type: 'CITIZEN' }, dto as any)
 
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'owner-1', type: 'NEW_COMMENT' }),
@@ -135,7 +147,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue(report)
       mockRepo.create.mockResolvedValue(makeComment())
 
-      await service.create('r1', 'owner-1', 'CITIZEN', dto as any)
+      await service.create('r1', { id: 'owner-1', type: 'CITIZEN' }, dto as any)
 
       expect(mockNotifications.notify).not.toHaveBeenCalled()
     })
@@ -144,7 +156,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue({ id: 'r1', authorId: null, title: 'T' })
       mockRepo.create.mockResolvedValue(makeComment())
 
-      await service.create('r1', 'u1', 'CITIZEN', dto as any)
+      await service.create('r1', { id: 'u1', type: 'CITIZEN' }, dto as any)
 
       expect(mockPressure.enqueueReport).toHaveBeenCalledWith('r1')
     })
@@ -162,9 +174,13 @@ describe('CommentsService', () => {
         recipientType: 'POLITICIAN',
         recipientId: 'pol-1',
       })
+      mockOrgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: ['RESPOND_REPORTS'] },
+      })
 
       await expect(
-        service.create('r1', 'u1', 'POLITICIAN', {
+        service.create('r1', polUser(), {
           mediaType: CommentMediaType.AUDIO,
           mediaKey: badKey,
           mediaUrl: `${STORAGE_BASE}/${badKey}`,
@@ -180,9 +196,13 @@ describe('CommentsService', () => {
         recipientType: 'POLITICIAN',
         recipientId: 'pol-1',
       })
+      mockOrgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: ['RESPOND_REPORTS'] },
+      })
 
       await expect(
-        service.create('r1', 'u1', 'POLITICIAN', {
+        service.create('r1', polUser(), {
           mediaType: CommentMediaType.AUDIO,
           mediaKey: VALID_MEDIA_KEY,
           mediaUrl: `${STORAGE_BASE}/comments/22222222-2222-4222-8222-222222222222.webm`,
@@ -194,7 +214,7 @@ describe('CommentsService', () => {
       mockPrismaReport.findUnique.mockResolvedValue({ id: 'r1', authorId: 'owner-1', title: 'Relato' })
 
       await expect(
-        service.create('r1', 'u1', 'CITIZEN', {
+        service.create('r1', { id: 'u1', type: 'CITIZEN' }, {
           content: 'Comentário normal com mediaKey indevida.',
           mediaKey: 'verification/11111111-1111-4111-8111-111111111111.pdf',
           mediaUrl: `${STORAGE_BASE}/verification/11111111-1111-4111-8111-111111111111.pdf`,
@@ -210,7 +230,10 @@ describe('CommentsService', () => {
         recipientType: 'POLITICIAN',
         recipientId: 'pol-1',
       })
-      mockOrgMembership.findFirst.mockResolvedValue({ orgId: 'pol-1' })
+      mockOrgMembership.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        role: { permissions: ['RESPOND_REPORTS'] },
+      })
       mockReportFollower.findUnique.mockResolvedValue(null)
       const created = makeComment({
         id: 'c-voice',
@@ -220,7 +243,7 @@ describe('CommentsService', () => {
       })
       mockRepo.create.mockResolvedValue(created)
 
-      const res = await service.create('r1', 'u1', 'POLITICIAN', {
+      const res = await service.create('r1', polUser(), {
         mediaType: CommentMediaType.AUDIO,
         mediaKey: VALID_MEDIA_KEY,
         mediaUrl: `${STORAGE_BASE}/${VALID_MEDIA_KEY}`,

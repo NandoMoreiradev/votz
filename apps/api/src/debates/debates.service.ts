@@ -10,7 +10,7 @@ import {
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { ConfigService } from '@nestjs/config'
-import { DebateStatus, InviteStatus, ParticipantRole, ReactionType } from '@prisma/client'
+import { DebateStatus, InviteStatus, OrgPermission, ParticipantRole, ReactionType } from '@prisma/client'
 import {
   AccessToken,
   EgressClient,
@@ -18,6 +18,8 @@ import {
   S3Upload,
   SegmentedFileOutput,
 } from 'livekit-server-sdk'
+import { PrismaService } from '../prisma/prisma.service'
+import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
 import { DebatesRepository } from './debates.repository'
 import { DebatesGateway } from './debates.gateway'
 import { CreateDebateDto } from './dto/create-debate.dto'
@@ -42,16 +44,21 @@ export class DebatesService {
 
   constructor(
     private readonly repo: DebatesRepository,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @InjectQueue(DEBATES_QUEUE) private readonly queue: Queue,
     @Optional() private readonly gateway: DebatesGateway,
   ) {}
 
-  async create(userId: string, dto: CreateDebateDto) {
-    const membership = await this.repo.findPoliticianByUserId(userId)
-    if (!membership) throw new ForbiddenException('Apenas políticos com conta ativa podem criar debates')
+  async create(user: ActingUser, dto: CreateDebateDto) {
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.MANAGE_PROFILE,
+    )
 
-    const creatorId = membership.orgId
+    const creatorId = acting.orgId
     const debate = await this.repo.create({
       title: dto.title,
       description: dto.description,
@@ -94,8 +101,8 @@ export class DebatesService {
     return debate
   }
 
-  async update(id: string, userId: string, dto: UpdateDebateDto) {
-    await this.assertCreator(id, userId)
+  async update(id: string, user: ActingUser, dto: UpdateDebateDto) {
+    await this.assertCreator(id, user)
     const data: Record<string, unknown> = {}
     if (dto.title !== undefined) data.title = dto.title
     if (dto.description !== undefined) data.description = dto.description
@@ -105,11 +112,14 @@ export class DebatesService {
     return this.repo.update(id, data)
   }
 
-  async respondInvite(debateId: string, politicianId: string, accept: boolean, userId: string) {
-    const membership = await this.repo.findPoliticianByUserId(userId)
-    if (!membership || membership.orgId !== politicianId) {
-      throw new ForbiddenException('Você não representa este político')
-    }
+  async respondInvite(debateId: string, politicianId: string, accept: boolean, user: ActingUser) {
+    await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.RESPOND_REPORTS,
+      { expectedOrgId: politicianId },
+    )
 
     const participant = await this.repo.findParticipant(debateId, politicianId)
     if (!participant) throw new NotFoundException('Convite não encontrado')
@@ -123,10 +133,10 @@ export class DebatesService {
     return { accepted: accept }
   }
 
-  async start(debateId: string, userId: string) {
+  async start(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    await this.assertCreatorById(debate, userId)
+    await this.assertCreatorById(debate, user)
     if (debate.status !== DebateStatus.SCHEDULED) {
       throw new BadRequestException('Debate não está no status SCHEDULED')
     }
@@ -190,10 +200,10 @@ export class DebatesService {
     return this.repo.findById(debateId)
   }
 
-  async end(debateId: string, userId: string) {
+  async end(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    await this.assertCreatorById(debate, userId)
+    await this.assertCreatorById(debate, user)
     if (debate.status !== DebateStatus.LIVE) {
       throw new BadRequestException('Debate não está ao vivo')
     }
@@ -218,17 +228,17 @@ export class DebatesService {
     return this.repo.findById(debateId)
   }
 
-  async getLivekitToken(debateId: string, userId: string) {
+  async getLivekitToken(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
     if (!debate.livekitRoomName) throw new BadRequestException('Debate ainda não foi iniciado')
 
-    // Politicians who are confirmed participants can publish; everyone else subscribes only
-    const membership = await this.repo.findPoliticianByUserId(userId)
-    const canPublish = membership ? await this.repo.isParticipant(debateId, membership.orgId) : false
+    // Politicians who are confirmed participants (acting in their active context) can publish
+    const acting = await resolveOptionalActingOrg(this.prisma, user, 'POLITICIAN')
+    const canPublish = acting ? await this.repo.isParticipant(debateId, acting.orgId) : false
 
     const token = new AccessToken(this.apiKey, this.apiSecret, {
-      identity: userId,
+      identity: user.id,
       ttl: '4h',
     })
     token.addGrant({
@@ -264,10 +274,14 @@ export class DebatesService {
     return this.repo.findQuestions(debateId)
   }
 
-  async createPoll(debateId: string, userId: string, dto: CreatePollDto) {
-    const membership = await this.repo.findPoliticianByUserId(userId)
-    if (!membership) throw new ForbiddenException()
-    const isParticipant = await this.repo.isParticipant(debateId, membership.orgId)
+  async createPoll(debateId: string, user: ActingUser, dto: CreatePollDto) {
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.RESPOND_REPORTS,
+    )
+    const isParticipant = await this.repo.isParticipant(debateId, acting.orgId)
     if (!isParticipant) throw new ForbiddenException('Apenas participantes podem criar enquetes')
 
     const poll = await this.repo.createPoll(debateId, dto.question, dto.options)
@@ -298,16 +312,19 @@ export class DebatesService {
     return exists
   }
 
-  private async assertCreator(debateId: string, userId: string) {
+  private async assertCreator(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    return this.assertCreatorById(debate, userId)
+    return this.assertCreatorById(debate, user)
   }
 
-  private async assertCreatorById(debate: { creatorId: string }, userId: string) {
-    const membership = await this.repo.findPoliticianByUserId(userId)
-    if (!membership || membership.orgId !== debate.creatorId) {
-      throw new ForbiddenException('Apenas o criador do debate pode realizar esta ação')
-    }
+  private async assertCreatorById(debate: { creatorId: string }, user: ActingUser) {
+    await requireActingOrg(
+      this.prisma,
+      user,
+      'POLITICIAN',
+      OrgPermission.MANAGE_PROFILE,
+      { expectedOrgId: debate.creatorId },
+    )
   }
 }

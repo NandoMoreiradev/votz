@@ -8,6 +8,7 @@ import { VotePropostaDto } from './dto/vote-proposta.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
+import { ActingUser } from '../auth/acting-org'
 
 @ApiTags('propostas')
 @Controller('propostas')
@@ -20,7 +21,7 @@ export class PropostasController {
   @ApiOperation({ summary: 'Criar proposta política (apenas políticos)' })
   create(
     @Body() dto: CreatePropostaDto,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
     return this.propostasService.create(dto, user)
   }
@@ -46,7 +47,7 @@ export class PropostasController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdatePropostaStatusDto,
-    @CurrentUser() user: { id: string; type: string },
+    @CurrentUser() user: ActingUser,
   ) {
     return this.propostasService.updateStatus(id, dto, user)
   }

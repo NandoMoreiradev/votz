@@ -11,9 +11,11 @@ import { CommentsSection } from '../components/comments/CommentsSection'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
+import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
+import { useMyProfiles } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -709,7 +711,8 @@ export function ReportDetail() {
   const { data: report, isLoading } = useReport(id!)
   const { mutate: vote } = useVote(id!)
   const { data: myVotes } = useMyVotes(id!)
-  const { user, activeContext } = useAuthStore()
+  const { user, activeContext, sessionReady } = useAuthStore()
+  const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const qc = useQueryClient()
   const { open: openMedia } = useMediaViewer()
 
@@ -1216,7 +1219,10 @@ export function ReportDetail() {
             {(() => {
               if (TERMINAL_STATUSES.has(report.status)) return null
 
-              const isRecipient = !!actorId && report.recipientId === actorId
+              const isRecipient =
+                !!actorId &&
+                activeContext?.type === report.recipientType &&
+                report.recipientId === actorId
               const hasAdvocatedUpdate = actorId
                 ? report.timeline?.some(
                     (e) =>
@@ -1321,6 +1327,32 @@ export function ReportDetail() {
                         ? `Aguardando ${uploadingCount} foto(s)…`
                         : 'Publicar atualização'}
                   </UpdateSubmitBtn>
+                </SideCard>
+              )
+            })()}
+
+            {(() => {
+              const recipientOrg = report.recipientId
+                ? profiles?.orgs.find(
+                    (o) => o.id === report.recipientId && o.type === report.recipientType,
+                  )
+                : undefined
+              const matchingRecipientActive =
+                !!actorId &&
+                activeContext?.type === report.recipientType &&
+                report.recipientId === actorId
+              const fallbackOrg = !isActorType
+                ? profiles?.orgs.find((o) => o.type === 'ENTITY' || o.type === 'POLITICIAN')
+                : undefined
+              const promptOrg =
+                recipientOrg && !matchingRecipientActive ? recipientOrg : fallbackOrg
+
+              if (!promptOrg) return null
+
+              return (
+                <SideCard>
+                  <SideTitle>Perfil institucional</SideTitle>
+                  <OrgContextPrompt orgName={promptOrg.name} />
                 </SideCard>
               )
             })()}

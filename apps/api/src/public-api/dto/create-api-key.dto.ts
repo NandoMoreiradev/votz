@@ -1,6 +1,5 @@
-import { IsString, IsNotEmpty, MaxLength, IsOptional, IsEnum } from 'class-validator'
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { ApiKeyTier } from '@prisma/client'
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator'
+import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateApiKeyDto {
   @ApiProperty({ example: 'Portal de Notícias XYZ', maxLength: 80 })
@@ -8,9 +7,4 @@ export class CreateApiKeyDto {
   @IsNotEmpty()
   @MaxLength(80)
   name: string
-
-  @ApiPropertyOptional({ enum: ApiKeyTier, default: ApiKeyTier.FREE })
-  @IsOptional()
-  @IsEnum(ApiKeyTier)
-  tier?: ApiKeyTier
 }

@@ -13,6 +13,7 @@ import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
 import { ListEntitiesDto } from './dto/list-entities.dto'
 import { EventType, ReportStatus } from '@votz/shared-types'
+import { ActingUser, requireActingOrg } from '../auth/acting-org'
 
 @Injectable()
 export class EntitiesService {
@@ -91,11 +92,15 @@ export class EntitiesService {
     return this.repo.update(id, dto as object)
   }
 
-  async advocate(entityId: string, reportId: string, userId: string) {
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'ENTITY', orgId: entityId, status: 'ACTIVE' },
-    })
-    if (!membership) throw new ForbiddenException()
+  async advocate(entityId: string, reportId: string, user: ActingUser) {
+    await requireActingOrg(
+      this.prisma,
+      user,
+      'ENTITY',
+      OrgPermission.RESPOND_REPORTS,
+      { expectedOrgId: entityId },
+    )
+    const userId = user.id
 
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },

@@ -11,6 +11,7 @@ import { Roles } from '../auth/decorators/roles.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { UserType } from '@votz/shared-types'
 import { AdminService } from './admin.service'
+import { SetApiKeyTierDto } from './dto/set-api-key-tier.dto'
 import { SetBanDto } from './dto/ban-user.dto'
 import { DeleteReportDto } from './dto/delete-report.dto'
 import { SetTypeDto } from './dto/set-type.dto'
@@ -161,5 +162,18 @@ export class AdminController {
   @ApiOperation({ summary: 'Set plan for a company (admin only)' })
   setCompanyPlan(@Param('id') id: string, @Body() dto: SetCompanyPlanDto) {
     return this.service.setCompanyPlan(id, dto.plan)
+  }
+
+  // ── API Keys ──────────────────────────────────────────────────────────────
+
+  @Patch('api-keys/:id/tier')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Change API key tier (admin only)' })
+  setApiKeyTier(
+    @Param('id') id: string,
+    @Body() dto: SetApiKeyTierDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.setApiKeyTier(id, dto.tier, actor.id, dto.reason)
   }
 }

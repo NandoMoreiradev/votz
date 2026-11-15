@@ -34,7 +34,7 @@ export class ApiKeysController {
   @ApiOperation({
     summary: 'Criar API key',
     description:
-      'Gera uma nova API key. O valor completo é retornado **apenas uma vez** — guarde-o com segurança.',
+      'Gera uma nova API key no nível FREE (upgrades para PAID são concedidos exclusivamente por administradores). O valor completo é retornado **apenas uma vez** — guarde-o com segurança.',
   })
   @ApiCreatedResponse({
     description: 'Key criada. O campo `key` não será retornado novamente.',

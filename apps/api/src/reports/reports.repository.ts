@@ -202,29 +202,6 @@ export class ReportsRepository {
     })
   }
 
-  // ── Recipient resolution (for updateStatus authorization) ───────────────────
-
-  async findEntityByUserId(userId: string) {
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'ENTITY', status: 'ACTIVE' },
-      select: { orgId: true },
-    })
-    return membership ? { id: membership.orgId } : null
-  }
-
-  async findPoliticianByUserId(userId: string) {
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: 'POLITICIAN', status: 'ACTIVE' },
-      select: { orgId: true },
-    })
-    if (!membership) return null
-    const politician = await this.prisma.politician.findUnique({
-      where: { id: membership.orgId },
-      select: { id: true, status: true },
-    })
-    return politician ?? null
-  }
-
   // ── Followers ────────────────────────────────────────────────────────────────
 
   async addFollower(reportId: string, actorType: FollowerActorType, actorId: string) {

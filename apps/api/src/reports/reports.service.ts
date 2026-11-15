@@ -15,8 +15,9 @@ import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
-import { FollowerActorType, PoliticianStatus } from '@prisma/client'
+import { FollowerActorType, OrgPermission, PoliticianStatus } from '@prisma/client'
 import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
+import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
 
 @Injectable()
 export class ReportsService {
@@ -148,7 +149,7 @@ export class ReportsService {
   async updateStatus(
     reportId: string,
     dto: UpdateStatusDto,
-    user: { id: string; type: string },
+    user: ActingUser,
   ) {
     this.storage.assertOwnStorageUrls(dto.media, 'reports')
     const report = await this.repository.findById(reportId)
@@ -159,24 +160,31 @@ export class ReportsService {
 
     let isRecipient = false
     let actorId: string | null = null
+    let actingOrgType: 'ENTITY' | 'POLITICIAN' | null = null
 
-    if (userType === UserType.ENTITY) {
-      const entity = await this.repository.findEntityByUserId(user.id)
-      if (entity) {
-        actorId = entity.id
-        isRecipient = report.recipientType === RecipientType.ENTITY && report.recipientId === entity.id
-      }
-    } else if (userType === UserType.POLITICIAN) {
-      const politician = await this.repository.findPoliticianByUserId(user.id)
-      if (politician) {
+    if (!isModAdmin) {
+      const acting = await requireActingOrg(
+        this.prisma,
+        user,
+        ['ENTITY', 'POLITICIAN'],
+        OrgPermission.RESPOND_REPORTS,
+      )
+      actorId = acting.orgId
+      actingOrgType = acting.orgType as 'ENTITY' | 'POLITICIAN'
+
+      if (acting.orgType === 'ENTITY') {
+        isRecipient = report.recipientType === RecipientType.ENTITY && report.recipientId === acting.orgId
+      } else {
+        const politician = await this.prisma.politician.findUnique({
+          where: { id: acting.orgId },
+          select: { id: true, status: true },
+        })
+        if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
         if (politician.status !== PoliticianStatus.ATIVO) {
           throw new ForbiddenException('Este político não possui mandato ativo')
         }
-        actorId = politician.id
         isRecipient = report.recipientType === RecipientType.POLITICIAN && report.recipientId === politician.id
       }
-    } else if (!isModAdmin) {
-      throw new ForbiddenException('Não autorizado')
     }
 
     const hasAdvocated = actorId
@@ -184,8 +192,9 @@ export class ReportsService {
           (e) =>
             e.type === EventType.RESPONDED &&
             (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-            ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
-              (e.metadata as Record<string, unknown>)?.entityId === actorId),
+            (actingOrgType === 'POLITICIAN'
+              ? (e.metadata as Record<string, unknown>)?.politicianId === actorId
+              : (e.metadata as Record<string, unknown>)?.entityId === actorId),
         ) ?? false
       : false
 
@@ -302,56 +311,40 @@ export class ReportsService {
 
   // ── Follow ───────────────────────────────────────────────────────────────────
 
-  async follow(reportId: string, userId: string, userType: string) {
+  async follow(reportId: string, user: ActingUser) {
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      ['POLITICIAN', 'ENTITY'],
+      OrgPermission.RESPOND_REPORTS,
+    )
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Relato não encontrado')
 
-    if (userType === UserType.POLITICIAN) {
-      const politician = await this.repository.findPoliticianByUserId(userId)
-      if (!politician) throw new ForbiddenException('Perfil de político não encontrado')
-      await this.repository.addFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
-      return { following: true, actorType: 'POLITICIAN', actorId: politician.id }
-    }
-
-    if (userType === UserType.ENTITY) {
-      const entity = await this.repository.findEntityByUserId(userId)
-      if (!entity) throw new ForbiddenException('Perfil de entidade não encontrado')
-      await this.repository.addFollower(reportId, FollowerActorType.ENTITY, entity.id)
-      return { following: true, actorType: 'ENTITY', actorId: entity.id }
-    }
-
-    throw new ForbiddenException('Apenas políticos e entidades podem acompanhar relatos')
+    await this.repository.addFollower(reportId, acting.orgType as FollowerActorType, acting.orgId)
+    return { following: true, actorType: acting.orgType, actorId: acting.orgId }
   }
 
-  async unfollow(reportId: string, userId: string, userType: string) {
-    if (userType === UserType.POLITICIAN) {
-      const politician = await this.repository.findPoliticianByUserId(userId)
-      if (!politician) throw new ForbiddenException('Perfil de político não encontrado')
-      await this.repository.removeFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
-    } else if (userType === UserType.ENTITY) {
-      const entity = await this.repository.findEntityByUserId(userId)
-      if (!entity) throw new ForbiddenException('Perfil de entidade não encontrado')
-      await this.repository.removeFollower(reportId, FollowerActorType.ENTITY, entity.id)
-    } else {
-      throw new ForbiddenException('Apenas políticos e entidades podem acompanhar relatos')
-    }
+  async unfollow(reportId: string, user: ActingUser) {
+    const acting = await requireActingOrg(
+      this.prisma,
+      user,
+      ['POLITICIAN', 'ENTITY'],
+      OrgPermission.RESPOND_REPORTS,
+    )
+    await this.repository.removeFollower(reportId, acting.orgType as FollowerActorType, acting.orgId)
     return { following: false }
   }
 
-  async getFollowStatus(reportId: string, userId: string, userType: string) {
-    if (userType === UserType.POLITICIAN) {
-      const politician = await this.repository.findPoliticianByUserId(userId)
-      if (!politician) return { following: false }
-      const f = await this.repository.findFollower(reportId, FollowerActorType.POLITICIAN, politician.id)
-      return { following: !!f }
-    }
-    if (userType === UserType.ENTITY) {
-      const entity = await this.repository.findEntityByUserId(userId)
-      if (!entity) return { following: false }
-      const f = await this.repository.findFollower(reportId, FollowerActorType.ENTITY, entity.id)
-      return { following: !!f }
-    }
-    return { following: false }
+  async getFollowStatus(reportId: string, user: ActingUser) {
+    const acting = await resolveOptionalActingOrg(this.prisma, user, ['POLITICIAN', 'ENTITY'])
+    if (!acting) return { following: false }
+    const f = await this.repository.findFollower(
+      reportId,
+      acting.orgType as FollowerActorType,
+      acting.orgId,
+    )
+    return { following: !!f }
   }
 
   getFollowers(reportId: string) {
