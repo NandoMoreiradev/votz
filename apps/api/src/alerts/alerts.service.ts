@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
+import { OrgType, WebhookEventType } from '@prisma/client'
 import { Queue } from 'bullmq'
 import { AlertsRepository } from './alerts.repository'
 import { NotificationsService } from '../notifications/notifications.service'
 import { MailService } from '../mail/mail.service'
+import { PrismaService } from '../prisma/prisma.service'
+import { WebhooksService } from '../webhooks/webhooks.service'
 
 export const ALERTS_QUEUE = 'alerts'
 
@@ -25,6 +28,8 @@ export class AlertsService {
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
     @InjectQueue(ALERTS_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly webhooks?: WebhooksService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   // ── Enqueue helpers ────────────────────────────────────────────────────────
@@ -92,6 +97,39 @@ export class AlertsService {
               .catch(() => null)
           }
         }).catch(() => null)
+
+        // Webhooks OUTBREAK_DETECTED para organizações com endpoint ativo na UF
+        if (this.webhooks && this.prisma) {
+          this.prisma.webhookEndpoint
+            .findMany({
+              where: { active: true, events: { has: WebhookEventType.OUTBREAK_DETECTED } },
+              select: { orgType: true, orgId: true },
+              distinct: ['orgType', 'orgId'],
+            })
+            .then(async (orgs) => {
+              for (const org of orgs) {
+                const inScope =
+                  org.orgType === OrgType.POLITICIAN
+                    ? await this.prisma!.politician.findFirst({
+                        where: { id: org.orgId, state: state.toUpperCase() },
+                        select: { id: true },
+                      })
+                    : await this.prisma!.entity.findFirst({
+                        where: { id: org.orgId, state: state.toUpperCase() },
+                        select: { id: true },
+                      })
+                if (!inScope) continue
+                await this.webhooks!.enqueueEvent(
+                  org.orgType,
+                  org.orgId,
+                  WebhookEventType.OUTBREAK_DETECTED,
+                  `surto:${surto.id}`,
+                  { surtoId: surto.id, category, city, state, reportCount: count },
+                )
+              }
+            })
+            .catch(() => null)
+        }
       }
     }
   }

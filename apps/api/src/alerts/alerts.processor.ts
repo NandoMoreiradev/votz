@@ -1,13 +1,17 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq'
 import { Logger } from '@nestjs/common'
 import { Job } from 'bullmq'
+import { AlertRulesService } from './alert-rules.service'
 import { AlertsService, ALERTS_QUEUE, AlertsJob } from './alerts.service'
 
 @Processor(ALERTS_QUEUE, { concurrency: 3 })
 export class AlertsProcessor extends WorkerHost {
   private readonly logger = new Logger(AlertsProcessor.name)
 
-  constructor(private readonly alertsService: AlertsService) {
+  constructor(
+    private readonly alertsService: AlertsService,
+    private readonly alertRules: AlertRulesService,
+  ) {
     super()
   }
 
@@ -21,6 +25,17 @@ export class AlertsProcessor extends WorkerHost {
 
       case 'check-all-surtos': {
         await this.alertsService.checkAllActiveSurtos()
+        return
+      }
+
+      case 'evaluate-report-rules': {
+        const { reportId } = job.data as { reportId: string }
+        await this.alertRules.evaluateRulesForReport(reportId)
+        return
+      }
+
+      case 'evaluate-rules-sweep': {
+        await this.alertRules.runPeriodicSweep()
         return
       }
 

@@ -103,6 +103,8 @@ var ModerationActionType;
     ModerationActionType["USER_UNBANNED"] = "USER_UNBANNED";
     ModerationActionType["USER_TYPE_CHANGED"] = "USER_TYPE_CHANGED";
     ModerationActionType["API_KEY_TIER_CHANGED"] = "API_KEY_TIER_CHANGED";
+    ModerationActionType["ORG_ITEM_CREATED"] = "ORG_ITEM_CREATED";
+    ModerationActionType["ORG_ITEM_DELETED"] = "ORG_ITEM_DELETED";
 })(ModerationActionType || (exports.ModerationActionType = ModerationActionType = {}));
 var FlagTargetType;
 (function (FlagTargetType) {

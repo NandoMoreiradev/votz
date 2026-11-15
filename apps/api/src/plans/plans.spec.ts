@@ -40,15 +40,8 @@ describe('Plans Catalog (@votz/shared-types)', () => {
     expect(hasFeature('ENTITY', 'INTEGRACAO', 'api_access')).toBe(true)
   })
 
-  it('marks unbuilt roadmap features as soon and built 4B analytics/heatmap as available', () => {
-    const soonKeys = [
-      'sla_panel',
-      'pdf_report',
-      'share_card',
-      'webhooks',
-      'peer_comparison',
-      'reply_templates',
-    ] as const
+  it('marks unbuilt roadmap features as soon and built 4B/4C features as available', () => {
+    const soonKeys = ['sla_panel', 'peer_comparison'] as const
     for (const key of soonKeys) {
       expect(FEATURE_STATUS[key]).toBe('soon')
     }
@@ -57,6 +50,10 @@ describe('Plans Catalog (@votz/shared-types)', () => {
     expect(FEATURE_STATUS.propostas).toBe('available')
     expect(FEATURE_STATUS.analytics_full).toBe('available')
     expect(FEATURE_STATUS.heatmap).toBe('available')
+    expect(FEATURE_STATUS.pdf_report).toBe('available')
+    expect(FEATURE_STATUS.share_card).toBe('available')
+    expect(FEATURE_STATUS.webhooks).toBe('available')
+    expect(FEATURE_STATUS.reply_templates).toBe('available')
   })
 
   it('returns correct maxMembers per orgType, plan, and politician tier', () => {

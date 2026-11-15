@@ -13,10 +13,15 @@ export class NotificationsService {
   async notify(data: {
     userId: string
     type: NotificationType
-    reportId: string
+    reportId?: string | null
     metadata?: Record<string, unknown>
   }) {
-    const notification = await this.repo.create(data)
+    const notification = await this.repo.create({
+      userId: data.userId,
+      type: data.type,
+      reportId: data.reportId ?? null,
+      metadata: data.metadata,
+    })
     this.gateway?.emitToUser(data.userId, 'notification', {
       id: notification.id,
       type: notification.type,

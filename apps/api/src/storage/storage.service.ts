@@ -144,15 +144,45 @@ export class StorageService {
 
   async uploadJson(key: string, data: unknown): Promise<void> {
     const body = Buffer.from(JSON.stringify(data, null, 2), 'utf-8')
+    await this.uploadBuffer(key, body, 'application/json', true)
+  }
+
+  async uploadBuffer(
+    key: string,
+    body: Buffer,
+    contentType: string,
+    isPrivate = true,
+  ): Promise<void> {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: body,
-        ContentType: 'application/json',
-        CacheControl: 'private, no-cache',
+        ContentType: contentType,
+        CacheControl: isPrivate ? 'private, no-cache' : 'public, max-age=86400',
       }),
     )
+  }
+
+  async getObjectBuffer(key: string): Promise<Buffer | null> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    )
+    const body = res.Body as
+      | { transformToByteArray?: () => Promise<Uint8Array>; [Symbol.asyncIterator]?: () => AsyncIterator<Uint8Array> }
+      | undefined
+    if (!body) return null
+    if (typeof body.transformToByteArray === 'function') {
+      const bytes = await body.transformToByteArray()
+      return Buffer.from(bytes)
+    }
+    const chunks: Buffer[] = []
+    if (typeof body[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of body as AsyncIterable<Uint8Array>) {
+        chunks.push(Buffer.from(chunk))
+      }
+    }
+    return chunks.length > 0 ? Buffer.concat(chunks) : null
   }
 
   async upload(

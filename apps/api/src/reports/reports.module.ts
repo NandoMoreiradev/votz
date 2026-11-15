@@ -7,6 +7,7 @@ import { TimelineModule } from '../timeline/timeline.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { AlertsModule } from '../alerts/alerts.module'
 import { EmbeddingModule } from '../embedding/embedding.module'
+import { WebhooksModule } from '../webhooks/webhooks.module'
 import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 
 @Module({
@@ -15,6 +16,7 @@ import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embed
     NotificationsModule,
     AlertsModule,
     EmbeddingModule,
+    WebhooksModule,
     BullModule.registerQueue({ name: REPORTS_QUEUE }),
   ],
   controllers: [ReportsController],

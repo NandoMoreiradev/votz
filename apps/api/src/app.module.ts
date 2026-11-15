@@ -45,6 +45,10 @@ import { VerificationRetentionModule } from './verification-retention/verificati
 import { InactivityModule } from './inactivity/inactivity.module'
 import { ModerationModule } from './moderation/moderation.module'
 import { AnalyticsModule } from './analytics/analytics.module'
+import { AccountabilityModule } from './accountability/accountability.module'
+import { MandateModule } from './mandate/mandate.module'
+import { ShareCardsModule } from './share-cards/share-cards.module'
+import { WebhooksModule } from './webhooks/webhooks.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
 import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
@@ -138,6 +142,10 @@ import { SecurityModule } from './common/security/security.module'
     InactivityModule,
     ModerationModule,
     AnalyticsModule,
+    WebhooksModule,
+    AccountabilityModule,
+    ShareCardsModule,
+    MandateModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -38,6 +38,38 @@ export interface ResolvedTerritorialScope {
   recipientType: RecipientType
 }
 
+export function resolvePoliticianTerritory(politician: {
+  office: string
+  state: string | null
+  city: string | null
+}): { territoryLevel: 'CITY' | 'STATE'; state: string; cityKey: string | null } {
+  const orgState = (politician.state ?? '').trim().toUpperCase()
+  const tier = getPoliticianTier(politician.office)
+  const normalizedOffice = normalizeLocationKey(politician.office)
+  const isMunicipal =
+    normalizedOffice === 'vereador' ||
+    normalizedOffice === 'vereadora' ||
+    normalizedOffice === 'prefeito' ||
+    normalizedOffice === 'prefeita' ||
+    normalizedOffice === 'vice prefeito' ||
+    normalizedOffice === 'vice prefeita' ||
+    tier <= 2
+
+  if (isMunicipal) {
+    const normalizedCity = normalizeLocationKey(politician.city)
+    if (!normalizedCity || !orgState) {
+      throw new ForbiddenException(
+        'Mandato municipal sem cidade/UF cadastrada para delimitar área.',
+      )
+    }
+    return { territoryLevel: 'CITY', state: orgState, cityKey: normalizedCity }
+  }
+  if (!orgState) {
+    throw new ForbiddenException('Mandato sem UF cadastrada para delimitar área.')
+  }
+  return { territoryLevel: 'STATE', state: orgState, cityKey: null }
+}
+
 @Injectable()
 export class AnalyticsScopeService {
   constructor(private readonly prisma: PrismaService) {}
@@ -97,34 +129,10 @@ export class AnalyticsScopeService {
       }
       orgName = politician.name
       plan = politician.plan
-      orgState = (politician.state ?? '').trim().toUpperCase()
-      const tier = getPoliticianTier(politician.office)
-      const normalizedOffice = normalizeLocationKey(politician.office)
-      const isMunicipal =
-        normalizedOffice === 'vereador' ||
-        normalizedOffice === 'vereadora' ||
-        normalizedOffice === 'prefeito' ||
-        normalizedOffice === 'prefeita' ||
-        normalizedOffice === 'vice prefeito' ||
-        normalizedOffice === 'vice prefeita' ||
-        tier <= 2
-
-      if (isMunicipal) {
-        const normalizedCity = normalizeLocationKey(politician.city)
-        if (!normalizedCity || !orgState) {
-          throw new ForbiddenException(
-            'Mandato municipal sem cidade/UF cadastrada para delimitar área.',
-          )
-        }
-        territoryLevel = 'CITY'
-        orgCityKey = normalizedCity
-      } else {
-        if (!orgState) {
-          throw new ForbiddenException('Mandato sem UF cadastrada para delimitar área.')
-        }
-        territoryLevel = 'STATE'
-        orgCityKey = null
-      }
+      const resolved = resolvePoliticianTerritory(politician)
+      territoryLevel = resolved.territoryLevel
+      orgState = resolved.state
+      orgCityKey = resolved.cityKey
     }
 
     // Valida parâmetros territoriais informados pelo cliente contra o escopo da org

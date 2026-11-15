@@ -25,6 +25,12 @@ export interface PlanLimits {
     maxMembersByTier?: Record<PoliticianPriceTier, number>;
     /** null = histórico completo */
     historyDays: number | null;
+    /** null = ilimitado; omitido = não aplicável */
+    maxAlertRules?: number | null;
+    maxReplyTemplates?: number | null;
+    maxPdfReportsPerMonth?: number | null;
+    maxShareCardsPerMonth?: number | null;
+    maxWebhookEndpoints?: number | null;
 }
 export interface PlanConfig<P extends string = string> {
     code: P;

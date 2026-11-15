@@ -51,12 +51,12 @@ export const FEATURE_STATUS: Record<FeatureKey, FeatureAvailability> = {
   analytics_full: 'available',
   heatmap: 'available',
   sla_panel: 'soon',
-  pdf_report: 'soon',
-  share_card: 'soon',
+  pdf_report: 'available',
+  share_card: 'available',
   api_access: 'available',
-  webhooks: 'soon',
+  webhooks: 'available',
   peer_comparison: 'soon',
-  reply_templates: 'soon',
+  reply_templates: 'available',
   priority_support: 'available',
 }
 
@@ -165,6 +165,12 @@ export interface PlanLimits {
   maxMembersByTier?: Record<PoliticianPriceTier, number>
   /** null = histórico completo */
   historyDays: number | null
+  /** null = ilimitado; omitido = não aplicável */
+  maxAlertRules?: number | null
+  maxReplyTemplates?: number | null
+  maxPdfReportsPerMonth?: number | null
+  maxShareCardsPerMonth?: number | null
+  maxWebhookEndpoints?: number | null
 }
 
 export interface PlanConfig<P extends string = string> {
@@ -260,6 +266,11 @@ export const POLITICIAN_PLANS: Record<PoliticianPlan, PlanConfig<PoliticianPlan>
       maxMembers: 1,
       maxMembersByTier: { 1: 1, 2: 1, 3: 1, 4: 1 },
       historyDays: null,
+      maxAlertRules: 0,
+      maxReplyTemplates: 0,
+      maxPdfReportsPerMonth: 0,
+      maxShareCardsPerMonth: 0,
+      maxWebhookEndpoints: 0,
     },
     features: buildFeatures(['respond_reports', 'analytics_basic']),
     status: { ...FEATURE_STATUS },
@@ -273,6 +284,11 @@ export const POLITICIAN_PLANS: Record<PoliticianPlan, PlanConfig<PoliticianPlan>
       maxMembers: 3,
       maxMembersByTier: { 1: 2, 2: 3, 3: 5, 4: 8 },
       historyDays: null,
+      maxAlertRules: 5,
+      maxReplyTemplates: 0,
+      maxPdfReportsPerMonth: 4,
+      maxShareCardsPerMonth: 10,
+      maxWebhookEndpoints: 0,
     },
     features: buildFeatures([
       'respond_reports',
@@ -282,8 +298,8 @@ export const POLITICIAN_PLANS: Record<PoliticianPlan, PlanConfig<PoliticianPlan>
       'analytics_basic',
       'analytics_full',
       'heatmap',
+      'pdf_report',
       'share_card',
-      'reply_templates',
     ]),
     status: { ...FEATURE_STATUS },
   },
@@ -296,6 +312,11 @@ export const POLITICIAN_PLANS: Record<PoliticianPlan, PlanConfig<PoliticianPlan>
       maxMembers: 8,
       maxMembersByTier: { 1: 5, 2: 8, 3: 12, 4: 20 },
       historyDays: null,
+      maxAlertRules: 25,
+      maxReplyTemplates: 30,
+      maxPdfReportsPerMonth: null,
+      maxShareCardsPerMonth: null,
+      maxWebhookEndpoints: 5,
     },
     features: buildFeatures([
       'respond_reports',
@@ -328,6 +349,10 @@ export const ENTITY_PLANS: Record<EntityPlan, PlanConfig<EntityPlan>> = {
     limits: {
       maxMembers: 2,
       historyDays: 30,
+      maxAlertRules: 0,
+      maxReplyTemplates: 0,
+      maxPdfReportsPerMonth: 0,
+      maxWebhookEndpoints: 0,
     },
     features: buildFeatures(['respond_reports', 'team', 'analytics_basic']),
     status: { ...FEATURE_STATUS },
@@ -340,6 +365,10 @@ export const ENTITY_PLANS: Record<EntityPlan, PlanConfig<EntityPlan>> = {
     limits: {
       maxMembers: 10,
       historyDays: null,
+      maxAlertRules: 10,
+      maxReplyTemplates: 15,
+      maxPdfReportsPerMonth: 4,
+      maxWebhookEndpoints: 0,
     },
     features: buildFeatures([
       'respond_reports',
@@ -363,6 +392,10 @@ export const ENTITY_PLANS: Record<EntityPlan, PlanConfig<EntityPlan>> = {
     limits: {
       maxMembers: null,
       historyDays: null,
+      maxAlertRules: 25,
+      maxReplyTemplates: 50,
+      maxPdfReportsPerMonth: null,
+      maxWebhookEndpoints: 5,
     },
     features: buildFeatures([
       'respond_reports',

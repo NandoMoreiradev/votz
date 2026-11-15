@@ -40,6 +40,10 @@ import { CreateProposta } from './pages/CreateProposta'
 import { Planos } from './pages/Planos'
 import { PagamentoSucesso } from './pages/PagamentoSucesso'
 import { PainelDados } from './pages/PainelDados'
+import { MandatoPortal } from './pages/MandatoPortal'
+import { PrestacaoPublica } from './pages/PrestacaoPublica'
+import { MandatoPublico } from './pages/MandatoPublico'
+import { DescadastroResumo } from './pages/DescadastroResumo'
 import DebatesList from './pages/DebatesList'
 import DebateWatch from './pages/DebateWatch'
 import { Termos } from './pages/Termos'
@@ -138,6 +142,16 @@ function App() {
               <Route path="/planos" element={<Planos />} />
               <Route path="/pagamento/sucesso" element={<PagamentoSucesso />} />
               <Route path="/painel-dados" element={<PainelDados />} />
+              <Route path="/mandato" element={<MandatoPortal />} />
+              <Route path="/mandato/alertas" element={<MandatoPortal />} />
+              <Route path="/mandato/modelos" element={<MandatoPortal />} />
+              <Route path="/mandato/prestacao" element={<MandatoPortal />} />
+              <Route path="/mandato/cartoes" element={<MandatoPortal />} />
+              <Route path="/mandato/webhooks" element={<MandatoPortal />} />
+              <Route path="/mandato/resumo" element={<MandatoPortal />} />
+              <Route path="/prestacao/:code" element={<PrestacaoPublica />} />
+              <Route path="/p/:slug/mandato" element={<MandatoPublico />} />
+              <Route path="/descadastro-resumo" element={<DescadastroResumo />} />
               <Route path="/debates" element={<DebatesList />} />
               <Route path="/debates/:id" element={<DebateWatch />} />
               <Route path="/termos" element={<Termos />} />

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException, ConflictException, Optional } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
@@ -7,15 +7,17 @@ import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
+import { AlertRulesService } from '../alerts/alert-rules.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { StorageService } from '../storage/storage.service'
+import { WebhooksService } from '../webhooks/webhooks.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
-import { FollowerActorType, OrgPermission, PoliticianStatus } from '@prisma/client'
+import { FollowerActorType, OrgPermission, OrgType, PoliticianStatus, WebhookEventType } from '@prisma/client'
 import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
 import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
 
@@ -32,6 +34,8 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
+    @Optional() private readonly alertRules?: AlertRulesService,
+    @Optional() private readonly webhooks?: WebhooksService,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
@@ -67,6 +71,32 @@ export class ReportsService {
     // Fire-and-forget: detecta surto após novo relato registrado
     if (report.city) {
       this.alerts.enqueueCheck(report.category, report.city, report.state ?? '').catch(() => null)
+    }
+
+    // Fire-and-forget: avalia regras de alerta configuráveis e webhooks de novo relato
+    this.alertRules?.enqueueReportRuleCheck(report.id).catch(() => null)
+    if (
+      (report.recipientType === RecipientType.POLITICIAN ||
+        report.recipientType === RecipientType.ENTITY) &&
+      report.recipientId
+    ) {
+      this.webhooks
+        ?.enqueueEvent(
+          report.recipientType === RecipientType.POLITICIAN ? OrgType.POLITICIAN : OrgType.ENTITY,
+          report.recipientId,
+          WebhookEventType.REPORT_CREATED,
+          `report.created:${report.id}`,
+          {
+            reportId: report.id,
+            title: report.title,
+            category: report.category,
+            status: report.status,
+            city: report.city,
+            state: report.state,
+            createdAt: report.createdAt,
+          },
+        )
+        .catch(() => null)
     }
 
     // Fire-and-forget: gera embedding semântico para busca por similaridade
@@ -223,6 +253,26 @@ export class ReportsService {
         metadata: { previousStatus: report.status, newStatus: dto.status, media: dto.media ?? [] },
       })
       // Notificar sobre mudança de status
+      if (
+        (report.recipientType === RecipientType.POLITICIAN ||
+          report.recipientType === RecipientType.ENTITY) &&
+        report.recipientId
+      ) {
+        this.webhooks
+          ?.enqueueEvent(
+            report.recipientType === RecipientType.POLITICIAN ? OrgType.POLITICIAN : OrgType.ENTITY,
+            report.recipientId,
+            WebhookEventType.REPORT_STATUS_CHANGED,
+            `report.status:${reportId}:${dto.status}:${Date.now()}`,
+            {
+              reportId,
+              previousStatus: report.status,
+              newStatus: dto.status,
+              category: report.category,
+            },
+          )
+          .catch(() => null)
+      }
       if (report.author?.id && report.author.id !== user.id) {
         this.notifications.notify({
           userId: report.author.id,

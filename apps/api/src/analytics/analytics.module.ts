@@ -44,7 +44,7 @@ import { AnalyticsService } from './analytics.service'
     AnalyticsProcessor,
     AnalyticsCron,
   ],
-  exports: [AnalyticsService, AnalyticsRollupService],
+  exports: [AnalyticsService, AnalyticsRollupService, AnalyticsScopeService, AnalyticsRepository],
 })
 export class AnalyticsModule implements OnModuleDestroy {
   constructor(@Inject(ANALYTICS_REDIS_CLIENT) private readonly redis: Redis) {}

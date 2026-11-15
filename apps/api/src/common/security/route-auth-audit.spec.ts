@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 import { AppModule } from '../../app.module'
 
 const EXPECTED_PUBLIC_ROUTES = new Set<string>([
+  'GET /accountability/public/:code',
   'GET /alerts',
   'GET /alerts/:id',
   'GET /analytics/public/entities/:id',
@@ -58,6 +59,7 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /imprensa/resumo',
   'GET /imprensa/surtos-ativos',
   'GET /imprensa/tendencias',
+  'GET /mandate/digest/unsubscribe',
   'GET /map/reports',
   'GET /org-memberships/invites/:token',
   'GET /parties',
@@ -73,6 +75,9 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /reports/similar',
   'GET /reports/:reportId/comments',
   'GET /reports/:reportId/votes',
+  'GET /share-cards/public/:slugOrId/image',
+  'GET /share-cards/public/:slugOrId/meta',
+  'GET /share-cards/public/:slugOrId/og',
   'POST /subscricoes/webhook',
   'GET /users/:id',
   'GET /users/:id/reports',

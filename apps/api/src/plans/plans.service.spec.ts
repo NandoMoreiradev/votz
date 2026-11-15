@@ -61,7 +61,8 @@ describe('PlansService', () => {
     expect(res.features.propostas).toBe(true)
     expect(res.features.export_data).toBe(false)
     expect(res.featureStatus.heatmap).toBe('available')
-    expect(res.featureStatus.pdf_report).toBe('soon')
+    expect(res.featureStatus.pdf_report).toBe('available')
+    expect(res.featureStatus.sla_panel).toBe('soon')
   })
 
   it('returns entity plan details with 30-day history limit on BASICO and unlimited members on INTEGRACAO', async () => {

@@ -652,6 +652,9 @@ export function Navbar() {
             {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
               <NavLink to="/painel-dados">Painel</NavLink>
             )}
+            {activeContext?.type === 'POLITICIAN' && (
+              <NavLink to="/mandato">Caixa do mandato</NavLink>
+            )}
             {!user && <NavLink to="/solicitar-cadastro">Registrar organização</NavLink>}
             {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
           </NavLinks>
@@ -759,6 +762,11 @@ export function Navbar() {
           {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
             <MobileNavLink to="/painel-dados" onClick={() => setMobileOpen(false)}>
               Painel de dados
+            </MobileNavLink>
+          )}
+          {activeContext?.type === 'POLITICIAN' && (
+            <MobileNavLink to="/mandato" onClick={() => setMobileOpen(false)}>
+              Caixa do mandato
             </MobileNavLink>
           )}
           {!user && (

@@ -281,4 +281,119 @@ export class MailService {
       return false
     }
   }
+
+  async sendWeeklyMandateDigest(
+    email: string,
+    recipientName: string,
+    data: {
+      orgName: string
+      territoryLabel: string
+      weekLabel: string
+      newReportsCount: number
+      resolvedCount: number
+      medianResponseHours: number | null
+      prevMedianResponseHours: number | null
+      detailed: boolean
+      topUnanswered: Array<{ id: string; title: string; category: string; pressureScore: number }>
+      unsubscribeToken: string
+      definitionVersion: string
+    },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const inboxLink = `${baseUrl}/mandato`
+    const unsubLink = `${baseUrl}/descadastro-resumo?token=${encodeURIComponent(data.unsubscribeToken)}`
+    const safeName = escapeHtml(recipientName || 'Equipe')
+    const safeOrg = escapeHtml(data.orgName)
+    const safeTerritory = escapeHtml(data.territoryLabel)
+    const safeWeek = escapeHtml(data.weekLabel)
+
+    const topHtml =
+      data.detailed && data.topUnanswered.length > 0
+        ? `
+          <h3 style="margin:20px 0 8px;">3 relatos sem resposta de maior pressão</h3>
+          <ul style="padding-left:18px;margin:0 0 16px;">
+            ${data.topUnanswered
+              .map(
+                (r) =>
+                  `<li style="margin-bottom:6px;"><a href="${escapeHtml(`${baseUrl}/relatos/${encodeURIComponent(r.id)}`)}">${escapeHtml(r.title)}</a> · ${escapeHtml(r.category)} · pressão ${escapeHtml(String(Math.round(r.pressureScore)))}</li>`,
+              )
+              .join('')}
+          </ul>
+        `
+        : ''
+
+    const medianLine =
+      data.detailed && data.medianResponseHours !== null
+        ? `<tr><td style="padding:6px 16px 6px 0;font-weight:600">Mediana de resposta</td><td>${escapeHtml(String(data.medianResponseHours))}h${
+            data.prevMedianResponseHours !== null
+              ? ` (semana anterior: ${escapeHtml(String(data.prevMedianResponseHours))}h)`
+              : ''
+          }</td></tr>`
+        : ''
+
+    await this.transporter
+      .sendMail({
+        from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+        to: email,
+        subject: sanitizeSubject(`Resumo semanal do mandato (${data.weekLabel}) — ${data.orgName}`),
+        html: `
+          <h2>Resumo semanal — ${safeOrg}</h2>
+          <p>Olá, ${safeName}. Dados factuais do Votz para ${safeTerritory} (${safeWeek}):</p>
+          <table style="border-collapse:collapse;margin:16px 0;">
+            <tr><td style="padding:6px 16px 6px 0;font-weight:600">Novos relatos na área</td><td>${escapeHtml(String(data.newReportsCount))}</td></tr>
+            <tr><td style="padding:6px 16px 6px 0;font-weight:600">Resolvidos na semana</td><td>${escapeHtml(String(data.resolvedCount))}</td></tr>
+            ${medianLine}
+          </table>
+          ${topHtml}
+          <p><a href="${escapeHtml(inboxLink)}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Abrir Caixa do mandato</a></p>
+          <p style="color:#6B7280;font-size:12px;margin-top:24px;">
+            Dados públicos agregados (definição ${escapeHtml(data.definitionVersion)}). Sem rastreamento de abertura.
+            <a href="${escapeHtml(unsubLink)}">Cancelar recebimento com 1 clique</a>
+          </p>
+        `,
+      })
+      .catch((err) => this.logger.error('Failed to send weekly mandate digest email', err))
+  }
+
+  async sendOrgAlertNotification(
+    email: string,
+    recipientName: string,
+    data: {
+      orgName: string
+      ruleName: string
+      itemsCount: number
+      highlights: Array<{ title: string; category: string; detail: string; reportId?: string | null }>
+    },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const inboxLink = `${baseUrl}/mandato`
+    const safeName = escapeHtml(recipientName || 'Equipe')
+    const safeOrg = escapeHtml(data.orgName)
+    const safeRule = escapeHtml(data.ruleName)
+
+    const itemsHtml = data.highlights
+      .slice(0, 5)
+      .map((item) => {
+        const titleHtml = item.reportId
+          ? `<a href="${escapeHtml(`${baseUrl}/relatos/${encodeURIComponent(item.reportId)}`)}">${escapeHtml(item.title)}</a>`
+          : escapeHtml(item.title)
+        return `<li style="margin-bottom:6px;">${titleHtml} — ${escapeHtml(item.category)} (${escapeHtml(item.detail)})</li>`
+      })
+      .join('')
+
+    await this.transporter
+      .sendMail({
+        from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+        to: email,
+        subject: sanitizeSubject(`[Alerta Votz] ${data.ruleName} (${data.itemsCount}) — ${data.orgName}`),
+        html: `
+          <h2>Alerta configurado — ${safeOrg}</h2>
+          <p>Olá, ${safeName}. A regra <strong>${safeRule}</strong> registrou ${escapeHtml(String(data.itemsCount))} ocorrência(s) na sua área:</p>
+          <ul style="padding-left:18px;margin:12px 0 18px;">${itemsHtml}</ul>
+          <p><a href="${escapeHtml(inboxLink)}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Abrir Caixa do mandato</a></p>
+          <p style="color:#6B7280;font-size:12px;">Dados públicos agregados sem dados pessoais de cidadãos. Gerencie suas regras em ${escapeHtml(baseUrl)}/mandato/alertas.</p>
+        `,
+      })
+      .catch((err) => this.logger.error('Failed to send org alert email', err))
+  }
 }

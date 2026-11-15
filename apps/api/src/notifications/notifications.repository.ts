@@ -18,11 +18,16 @@ export class NotificationsRepository {
   async create(data: {
     userId: string
     type: NotificationType
-    reportId: string
+    reportId?: string | null
     metadata?: Record<string, unknown>
   }) {
     return this.prisma.notification.create({
-      data: { ...data, metadata: data.metadata as Prisma.InputJsonValue | undefined },
+      data: {
+        userId: data.userId,
+        type: data.type,
+        reportId: data.reportId ?? null,
+        metadata: data.metadata as Prisma.InputJsonValue | undefined,
+      },
     })
   }
 
