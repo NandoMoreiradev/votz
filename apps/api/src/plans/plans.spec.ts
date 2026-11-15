@@ -107,6 +107,10 @@ describe('Plans Catalog (@votz/shared-types)', () => {
     expect(PLAN_PRICES.POLITICIAN.MANDATO_PRO[4]).toBe(149000)
     expect(PLAN_PRICES.ENTITY.GESTAO.UP_TO_50K).toBe(59000)
     expect(PLAN_PRICES.ENTITY.GESTAO.OVER_300K).toBe(320000)
+    expect(PLAN_PRICES.COMPANY.STARTER).toBe(30000)
+    expect(PLAN_PRICES.COMPANY.BUSINESS).toBe(120000)
+    expect(PLAN_PRICES.COMPANY.ENTERPRISE).toBe(350000)
+    expect(PLAN_PRICES.COMPANY.WHITE_LABEL).toBeNull()
 
     expect(getRequiredPlanForFeature('POLITICIAN', 'propostas')?.code).toBe('MANDATO')
     expect(getRequiredPlanForFeature('POLITICIAN', 'export_data')?.code).toBe('MANDATO_PRO')

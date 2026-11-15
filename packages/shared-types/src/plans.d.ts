@@ -52,12 +52,7 @@ export declare const PLAN_PRICES: {
         readonly GESTAO: Record<EntityPopulationTier, number>;
         readonly INTEGRACAO: Record<EntityPopulationTier, number>;
     };
-    readonly COMPANY: {
-        readonly STARTER: 0;
-        readonly BUSINESS: 99000;
-        readonly ENTERPRISE: 299000;
-        readonly WHITE_LABEL: 599000;
-    };
+    readonly COMPANY: Record<`${CompanyPlan}`, number | null>;
 };
 export declare const POLITICIAN_PLANS: Record<PoliticianPlan, PlanConfig<PoliticianPlan>>;
 export declare const ENTITY_PLANS: Record<EntityPlan, PlanConfig<EntityPlan>>;

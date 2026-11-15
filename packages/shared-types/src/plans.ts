@@ -218,12 +218,14 @@ export const PLAN_PRICES = {
       OVER_300K: 320000,
     } as Record<EntityPopulationTier, number>,
   },
+  // Fase 2 do negócio: valores históricos, NÃO validados. Não alterar sem decisão do dono do produto.
   COMPANY: {
-    [CompanyPlan.STARTER]: 0,
-    [CompanyPlan.BUSINESS]: 99000,
-    [CompanyPlan.ENTERPRISE]: 299000,
-    [CompanyPlan.WHITE_LABEL]: 599000,
-  },
+    [CompanyPlan.STARTER]: 30000,
+    [CompanyPlan.BUSINESS]: 120000,
+    // R$ 3.500+ é o piso de referência do Enterprise
+    [CompanyPlan.ENTERPRISE]: 350000,
+    [CompanyPlan.WHITE_LABEL]: null,
+  } as Record<`${CompanyPlan}`, number | null>,
 } as const
 
 function buildFeatures(enabled: FeatureKey[]): Record<FeatureKey, boolean> {

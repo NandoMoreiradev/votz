@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import styled from 'styled-components'
 import {
+  COMPANY_PLANS,
+  CompanyPlan,
   ENTITY_PLANS,
   ENTITY_POPULATION_TIER_LABELS,
   EntityPlan,
@@ -91,6 +93,13 @@ const FAQ = [
   },
 ]
 
+const COMPANY_PLAN_ORDER: CompanyPlan[] = [
+  CompanyPlan.STARTER,
+  CompanyPlan.BUSINESS,
+  CompanyPlan.ENTERPRISE,
+  CompanyPlan.WHITE_LABEL,
+]
+
 function formatCentavos(centavos: number): string {
   if (centavos <= 0) return 'Grátis'
   return (centavos / 100).toLocaleString('pt-BR', {
@@ -98,6 +107,13 @@ function formatCentavos(centavos: number): string {
     currency: 'BRL',
     maximumFractionDigits: 0,
   })
+}
+
+function formatCompanyPrice(code: CompanyPlan): string {
+  const centavos = PLAN_PRICES.COMPANY[code]
+  if (centavos === null) return 'Sob consulta'
+  const base = formatCentavos(centavos)
+  return code === CompanyPlan.ENTERPRISE ? `${base}+/mês` : `${base}/mês`
 }
 
 function formatMembersLimit(max: number | null): string {
@@ -466,9 +482,20 @@ export function Planos() {
           </>
         )}
 
-        <CompanyNote>
-          Empresas e concessionárias privadas terão catálogo próprio na próxima fase do projeto.
-        </CompanyNote>
+        <CompanySection aria-label="Planos empresariais — fase 2">
+          <CompanyTitle>Empresas e concessionárias privadas</CompanyTitle>
+          <CompanySubtitle>
+            Catálogo previsto para a fase 2 do negócio (valores de referência, não validados).
+          </CompanySubtitle>
+          <CompanyGrid>
+            {COMPANY_PLAN_ORDER.map((code) => (
+              <CompanyItem key={code}>
+                <CompanyPlanLabel>{COMPANY_PLANS[code].label}</CompanyPlanLabel>
+                <CompanyPlanPrice>{formatCompanyPrice(code)}</CompanyPlanPrice>
+              </CompanyItem>
+            ))}
+          </CompanyGrid>
+        </CompanySection>
 
         <FaqSection>
           <FaqTitle>Dúvidas frequentes</FaqTitle>
@@ -813,11 +840,57 @@ const PriceTable = styled.table`
   }
 `
 
-const CompanyNote = styled.p`
-  text-align: center;
+const CompanySection = styled.section`
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: ${({ theme }) => theme.spacing[5]} ${({ theme }) => theme.spacing[6]};
+  margin-bottom: ${({ theme }) => theme.spacing[12]};
+`
+
+const CompanyTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.md};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0 0 ${({ theme }) => theme.spacing[1]};
+`
+
+const CompanySubtitle = styled.p`
   font-size: ${({ theme }) => theme.fontSizes.sm};
   color: ${({ theme }) => theme.colors.muted};
-  margin-bottom: ${({ theme }) => theme.spacing[12]};
+  margin: 0 0 ${({ theme }) => theme.spacing[4]};
+`
+
+const CompanyGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: ${({ theme }) => theme.spacing[3]};
+
+  @media (max-width: 720px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+`
+
+const CompanyItem = styled.div`
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
+  display: flex;
+  flex-direction: column;
+  gap: ${({ theme }) => theme.spacing[1]};
+`
+
+const CompanyPlanLabel = styled.span`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const CompanyPlanPrice = styled.span`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.muted};
 `
 
 const FaqSection = styled.section`

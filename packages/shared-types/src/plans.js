@@ -167,11 +167,13 @@ exports.PLAN_PRICES = {
             OVER_300K: 320000,
         },
     },
+    // Fase 2 do negócio: valores históricos, NÃO validados. Não alterar sem decisão do dono do produto.
     COMPANY: {
-        [enums_1.CompanyPlan.STARTER]: 0,
-        [enums_1.CompanyPlan.BUSINESS]: 99000,
-        [enums_1.CompanyPlan.ENTERPRISE]: 299000,
-        [enums_1.CompanyPlan.WHITE_LABEL]: 599000,
+        [enums_1.CompanyPlan.STARTER]: 30000,
+        [enums_1.CompanyPlan.BUSINESS]: 120000,
+        // R$ 3.500+ é o piso de referência do Enterprise
+        [enums_1.CompanyPlan.ENTERPRISE]: 350000,
+        [enums_1.CompanyPlan.WHITE_LABEL]: null,
     },
 };
 function buildFeatures(enabled) {
