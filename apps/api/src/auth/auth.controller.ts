@@ -22,9 +22,7 @@ import { SwitchContextDto } from './dto/switch-context.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
 import { JwtMfaSetupGuard } from './guards/jwt-mfa-setup.guard'
 import { GoogleAuthGuard } from './guards/google-auth.guard'
-import { OriginCsrfGuard } from '../common/security/origin-csrf.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
-import { Public } from './decorators/public.decorator'
 import { ConfigService } from '@nestjs/config'
 
 const REFRESH_COOKIE = 'votz_refresh_token'
@@ -47,7 +45,6 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
-  @Public()
   @Post('register')
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Register new citizen' })
@@ -57,7 +54,6 @@ export class AuthController {
     return { user, accessToken }
   }
 
-  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
@@ -70,7 +66,6 @@ export class AuthController {
     return { requiresMfa: false, requiresMfaSetup: false, user: result.user, accessToken: result.accessToken }
   }
 
-  @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
@@ -98,7 +93,6 @@ export class AuthController {
     return this.authService.mfaSetup(user.id)
   }
 
-  @Public()
   @Post('mfa/setup/forced')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtMfaSetupGuard)
@@ -116,7 +110,6 @@ export class AuthController {
     return this.authService.mfaEnable(user.id, dto.code, false)
   }
 
-  @Public()
   @Post('mfa/enable/forced')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtMfaSetupGuard)
@@ -132,7 +125,6 @@ export class AuthController {
     return { backupCodes: result.backupCodes, accessToken: result.accessToken, user: result.user }
   }
 
-  @Public()
   @Post('mfa/verify')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
@@ -170,9 +162,7 @@ export class AuthController {
     return this.authService.mfaRegenerateBackupCodes(user.id, dto.code)
   }
 
-  @Public()
   @Post('refresh')
-  @UseGuards(OriginCsrfGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate refresh token and get new access token' })
   async refresh(
@@ -187,7 +177,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(OriginCsrfGuard, JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout current session family and invalidate refresh token cookie' })
   async logout(
@@ -202,7 +192,7 @@ export class AuthController {
 
   @Post('logout-all')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(OriginCsrfGuard, JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout from all devices and revoke all refresh token families' })
   async logoutAll(
@@ -242,7 +232,6 @@ export class AuthController {
 
   // ── Google OAuth ────────────────────────────────────────────────────────
 
-  @Public()
   @Get('google')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Redirect to Google OAuth' })
@@ -250,7 +239,6 @@ export class AuthController {
     // Passport redireciona automaticamente
   }
 
-  @Public()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Google OAuth callback' })
