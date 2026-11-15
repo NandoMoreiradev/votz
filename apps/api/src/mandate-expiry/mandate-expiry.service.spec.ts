@@ -47,7 +47,7 @@ describe('MandateExpiryService', () => {
 
   it('closes expired mandates, reopens IN_PROGRESS reports, freezes mandatometer and cancels Stripe', async () => {
     mockPrisma.politician.findMany.mockResolvedValue([
-      { id: 'pol-1', name: 'Fulano', plan: 'MANDATOMETRO_PRO', stripeSubscriptionId: 'sub_1' },
+      { id: 'pol-1', name: 'Fulano', plan: 'MANDATO_PRO', stripeSubscriptionId: 'sub_1' },
     ])
     mockPrisma.report.findMany.mockResolvedValue([
       {

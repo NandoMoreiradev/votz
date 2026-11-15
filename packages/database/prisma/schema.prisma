@@ -97,14 +97,13 @@ enum CompanyPlan {
 enum EntityPlan {
   BASICO
   GESTAO
-  PRO
-  ENTERPRISE
+  INTEGRACAO
 }
 
 enum PoliticianPlan {
   BASICO
-  MANDATOMETRO_PRO
-  CAMPANHA
+  MANDATO
+  MANDATO_PRO
 }
 
 enum PoliticianStatus {
@@ -305,8 +304,14 @@ model Report {
   longitude        Float?
   normalizedAddress String?
   city             String?
+  cityKey          String?        @map("city_key")
   state            String?
   neighborhood     String?
+  neighborhoodKey  String?        @map("neighborhood_key")
+  cell7            String?
+
+  firstResponseAt  DateTime?      @map("first_response_at")
+  resolvedAt       DateTime?      @map("resolved_at")
 
   // Media (Cloudflare R2 URLs)
   media            String[]
@@ -342,6 +347,10 @@ model Report {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
+  @@index([state, cityKey, createdAt])
+  @@index([cell7, category, createdAt])
+  @@index([recipientType, recipientId, createdAt])
+  @@index([updatedAt])
   @@map("reports")
 }
 
@@ -939,4 +948,79 @@ model StripeEvent {
   processedAt DateTime @default(now())
 
   @@map("stripe_events")
+}
+
+// ==================== ANALYTICS ROLLUPS (BRIEF 4B) ====================
+
+model AreaMetricDaily {
+  id                      String   @id @default(uuid())
+  day                     DateTime @db.Date
+  state                   String
+  cityKey                 String   @map("city_key")
+  cityDisplay             String   @default("") @map("city_display")
+  cell7                   String?
+  category                Category
+  createdCount            Int      @default(0) @map("created_count")
+  resolvedCount           Int      @default(0) @map("resolved_count")
+  openCurrentCount        Int      @default(0) @map("open_current_count")
+  contestedCount          Int      @default(0) @map("contested_count")
+  responseCount           Int      @default(0) @map("response_count")
+  resolutionDurationCount Int      @default(0) @map("resolution_duration_count")
+  respBuckets             Int[]    @default([0, 0, 0, 0, 0, 0, 0, 0]) @map("resp_buckets")
+  resBuckets              Int[]    @default([0, 0, 0, 0, 0, 0, 0, 0]) @map("res_buckets")
+  pressureBuckets         Int[]    @default([0, 0, 0, 0, 0, 0, 0, 0, 0]) @map("pressure_buckets")
+  pressureSum             Float    @default(0) @map("pressure_sum")
+  supportCount            Int      @default(0) @map("support_count")
+  commentCount            Int      @default(0) @map("comment_count")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@index([state, cityKey, day])
+  @@index([state, day, category])
+  @@index([state, cityKey, cell7, day])
+  @@index([day])
+  @@map("area_metrics_daily")
+}
+
+model RecipientMetricDaily {
+  id                      String        @id @default(uuid())
+  day                     DateTime      @db.Date
+  recipientType           RecipientType @map("recipient_type")
+  recipientId             String        @map("recipient_id")
+  category                Category
+  createdCount            Int           @default(0) @map("created_count")
+  resolvedCount           Int           @default(0) @map("resolved_count")
+  openCurrentCount        Int           @default(0) @map("open_current_count")
+  contestedCount          Int           @default(0) @map("contested_count")
+  responseCount           Int           @default(0) @map("response_count")
+  resolutionDurationCount Int           @default(0) @map("resolution_duration_count")
+  respBuckets             Int[]         @default([0, 0, 0, 0, 0, 0, 0, 0]) @map("resp_buckets")
+  resBuckets              Int[]         @default([0, 0, 0, 0, 0, 0, 0, 0]) @map("res_buckets")
+  pressureBuckets         Int[]         @default([0, 0, 0, 0, 0, 0, 0, 0, 0]) @map("pressure_buckets")
+  pressureSum             Float         @default(0) @map("pressure_sum")
+  supportCount            Int           @default(0) @map("support_count")
+  commentCount            Int           @default(0) @map("comment_count")
+  updatedAt               DateTime      @updatedAt @map("updated_at")
+
+  @@unique([day, recipientType, recipientId, category])
+  @@index([recipientType, recipientId, day])
+  @@map("recipient_metrics_daily")
+}
+
+model RecurrenceCell {
+  id         String   @id @default(uuid())
+  state      String
+  cityKey    String   @map("city_key")
+  cell7      String
+  category   Category
+  windowEnd  DateTime @db.Date @map("window_end")
+  count90d   Int      @map("count_90d")
+  firstSeen  DateTime @map("first_seen")
+  lastSeen   DateTime @map("last_seen")
+  avgGapDays Float?   @map("avg_gap_days")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([cell7, category, windowEnd])
+  @@index([state, cityKey, windowEnd, count90d])
+  @@index([state, windowEnd, count90d])
+  @@map("recurrence_cells")
 }

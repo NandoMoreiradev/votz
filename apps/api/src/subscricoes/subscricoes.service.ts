@@ -5,18 +5,26 @@ import { PrismaService } from '../prisma/prisma.service'
 import { OrgType } from '@prisma/client'
 
 // Mapa de plano → Price ID do Stripe (configurado no dashboard Stripe)
-const PRICE_IDS: Record<string, string | undefined> = {
-  // Entidades
-  'ENTITY:GESTAO':      process.env.STRIPE_ENTITY_GESTAO_PRICE_ID,
-  'ENTITY:PRO':         process.env.STRIPE_ENTITY_PRO_PRICE_ID,
-  'ENTITY:ENTERPRISE':  process.env.STRIPE_ENTITY_ENTERPRISE_PRICE_ID,
-  // Políticos
-  'POLITICIAN:MANDATOMETRO_PRO': process.env.STRIPE_POLITICIAN_PRO_PRICE_ID,
-  'POLITICIAN:CAMPANHA':         process.env.STRIPE_POLITICIAN_CAMPANHA_PRICE_ID,
-  // Empresas
-  'COMPANY:STARTER':    process.env.STRIPE_COMPANY_STARTER_PRICE_ID,
-  'COMPANY:BUSINESS':   process.env.STRIPE_COMPANY_BUSINESS_PRICE_ID,
-  'COMPANY:ENTERPRISE': process.env.STRIPE_COMPANY_ENTERPRISE_PRICE_ID,
+/**
+ * Mapeamento dos planos do catálogo para Stripe Price IDs configurados via variáveis de ambiente.
+ * Nota: o catálogo (@votz/shared-types `PLAN_PRICES`) é a fonte de verdade para exibição de preços
+ * por faixa e limites; na Stripe cada Price ID configurado no painel controla a cobrança recorrente.
+ */
+function getStripePriceId(orgType: OrgType, plan: string): string | undefined {
+  const key = `${orgType}:${plan}`
+  const priceIds: Record<string, string | undefined> = {
+    // Entidades
+    'ENTITY:GESTAO': process.env.STRIPE_ENTITY_GESTAO_PRICE_ID,
+    'ENTITY:INTEGRACAO': process.env.STRIPE_ENTITY_INTEGRACAO_PRICE_ID,
+    // Políticos
+    'POLITICIAN:MANDATO': process.env.STRIPE_POLITICIAN_MANDATO_PRICE_ID,
+    'POLITICIAN:MANDATO_PRO': process.env.STRIPE_POLITICIAN_MANDATO_PRO_PRICE_ID,
+    // Empresas (fase 2 — mantidos intactos)
+    'COMPANY:STARTER': process.env.STRIPE_COMPANY_STARTER_PRICE_ID,
+    'COMPANY:BUSINESS': process.env.STRIPE_COMPANY_BUSINESS_PRICE_ID,
+    'COMPANY:ENTERPRISE': process.env.STRIPE_COMPANY_ENTERPRISE_PRICE_ID,
+  }
+  return priceIds[key]
 }
 
 @Injectable()
@@ -32,26 +40,21 @@ export class SubscricoesService {
   }
 
   async criarCheckout(orgId: string, orgType: OrgType, plan: string, userEmail: string) {
-    const key = `${orgType}:${plan}`
-    const priceId = PRICE_IDS[key]
+    const priceId = getStripePriceId(orgType, plan)
     if (!priceId) throw new BadRequestException(`Plano ${plan} não disponível para ${orgType}`)
 
     const stripeCustomerId = await this.getOrCreateCustomer(orgId, orgType, userEmail)
 
     const webUrl = this.config.getOrThrow('WEB_URL')
 
-    const isOneTime = plan === 'CAMPANHA'
     const session = await this.stripe.checkout.sessions.create({
       customer: stripeCustomerId,
-      mode: isOneTime ? 'payment' : 'subscription',
+      mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${webUrl}/pagamento/sucesso?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${webUrl}/planos`,
       metadata: { orgId, orgType, plan },
-      ...(isOneTime
-        ? { payment_intent_data: { metadata: { orgId, orgType, plan } } }
-        : { subscription_data: { metadata: { orgId, orgType, plan } } }
-      ),
+      subscription_data: { metadata: { orgId, orgType, plan } },
     })
 
     return { url: session.url }

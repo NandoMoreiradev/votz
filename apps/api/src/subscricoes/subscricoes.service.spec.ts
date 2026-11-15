@@ -1,8 +1,8 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common'
 import { OrgType } from '@prisma/client'
 
-process.env.STRIPE_POLITICIAN_PRO_PRICE_ID = 'price_pol_pro'
-process.env.STRIPE_POLITICIAN_CAMPANHA_PRICE_ID = 'price_pol_camp'
+process.env.STRIPE_POLITICIAN_MANDATO_PRICE_ID = 'price_pol_mandato'
+process.env.STRIPE_POLITICIAN_MANDATO_PRO_PRICE_ID = 'price_pol_pro'
 process.env.STRIPE_ENTITY_GESTAO_PRICE_ID = 'price_ent_gestao'
 
 const stripeMock = {
@@ -55,7 +55,7 @@ describe('SubscricoesService', () => {
     stripeMock.customers.create.mockResolvedValue({ id: 'cus_123' })
     stripeMock.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/s1' })
 
-    const res = await service.criarCheckout('p1', OrgType.POLITICIAN, 'MANDATOMETRO_PRO', 'pol@votz.app')
+    const res = await service.criarCheckout('p1', OrgType.POLITICIAN, 'MANDATO_PRO', 'pol@votz.app')
 
     expect(stripeMock.customers.create).toHaveBeenCalledWith({
       email: 'pol@votz.app',
@@ -75,19 +75,23 @@ describe('SubscricoesService', () => {
     expect(res).toEqual({ url: 'https://checkout.stripe.com/s1' })
   })
 
-  it('uses payment mode for CAMPANHA one-time plan', async () => {
+  it('uses subscription mode for MANDATO and rejects removed CAMPANHA plan', async () => {
     prisma.politician.findUnique.mockResolvedValue({ stripeCustomerId: 'cus_existing' })
     stripeMock.checkout.sessions.create.mockResolvedValue({ url: 'https://checkout.stripe.com/s2' })
 
-    await service.criarCheckout('p1', OrgType.POLITICIAN, 'CAMPANHA', 'pol@votz.app')
+    await service.criarCheckout('p1', OrgType.POLITICIAN, 'MANDATO', 'pol@votz.app')
 
     expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         customer: 'cus_existing',
-        mode: 'payment',
-        payment_intent_data: { metadata: { orgId: 'p1', orgType: OrgType.POLITICIAN, plan: 'CAMPANHA' } },
+        mode: 'subscription',
+        subscription_data: { metadata: { orgId: 'p1', orgType: OrgType.POLITICIAN, plan: 'MANDATO' } },
       }),
     )
+
+    await expect(
+      service.criarCheckout('p1', OrgType.POLITICIAN, 'CAMPANHA', 'pol@votz.app'),
+    ).rejects.toThrow(BadRequestException)
   })
 
   it('throws NotFoundException in criarPortal when org has no stripeCustomerId', async () => {

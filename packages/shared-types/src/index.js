@@ -21,4 +21,6 @@ __exportStar(require("./pagination"), exports);
 __exportStar(require("./proposta"), exports);
 __exportStar(require("./election"), exports);
 __exportStar(require("./legal"), exports);
+__exportStar(require("./plans"), exports);
+__exportStar(require("./analytics"), exports);
 //# sourceMappingURL=index.js.map

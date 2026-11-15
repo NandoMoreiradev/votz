@@ -24,6 +24,8 @@ describe('OrgMembershipsService', () => {
       findInviteByToken: jest.fn(),
       acceptInvite: jest.fn(),
       addMember: jest.fn(),
+      countActiveMembers: jest.fn().mockResolvedValue(0),
+      countPendingInvites: jest.fn().mockResolvedValue(0),
     }
     prisma = {
       user: { findUnique: jest.fn() },
@@ -210,6 +212,79 @@ describe('OrgMembershipsService', () => {
       expect(repo.acceptInvite).toHaveBeenCalledWith('tok')
       expect(repo.addMember).toHaveBeenCalledWith('u1', OrgType.COMPANY, 'c1', 'r2')
       expect(member.id).toBe('mem1')
+    })
+
+    it('enforces maxMembers limit at invite and accept, allowing unlimited on INTEGRACAO and preserving members on downgrade', async () => {
+      // No limite exato: Entidade BASICO (max 2) com 1 ativo e 0 pendentes -> permite novo convite
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', orgType: OrgType.ENTITY, orgId: 'e1', name: 'AGENT' })
+      prisma.user.findUnique.mockResolvedValueOnce(null)
+      prisma.entity.findUnique.mockResolvedValueOnce({ legalName: 'Prefeitura', plan: 'BASICO' })
+      repo.countActiveMembers.mockResolvedValueOnce(1)
+      repo.countPendingInvites.mockResolvedValueOnce(0)
+      repo.createInvite.mockResolvedValueOnce({ id: 'inv-ok', token: 't1' })
+      await expect(
+        service.invite({ orgType: OrgType.ENTITY, orgId: 'e1', email: 'ok@votz.app', roleId: 'r1' } as any),
+      ).resolves.toEqual({ id: 'inv-ok', token: 't1' })
+
+      // Acima/no limite com convite pendente (1 ativo + 1 pendente = 2) -> bloqueia com PLAN_LIMIT_MEMBERS
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', orgType: OrgType.ENTITY, orgId: 'e1', name: 'AGENT' })
+      prisma.user.findUnique.mockResolvedValueOnce(null)
+      prisma.entity.findUnique.mockResolvedValueOnce({ legalName: 'Prefeitura', plan: 'BASICO' })
+      repo.countActiveMembers.mockResolvedValueOnce(1)
+      repo.countPendingInvites.mockResolvedValueOnce(1)
+      await expect(
+        service.invite({ orgType: OrgType.ENTITY, orgId: 'e1', email: 'over@votz.app', roleId: 'r1' } as any),
+      ).rejects.toMatchObject({
+        response: { code: 'PLAN_LIMIT_MEMBERS', limit: 2, current: 2 },
+      })
+
+      // Aceitar o convite pendente quando ha 1 ativo (< 2) -> funciona normalmente
+      repo.findInviteByToken.mockResolvedValueOnce({
+        id: 'inv-ok',
+        acceptedAt: null,
+        expiresAt: new Date(Date.now() + 60000),
+        orgType: OrgType.ENTITY,
+        orgId: 'e1',
+        roleId: 'r1',
+      })
+      repo.findMembership.mockResolvedValueOnce(null)
+      prisma.entity.findUnique.mockResolvedValueOnce({ legalName: 'Prefeitura', plan: 'BASICO' })
+      repo.countActiveMembers.mockResolvedValueOnce(1)
+      repo.addMember.mockResolvedValueOnce({ id: 'mem-new' })
+      await expect(service.acceptInvite('t1', 'u2')).resolves.toEqual({ id: 'mem-new' })
+
+      // Pós-rebaixamento (GESTAO -> BASICO) com 5 ativos existentes: bloqueia novos convites e aceites
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', orgType: OrgType.ENTITY, orgId: 'e1', name: 'AGENT' })
+      prisma.user.findUnique.mockResolvedValueOnce(null)
+      prisma.entity.findUnique.mockResolvedValueOnce({ legalName: 'Prefeitura', plan: 'BASICO' })
+      repo.countActiveMembers.mockResolvedValueOnce(5)
+      repo.countPendingInvites.mockResolvedValueOnce(0)
+      await expect(
+        service.invite({ orgType: OrgType.ENTITY, orgId: 'e1', email: 'after-down@votz.app', roleId: 'r1' } as any),
+      ).rejects.toMatchObject({
+        response: { code: 'PLAN_LIMIT_MEMBERS', limit: 2, current: 5 },
+      })
+
+      // Político por cargo: Prefeito (Faixa 3) no plano MANDATO tem limite 5
+      repo.findRoleById.mockResolvedValueOnce({ id: 'rp1', orgType: OrgType.POLITICIAN, orgId: 'p1', name: 'ASSESSOR' })
+      prisma.user.findUnique.mockResolvedValueOnce(null)
+      prisma.politician.findUnique.mockResolvedValueOnce({ name: 'Prefeito X', plan: 'MANDATO', office: 'Prefeito' })
+      repo.countActiveMembers.mockResolvedValueOnce(5)
+      repo.countPendingInvites.mockResolvedValueOnce(0)
+      await expect(
+        service.invite({ orgType: OrgType.POLITICIAN, orgId: 'p1', email: 'assessor@votz.app', roleId: 'rp1' } as any),
+      ).rejects.toMatchObject({
+        response: { code: 'PLAN_LIMIT_MEMBERS', limit: 5, current: 5 },
+      })
+
+      // Entidade INTEGRACAO ilimitada permite convite mesmo com 100 membros
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', orgType: OrgType.ENTITY, orgId: 'e2', name: 'AGENT' })
+      prisma.user.findUnique.mockResolvedValueOnce(null)
+      prisma.entity.findUnique.mockResolvedValueOnce({ legalName: 'Estado', plan: 'INTEGRACAO' })
+      repo.createInvite.mockResolvedValueOnce({ id: 'inv-unlim', token: 't-unlim' })
+      await expect(
+        service.invite({ orgType: OrgType.ENTITY, orgId: 'e2', email: 'extra@votz.app', roleId: 'r1' } as any),
+      ).resolves.toEqual({ id: 'inv-unlim', token: 't-unlim' })
     })
   })
 })

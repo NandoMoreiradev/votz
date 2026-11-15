@@ -123,4 +123,21 @@ export class OrgMembershipsRepository {
       data: { acceptedAt: new Date() },
     })
   }
+
+  countActiveMembers(orgType: OrgType, orgId: string) {
+    return this.prisma.orgMembership.count({
+      where: { orgType, orgId, status: MembershipStatus.ACTIVE },
+    })
+  }
+
+  countPendingInvites(orgType: OrgType, orgId: string) {
+    return this.prisma.memberInvite.count({
+      where: {
+        orgType,
+        orgId,
+        acceptedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    })
+  }
 }

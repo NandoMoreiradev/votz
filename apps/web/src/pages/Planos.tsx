@@ -1,380 +1,508 @@
-import { useState } from 'react'
-import styled from 'styled-components'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../store/auth.store'
+import { useQuery } from '@tanstack/react-query'
+import styled from 'styled-components'
+import {
+  ENTITY_PLANS,
+  ENTITY_POPULATION_TIER_LABELS,
+  EntityPlan,
+  EntityPopulationTier,
+  FEATURE_CATALOG,
+  FeatureKey,
+  PLAN_PRICES,
+  POLITICIAN_PLANS,
+  POLITICIAN_TIER_LABELS,
+  PoliticianPlan,
+  PoliticianPriceTier,
+  getMaxMembers,
+} from '@votz/shared-types'
+import { Navbar } from '../components/layout/Navbar'
 import { api } from '../lib/api'
+import { useAuthStore } from '../store/auth.store'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type TabType = 'POLITICIAN' | 'ENTITY'
 
-type Tab = 'entidades' | 'politicos' | 'empresas'
-
-interface PlanFeature {
-  text: string
-  locked?: boolean
+interface MyPlanResponse {
+  orgType: 'POLITICIAN' | 'ENTITY' | 'COMPANY'
+  orgId: string
+  orgName: string
+  plan: string
+  label: string
+  tier: PoliticianPriceTier | null
+  limits: { maxMembers: number | null; historyDays: number | null }
+  members: { active: number; pending: number; used: number; max: number | null }
 }
 
-interface Plan {
-  name: string
-  planKey: string | null  // null = plano grátis
-  price: string
-  priceNote?: string
-  highlight?: boolean
-  features: PlanFeature[]
-  cta: string
-}
-
-// ─── Data ─────────────────────────────────────────────────────────────────────
-
-const ENTITY_PLANS: Plan[] = [
-  {
-    name: 'Básico',
-    planKey: null,
-    price: 'Grátis',
-    features: [
-      { text: 'Perfil verificado público' },
-      { text: 'Responder relatos e atualizar status' },
-      { text: 'Votz Score calculado automaticamente' },
-      { text: 'Até 2 membros na equipe' },
-      { text: 'Dashboard analytics', locked: true },
-      { text: 'Exportação de relatórios', locked: true },
-      { text: 'SLA configurável por categoria', locked: true },
-    ],
-    cta: 'Criar perfil gratuito',
-  },
-  {
-    name: 'Gestão',
-    planKey: 'GESTAO',
-    price: 'R$ 1.200',
-    priceNote: '/mês',
-    highlight: true,
-    features: [
-      { text: 'Tudo do Básico' },
-      { text: 'Dashboard analytics completo' },
-      { text: 'SLA configurável por categoria' },
-      { text: 'Exportação de relatórios mensais (JSON)' },
-      { text: 'Até 5 membros na equipe' },
-      { text: 'Alertas por email ao receber relato' },
-      { text: 'API key e webhooks', locked: true },
-      { text: 'Relatórios custom por bairro/período', locked: true },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'Pro',
-    planKey: 'PRO',
-    price: 'R$ 3.200',
-    priceNote: '/mês',
-    features: [
-      { text: 'Tudo do Gestão' },
-      { text: 'API key para integração de sistemas' },
-      { text: 'Webhooks em tempo real' },
-      { text: 'Relatórios custom por bairro e período' },
-      { text: 'Até 15 membros na equipe' },
-      { text: 'Templates de resposta' },
-      { text: 'Badge de destaque na listagem' },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'Enterprise',
-    planKey: null,
-    price: 'Sob consulta',
-    features: [
-      { text: 'Tudo do Pro' },
-      { text: 'Suporte dedicado' },
-      { text: 'Múltiplos departamentos' },
-      { text: 'SLA garantido de implementação' },
-      { text: 'Customizações sob medida' },
-    ],
-    cta: 'Entrar em contato',
-  },
+const POLITICIAN_FEATURE_ORDER: FeatureKey[] = [
+  'respond_reports',
+  'analytics_basic',
+  'team',
+  'propostas',
+  'outbreak_alerts',
+  'export_data',
+  'analytics_full',
+  'heatmap',
+  'share_card',
+  'reply_templates',
+  'sla_panel',
+  'pdf_report',
+  'api_access',
+  'webhooks',
+  'peer_comparison',
+  'priority_support',
 ]
 
-const POLITICIAN_PLANS: Plan[] = [
-  {
-    name: 'Básico',
-    planKey: null,
-    price: 'Grátis',
-    features: [
-      { text: 'Perfil público com mandato e partido' },
-      { text: 'Mandatômetro público (% resolvidos vs ignorados)' },
-      { text: 'Avocar relatos da zona eleitoral' },
-      { text: 'Relatório de atuação exportável', locked: true },
-      { text: 'Dashboard analytics por bairro', locked: true },
-      { text: 'Badge de responsividade', locked: true },
-      { text: 'Criar Propostas vinculadas a relatos', locked: true },
-    ],
-    cta: 'Criar perfil gratuito',
-  },
-  {
-    name: 'Mandatômetro Pro',
-    planKey: 'MANDATOMETRO_PRO',
-    price: 'R$ 800',
-    priceNote: '/mês',
-    highlight: true,
-    features: [
-      { text: 'Tudo do Básico' },
-      { text: 'Badge de responsividade + destaque na listagem' },
-      { text: 'Relatório de atuação exportável em PDF' },
-      { text: 'Dashboard analytics por bairro e categoria' },
-      { text: 'Notificações prioritárias de surtos na zona' },
-      { text: 'Criar Propostas vinculadas a relatos reais' },
-      { text: 'Compromissos eleitorais públicos', locked: true },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'Campanha',
-    planKey: 'CAMPANHA',
-    price: 'R$ 5.000',
-    priceNote: 'pagamento único',
-    features: [
-      { text: 'Tudo do Mandatômetro Pro' },
-      { text: 'Compromissos eleitorais vinculados a relatos reais' },
-      { text: 'Badge "Candidato Comprometido"' },
-      { text: 'Portfolio eleitoral com progresso de promessas' },
-      { text: 'Destaque na home durante período eleitoral' },
-      { text: 'Histórico imutável de promessas cumpridas' },
-    ],
-    cta: 'Falar com o Votz',
-  },
+const ENTITY_FEATURE_ORDER: FeatureKey[] = [
+  'respond_reports',
+  'team',
+  'analytics_basic',
+  'outbreak_alerts',
+  'export_data',
+  'analytics_full',
+  'heatmap',
+  'sla_panel',
+  'pdf_report',
+  'reply_templates',
+  'api_access',
+  'webhooks',
+  'peer_comparison',
+  'priority_support',
 ]
 
-const COMPANY_PLANS: Plan[] = [
-  {
-    name: 'Starter',
-    planKey: 'STARTER',
-    price: 'R$ 300',
-    priceNote: '/mês',
-    features: [
-      { text: 'Perfil verificado público' },
-      { text: 'Resposta pública a relatos' },
-      { text: 'Dashboard básico' },
-      { text: 'Até 2 membros' },
-      { text: 'Janela de 24h para resolução privada' },
-      { text: 'Analytics completo', locked: true },
-      { text: 'Gestão de filiais', locked: true },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'Business',
-    planKey: 'BUSINESS',
-    price: 'R$ 1.200',
-    priceNote: '/mês',
-    highlight: true,
-    features: [
-      { text: 'Tudo do Starter' },
-      { text: 'Analytics completo' },
-      { text: 'SLA configurável' },
-      { text: 'Exportação de relatórios' },
-      { text: 'Até 5 membros' },
-      { text: 'Alertas por email' },
-      { text: 'Gestão de filiais (básico)' },
-      { text: 'API + webhook', locked: true },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'Enterprise',
-    planKey: 'ENTERPRISE',
-    price: 'R$ 3.500+',
-    priceNote: '/mês',
-    features: [
-      { text: 'Tudo do Business' },
-      { text: 'Multi-filial unificado' },
-      { text: 'API + webhook para integração CRM' },
-      { text: 'Membros ilimitados' },
-      { text: 'Relatórios custom por filial/região' },
-    ],
-    cta: 'Falar com o Votz',
-  },
-  {
-    name: 'White-label',
-    planKey: null,
-    price: 'Sob consulta',
-    features: [
-      { text: 'Tudo do Enterprise' },
-      { text: 'Votz embedado no canal próprio da empresa' },
-      { text: 'Branding customizado' },
-      { text: 'Registro público mantido (sem supressão)' },
-      { text: 'Suporte dedicado exclusivo' },
-    ],
-    cta: 'Entrar em contato',
-  },
-]
+const POLITICIAN_TIERS: PoliticianPriceTier[] = [1, 2, 3, 4]
+const ENTITY_TIERS: EntityPopulationTier[] = ['UP_TO_50K', 'FROM_50K_TO_300K', 'OVER_300K']
 
 const FAQ = [
   {
-    q: 'Posso aparecer no Votz sem assinar?',
-    a: 'Sim. Relatos sobre sua entidade ou mandato são públicos de qualquer forma. A assinatura dá acesso ao dashboard, à capacidade de responder com eficiência e ao controle sobre como você aparece.',
+    q: 'Responder relatos e atualizar o andamento tem algum custo?',
+    a: 'Não. Responder relatos, mudar o status e registrar o andamento público são recursos gratuitos em qualquer plano.',
   },
   {
-    q: 'O que acontece se eu não responder os relatos?',
-    a: 'Seu Votz Score cai publicamente a cada dia sem resposta. O score de pressão sobe (dias sem resposta × 2), o relato sobe no feed e pode virar surto. Ignorar tem custo — e ele fica no histórico para sempre.',
+    q: 'Assinar um plano melhora a reputação ou dá destaque na busca?',
+    a: 'Não. A reputação e os selos de atendimento dependem exclusivamente das respostas e resoluções reais registradas na plataforma.',
+  },
+  {
+    q: 'O que acontece se eu mudar para um plano com limite menor de equipe?',
+    a: 'Os membros já ativos não são removidos. O sistema apenas bloqueia novos convites até que a equipe fique dentro do limite do plano atual.',
   },
   {
     q: 'Como funciona o pagamento?',
-    a: 'O pagamento é feito via Stripe, com cartão de crédito. Ao clicar em Assinar, você é redirecionado para o checkout seguro do Stripe e volta ao Votz automaticamente após a confirmação.',
-  },
-  {
-    q: 'Posso cancelar a qualquer momento?',
-    a: 'Sim. Ao cancelar, seu perfil continua existindo no plano Básico (gratuito). Nenhum relato é removido.',
+    a: 'As formas de pagamento serão informadas na contratação.',
   },
 ]
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function formatCentavos(centavos: number): string {
+  if (centavos <= 0) return 'Grátis'
+  return (centavos / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0,
+  })
+}
 
-const TAB_ORG_TYPE: Record<Tab, string> = {
-  entidades: 'ENTITY',
-  politicos: 'POLITICIAN',
-  empresas: 'COMPANY',
+function formatMembersLimit(max: number | null): string {
+  if (max === null) return 'Equipe ilimitada'
+  if (max === 1) return '1 usuário (sem equipe)'
+  return `Até ${max} membros na equipe`
+}
+
+function formatHistoryLimit(days: number | null): string {
+  if (days === null) return 'Histórico completo'
+  return `Histórico dos últimos ${days} dias`
 }
 
 export function Planos() {
-  const [activeTab, setActiveTab] = useState<Tab>('entidades')
-  const [openFaq, setOpenFaq] = useState<number | null>(null)
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
-  const { user, activeContext } = useAuthStore()
   const navigate = useNavigate()
+  const { user, activeContext } = useAuthStore()
 
-  const plans = activeTab === 'entidades' ? ENTITY_PLANS : activeTab === 'politicos' ? POLITICIAN_PLANS : COMPANY_PLANS
+  const [tab, setTab] = useState<TabType>('POLITICIAN')
+  const [polTier, setPolTier] = useState<PoliticianPriceTier>(2)
+  const [entTier, setEntTier] = useState<EntityPopulationTier>('UP_TO_50K')
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [openFaq, setOpenFaq] = useState<number | null>(0)
 
-  async function handleCheckout(planKey: string | null, planName: string) {
-    if (!planKey) {
-      navigate('/solicitar-cadastro')
-      return
+  const { data: myPlan } = useQuery<MyPlanResponse>({
+    queryKey: ['plans', 'me', activeContext?.type, activeContext?.id],
+    queryFn: () => api.get<MyPlanResponse>('/plans/me').then((r) => r.data),
+    enabled: Boolean(activeContext),
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (activeContext?.type === 'ENTITY') {
+      setTab('ENTITY')
+    } else if (activeContext?.type === 'POLITICIAN') {
+      setTab('POLITICIAN')
     }
+  }, [activeContext?.type])
+
+  useEffect(() => {
+    if (myPlan?.orgType === 'POLITICIAN' && myPlan.tier) {
+      setPolTier(myPlan.tier)
+    }
+  }, [myPlan?.orgType, myPlan?.tier])
+
+  async function handleCheckout(planCode: string, planLabel: string) {
+    setFeedback(null)
+
     if (!user) {
       navigate('/entrar')
       return
     }
-    if (!activeContext) {
-      alert('Selecione o perfil da sua organização antes de assinar.')
+
+    if (!activeContext || activeContext.type !== tab) {
+      setFeedback(
+        tab === 'POLITICIAN'
+          ? 'Troque para o perfil do político no menu superior antes de contratar um plano.'
+          : 'Troque para o perfil da entidade no menu superior antes de contratar um plano.',
+      )
       return
     }
-    if (activeContext.type.toUpperCase() !== TAB_ORG_TYPE[activeTab]) {
-      alert('Mude para o perfil correto antes de assinar este plano.')
-      return
-    }
-    setLoadingPlan(planKey)
+
+    setLoadingPlan(planCode)
     try {
-      const { data } = await api.post('/subscricoes/checkout', {
+      const { data } = await api.post<{ url: string }>('/subscricoes/checkout', {
         orgId: activeContext.id,
-        orgType: activeContext.type.toUpperCase(),
-        plan: planKey,
+        orgType: activeContext.type,
+        plan: planCode,
       })
-      window.location.href = data.url
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status
-      if (status === 403) {
-        alert('Só quem administra a organização pode contratar ou gerenciar o plano')
-      } else {
-        alert('Erro ao iniciar checkout. Tente novamente.')
+      if (data.url) {
+        window.location.href = data.url
       }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        `Não foi possível iniciar a contratação do plano ${planLabel} agora.`
+      setFeedback(Array.isArray(msg) ? msg.join(' ') : msg)
     } finally {
       setLoadingPlan(null)
     }
   }
 
+  const politicianPlans = Object.values(POLITICIAN_PLANS)
+  const entityPlans = Object.values(ENTITY_PLANS)
+
   return (
-    <Page>
-      <Hero>
-        <HeroLabel>Planos Votz</HeroLabel>
-        <HeroTitle>Ignorar tem custo.<br />Agir tem valor.</HeroTitle>
-        <HeroSub>
-          Seu perfil já existe no Votz — com ou sem assinatura. Relatos sobre você são
-          públicos e ficam na memória para sempre. A diferença é se você escolhe agir com
-          dados e controle, ou apenas ser cobrado sem ferramentas.
-        </HeroSub>
-      </Hero>
+    <PageShell>
+      <Navbar />
+      <Page>
+        <Hero>
+          <HeroLabel>Planos transparentes</HeroLabel>
+          <HeroTitle>Planos para mandatos e entidades</HeroTitle>
+          <HeroSub>
+            Responder relatos e atualizar o andamento é sempre grátis. Os planos pagos organizam
+            equipe, exportação de dados e ferramentas de gestão.
+          </HeroSub>
+        </Hero>
 
-      <TabsRow>
-        <Tab active={activeTab === 'entidades'} onClick={() => setActiveTab('entidades')}>
-          Para Entidades
-        </Tab>
-        <Tab active={activeTab === 'politicos'} onClick={() => setActiveTab('politicos')}>
-          Para Políticos
-        </Tab>
-        <Tab active={activeTab === 'empresas'} onClick={() => setActiveTab('empresas')}>
-          Para Empresas
-        </Tab>
-      </TabsRow>
+        {myPlan && (
+          <CurrentPlanBanner>
+            <div>
+              <strong>{myPlan.orgName}</strong> — Plano atual: <strong>{myPlan.label}</strong>
+              {myPlan.tier ? ` (${POLITICIAN_TIER_LABELS[myPlan.tier]})` : ''}
+            </div>
+            <UsageBadge>
+              Equipe: {myPlan.members.used}
+              {myPlan.members.max !== null ? ` / ${myPlan.members.max}` : ' (ilimitado)'}
+            </UsageBadge>
+          </CurrentPlanBanner>
+        )}
 
-      {activeTab === 'entidades' && (
-        <UrgencyBar>
-          Seu Votz Score cai a cada dia sem resposta. Entidades no plano Gestão têm acesso
-          ao dashboard que mostra exatamente onde agir — antes que o problema vire manchete.
-        </UrgencyBar>
-      )}
-      {activeTab === 'politicos' && (
-        <UrgencyBar>
-          Cidadãos do seu distrito são notificados quando você age <em>ou quando você ignora</em>.
-          O Mandatômetro é público. A diferença é se você tem as ferramentas para mostrar seu trabalho.
-        </UrgencyBar>
-      )}
-      {activeTab === 'empresas' && (
-        <UrgencyBar>
-          Diferente do Reclame Aqui, no Votz o registro é imutável e a pressão é coletiva.
-          O plano certo transforma reclamações em relacionamento — e reputação em vantagem competitiva.
-        </UrgencyBar>
-      )}
+        <TabsRow>
+          <Tab active={tab === 'POLITICIAN'} onClick={() => { setTab('POLITICIAN'); setFeedback(null) }}>
+            Políticos e Mandatos
+          </Tab>
+          <Tab active={tab === 'ENTITY'} onClick={() => { setTab('ENTITY'); setFeedback(null) }}>
+            Entidades Públicas
+          </Tab>
+        </TabsRow>
 
-      <PlansGrid count={plans.length}>
-        {plans.map((plan) => (
-          <PlanCard key={plan.name} highlight={plan.highlight}>
-            {plan.highlight && <HighlightBadge>Mais escolhido</HighlightBadge>}
-            <PlanName highlight={plan.highlight}>{plan.name}</PlanName>
-            <PriceRow>
-              <PlanPrice>{plan.price}</PlanPrice>
-              {plan.priceNote && <PriceNote>{plan.priceNote}</PriceNote>}
-            </PriceRow>
-            <FeatureList>
-              {plan.features.map((f, i) => (
-                <FeatureItem key={i} locked={f.locked}>
-                  <FeatureIcon locked={f.locked}>{f.locked ? '🔒' : '✓'}</FeatureIcon>
-                  {f.text}
-                </FeatureItem>
-              ))}
-            </FeatureList>
-            <PlanCtaBtn
-              highlight={plan.highlight}
-              disabled={loadingPlan === plan.planKey}
-              onClick={() => handleCheckout(plan.planKey, plan.name)}
-            >
-              {loadingPlan === plan.planKey ? 'Aguarde...' : plan.cta}
-            </PlanCtaBtn>
-          </PlanCard>
-        ))}
-      </PlansGrid>
+        <PrincipleNotice>
+          Transparência: anunciamos apenas o que já funciona hoje. Itens em construção aparecem
+          marcados como <strong>Em breve</strong>. Reputação e selos nunca dependem de plano pago.
+        </PrincipleNotice>
 
-      <FaqSection>
-        <FaqTitle>Dúvidas frequentes</FaqTitle>
-        {FAQ.map((item, i) => (
-          <FaqItem key={i}>
-            <FaqQuestion onClick={() => setOpenFaq(openFaq === i ? null : i)}>
-              {item.q}
-              <FaqToggle>{openFaq === i ? '−' : '+'}</FaqToggle>
-            </FaqQuestion>
-            {openFaq === i && <FaqAnswer>{item.a}</FaqAnswer>}
-          </FaqItem>
-        ))}
-      </FaqSection>
-    </Page>
+        {feedback && <FeedbackBanner role="alert">{feedback}</FeedbackBanner>}
+
+        {tab === 'POLITICIAN' ? (
+          <>
+            <TierSelectorSection>
+              <SectionTitle>Faixa por cargo</SectionTitle>
+              <TierButtons>
+                {POLITICIAN_TIERS.map((tier) => (
+                  <TierButton
+                    key={tier}
+                    type="button"
+                    $active={polTier === tier}
+                    onClick={() => setPolTier(tier)}
+                  >
+                    {POLITICIAN_TIER_LABELS[tier]}
+                  </TierButton>
+                ))}
+              </TierButtons>
+            </TierSelectorSection>
+
+            <PlansGrid count={politicianPlans.length}>
+              {politicianPlans.map((plan) => {
+                const code = plan.code as PoliticianPlan
+                const priceCentavos = PLAN_PRICES.POLITICIAN[code][polTier]
+                const maxMembers = getMaxMembers('POLITICIAN', code, polTier)
+                const isCurrent = myPlan?.orgType === 'POLITICIAN' && myPlan.plan === code
+                const highlight = code === 'MANDATO'
+
+                return (
+                  <PlanCard key={code} $highlight={highlight}>
+                    <PlanName $highlight={highlight}>{plan.label}</PlanName>
+                    <PlanDescription>{plan.description}</PlanDescription>
+                    <PriceRow>
+                      <PlanPrice>{formatCentavos(priceCentavos)}</PlanPrice>
+                      {priceCentavos > 0 && <PriceNote>/mês</PriceNote>}
+                    </PriceRow>
+
+                    <LimitsBox>
+                      <LimitLine>{formatMembersLimit(maxMembers)}</LimitLine>
+                      <LimitLine>{formatHistoryLimit(plan.limits.historyDays)}</LimitLine>
+                    </LimitsBox>
+
+                    <FeatureList>
+                      {POLITICIAN_FEATURE_ORDER.map((featureKey) => {
+                        const enabled = plan.features[featureKey]
+                        const status = plan.status[featureKey]
+                        const meta = FEATURE_CATALOG[featureKey]
+                        const isSoon = enabled && status === 'soon'
+
+                        return (
+                          <FeatureItem key={featureKey} $muted={!enabled}>
+                            <FeatureIcon $enabled={enabled} $soon={isSoon}>
+                              {!enabled ? '—' : isSoon ? '🕒' : '✅'}
+                            </FeatureIcon>
+                            <FeatureLabelWrap>
+                              <span>{meta.label}</span>
+                              {isSoon && <SoonBadge>Em breve</SoonBadge>}
+                            </FeatureLabelWrap>
+                          </FeatureItem>
+                        )
+                      })}
+                    </FeatureList>
+
+                    {code === 'BASICO' ? (
+                      <PlanCtaBtn type="button" disabled>
+                        {isCurrent ? 'Seu plano atual' : 'Gratuito por padrão'}
+                      </PlanCtaBtn>
+                    ) : (
+                      <PlanCtaBtn
+                        type="button"
+                        $highlight={highlight}
+                        disabled={isCurrent || loadingPlan === code}
+                        onClick={() => handleCheckout(code, plan.label)}
+                      >
+                        {isCurrent
+                          ? 'Seu plano atual'
+                          : loadingPlan === code
+                            ? 'Aguarde...'
+                            : `Contratar ${plan.label}`}
+                      </PlanCtaBtn>
+                    )}
+                  </PlanCard>
+                )
+              })}
+            </PlansGrid>
+
+            <TableCard>
+              <SectionTitle>Tabela completa de valores e limites por cargo</SectionTitle>
+              <TableNote>
+                Os valores acima consideram a faixa selecionada; abaixo estão todas as faixas de
+                cargo e limites de equipe definidos no catálogo.
+              </TableNote>
+              <PriceTable>
+                <thead>
+                  <tr>
+                    <th>Faixa de cargo</th>
+                    <th>Básico</th>
+                    <th>Mandato</th>
+                    <th>Mandato Pro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {POLITICIAN_TIERS.map((tier) => (
+                    <tr key={tier}>
+                      <td>{POLITICIAN_TIER_LABELS[tier]}</td>
+                      <td>
+                        {formatCentavos(PLAN_PRICES.POLITICIAN.BASICO[tier])} ·{' '}
+                        {getMaxMembers('POLITICIAN', 'BASICO', tier)} usuário
+                      </td>
+                      <td>
+                        {formatCentavos(PLAN_PRICES.POLITICIAN.MANDATO[tier])}/mês · até{' '}
+                        {getMaxMembers('POLITICIAN', 'MANDATO', tier)} membros
+                      </td>
+                      <td>
+                        {formatCentavos(PLAN_PRICES.POLITICIAN.MANDATO_PRO[tier])}/mês · até{' '}
+                        {getMaxMembers('POLITICIAN', 'MANDATO_PRO', tier)} membros
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PriceTable>
+            </TableCard>
+          </>
+        ) : (
+          <>
+            <TierSelectorSection>
+              <SectionTitle>Porte do município</SectionTitle>
+              <TierButtons>
+                {ENTITY_TIERS.map((tier) => (
+                  <TierButton
+                    key={tier}
+                    type="button"
+                    $active={entTier === tier}
+                    onClick={() => setEntTier(tier)}
+                  >
+                    {ENTITY_POPULATION_TIER_LABELS[tier]}
+                  </TierButton>
+                ))}
+              </TierButtons>
+            </TierSelectorSection>
+
+            <PlansGrid count={entityPlans.length}>
+              {entityPlans.map((plan) => {
+                const code = plan.code as EntityPlan
+                const priceCentavos = PLAN_PRICES.ENTITY[code][entTier]
+                const maxMembers = getMaxMembers('ENTITY', code)
+                const isCurrent = myPlan?.orgType === 'ENTITY' && myPlan.plan === code
+                const highlight = code === 'GESTAO'
+
+                return (
+                  <PlanCard key={code} $highlight={highlight}>
+                    <PlanName $highlight={highlight}>{plan.label}</PlanName>
+                    <PlanDescription>{plan.description}</PlanDescription>
+                    <PriceRow>
+                      <PlanPrice>{formatCentavos(priceCentavos)}</PlanPrice>
+                      {priceCentavos > 0 && (
+                        <PriceNote>
+                          /mês{code === 'INTEGRACAO' ? ' (a confirmar)' : ''}
+                        </PriceNote>
+                      )}
+                    </PriceRow>
+
+                    <LimitsBox>
+                      <LimitLine>{formatMembersLimit(maxMembers)}</LimitLine>
+                      <LimitLine>{formatHistoryLimit(plan.limits.historyDays)}</LimitLine>
+                    </LimitsBox>
+
+                    <FeatureList>
+                      {ENTITY_FEATURE_ORDER.map((featureKey) => {
+                        const enabled = plan.features[featureKey]
+                        const status = plan.status[featureKey]
+                        const meta = FEATURE_CATALOG[featureKey]
+                        const isSoon = enabled && status === 'soon'
+
+                        return (
+                          <FeatureItem key={featureKey} $muted={!enabled}>
+                            <FeatureIcon $enabled={enabled} $soon={isSoon}>
+                              {!enabled ? '—' : isSoon ? '🕒' : '✅'}
+                            </FeatureIcon>
+                            <FeatureLabelWrap>
+                              <span>{meta.label}</span>
+                              {isSoon && <SoonBadge>Em breve</SoonBadge>}
+                            </FeatureLabelWrap>
+                          </FeatureItem>
+                        )
+                      })}
+                    </FeatureList>
+
+                    {code === 'BASICO' ? (
+                      <PlanCtaBtn type="button" disabled>
+                        {isCurrent ? 'Seu plano atual' : 'Gratuito por padrão'}
+                      </PlanCtaBtn>
+                    ) : (
+                      <PlanCtaBtn
+                        type="button"
+                        $highlight={highlight}
+                        disabled={isCurrent || loadingPlan === code}
+                        onClick={() => handleCheckout(code, plan.label)}
+                      >
+                        {isCurrent
+                          ? 'Seu plano atual'
+                          : loadingPlan === code
+                            ? 'Aguarde...'
+                            : `Contratar ${plan.label}`}
+                      </PlanCtaBtn>
+                    )}
+                  </PlanCard>
+                )
+              })}
+            </PlansGrid>
+
+            <TableCard>
+              <SectionTitle>Valores por faixa populacional da entidade</SectionTitle>
+              <TableNote>
+                O plano Básico é gratuito (até 2 membros e histórico de 30 dias). Para Integração,
+                os valores exibidos são provisórios até confirmação comercial.
+              </TableNote>
+              <PriceTable>
+                <thead>
+                  <tr>
+                    <th>Faixa de população</th>
+                    <th>Básico</th>
+                    <th>Gestão (até 10 membros)</th>
+                    <th>Integração (ilimitado)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ENTITY_TIERS.map((tier) => (
+                    <tr key={tier}>
+                      <td>{ENTITY_POPULATION_TIER_LABELS[tier]}</td>
+                      <td>{formatCentavos(PLAN_PRICES.ENTITY.BASICO[tier])}</td>
+                      <td>{formatCentavos(PLAN_PRICES.ENTITY.GESTAO[tier])}/mês</td>
+                      <td>
+                        {formatCentavos(PLAN_PRICES.ENTITY.INTEGRACAO[tier])}/mês (a confirmar)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PriceTable>
+            </TableCard>
+          </>
+        )}
+
+        <CompanyNote>
+          Empresas e concessionárias privadas terão catálogo próprio na próxima fase do projeto.
+        </CompanyNote>
+
+        <FaqSection>
+          <FaqTitle>Dúvidas frequentes</FaqTitle>
+          {FAQ.map((item, i) => (
+            <FaqItem key={item.q}>
+              <FaqQuestion type="button" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+                {item.q}
+                <FaqToggle>{openFaq === i ? '−' : '+'}</FaqToggle>
+              </FaqQuestion>
+              {openFaq === i && <FaqAnswer>{item.a}</FaqAnswer>}
+            </FaqItem>
+          ))}
+        </FaqSection>
+      </Page>
+    </PageShell>
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles (apenas tokens de theme) ─────────────────────────────────────────
 
-const Page = styled.div`
+const PageShell = styled.div`
+  min-height: 100vh;
+  background: ${({ theme }) => theme.colors.neutral};
+`
+
+const Page = styled.main`
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 ${({ theme }) => theme.spacing[4]};
+  padding: 0 ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[16]};
 `
 
 const Hero = styled.section`
   text-align: center;
-  padding: ${({ theme }) => theme.spacing[16]} 0 ${({ theme }) => theme.spacing[8]};
+  padding: ${({ theme }) => theme.spacing[12]} 0 ${({ theme }) => theme.spacing[6]};
 `
 
 const HeroLabel = styled.span`
@@ -382,13 +510,13 @@ const HeroLabel = styled.span`
   font-size: ${({ theme }) => theme.fontSizes.sm};
   color: ${({ theme }) => theme.colors.action};
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
 `
 
 const HeroTitle = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(2rem, 5vw, ${({ theme }) => theme.fontSizes['4xl']});
-  font-weight: 700;
+  font-size: clamp(1.875rem, 4.5vw, ${({ theme }) => theme.fontSizes['4xl']});
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.primary};
   margin: ${({ theme }) => theme.spacing[3]} 0;
   line-height: 1.15;
@@ -398,9 +526,35 @@ const HeroSub = styled.p`
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.lg};
   color: ${({ theme }) => theme.colors.muted};
-  max-width: 600px;
+  max-width: 660px;
   margin: 0 auto;
   line-height: 1.6;
+`
+
+const CurrentPlanBanner = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing[3]};
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[4]};
+  margin-bottom: ${({ theme }) => theme.spacing[6]};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const UsageBadge = styled.span`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  background: ${({ theme }) => theme.colors.neutral};
+  color: ${({ theme }) => theme.colors.primary};
+  padding: ${({ theme }) => theme.spacing[1]} ${({ theme }) => theme.spacing[3]};
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const TabsRow = styled.div`
@@ -409,20 +563,18 @@ const TabsRow = styled.div`
   justify-content: center;
   margin-bottom: ${({ theme }) => theme.spacing[4]};
   border-bottom: 2px solid ${({ theme }) => theme.colors.border};
-  padding-bottom: 0;
 `
 
 const Tab = styled.button<{ active: boolean }>`
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.md};
-  font-weight: 600;
-  color: ${({ theme, active }) => active ? theme.colors.primary : theme.colors.muted};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme, active }) => (active ? theme.colors.primary : theme.colors.muted)};
   background: none;
   border: none;
-  border-bottom: 3px solid ${({ theme, active }) => active ? theme.colors.action : 'transparent'};
+  border-bottom: 3px solid ${({ theme, active }) => (active ? theme.colors.action : 'transparent')};
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[5]};
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
   margin-bottom: -2px;
 
   &:hover {
@@ -430,69 +582,95 @@ const Tab = styled.button<{ active: boolean }>`
   }
 `
 
-const UrgencyBar = styled.p`
+const PrincipleNotice = styled.p`
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.sm};
-  color: ${({ theme }) => theme.colors.white};
-  background: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.surface};
   border-left: 4px solid ${({ theme }) => theme.colors.action};
-  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[5]};
-  border-radius: 6px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
   margin-bottom: ${({ theme }) => theme.spacing[6]};
   line-height: 1.5;
+`
 
-  em { color: ${({ theme }) => theme.colors.action}; font-style: normal; font-weight: 600; }
+const FeedbackBanner = styled.div`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.action};
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.action};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
+  margin-bottom: ${({ theme }) => theme.spacing[6]};
+`
+
+const TierSelectorSection = styled.div`
+  margin-bottom: ${({ theme }) => theme.spacing[6]};
+`
+
+const SectionTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.primary};
+  margin: 0 0 ${({ theme }) => theme.spacing[3]};
+`
+
+const TierButtons = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: ${({ theme }) => theme.spacing[2]};
+`
+
+const TierButton = styled.button<{ $active: boolean }>`
+  text-align: left;
+  font-family: ${({ theme }) => theme.fonts.body};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-weight: ${({ theme, $active }) =>
+    $active ? theme.fontWeights.semibold : theme.fontWeights.regular};
+  color: ${({ theme, $active }) => ($active ? theme.colors.white : theme.colors.text)};
+  background: ${({ theme, $active }) => ($active ? theme.colors.primary : theme.colors.surface)};
+  border: 1px solid ${({ theme, $active }) => ($active ? theme.colors.primary : theme.colors.border)};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[3]};
+  cursor: pointer;
 `
 
 const PlansGrid = styled.div<{ count: number }>`
   display: grid;
-  grid-template-columns: repeat(${({ count }) => Math.min(count, 4)}, 1fr);
+  grid-template-columns: repeat(${({ count }) => Math.min(count, 3)}, 1fr);
   gap: ${({ theme }) => theme.spacing[4]};
-  margin-bottom: ${({ theme }) => theme.spacing[16]};
+  margin-bottom: ${({ theme }) => theme.spacing[10]};
 
-  @media (max-width: 1024px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  @media (max-width: 640px) {
+  @media (max-width: 960px) {
     grid-template-columns: 1fr;
   }
 `
 
-const PlanCard = styled.div<{ highlight?: boolean }>`
-  position: relative;
+const PlanCard = styled.div<{ $highlight?: boolean }>`
   background: ${({ theme }) => theme.colors.surface};
-  border: 2px solid ${({ theme, highlight }) => highlight ? theme.colors.action : theme.colors.border};
-  border-radius: 12px;
+  border: 2px solid
+    ${({ theme, $highlight }) => ($highlight ? theme.colors.action : theme.colors.border)};
+  border-radius: ${({ theme }) => theme.radii.lg};
   padding: ${({ theme }) => theme.spacing[6]};
   display: flex;
   flex-direction: column;
-  box-shadow: ${({ theme, highlight }) => highlight ? theme.shadows.lg : theme.shadows.sm};
+  box-shadow: ${({ theme, $highlight }) => ($highlight ? theme.shadows.lg : theme.shadows.sm)};
 `
 
-const HighlightBadge = styled.span`
-  position: absolute;
-  top: -12px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: ${({ theme }) => theme.colors.action};
-  color: ${({ theme }) => theme.colors.white};
-  font-family: ${({ theme }) => theme.fonts.body};
-  font-size: ${({ theme }) => theme.fontSizes.xs};
-  font-weight: 700;
-  padding: 2px 12px;
-  border-radius: 999px;
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-`
-
-const PlanName = styled.h3<{ highlight?: boolean }>`
+const PlanName = styled.h3<{ $highlight?: boolean }>`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes.xl};
-  font-weight: 700;
-  color: ${({ theme, highlight }) => highlight ? theme.colors.action : theme.colors.primary};
-  margin: 0 0 ${({ theme }) => theme.spacing[2]};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme, $highlight }) => ($highlight ? theme.colors.action : theme.colors.primary)};
+  margin: 0 0 ${({ theme }) => theme.spacing[1]};
+`
+
+const PlanDescription = styled.p`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.5;
+  margin: 0 0 ${({ theme }) => theme.spacing[4]};
 `
 
 const PriceRow = styled.div`
@@ -505,14 +683,30 @@ const PriceRow = styled.div`
 const PlanPrice = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes['3xl']};
-  font-weight: 700;
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
 `
 
 const PriceNote = styled.span`
-  font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.sm};
   color: ${({ theme }) => theme.colors.muted};
+`
+
+const LimitsBox = styled.div`
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => theme.spacing[3]};
+  margin-bottom: ${({ theme }) => theme.spacing[4]};
+`
+
+const LimitLine = styled.div`
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+  & + & {
+    margin-top: ${({ theme }) => theme.spacing[1]};
+  }
 `
 
 const FeatureList = styled.ul`
@@ -522,57 +716,121 @@ const FeatureList = styled.ul`
   flex: 1;
 `
 
-const FeatureItem = styled.li<{ locked?: boolean }>`
+const FeatureItem = styled.li<{ $muted?: boolean }>`
   display: flex;
   align-items: flex-start;
   gap: ${({ theme }) => theme.spacing[2]};
-  font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.sm};
-  color: ${({ theme, locked }) => locked ? theme.colors.muted : theme.colors.text};
+  color: ${({ theme, $muted }) => ($muted ? theme.colors.muted : theme.colors.text)};
   padding: ${({ theme }) => theme.spacing[2]} 0;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  opacity: ${({ locked }) => locked ? 0.5 : 1};
+  opacity: ${({ $muted }) => ($muted ? 0.55 : 1)};
 
-  &:last-child { border-bottom: none; }
+  &:last-child {
+    border-bottom: none;
+  }
 `
 
-const FeatureIcon = styled.span<{ locked?: boolean }>`
+const FeatureIcon = styled.span<{ $enabled: boolean; $soon: boolean }>`
   flex-shrink: 0;
-  font-size: 12px;
-  color: ${({ theme, locked }) => locked ? theme.colors.muted : theme.colors.positive};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
   margin-top: 2px;
 `
 
-const PlanCtaBtn = styled.button<{ highlight?: boolean }>`
+const FeatureLabelWrap = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing[2]};
+  line-height: 1.4;
+`
+
+const SoonBadge = styled.span`
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.muted};
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.full};
+  padding: 1px ${({ theme }) => theme.spacing[2]};
+`
+
+const PlanCtaBtn = styled.button<{ $highlight?: boolean }>`
   display: block;
   width: 100%;
   text-align: center;
   font-family: ${({ theme }) => theme.fonts.body};
-  font-weight: 600;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
   font-size: ${({ theme }) => theme.fontSizes.sm};
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
-  border-radius: 8px;
+  border-radius: ${({ theme }) => theme.radii.md};
   border: none;
   cursor: pointer;
-  background: ${({ theme, highlight }) => highlight ? theme.colors.action : theme.colors.primary};
+  background: ${({ theme, $highlight }) =>
+    $highlight ? theme.colors.action : theme.colors.primary};
   color: ${({ theme }) => theme.colors.white};
-  transition: opacity 0.15s;
 
-  &:hover:not(:disabled) { opacity: 0.88; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+`
+
+const TableCard = styled.section`
+  background: ${({ theme }) => theme.colors.surface};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: ${({ theme }) => theme.spacing[6]};
+  margin-bottom: ${({ theme }) => theme.spacing[8]};
+  overflow-x: auto;
+`
+
+const TableNote = styled.p`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0 0 ${({ theme }) => theme.spacing[4]};
+`
+
+const PriceTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+
+  th,
+  td {
+    text-align: left;
+    padding: ${({ theme }) => theme.spacing[3]};
+    border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+    color: ${({ theme }) => theme.colors.text};
+  }
+
+  th {
+    font-weight: ${({ theme }) => theme.fontWeights.semibold};
+    color: ${({ theme }) => theme.colors.primary};
+  }
+`
+
+const CompanyNote = styled.p`
+  text-align: center;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: ${({ theme }) => theme.spacing[12]};
 `
 
 const FaqSection = styled.section`
   max-width: 720px;
-  margin: 0 auto ${({ theme }) => theme.spacing[16]};
+  margin: 0 auto;
 `
 
 const FaqTitle = styled.h2`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
-  font-weight: 700;
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.primary};
-  margin-bottom: ${({ theme }) => theme.spacing[6]};
+  margin-bottom: ${({ theme }) => theme.spacing[4]};
 `
 
 const FaqItem = styled.div`
@@ -589,13 +847,15 @@ const FaqQuestion = styled.button`
   padding: ${({ theme }) => theme.spacing[4]} 0;
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.md};
-  font-weight: 600;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
   color: ${({ theme }) => theme.colors.text};
   text-align: left;
   cursor: pointer;
   gap: ${({ theme }) => theme.spacing[4]};
 
-  &:hover { color: ${({ theme }) => theme.colors.action}; }
+  &:hover {
+    color: ${({ theme }) => theme.colors.action};
+  }
 `
 
 const FaqToggle = styled.span`
@@ -605,7 +865,6 @@ const FaqToggle = styled.span`
 `
 
 const FaqAnswer = styled.p`
-  font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.md};
   color: ${({ theme }) => theme.colors.muted};
   line-height: 1.6;

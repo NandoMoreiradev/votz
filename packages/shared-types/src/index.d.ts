@@ -5,4 +5,6 @@ export * from './pagination';
 export * from './proposta';
 export * from './election';
 export * from './legal';
+export * from './plans';
+export * from './analytics';
 //# sourceMappingURL=index.d.ts.map

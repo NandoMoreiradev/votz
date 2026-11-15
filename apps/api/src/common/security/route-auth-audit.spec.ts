@@ -22,6 +22,9 @@ import { AppModule } from '../../app.module'
 const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /alerts',
   'GET /alerts/:id',
+  'GET /analytics/public/entities/:id',
+  'GET /analytics/public/municipality',
+  'GET /analytics/public/politicians/:id',
   'GET /api-publica/entidades',
   'GET /api-publica/entidades/:id',
   'GET /api-publica/relatos',

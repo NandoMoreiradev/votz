@@ -153,7 +153,7 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
       office: 'Vereador',
       createdByUserId: 'owner-1',
       status: PoliticianStatus.ATIVO,
-      plan: 'MANDATOMETRO_PRO',
+      plan: 'MANDATO_PRO',
     })
 
     // owner-1 belongs to BOTH Entidade A and Entidade B, plus Politician
@@ -434,7 +434,7 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
     })
     expect((await req('PATCH', `/reports/${REP_ENT_A_ID}/status`, tokenEntA, { status: 'RESOLVED', content: 'Token valido mas membro removido da equipe.' })).status).toBe(403)
 
-    // 4) Switch to POLITICIAN (MANDATOMETRO_PRO, User.type still CITIZEN) -> create proposta, update proposta status, follow & update report status
+    // 4) Switch to POLITICIAN (MANDATO_PRO, User.type still CITIZEN) -> create proposta, update proposta status, follow & update report status
     const swPol = await req('POST', '/auth/switch-context', personalToken, {
       contextType: 'politician',
       contextId: POL_ID,

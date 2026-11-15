@@ -81,8 +81,8 @@ describe('AdminService', () => {
     await service.setEntityPlan('e1', EntityPlan.GESTAO)
     expect(repo.setEntityPlan).toHaveBeenCalledWith('e1', EntityPlan.GESTAO)
 
-    await service.setPoliticianPlan('p1', PoliticianPlan.MANDATOMETRO_PRO)
-    expect(repo.setPoliticianPlan).toHaveBeenCalledWith('p1', PoliticianPlan.MANDATOMETRO_PRO)
+    await service.setPoliticianPlan('p1', PoliticianPlan.MANDATO_PRO)
+    expect(repo.setPoliticianPlan).toHaveBeenCalledWith('p1', PoliticianPlan.MANDATO_PRO)
 
     await service.setCompanyPlan('c1', CompanyPlan.BUSINESS)
     expect(repo.setCompanyPlan).toHaveBeenCalledWith('c1', CompanyPlan.BUSINESS)

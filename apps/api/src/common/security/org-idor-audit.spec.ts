@@ -126,7 +126,7 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
 
     propostasRepo = {
       findPoliticianById: jest.fn(async (id: string) =>
-        id === ORG_A_ID ? { id: ORG_A_ID, plan: 'MANDATOMETRO_PRO' } : null,
+        id === ORG_A_ID ? { id: ORG_A_ID, plan: 'MANDATO_PRO' } : null,
       ),
       findById: jest.fn(async (id: string) => {
         if (id === PROPOSTA_B_ID) return { id: PROPOSTA_B_ID, politicoId: ORG_B_ID }

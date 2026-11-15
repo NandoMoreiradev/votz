@@ -209,6 +209,10 @@ export class ReportsService {
 
     const sanitizedContent = DOMPurify.sanitize(dto.content)
 
+    if (!isModAdmin) {
+      await this.repository.markFirstResponseIfUnset?.(reportId)
+    }
+
     if (dto.status !== undefined) {
       await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
       await this.timeline.record({

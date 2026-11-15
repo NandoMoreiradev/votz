@@ -1,18 +1,27 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common'
 import { OrgPermission, OrgType } from '@prisma/client'
+import {
+  OrgPlanType,
+  getMaxMembers,
+  getPoliticianTier,
+} from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
+import { planMemberLimitException } from '../auth/plan-errors'
 import { OrgMembershipsRepository } from './org-memberships.repository'
 import { InviteMemberDto } from './dto/invite-member.dto'
 import { CreateRoleDto } from './dto/create-role.dto'
 
 @Injectable()
 export class OrgMembershipsService {
+  private readonly logger = new Logger(OrgMembershipsService.name)
+
   constructor(
     private readonly repo: OrgMembershipsRepository,
     private readonly prisma: PrismaService,
@@ -90,33 +99,100 @@ export class OrgMembershipsService {
       if (existing) throw new ConflictException('Usuário já é membro desta organização')
     }
 
-    const orgName = await this.resolveOrgName(dto.orgType, dto.orgId)
+    const orgInfo = await this.resolveOrgSummary(dto.orgType, dto.orgId)
+    await this.assertCanReserveSlot(dto.orgType, dto.orgId, orgInfo.plan, orgInfo.office)
+
     const invite = await this.repo.createInvite(dto.orgType, dto.orgId, dto.email, dto.roleId)
-    this.mail.sendMemberInvite(dto.email, orgName, role.name, invite.token)
+    this.mail.sendMemberInvite(dto.email, orgInfo.name, role.name, invite.token)
     return invite
   }
 
-  private async resolveOrgName(orgType: OrgType, orgId: string): Promise<string> {
+  private async resolveOrgSummary(
+    orgType: OrgType,
+    orgId: string,
+  ): Promise<{ name: string; plan: string; office?: string }> {
     if (orgType === OrgType.ENTITY) {
-      const e = await this.prisma.entity.findUnique({ where: { id: orgId }, select: { legalName: true } })
-      return e?.legalName ?? 'Organização'
+      const e = await this.prisma.entity.findUnique({
+        where: { id: orgId },
+        select: { legalName: true, plan: true },
+      })
+      return { name: e?.legalName ?? 'Organização', plan: e?.plan ?? 'BASICO' }
     }
     if (orgType === OrgType.POLITICIAN) {
-      const p = await this.prisma.politician.findUnique({ where: { id: orgId }, select: { name: true } })
-      return p?.name ?? 'Político'
+      const p = await this.prisma.politician.findUnique({
+        where: { id: orgId },
+        select: { name: true, plan: true, office: true },
+      })
+      return {
+        name: p?.name ?? 'Político',
+        plan: p?.plan ?? 'BASICO',
+        office: p?.office,
+      }
     }
     if (orgType === OrgType.COMPANY) {
-      const c = await this.prisma.company.findUnique({ where: { id: orgId }, select: { tradeName: true } })
-      return c?.tradeName ?? 'Empresa'
+      const c = await this.prisma.company.findUnique({
+        where: { id: orgId },
+        select: { tradeName: true, plan: true },
+      })
+      return { name: c?.tradeName ?? 'Empresa', plan: c?.plan ?? 'STARTER' }
     }
-    return 'Organização'
+    return { name: 'Organização', plan: 'BASICO' }
+  }
+
+  private resolveMaxMembersLimit(orgType: OrgType, plan: string, office?: string): number | null {
+    const tier =
+      orgType === OrgType.POLITICIAN ? getPoliticianTier(office, this.logger) : undefined
+    return getMaxMembers(orgType as OrgPlanType, plan, tier)
+  }
+
+  /**
+   * Garante limite de assentos ao enviar novo convite (ACTIVE + convites pendentes válidos).
+   * Nota: rebaixar um plano nunca remove membros existentes; apenas impede novos convites/entradas.
+   */
+  private async assertCanReserveSlot(
+    orgType: OrgType,
+    orgId: string,
+    plan: string,
+    office?: string,
+  ): Promise<void> {
+    const limit = this.resolveMaxMembersLimit(orgType, plan, office)
+    if (limit === null) return
+
+    const [activeCount, pendingCount] = await Promise.all([
+      this.repo.countActiveMembers(orgType, orgId),
+      this.repo.countPendingInvites(orgType, orgId),
+    ])
+    const current = (activeCount ?? 0) + (pendingCount ?? 0)
+    if (current >= limit) {
+      throw planMemberLimitException(limit, current)
+    }
+  }
+
+  /**
+   * Ao aceitar convite, verifica apenas membros ACTIVE atuais contra o limite do plano vigente.
+   * Assim o próprio convite pendente não bloqueia a vaga reservada, mas planos rebaixados
+   * posteriormente impedem novas entradas acima do limite.
+   */
+  private async assertCanAcceptSlot(
+    orgType: OrgType,
+    orgId: string,
+    plan: string,
+    office?: string,
+  ): Promise<void> {
+    const limit = this.resolveMaxMembersLimit(orgType, plan, office)
+    if (limit === null) return
+
+    const activeCount = (await this.repo.countActiveMembers(orgType, orgId)) ?? 0
+    if (activeCount >= limit) {
+      throw planMemberLimitException(limit, activeCount)
+    }
   }
 
   async previewInvite(token: string) {
     const invite = await this.repo.findInvitePreview(token)
     if (!invite) throw new NotFoundException('Convite não encontrado')
 
-    const orgName = await this.resolveOrgName(invite.orgType, invite.orgId)
+    const { name: orgName } = await this.resolveOrgSummary(invite.orgType, invite.orgId)
     const role = await this.repo.findRoleById(invite.roleId)
 
     return {
@@ -139,6 +215,9 @@ export class OrgMembershipsService {
 
     const existing = await this.repo.findMembership(userId, invite.orgType, invite.orgId)
     if (existing) throw new ConflictException('Você já é membro desta organização')
+
+    const orgInfo = await this.resolveOrgSummary(invite.orgType, invite.orgId)
+    await this.assertCanAcceptSlot(invite.orgType, invite.orgId, orgInfo.plan, orgInfo.office)
 
     await this.repo.acceptInvite(token)
     return this.repo.addMember(userId, invite.orgType, invite.orgId, invite.roleId)

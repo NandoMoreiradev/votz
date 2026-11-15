@@ -1,41 +1,20 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common'
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { CompanyPlan, EntityPlan, OrgType, PoliticianPlan } from '@prisma/client'
+import { hasFeature, OrgPlanType } from '@votz/shared-types'
 import { PrismaService } from '../../prisma/prisma.service'
-import { PLAN_KEY } from '../decorators/requires-plan.decorator'
+import {
+  ActingUser,
+  MISSING_ORG_CONTEXT_MESSAGE,
+  requireActingOrg,
+  resolveOptionalActingOrg,
+} from '../acting-org'
+import {
+  FEATURE_METADATA_KEY,
+  RequiredFeatureMetadata,
+} from '../decorators/requires-feature.decorator'
+import { planRequiredException } from '../plan-errors'
 
-const ENTITY_LEVELS: Record<EntityPlan, number> = {
-  BASICO: 0,
-  GESTAO: 1,
-  PRO: 2,
-  ENTERPRISE: 3,
-}
-
-const POLITICIAN_LEVELS: Record<PoliticianPlan, number> = {
-  BASICO: 0,
-  MANDATOMETRO_PRO: 1,
-  CAMPANHA: 2,
-}
-
-const COMPANY_LEVELS: Record<CompanyPlan, number> = {
-  STARTER: 0,
-  BUSINESS: 1,
-  ENTERPRISE: 2,
-  WHITE_LABEL: 3,
-}
-
-function planSatisfies(current: string, required: string, orgType: OrgType): boolean {
-  switch (orgType) {
-    case OrgType.ENTITY:
-      return (ENTITY_LEVELS[current as EntityPlan] ?? -1) >= (ENTITY_LEVELS[required as EntityPlan] ?? 0)
-    case OrgType.POLITICIAN:
-      return (POLITICIAN_LEVELS[current as PoliticianPlan] ?? -1) >= (POLITICIAN_LEVELS[required as PoliticianPlan] ?? 0)
-    case OrgType.COMPANY:
-      return (COMPANY_LEVELS[current as CompanyPlan] ?? -1) >= (COMPANY_LEVELS[required as CompanyPlan] ?? 0)
-    default:
-      return false
-  }
-}
+const ALL_ORG_TYPES: readonly OrgPlanType[] = ['ENTITY', 'POLITICIAN', 'COMPANY']
 
 @Injectable()
 export class PlanGuard implements CanActivate {
@@ -45,39 +24,71 @@ export class PlanGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<{ plan: string; orgType: OrgType }>(PLAN_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ])
-    if (!required) return true
+    const meta = this.reflector.getAllAndOverride<RequiredFeatureMetadata | undefined>(
+      FEATURE_METADATA_KEY,
+      [context.getHandler(), context.getClass()],
+    )
+    if (!meta) return true
 
-    const request = context.switchToHttp().getRequest()
-    const userId: string | undefined = request.user?.id
-    if (!userId) return false
+    const req = context.switchToHttp().getRequest<{
+      params?: { id?: string }
+      user?: ActingUser
+    }>()
+    const allowedTypes = meta.orgType ? [meta.orgType] : ALL_ORG_TYPES
+    const expectedOrgId = req.params?.id
 
-    const orgId: string | undefined = request.params.id
-    if (!orgId) return false
+    const acting = meta.permission
+      ? await requireActingOrg(
+          this.prisma,
+          req.user,
+          allowedTypes,
+          meta.permission,
+          expectedOrgId ? { expectedOrgId } : undefined,
+        )
+      : await resolveOptionalActingOrg(this.prisma, req.user, allowedTypes)
 
-    const membership = await this.prisma.orgMembership.findFirst({
-      where: { userId, orgType: required.orgType, orgId, status: 'ACTIVE' },
-    })
-    if (!membership) throw new ForbiddenException('Plano insuficiente')
-
-    let currentPlan: string | null = null
-    if (required.orgType === OrgType.ENTITY) {
-      const entity = await this.prisma.entity.findUnique({ where: { id: orgId }, select: { plan: true } })
-      currentPlan = entity?.plan ?? null
-    } else if (required.orgType === OrgType.POLITICIAN) {
-      const politician = await this.prisma.politician.findUnique({ where: { id: orgId }, select: { plan: true } })
-      currentPlan = politician?.plan ?? null
-    } else if (required.orgType === OrgType.COMPANY) {
-      const company = await this.prisma.company.findUnique({ where: { id: orgId }, select: { plan: true } })
-      currentPlan = company?.plan ?? null
+    if (!acting) {
+      throw new ForbiddenException(MISSING_ORG_CONTEXT_MESSAGE)
     }
 
-    if (!currentPlan || !planSatisfies(currentPlan, required.plan, required.orgType))
-      throw new ForbiddenException('Plano insuficiente')
+    if (!meta.permission && expectedOrgId && acting.orgId !== expectedOrgId) {
+      throw new ForbiddenException('Contexto ativo não corresponde à organização solicitada.')
+    }
+
+    const plan = await this.findOrgPlan(acting.orgType, acting.orgId)
+    if (!plan) {
+      throw new ForbiddenException('Organização ativa não encontrada.')
+    }
+
+    if (!hasFeature(acting.orgType, plan, meta.feature)) {
+      throw planRequiredException(acting.orgType, meta.feature)
+    }
 
     return true
+  }
+
+  private async findOrgPlan(orgType: OrgPlanType, orgId: string): Promise<string | null> {
+    if (orgType === 'ENTITY') {
+      const entity = await this.prisma.entity.findUnique({
+        where: { id: orgId },
+        select: { plan: true },
+      })
+      return entity?.plan ?? null
+    }
+    if (orgType === 'POLITICIAN') {
+      const politician = await this.prisma.politician.findUnique({
+        where: { id: orgId },
+        select: { plan: true },
+      })
+      return politician?.plan ?? null
+    }
+    if (orgType === 'COMPANY') {
+      const company = await this.prisma.company.findUnique({
+        where: { id: orgId },
+        select: { plan: true },
+      })
+      return company?.plan ?? null
+    }
+    return null
   }
 }

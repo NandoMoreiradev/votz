@@ -649,6 +649,9 @@ export function Navbar() {
             <NavLink to="/mapa">Mapa</NavLink>
             <NavLink to="/imprensa">Imprensa</NavLink>
             <NavLink to="/planos">Planos</NavLink>
+            {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
+              <NavLink to="/painel-dados">Painel</NavLink>
+            )}
             {!user && <NavLink to="/solicitar-cadastro">Registrar organização</NavLink>}
             {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
           </NavLinks>
@@ -753,6 +756,11 @@ export function Navbar() {
           <MobileNavLink to="/mapa" onClick={() => setMobileOpen(false)}>Mapa</MobileNavLink>
           <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
           <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>Planos</MobileNavLink>
+          {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
+            <MobileNavLink to="/painel-dados" onClick={() => setMobileOpen(false)}>
+              Painel de dados
+            </MobileNavLink>
+          )}
           {!user && (
             <MobileNavLink to="/solicitar-cadastro" onClick={() => setMobileOpen(false)}>
               Registrar organização

@@ -193,8 +193,8 @@ export interface ProfileMetrics {
   classification: string
 }
 
-export type EntityPlan = 'BASICO' | 'GESTAO' | 'PRO' | 'ENTERPRISE'
-export type PoliticianPlan = 'BASICO' | 'MANDATOMETRO_PRO' | 'CAMPANHA'
+export type { EntityPlan, PoliticianPlan } from '@votz/shared-types'
+import type { EntityPlan, PoliticianPlan } from '@votz/shared-types'
 export type PoliticianStatus = 'ATIVO' | 'ENCERRADO' | 'AFASTADO'
 
 export interface Entity {

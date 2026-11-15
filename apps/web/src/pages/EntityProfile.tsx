@@ -13,6 +13,7 @@ import { TeamPanel } from '../components/org/TeamPanel'
 import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
+import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
 import { EntityType, ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 import { api } from '../lib/api'
@@ -137,7 +138,7 @@ const MetaRow = styled.div`
   margin-bottom: 6px;
 `
 
-const Tag = styled.span<{ $variant?: 'type' | 'verified' | 'cnpj' | 'plan' }>`
+const Tag = styled.span<{ $variant?: 'type' | 'verified' | 'cnpj' }>`
   font-size: 0.75rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   padding: 2px 9px;
@@ -145,12 +146,10 @@ const Tag = styled.span<{ $variant?: 'type' | 'verified' | 'cnpj' | 'plan' }>`
   background: ${({ $variant, theme }) =>
     $variant === 'verified' ? theme.colors.positive + '18' :
     $variant === 'cnpj' ? theme.colors.neutral :
-    $variant === 'plan' ? theme.colors.action + '18' :
     theme.colors.primary + '12'};
   color: ${({ $variant, theme }) =>
     $variant === 'verified' ? theme.colors.positive :
     $variant === 'cnpj' ? theme.colors.muted :
-    $variant === 'plan' ? theme.colors.action :
     theme.colors.primary};
   ${({ $variant }) => $variant === 'cnpj' && 'font-family: "JetBrains Mono", monospace;'}
   text-transform: ${({ $variant }) => $variant === 'cnpj' ? 'none' : 'uppercase'};
@@ -515,10 +514,6 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
   AUTARCHY: 'Autarquia', SECRETARIAT: 'Secretaria', OTHER: 'Órgão público',
 }
 
-const ENTITY_PLAN_LABELS: Record<string, string> = {
-  GESTAO: 'Plano Gestão', PRO: 'Plano Pro', ENTERPRISE: 'Enterprise',
-}
-
 const CAT_LABELS: Record<string, string> = {
   HEALTH: 'Saúde', MOBILITY: 'Mobilidade', SAFETY: 'Segurança', EDUCATION: 'Educação',
   SANITATION: 'Saneamento', HOUSING: 'Habitação', ENVIRONMENT: 'Meio Ambiente',
@@ -661,9 +656,6 @@ export function EntityProfile() {
                   <Tag>{ENTITY_TYPE_LABELS[entity.type] ?? entity.type}</Tag>
                   {entity.verified && <Tag $variant="verified">✓ Verificada</Tag>}
                   {entity.cnpj && <Tag $variant="cnpj">{formatCnpj(entity.cnpj)}</Tag>}
-                  {entity.plan && entity.plan !== 'BASICO' && (
-                    <Tag $variant="plan">{ENTITY_PLAN_LABELS[entity.plan] ?? entity.plan}</Tag>
-                  )}
                   {entity.metrics && (
                     <TrustBadge
                       classification={entity.metrics.classification}
@@ -691,6 +683,14 @@ export function EntityProfile() {
                       style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
                     >
                       Editar perfil
+                    </ReportCta>
+                  )}
+                  {isOwner && (
+                    <ReportCta
+                      to="/painel-dados"
+                      style={{ background: '#1A1A2E', color: '#FFFFFF' }}
+                    >
+                      Painel de dados
                     </ReportCta>
                   )}
                   {!entity.verified && currentUser && !isOwner && (
@@ -732,6 +732,11 @@ export function EntityProfile() {
             </StatsRow>
 
             {entity.metrics && <MetricsBar metrics={entity.metrics} />}
+            <PublicTransparencyCard
+              orgType="ENTITY"
+              orgId={entity.id}
+              showOwnerPanelLink={isOwner}
+            />
           </HeaderCard>
         ) : (
           <Empty>Entidade não encontrada.</Empty>

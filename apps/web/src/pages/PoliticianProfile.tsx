@@ -16,6 +16,7 @@ import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
+import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
 
@@ -115,7 +116,7 @@ const MetaRow = styled.div`
   margin-bottom: 6px;
 `
 
-const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' | 'plan' | 'campanha' | 'encerrado' | 'afastado' }>`
+const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' | 'encerrado' | 'afastado' }>`
   font-size: 0.75rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   padding: 2px 9px;
@@ -124,8 +125,6 @@ const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' 
     $variant === 'party' ? theme.colors.action + '18' :
     $variant === 'verified' ? theme.colors.positive + '18' :
     $variant === 'number' ? theme.colors.neutral :
-    $variant === 'plan' ? theme.colors.action + '18' :
-    $variant === 'campanha' ? theme.colors.primary + '18' :
     $variant === 'encerrado' ? '#6B728018' :
     $variant === 'afastado' ? '#F59E0B18' :
     theme.colors.primary + '12'};
@@ -133,8 +132,6 @@ const Tag = styled.span<{ $variant?: 'office' | 'party' | 'verified' | 'number' 
     $variant === 'party' ? theme.colors.action :
     $variant === 'verified' ? theme.colors.positive :
     $variant === 'number' ? theme.colors.muted :
-    $variant === 'plan' ? theme.colors.action :
-    $variant === 'campanha' ? theme.colors.primary :
     $variant === 'encerrado' ? '#6B7280' :
     $variant === 'afastado' ? '#F59E0B' :
     theme.colors.primary};
@@ -631,12 +628,6 @@ export function PoliticianProfile() {
                     <Tag $variant="afastado">Afastado</Tag>
                   )}
                   {politician.verified && <Tag $variant="verified">✓ Verificado</Tag>}
-                  {politician.plan === 'MANDATOMETRO_PRO' && politician.status === 'ATIVO' && (
-                    <Tag $variant="plan">★ Mandatômetro Pro</Tag>
-                  )}
-                  {politician.plan === 'CAMPANHA' && politician.status === 'ATIVO' && (
-                    <Tag $variant="campanha">🗳 Candidato Comprometido</Tag>
-                  )}
                   {politician.metrics && politician.status === 'ATIVO' && (
                     <TrustBadge
                       classification={politician.metrics.classification}
@@ -684,6 +675,15 @@ export function PoliticianProfile() {
                       size="sm"
                     >
                       Editar perfil
+                    </Button>
+                  )}
+                  {canEdit && (
+                    <Button
+                      as={Link as any}
+                      to="/painel-dados"
+                      size="sm"
+                    >
+                      Painel de dados
                     </Button>
                   )}
                   {canEdit && politician.status === 'ATIVO' && (
@@ -775,6 +775,11 @@ export function PoliticianProfile() {
             </MGrid>
 
             {politician.metrics && <MetricsBar metrics={politician.metrics} />}
+            <PublicTransparencyCard
+              orgType="POLITICIAN"
+              orgId={politician.id}
+              showOwnerPanelLink={canEdit}
+            />
           </HeaderCard>
         ) : (
           <Empty>Político não encontrado.</Empty>

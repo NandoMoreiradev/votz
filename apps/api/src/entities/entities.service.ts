@@ -138,6 +138,11 @@ export class EntitiesService {
       })
     }
 
+    await this.prisma.report.updateMany?.({
+      where: { id: reportId, firstResponseAt: null },
+      data: { firstResponseAt: new Date() },
+    })
+
     await this.prisma.timelineEvent.create({
       data: {
         reportId,

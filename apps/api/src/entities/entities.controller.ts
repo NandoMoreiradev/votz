@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { EntityPlan, OrgType } from '@prisma/client'
+import { OrgPermission } from '@prisma/client'
 import { UserType } from '@votz/shared-types'
 import { EntitiesService } from './entities.service'
 import { CreateEntityDto } from './dto/create-entity.dto'
@@ -18,7 +18,7 @@ import { UpdateEntityDto } from './dto/update-entity.dto'
 import { ListEntitiesDto } from './dto/list-entities.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PlanGuard } from '../auth/guards/plan.guard'
-import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
+import { RequiresFeature } from '../auth/decorators/requires-feature.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
 import { ActingUser } from '../auth/acting-org'
@@ -107,7 +107,7 @@ export class EntitiesController {
 
   @Get(':id/export')
   @UseGuards(JwtAuthGuard, PlanGuard)
-  @RequiresPlan(EntityPlan.GESTAO, OrgType.ENTITY)
+  @RequiresFeature('export_data', 'ENTITY', OrgPermission.EXPORT_DATA)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Export entity reports as JSON (requires Gestão plan or higher)' })
   exportReports(

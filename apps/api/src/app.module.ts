@@ -35,6 +35,7 @@ import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
 import { SenadoSyncModule } from './senado-sync/senado-sync.module'
 import { TseSyncModule } from './tse-sync/tse-sync.module'
 import { PropostasModule } from './propostas/propostas.module'
+import { PlansModule } from './plans/plans.module'
 import { TranscriptionModule } from './transcription/transcription.module'
 import { SubscricoesModule } from './subscricoes/subscricoes.module'
 import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
@@ -43,6 +44,7 @@ import { AccessLogModule } from './access-log/access-log.module'
 import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
 import { InactivityModule } from './inactivity/inactivity.module'
 import { ModerationModule } from './moderation/moderation.module'
+import { AnalyticsModule } from './analytics/analytics.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
 import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
@@ -126,6 +128,7 @@ import { SecurityModule } from './common/security/security.module'
     SenadoSyncModule,
     TseSyncModule,
     PropostasModule,
+    PlansModule,
     TranscriptionModule,
     SubscricoesModule,
     MandateExpiryModule,
@@ -134,6 +137,7 @@ import { SecurityModule } from './common/security/security.module'
     VerificationRetentionModule,
     InactivityModule,
     ModerationModule,
+    AnalyticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

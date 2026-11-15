@@ -65,20 +65,32 @@ describe('PropostasService', () => {
       )
     })
 
-    it('requires MANDATOMETRO_PRO or CAMPANHA plan', async () => {
+    it('requires MANDATO or MANDATO_PRO plan and rejects BASICO with PLAN_REQUIRED', async () => {
       mockRepo.findPoliticianById.mockResolvedValue({ id: 'p1', plan: 'BASICO' })
       await expect(
         service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') }),
-      ).rejects.toThrow(ForbiddenException)
+      ).rejects.toMatchObject({
+        response: {
+          code: 'PLAN_REQUIRED',
+          feature: 'propostas',
+          requiredPlan: 'MANDATO',
+        },
+      })
     })
 
-    it('creates proposta for CITIZEN with active POLITICIAN context and records CREATED timeline event', async () => {
-      mockRepo.findPoliticianById.mockResolvedValue({ id: 'p1', plan: 'MANDATOMETRO_PRO' })
-      mockRepo.create.mockResolvedValue({ id: 'prop-1', titulo: 'PL Saúde' })
+    it('creates proposta for MANDATO and MANDATO_PRO active contexts and records CREATED timeline event', async () => {
+      mockRepo.findPoliticianById.mockResolvedValueOnce({ id: 'p1', plan: 'MANDATO' })
+      mockRepo.create.mockResolvedValueOnce({ id: 'prop-1', titulo: 'PL Saúde' })
 
-      const res = await service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') })
-      expect(res.id).toBe('prop-1')
-      expect(mockRepo.addTimeline).toHaveBeenCalledTimes(1)
+      const resMandato = await service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') })
+      expect(resMandato.id).toBe('prop-1')
+
+      mockRepo.findPoliticianById.mockResolvedValueOnce({ id: 'p1', plan: 'MANDATO_PRO' })
+      mockRepo.create.mockResolvedValueOnce({ id: 'prop-2', titulo: 'PL Saúde' })
+
+      const resPro = await service.create(dto, { id: 'u1', type: UserType.CITIZEN, ctx: polCtx('p1') })
+      expect(resPro.id).toBe('prop-2')
+      expect(mockRepo.addTimeline).toHaveBeenCalledTimes(2)
     })
   })
 

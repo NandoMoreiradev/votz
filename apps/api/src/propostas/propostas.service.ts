@@ -6,8 +6,9 @@ import { PropostasRepository } from './propostas.repository'
 import { CreatePropostaDto } from './dto/create-proposta.dto'
 import { UpdatePropostaStatusDto } from './dto/update-status-proposta.dto'
 import { ListPropostasQueryDto } from './dto/list-propostas-query.dto'
-import { Category, PropostaEventType, PropostaStatus } from '@votz/shared-types'
+import { Category, PropostaEventType, PropostaStatus, hasFeature } from '@votz/shared-types'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
+import { planRequiredException } from '../auth/plan-errors'
 
 @Injectable()
 export class PropostasService {
@@ -27,9 +28,8 @@ export class PropostasService {
     const politician = await this.repository.findPoliticianById(acting.orgId)
     if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
 
-    const PROPOSTA_PLANS = ['MANDATOMETRO_PRO', 'CAMPANHA']
-    if (!PROPOSTA_PLANS.includes(politician.plan)) {
-      throw new ForbiddenException('Criar propostas requer o plano Mandatômetro Pro ou superior')
+    if (!hasFeature('POLITICIAN', politician.plan, 'propostas')) {
+      throw planRequiredException('POLITICIAN', 'propostas')
     }
 
     const sanitizedTitulo = DOMPurify.sanitize(dto.titulo).trim()

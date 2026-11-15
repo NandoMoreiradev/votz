@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateReportDto } from './dto/create-report.dto'
-import { Category, ReportStatus, VoteType } from '@votz/shared-types'
+import {
+  Category,
+  ReportStatus,
+  VoteType,
+  encodeGeohash7,
+  normalizeLocationKey,
+} from '@votz/shared-types'
 import { FollowerActorType } from '@prisma/client'
 
 export interface SimilarReportRow {
@@ -78,6 +84,8 @@ export class ReportsRepository {
   }
 
   async create(dto: CreateReportDto, authorId: string | null) {
+    const city = dto.city ?? null
+    const neighborhood = dto.neighborhood ?? null
     return this.prisma.report.create({
       data: {
         title: dto.title.trim(),
@@ -86,10 +94,13 @@ export class ReportsRepository {
         anonymous: dto.anonymous ?? false,
         latitude: dto.latitude,
         longitude: dto.longitude,
+        cell7: encodeGeohash7(dto.latitude, dto.longitude),
         normalizedAddress: dto.typedAddress ?? null,
-        city: dto.city ?? null,
+        city,
+        cityKey: city ? normalizeLocationKey(city) || null : null,
         state: dto.state ?? null,
-        neighborhood: dto.neighborhood ?? null,
+        neighborhood,
+        neighborhoodKey: neighborhood ? normalizeLocationKey(neighborhood) || null : null,
         recipientType: dto.recipientType,
         recipientId: dto.recipientId,
         authorId: dto.anonymous ? null : authorId,
@@ -156,10 +167,24 @@ export class ReportsRepository {
   }
 
   async updateStatus(id: string, status: ReportStatus) {
+    const now = new Date()
+    if (status === ReportStatus.RESOLVED) {
+      await this.prisma.report.updateMany({
+        where: { id, resolvedAt: null },
+        data: { resolvedAt: now },
+      })
+    }
     return this.prisma.report.update({
       where: { id },
       data: { status },
       select: { id: true, status: true },
+    })
+  }
+
+  async markFirstResponseIfUnset(id: string) {
+    return this.prisma.report.updateMany({
+      where: { id, firstResponseAt: null },
+      data: { firstResponseAt: new Date() },
     })
   }
 
@@ -180,6 +205,12 @@ export class ReportsRepository {
   }
 
   async resolveDispute(id: string, status: ReportStatus.OPEN | ReportStatus.RESOLVED) {
+    if (status === ReportStatus.RESOLVED) {
+      await this.prisma.report.updateMany({
+        where: { id, resolvedAt: null },
+        data: { resolvedAt: new Date() },
+      })
+    }
     return this.prisma.report.update({
       where: { id },
       data: { status },

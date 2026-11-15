@@ -712,8 +712,7 @@ function EntitiesTab() {
                   >
                     <option value="BASICO">Básico</option>
                     <option value="GESTAO">Gestão</option>
-                    <option value="PRO">Pro</option>
-                    <option value="ENTERPRISE">Enterprise</option>
+                    <option value="INTEGRACAO">Integração</option>
                   </select>
                 </Td>
                 <Td>
@@ -778,8 +777,8 @@ function PoliticiansTab() {
                     style={{ fontSize: '0.8125rem', padding: '2px 6px', borderRadius: 4, border: '1px solid #E5E5E5' }}
                   >
                     <option value="BASICO">Básico</option>
-                    <option value="MANDATOMETRO_PRO">Mandatômetro Pro</option>
-                    <option value="CAMPANHA">Campanha</option>
+                    <option value="MANDATO">Mandato</option>
+                    <option value="MANDATO_PRO">Mandato Pro</option>
                   </select>
                 </Td>
                 <Td>
