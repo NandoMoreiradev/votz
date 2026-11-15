@@ -33,9 +33,9 @@ export class UpdateProfileDto {
   @MaxLength(300)
   bio?: string
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/avatar.jpg' })
+  @ApiPropertyOptional({ example: 'https://cdn.votz.app/avatars/avatar.jpg' })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   avatarUrl?: string
 
   @ApiPropertyOptional({ example: '+5511999999999' })

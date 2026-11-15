@@ -50,14 +50,38 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() _user: { id: string },
   ) {
+    return this.uploadImageToFolder(file, 'avatars', 'Avatar deve ser JPEG, PNG ou WebP')
+  }
+
+  @Post('upload/entity-logo')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 10, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload entity or company logo (image only)' })
+  async uploadEntityLogo(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    return this.uploadImageToFolder(file, 'entities', 'Logo deve ser JPEG, PNG ou WebP')
+  }
+
+  private async uploadImageToFolder(
+    file: Express.Multer.File,
+    folder: 'avatars' | 'entities',
+    invalidTypeMessage: string,
+  ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado')
 
     const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
     if (!imageTypes.has(file.mimetype)) {
-      throw new BadRequestException('Avatar deve ser JPEG, PNG ou WebP')
+      throw new BadRequestException(invalidTypeMessage)
     }
 
-    return this.storageService.upload(file.buffer, file.mimetype, 'avatars')
+    return this.storageService.upload(file.buffer, file.mimetype, folder)
   }
 
   @Post('upload/verification-doc')

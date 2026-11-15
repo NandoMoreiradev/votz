@@ -23,7 +23,7 @@ export class CreatePropostaDto {
   categorias: Category[]
 
   @ApiPropertyOptional({ example: 'https://camara.leg.br/proposicoes/PL-1234-2026' })
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @IsOptional()
   @MaxLength(500)
   linkExterno?: string

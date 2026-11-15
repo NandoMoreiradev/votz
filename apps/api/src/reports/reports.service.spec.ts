@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { PrismaService } from '../prisma/prisma.service'
+import { StorageService } from '../storage/storage.service'
 import { REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { ReportStatus, EventType } from '@votz/shared-types'
 import { DisputeResolution } from './dto/resolve-dispute.dto'
@@ -42,6 +43,16 @@ const mockPrisma = {
   entity: { findUnique: jest.fn() },
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
+const STORAGE_BASE = 'https://cdn.votz.app'
+const mockStorage = {
+  assertOwnStorageUrls: jest.fn((urls: string[] | undefined, folder?: string) => {
+    for (const url of urls ?? []) {
+      if (!url.startsWith(`${STORAGE_BASE}/${folder ? `${folder}/` : ''}`)) {
+        throw new BadRequestException('Envie o arquivo pelo Votz')
+      }
+    }
+  }),
+}
 
 function makeReport(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -69,6 +80,7 @@ describe('ReportsService', () => {
         { provide: AlertsService, useValue: mockAlerts },
         { provide: EmbeddingService, useValue: mockEmbedding },
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: StorageService, useValue: mockStorage },
         { provide: getQueueToken(REPORTS_QUEUE), useValue: mockReportsQueue },
       ],
     }).compile()
@@ -333,6 +345,89 @@ describe('ReportsService', () => {
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'author-1', type: 'STATUS_CHANGED' }),
       )
+    })
+  })
+
+  describe('media & evidence storage ownership (A4)', () => {
+    const validMedia = [`${STORAGE_BASE}/reports/11111111-1111-4111-8111-111111111111.jpg`]
+
+    it('rejects external and wrong-folder URLs on report create, updateStatus, and dispute', async () => {
+      await expect(
+        service.create(
+          {
+            title: 'Buraco grande na via',
+            description: 'Buraco atrapalhando trânsito.',
+            category: 'INFRASTRUCTURE' as any,
+            latitude: -23.5,
+            longitude: -46.6,
+            media: ['https://evil.example/track.jpg'],
+          } as any,
+          { id: 'u1', type: 'CITIZEN', emailVerified: true },
+        ),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.create(
+          {
+            title: 'Buraco grande na via',
+            description: 'Buraco atrapalhando trânsito.',
+            category: 'INFRASTRUCTURE' as any,
+            latitude: -23.5,
+            longitude: -46.6,
+            media: [`${STORAGE_BASE}/avatars/wrong.jpg`],
+          } as any,
+          { id: 'u1', type: 'CITIZEN', emailVerified: true },
+        ),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.updateStatus(
+          'r1',
+          { content: 'Atualização com imagem externa', media: ['https://evil.example/a.png'] } as any,
+          { id: 'admin-1', type: 'ADMIN' },
+        ),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.dispute(
+          'r1',
+          { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: [`${STORAGE_BASE}/entities/logo.png`] },
+          'u1',
+        ),
+      ).rejects.toThrow(BadRequestException)
+    })
+
+    it('accepts valid reports/ storage URLs on create, updateStatus, and dispute', async () => {
+      mockRepo.create.mockResolvedValue({ id: 'r1', category: 'INFRASTRUCTURE' })
+      await service.create(
+        {
+          title: 'Buraco grande na via',
+          description: 'Buraco atrapalhando trânsito.',
+          category: 'INFRASTRUCTURE' as any,
+          latitude: -23.5,
+          longitude: -46.6,
+          media: validMedia,
+        } as any,
+        { id: 'u1', type: 'CITIZEN', emailVerified: true },
+      )
+      expect(mockRepo.create).toHaveBeenCalled()
+
+      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.OPEN }))
+      await service.updateStatus(
+        'r1',
+        { content: 'Equipe enviada ao local hoje.', media: validMedia },
+        { id: 'admin-1', type: 'ADMIN' },
+      )
+      expect(mockTimeline.record).toHaveBeenCalled()
+
+      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED, anonymous: false }))
+      mockRepo.findAuthorId.mockResolvedValue('u1')
+      await service.dispute(
+        'r1',
+        { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: validMedia },
+        'u1',
+      )
+      expect(mockRepo.setDisputed).toHaveBeenCalledWith('r1')
     })
   })
 })

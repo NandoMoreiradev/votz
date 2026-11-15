@@ -855,6 +855,7 @@ enum ModerationActionType {
   COMMENT_REMOVED
   USER_BANNED
   USER_UNBANNED
+  USER_TYPE_CHANGED
 }
 
 model ModerationAction {

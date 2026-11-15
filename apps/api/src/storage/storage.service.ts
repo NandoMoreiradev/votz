@@ -23,6 +23,23 @@ const ALLOWED_MIME_TYPES = new Set([
   'audio/wav',
 ])
 
+const ALLOWED_COMMENT_MEDIA_EXTENSIONS = Array.from(
+  new Set(
+    Array.from(ALLOWED_MIME_TYPES)
+      .filter((mime) => mime.startsWith('audio/') || mime.startsWith('video/'))
+      .map((mime) => mime.split('/')[1].replace('quicktime', 'mov')),
+  ),
+)
+
+export const COMMENT_MEDIA_KEY_REGEX = new RegExp(
+  `^comments\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(${ALLOWED_COMMENT_MEDIA_EXTENSIONS.join('|')})$`,
+  'i',
+)
+
+export function isCommentMediaKey(key: unknown): key is string {
+  return typeof key === 'string' && COMMENT_MEDIA_KEY_REGEX.test(key)
+}
+
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
 const PDF_MAX_SIZE   = 50 * 1024 * 1024   // 50 MB
@@ -60,6 +77,22 @@ function detectMimeFromBuffer(buf: Buffer): string {
   return ''
 }
 
+const DEFAULT_EXTERNAL_IMAGE_HOSTS =
+  'www.camara.leg.br,camara.leg.br,www.senado.leg.br'
+
+function parseHttpUrl(raw: unknown): URL | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export interface UploadedFile {
   key: string
   url: string
@@ -73,6 +106,7 @@ export class StorageService {
   private readonly bucket: string
   private readonly endpoint: string
   private readonly publicBase: string
+  private readonly allowedExternalImageHosts: Set<string>
 
   constructor(private readonly config: ConfigService) {
     this.bucket = this.config.getOrThrow<string>('CLOUDFLARE_R2_BUCKET')
@@ -82,6 +116,16 @@ export class StorageService {
     // Se não configurada, usa o endpoint S3 + bucket como fallback (não acessível publicamente)
     const pub = this.config.get<string>('CLOUDFLARE_R2_PUBLIC_URL', '')
     this.publicBase = pub ? pub.replace(/\/$/, '') : `${this.endpoint}/${this.bucket}`
+
+    const rawHosts = this.config.get<string>('ALLOWED_EXTERNAL_IMAGE_HOSTS')
+    const hostsSource =
+      rawHosts && rawHosts.trim().length > 0 ? rawHosts : DEFAULT_EXTERNAL_IMAGE_HOSTS
+    this.allowedExternalImageHosts = new Set(
+      hostsSource
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean),
+    )
 
     const forcePathStyle =
       this.endpoint.startsWith('http://') ||
@@ -153,6 +197,53 @@ export class StorageService {
       url: `${this.publicBase}/${key}`,
       mimeType,
       size: buffer.byteLength,
+    }
+  }
+
+  isCommentMediaKey(key: unknown): key is string {
+    return isCommentMediaKey(key)
+  }
+
+  getPublicUrl(key: string): string {
+    return `${this.publicBase}/${key}`
+  }
+
+  isOwnStorageUrl(url: string, folder?: string): boolean {
+    const parsed = parseHttpUrl(url)
+    if (!parsed) return false
+    if (!url.startsWith(`${this.publicBase}/`)) return false
+
+    const key = this.extractKeyFromUrl(url)
+    if (!key) return false
+    if (key.includes('..') || key.includes('\\') || key.includes('?') || key.includes('#')) {
+      return false
+    }
+
+    if (folder) {
+      return key.startsWith(`${folder}/`) && key.length > folder.length + 1
+    }
+    return true
+  }
+
+  isAllowedExternalImageUrl(url: string): boolean {
+    const parsed = parseHttpUrl(url)
+    if (!parsed) return false
+    return this.allowedExternalImageHosts.has(parsed.hostname.toLowerCase())
+  }
+
+  assertOwnStorageUrl(
+    url: string,
+    folder?: string,
+    options?: { allowExternalImageHosts?: boolean },
+  ): void {
+    if (this.isOwnStorageUrl(url, folder)) return
+    if (options?.allowExternalImageHosts && this.isAllowedExternalImageUrl(url)) return
+    throw new BadRequestException('Envie o arquivo pelo Votz')
+  }
+
+  assertOwnStorageUrls(urls: string[] | undefined, folder?: string): void {
+    for (const url of urls ?? []) {
+      this.assertOwnStorageUrl(url, folder)
     }
   }
 

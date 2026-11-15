@@ -10,13 +10,13 @@ export class UpdateCompanyDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(300)
   website?: string
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(500)
   logoUrl?: string
 }

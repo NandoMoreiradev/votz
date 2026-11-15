@@ -5,11 +5,17 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common'
+import { plainToInstance } from 'class-transformer'
+import { validate } from 'class-validator'
 import { OrgPermission } from '@prisma/client'
 import { EventType, ReportStatus } from '@votz/shared-types'
 import { EntitiesService } from './entities.service'
 import { EntitiesRepository } from './entities.repository'
+import { CreateEntityDto } from './dto/create-entity.dto'
 import { PrismaService } from '../prisma/prisma.service'
+import { StorageService } from '../storage/storage.service'
+
+const STORAGE_BASE = 'https://cdn.votz.app'
 
 const mockRepo = {
   create: jest.fn(),
@@ -28,6 +34,14 @@ const mockPrisma = {
   timelineEvent: { create: jest.fn() },
 }
 
+const mockStorage = {
+  assertOwnStorageUrl: jest.fn((url: string, folder?: string) => {
+    if (!url.startsWith(`${STORAGE_BASE}/${folder ? `${folder}/` : ''}`)) {
+      throw new BadRequestException('Envie o arquivo pelo Votz')
+    }
+  }),
+}
+
 describe('EntitiesService', () => {
   let service: EntitiesService
 
@@ -37,6 +51,7 @@ describe('EntitiesService', () => {
         EntitiesService,
         { provide: EntitiesRepository, useValue: mockRepo },
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile()
 
@@ -122,5 +137,32 @@ describe('EntitiesService', () => {
         data: expect.objectContaining({ type: EventType.RESPONDED }),
       }),
     )
+  })
+
+  it('rejects external or wrong-folder logoUrl and ftp:// website on entity', async () => {
+    mockPrisma.orgMembership.findFirst.mockResolvedValue({
+      role: { permissions: [OrgPermission.MANAGE_PROFILE] },
+    })
+
+    await expect(
+      service.update('e1', 'u1', { logoUrl: 'https://evil.example/logo.png' }),
+    ).rejects.toThrow(BadRequestException)
+
+    await expect(
+      service.update('e1', 'u1', { logoUrl: `${STORAGE_BASE}/reports/wrong.png` }),
+    ).rejects.toThrow(BadRequestException)
+
+    mockRepo.update.mockResolvedValue({ id: 'e1', logoUrl: `${STORAGE_BASE}/entities/logo.png` })
+    await expect(
+      service.update('e1', 'u1', { logoUrl: `${STORAGE_BASE}/entities/logo.png` }),
+    ).resolves.toMatchObject({ logoUrl: `${STORAGE_BASE}/entities/logo.png` })
+
+    const ftpDto = plainToInstance(CreateEntityDto, {
+      legalName: 'Prefeitura Municipal',
+      cnpj: '46395000000139',
+      type: 'PUBLIC_AGENCY',
+      website: 'ftp://prefeitura.sp.gov.br',
+    })
+    expect(await validate(ftpDto)).not.toHaveLength(0)
   })
 })

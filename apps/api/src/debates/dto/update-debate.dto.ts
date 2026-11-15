@@ -22,7 +22,7 @@ export class UpdateDebateDto {
 
   @ApiPropertyOptional({ description: 'URL da gravação pós-debate' })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   recordingUrl?: string
 
   @ApiPropertyOptional({ description: 'Segundos mínimos entre mensagens no chat (padrão: 5)' })

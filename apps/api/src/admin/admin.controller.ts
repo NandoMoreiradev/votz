@@ -13,11 +13,7 @@ import { UserType } from '@votz/shared-types'
 import { AdminService } from './admin.service'
 import { SetBanDto } from './dto/ban-user.dto'
 import { DeleteReportDto } from './dto/delete-report.dto'
-
-class SetTypeDto {
-  @IsEnum(UserType)
-  type: UserType
-}
+import { SetTypeDto } from './dto/set-type.dto'
 
 class SetVerifiedDto {
   verified: boolean
@@ -73,9 +69,14 @@ export class AdminController {
   }
 
   @Patch('users/:id/type')
-  @ApiOperation({ summary: 'Change user type' })
-  setUserType(@Param('id') id: string, @Body() dto: SetTypeDto) {
-    return this.service.setUserType(id, dto.type)
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Change user type (admin only)' })
+  setUserType(
+    @Param('id') id: string,
+    @Body() dto: SetTypeDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.setUserType(id, dto.type, actor.id, dto.reason)
   }
 
   // ── Reports ───────────────────────────────────────────────────────────────

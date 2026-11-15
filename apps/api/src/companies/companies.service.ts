@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { CompaniesRepository } from './companies.repository'
+import { StorageService } from '../storage/storage.service'
 import { ListCompaniesDto } from './dto/list-companies.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly repo: CompaniesRepository) {}
+  constructor(
+    private readonly repo: CompaniesRepository,
+    private readonly storage: StorageService,
+  ) {}
 
   async findAll(query: ListCompaniesDto) {
     return this.repo.findAll({
@@ -39,6 +43,10 @@ export class CompaniesService {
 
     const hasPerm = await this.repo.hasMemberWithPermission(userId, id, 'MANAGE_PROFILE')
     if (!hasPerm) throw new ForbiddenException('Permissão insuficiente')
+
+    if (dto.logoUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.logoUrl, 'entities')
+    }
 
     return this.repo.update(id, dto)
   }

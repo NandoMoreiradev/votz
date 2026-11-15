@@ -7,6 +7,15 @@ import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
 import { AdminRepository } from './admin.repository'
 
+const ASSIGNABLE_USER_TYPES = new Set<string>([
+  UserType.CITIZEN,
+  UserType.PRESS,
+  UserType.NGO,
+  UserType.RESEARCHER,
+  UserType.MODERATOR,
+  UserType.ADMIN,
+])
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name)
@@ -47,10 +56,7 @@ export class AdminService {
     const { user, actionId } = await this.repo.setBan(id, banned, actorId, auditReason)
 
     if (banned) {
-      await this.prisma.refreshToken.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt: new Date() },
-      })
+      await this.revokeRefreshSessions(id)
       this.socketRegistry?.disconnectUser(id)
       await deliverModerationNotice(this.mail, this.prisma, this.logger, {
         actionId,
@@ -64,8 +70,45 @@ export class AdminService {
     return user
   }
 
-  async setUserType(id: string, type: string) {
-    return this.repo.setUserType(id, type)
+  async setUserType(id: string, type: string, actorId: string, reason: string) {
+    if (id === actorId) {
+      throw new BadRequestException('Você não pode alterar o próprio papel.')
+    }
+
+    const trimmedReason = reason?.trim()
+    if (!trimmedReason || trimmedReason.length < 10 || trimmedReason.length > 500) {
+      throw new BadRequestException('Informe um motivo entre 10 e 500 caracteres.')
+    }
+
+    if (!ASSIGNABLE_USER_TYPES.has(type)) {
+      throw new BadRequestException(
+        'Tipos organizacionais (ENTITY, POLITICIAN, COMPANY) devem ser concedidos pelo fluxo de aprovação de cadastro.',
+      )
+    }
+
+    const target = await this.repo.findUserForBan(id)
+    if (!target) {
+      throw new NotFoundException('Usuário não encontrado.')
+    }
+
+    if (target.type === UserType.ADMIN && type !== UserType.ADMIN) {
+      const adminCount = await this.repo.countAdmins()
+      if (adminCount <= 1) {
+        throw new BadRequestException('Não é possível rebaixar o último administrador da plataforma.')
+      }
+    }
+
+    const auditReason = `${target.type} → ${type}: ${trimmedReason}`
+    const { user } = await this.repo.setUserType(id, type, actorId, auditReason)
+    await this.revokeRefreshSessions(id)
+    return user
+  }
+
+  private revokeRefreshSessions(userId: string) {
+    return this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
   }
 
   listReports(search?: string, page = 1, limit = 20) {

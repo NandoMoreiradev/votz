@@ -20,6 +20,7 @@ describe('AdminService', () => {
       stats: jest.fn(),
       listUsers: jest.fn(),
       findUserForBan: jest.fn(),
+      countAdmins: jest.fn(),
       setBan: jest.fn(),
       setUserType: jest.fn(),
       listReports: jest.fn(),
@@ -69,9 +70,6 @@ describe('AdminService', () => {
   })
 
   it('delegates plan and verification mutations', async () => {
-    await service.setUserType('u1', UserType.MODERATOR)
-    expect(repo.setUserType).toHaveBeenCalledWith('u1', UserType.MODERATOR)
-
     await service.verifyEntity('e1', true)
     expect(repo.setEntityVerified).toHaveBeenCalledWith('e1', true)
 
@@ -86,6 +84,67 @@ describe('AdminService', () => {
 
     await service.setCompanyPlan('c1', CompanyPlan.BUSINESS)
     expect(repo.setCompanyPlan).toHaveBeenCalledWith('c1', CompanyPlan.BUSINESS)
+  })
+
+  describe('setUserType', () => {
+    it('changes role, records audit reason with old->new type, and revokes refresh sessions', async () => {
+      repo.findUserForBan.mockResolvedValue({ id: 'u1', type: UserType.CITIZEN })
+      repo.setUserType.mockResolvedValue({
+        user: { id: 'u1', type: UserType.MODERATOR },
+        actionId: 'act-type-1',
+      })
+
+      const res = await service.setUserType(
+        'u1',
+        UserType.MODERATOR,
+        'adm-1',
+        'Promovido após treinamento de moderação.',
+      )
+
+      expect(res).toEqual({ id: 'u1', type: UserType.MODERATOR })
+      expect(repo.setUserType).toHaveBeenCalledWith(
+        'u1',
+        UserType.MODERATOR,
+        'adm-1',
+        'CITIZEN → MODERATOR: Promovido após treinamento de moderação.',
+      )
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      })
+    })
+
+    it('forbids changing own role, short reason, org roles, or demoting the last admin', async () => {
+      await expect(
+        service.setUserType('adm-1', UserType.CITIZEN, 'adm-1', 'Alterando a própria conta'),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.setUserType('u1', UserType.MODERATOR, 'adm-1', 'curto'),
+      ).rejects.toThrow(BadRequestException)
+
+      for (const orgRole of [UserType.ENTITY, UserType.POLITICIAN, UserType.COMPANY]) {
+        await expect(
+          service.setUserType('u1', orgRole, 'adm-1', 'Motivo válido com mais de dez caracteres'),
+        ).rejects.toThrow(BadRequestException)
+      }
+
+      repo.findUserForBan.mockResolvedValueOnce({ id: 'adm-2', type: UserType.ADMIN })
+      repo.countAdmins.mockResolvedValueOnce(1)
+      await expect(
+        service.setUserType('adm-2', UserType.CITIZEN, 'adm-1', 'Tentando rebaixar último admin'),
+      ).rejects.toThrow(BadRequestException)
+
+      repo.findUserForBan.mockResolvedValueOnce({ id: 'adm-2', type: UserType.ADMIN })
+      repo.countAdmins.mockResolvedValueOnce(2)
+      repo.setUserType.mockResolvedValueOnce({
+        user: { id: 'adm-2', type: UserType.MODERATOR },
+        actionId: 'act-type-2',
+      })
+      await expect(
+        service.setUserType('adm-2', UserType.MODERATOR, 'adm-1', 'Rebaixando com outro admin ativo'),
+      ).resolves.toEqual({ id: 'adm-2', type: UserType.MODERATOR })
+    })
   })
 
   describe('banUser', () => {
@@ -342,6 +401,46 @@ describe('AdminRepository.deleteReport (FK dependency cleanup)', () => {
       reportMedia: ['https://pub.r2.dev/reports/photo.jpg'],
       commentMediaKeys: ['comments/voice-1.webm'],
       author: { name: 'João', email: 'joao@votz.app' },
+    })
+  })
+
+  it('AdminRepository.setUserType updates type and creates USER_TYPE_CHANGED audit in one transaction', async () => {
+    const tx: any = {
+      user: {
+        update: jest.fn().mockResolvedValue({ id: 'u-t1', type: UserType.MODERATOR }),
+      },
+      moderationAction: {
+        create: jest.fn().mockResolvedValue({ id: 'act-type-tx' }),
+      },
+    }
+    const prismaMock: any = { $transaction: jest.fn((fn: any) => fn(tx)) }
+
+    const { AdminRepository } = require('./admin.repository')
+    const repo = new AdminRepository(prismaMock)
+    const result = await repo.setUserType(
+      'u-t1',
+      UserType.MODERATOR,
+      'adm-1',
+      'CITIZEN → MODERATOR: Motivo auditado válido.',
+    )
+
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'u-t1' },
+      data: { type: UserType.MODERATOR },
+      select: { id: true, type: true },
+    })
+    expect(tx.moderationAction.create).toHaveBeenCalledWith({
+      data: {
+        action: ModerationActionType.USER_TYPE_CHANGED,
+        targetType: 'USER',
+        targetId: 'u-t1',
+        reason: 'CITIZEN → MODERATOR: Motivo auditado válido.',
+        actorId: 'adm-1',
+      },
+    })
+    expect(result).toEqual({
+      user: { id: 'u-t1', type: UserType.MODERATOR },
+      actionId: 'act-type-tx',
     })
   })
 })

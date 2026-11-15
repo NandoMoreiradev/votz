@@ -234,6 +234,16 @@ const FilterBtn = styled.button<{ $active: boolean }>`
   color: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.muted};
 `
 
+const RoleSelect = styled.select`
+  font-size: 0.8125rem;
+  padding: 4px 8px;
+  border-radius: ${({ theme }) => theme.radii.sm};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surface};
+  color: ${({ theme }) => theme.colors.text};
+  cursor: pointer;
+`
+
 // ── Hooks ──────────────────────────────────────────────────────────────────
 
 function useAdminStats() {
@@ -274,12 +284,22 @@ function useAdminPoliticians(verified: boolean | undefined, page: number) {
 
 // ── Sub-abas ───────────────────────────────────────────────────────────────
 
+const ASSIGNABLE_ROLES = ['CITIZEN', 'PRESS', 'NGO', 'RESEARCHER', 'MODERATOR', 'ADMIN'] as const
+
 function UsersTab() {
   const qc = useQueryClient()
+  const currentUser = useAuthStore((s) => s.user)
+  const isAdmin = currentUser?.type === 'ADMIN'
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null)
   const [banError, setBanError] = useState<string | null>(null)
+  const [typeTarget, setTypeTarget] = useState<{
+    id: string
+    name: string
+    nextType: string
+  } | null>(null)
+  const [typeError, setTypeError] = useState<string | null>(null)
   const { data, isLoading } = useAdminUsers(search, page)
 
   const ban = useMutation({
@@ -292,6 +312,19 @@ function UsersTab() {
     },
     onError: (err) => {
       setBanError(extractApiError(err, 'Não foi possível atualizar o status do usuário.'))
+    },
+  })
+
+  const changeType = useMutation({
+    mutationFn: ({ id, type, reason }: { id: string; type: string; reason: string }) =>
+      api.patch(`/admin/users/${id}/type`, { type, reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setTypeTarget(null)
+      setTypeError(null)
+    },
+    onError: (err) => {
+      setTypeError(extractApiError(err, 'Não foi possível alterar o papel do usuário.'))
     },
   })
 
@@ -310,7 +343,33 @@ function UsersTab() {
               <Tr key={u.id}>
                 <Td>{u.name}</Td>
                 <Td style={{ color: '#6B7280' }}>{u.email}</Td>
-                <Td><Badge>{u.type}</Badge></Td>
+                <Td>
+                  {isAdmin && u.id !== currentUser?.id ? (
+                    <RoleSelect
+                      aria-label={`Papel de ${u.name}`}
+                      value={u.type}
+                      onChange={(ev) => {
+                        const nextType = ev.target.value
+                        if (nextType === u.type) return
+                        setTypeError(null)
+                        setTypeTarget({ id: u.id, name: u.name, nextType })
+                      }}
+                    >
+                      {!ASSIGNABLE_ROLES.includes(u.type) && (
+                        <option value={u.type} disabled>
+                          {u.type} (cadastro)
+                        </option>
+                      )}
+                      {ASSIGNABLE_ROLES.map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </RoleSelect>
+                  ) : (
+                    <Badge>{u.type}</Badge>
+                  )}
+                </Td>
                 <Td>
                   {u.banned
                     ? <Badge $color="#E63946">Banido</Badge>
@@ -350,6 +409,24 @@ function UsersTab() {
         onClose={() => {
           setBanTarget(null)
           setBanError(null)
+        }}
+      />
+      <ModerationReasonModal
+        isOpen={Boolean(typeTarget)}
+        title={`Alterar papel de ${typeTarget?.name ?? 'usuário'}`}
+        description={`Novo papel: ${typeTarget?.nextType ?? ''}. As sessões ativas deste usuário serão revogadas para aplicar a mudança.`}
+        confirmLabel="Confirmar alteração"
+        danger={typeTarget?.nextType === 'ADMIN'}
+        isPending={changeType.isPending}
+        errorMessage={typeError}
+        onConfirm={(reason) => {
+          if (typeTarget) {
+            changeType.mutate({ id: typeTarget.id, type: typeTarget.nextType, reason })
+          }
+        }}
+        onClose={() => {
+          setTypeTarget(null)
+          setTypeError(null)
         }}
       />
     </div>

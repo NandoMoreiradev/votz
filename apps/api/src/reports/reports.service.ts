@@ -8,6 +8,7 @@ import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { AlertsService } from '../alerts/alerts.service'
 import { EmbeddingService } from '../embedding/embedding.service'
+import { StorageService } from '../storage/storage.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { UpdateRecipientDto } from './dto/update-recipient.dto'
@@ -28,11 +29,13 @@ export class ReportsService {
     private readonly alerts: AlertsService,
     private readonly embedding: EmbeddingService,
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
     if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
+    this.storage.assertOwnStorageUrls(dto.media, 'reports')
 
     if (dto.recipientType === RecipientType.POLITICIAN && dto.recipientId) {
       const politician = await this.prisma.politician.findUnique({
@@ -147,6 +150,7 @@ export class ReportsService {
     dto: UpdateStatusDto,
     user: { id: string; type: string },
   ) {
+    this.storage.assertOwnStorageUrls(dto.media, 'reports')
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Report not found')
 
@@ -355,6 +359,7 @@ export class ReportsService {
   }
 
   async dispute(reportId: string, dto: DisputeDto, userId: string) {
+    this.storage.assertOwnStorageUrls(dto.evidence, 'reports')
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Report not found')
 

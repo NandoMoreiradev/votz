@@ -44,6 +44,9 @@ export class UsersService {
     if (id !== requesterId) throw new ForbiddenException()
     const user = await this.repo.findById(id)
     if (!user) throw new NotFoundException('User not found')
+    if (dto.avatarUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.avatarUrl, 'avatars')
+    }
     return this.repo.updateProfile(id, {
       name: dto.name,
       bio: dto.bio,

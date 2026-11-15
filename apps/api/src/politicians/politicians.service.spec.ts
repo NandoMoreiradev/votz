@@ -5,12 +5,18 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common'
+import { plainToInstance } from 'class-transformer'
+import { validate } from 'class-validator'
 import { OrgPermission, PoliticianStatus } from '@prisma/client'
 import { EventType, ReportStatus } from '@votz/shared-types'
 import { PoliticiansService } from './politicians.service'
 import { PoliticiansRepository } from './politicians.repository'
+import { UpdatePoliticianDto } from './dto/update-politician.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
+import { StorageService } from '../storage/storage.service'
+
+const STORAGE_BASE = 'https://cdn.votz.app'
 
 const mockRepo = {
   create: jest.fn(),
@@ -33,6 +39,15 @@ const mockPrisma = {
 }
 
 const mockTimeline = { record: jest.fn() }
+const mockStorage = {
+  assertOwnStorageUrl: jest.fn(
+    (url: string, folder?: string, opts?: { allowExternalImageHosts?: boolean }) => {
+      if (url.startsWith(`${STORAGE_BASE}/${folder ? `${folder}/` : ''}`)) return
+      if (opts?.allowExternalImageHosts && url.startsWith('https://www.camara.leg.br/')) return
+      throw new BadRequestException('Envie o arquivo pelo Votz')
+    },
+  ),
+}
 
 describe('PoliticiansService', () => {
   let service: PoliticiansService
@@ -44,6 +59,7 @@ describe('PoliticiansService', () => {
         { provide: PoliticiansRepository, useValue: mockRepo },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: TimelineService, useValue: mockTimeline },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile()
 
@@ -154,6 +170,35 @@ describe('PoliticiansService', () => {
         }),
       )
       expect(mockRepo.updateMandatometer).toHaveBeenCalledWith('p1', { total: 1 })
+    })
+  })
+
+  describe('update avatarUrl & website validation (A4)', () => {
+    it('rejects untrusted external or wrong-folder avatarUrl, accepts avatars/ or allowlisted official hosts, and rejects ftp:// website', async () => {
+      mockPrisma.orgMembership.findFirst.mockResolvedValue({
+        role: { permissions: [OrgPermission.MANAGE_PROFILE] },
+      })
+
+      await expect(
+        service.update('p1', 'u1', { avatarUrl: 'https://evil.example/a.jpg' }),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.update('p1', 'u1', { avatarUrl: `${STORAGE_BASE}/reports/wrong.jpg` }),
+      ).rejects.toThrow(BadRequestException)
+
+      mockRepo.update.mockResolvedValue({ id: 'p1', avatarUrl: `${STORAGE_BASE}/avatars/ok.jpg` })
+      await expect(
+        service.update('p1', 'u1', { avatarUrl: `${STORAGE_BASE}/avatars/ok.jpg` }),
+      ).resolves.toMatchObject({ avatarUrl: `${STORAGE_BASE}/avatars/ok.jpg` })
+
+      mockRepo.update.mockResolvedValue({ id: 'p1', avatarUrl: 'https://www.camara.leg.br/dep.jpg' })
+      await expect(
+        service.update('p1', 'u1', { avatarUrl: 'https://www.camara.leg.br/dep.jpg' }),
+      ).resolves.toMatchObject({ avatarUrl: 'https://www.camara.leg.br/dep.jpg' })
+
+      const ftpDto = plainToInstance(UpdatePoliticianDto, { website: 'ftp://senado.leg.br' })
+      expect(await validate(ftpDto)).not.toHaveLength(0)
     })
   })
 })

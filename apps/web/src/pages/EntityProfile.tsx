@@ -574,7 +574,7 @@ export function EntityProfile() {
     mutationFn: async (file: File) => {
       const form = new FormData()
       form.append('file', file)
-      const { data: upload } = await api.post<{ url: string }>('/storage/upload/avatar', form)
+      const { data: upload } = await api.post<{ url: string }>('/storage/upload/entity-logo', form)
       await api.patch(`/entities/${id}`, { logoUrl: upload.url })
       return upload.url
     },

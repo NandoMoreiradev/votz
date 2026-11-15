@@ -76,12 +76,12 @@ export class UpdateEntityDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   website?: string
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   logoUrl?: string
 
   @ApiPropertyOptional({ type: SlaHoursDto })

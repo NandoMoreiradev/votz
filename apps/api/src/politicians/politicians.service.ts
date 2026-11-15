@@ -8,6 +8,7 @@ import {
 import { OrgPermission, PoliticianStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
+import { StorageService } from '../storage/storage.service'
 import { PoliticiansRepository } from './politicians.repository'
 import { CreatePoliticianDto } from './dto/create-politician.dto'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'
@@ -20,6 +21,7 @@ export class PoliticiansService {
     private readonly repo: PoliticiansRepository,
     private readonly prisma: PrismaService,
     private readonly timeline: TimelineService,
+    private readonly storage: StorageService,
   ) {}
 
   async register(userId: string, dto: CreatePoliticianDto) {
@@ -87,6 +89,9 @@ export class PoliticiansService {
     })
     if (!membership || !membership.role.permissions.includes(OrgPermission.MANAGE_PROFILE)) {
       throw new ForbiddenException()
+    }
+    if (dto.avatarUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.avatarUrl, 'avatars', { allowExternalImageHosts: true })
     }
     const data: Record<string, unknown> = { ...dto }
     if (dto.termStart) data.termStart = new Date(dto.termStart)

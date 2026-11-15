@@ -4,7 +4,7 @@ import { Job } from 'bullmq'
 import OpenAI, { toFile } from 'openai'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service'
-import { StorageService } from '../storage/storage.service'
+import { StorageService, isCommentMediaKey } from '../storage/storage.service'
 import { TRANSCRIPTION_QUEUE, TranscriptionJob } from './transcription.service'
 
 const EXT_MIME: Record<string, string> = {
@@ -34,6 +34,10 @@ export class TranscriptionProcessor extends WorkerHost {
 
   async process(job: Job<TranscriptionJob>): Promise<void> {
     const { commentId, mediaKey } = job.data
+
+    if (!isCommentMediaKey(mediaKey)) {
+      throw new Error(`Chave de mídia inválida para transcrição: ${mediaKey}`)
+    }
 
     const signedUrl = await this.storage.getSignedDownloadUrl(mediaKey, 300)
     const response = await fetch(signedUrl)

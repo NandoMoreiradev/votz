@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { ModerationActionType } from '@prisma/client'
+import { ModerationActionType, UserType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
@@ -53,8 +53,28 @@ export class AdminRepository {
     })
   }
 
-  async setUserType(id: string, type: string) {
-    return this.prisma.user.update({ where: { id }, data: { type: type as any }, select: { id: true, type: true } })
+  async countAdmins() {
+    return this.prisma.user.count({ where: { type: UserType.ADMIN } })
+  }
+
+  async setUserType(id: string, type: string, actorId: string, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data: { type: type as UserType },
+        select: { id: true, type: true },
+      })
+      const action = await tx.moderationAction.create({
+        data: {
+          action: ModerationActionType.USER_TYPE_CHANGED,
+          targetType: 'USER',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+      return { user, actionId: action.id }
+    })
   }
 
   // ── Reports ───────────────────────────────────────────────────────────────

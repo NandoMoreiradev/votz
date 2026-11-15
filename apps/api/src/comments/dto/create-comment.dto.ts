@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsEnum, IsInt, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator'
+import { IsEnum, IsInt, IsOptional, IsString, IsUrl, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator'
+import { COMMENT_MEDIA_KEY_REGEX } from '../../storage/storage.service'
 
 export enum CommentMediaType {
   TEXT  = 'TEXT',
@@ -26,13 +27,16 @@ export class CreateCommentDto {
 
   @ApiPropertyOptional({ description: 'URL pública do áudio/vídeo no R2' })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(500)
   mediaUrl?: string
 
   @ApiPropertyOptional({ description: 'Chave do objeto no R2' })
   @IsOptional()
   @IsString()
+  @Matches(COMMENT_MEDIA_KEY_REGEX, {
+    message: 'mediaKey inválido para mídia de comentário',
+  })
   @MaxLength(300)
   mediaKey?: string
 

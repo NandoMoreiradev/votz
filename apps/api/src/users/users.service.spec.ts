@@ -33,6 +33,11 @@ describe('UsersService', () => {
     storage = {
       delete: jest.fn().mockResolvedValue(undefined),
       extractKeyFromUrl: jest.fn().mockReturnValue(null),
+      assertOwnStorageUrl: jest.fn((url: string, folder?: string) => {
+        if (!url.startsWith(`https://pub-r2.dev/${folder ? `${folder}/` : ''}`)) {
+          throw new BadRequestException('Envie o arquivo pelo Votz')
+        }
+      }),
     }
     lgpdQueue = {
       add: jest.fn().mockResolvedValue({ id: 'job-1' }),
@@ -353,6 +358,25 @@ describe('UsersService', () => {
       expect(tx.accessLog.deleteMany).not.toHaveBeenCalled()
       expect(tx.accessLog.delete).not.toHaveBeenCalled()
       expect(storage.delete).toHaveBeenCalledWith('avatars/u2.png')
+    })
+  })
+
+  describe('updateProfile avatarUrl validation (A4)', () => {
+    it('rejects external and wrong-folder avatarUrl and accepts avatars/ storage URL', async () => {
+      repo.findById.mockResolvedValue({ id: 'u1' })
+
+      await expect(
+        service.updateProfile('u1', 'u1', { avatarUrl: 'https://evil.example/avatar.jpg' }),
+      ).rejects.toThrow(BadRequestException)
+
+      await expect(
+        service.updateProfile('u1', 'u1', { avatarUrl: 'https://pub-r2.dev/entities/wrong.jpg' }),
+      ).rejects.toThrow(BadRequestException)
+
+      repo.updateProfile.mockResolvedValue({ id: 'u1', avatarUrl: 'https://pub-r2.dev/avatars/u1.png' })
+      await expect(
+        service.updateProfile('u1', 'u1', { avatarUrl: 'https://pub-r2.dev/avatars/u1.png' }),
+      ).resolves.toMatchObject({ avatarUrl: 'https://pub-r2.dev/avatars/u1.png' })
     })
   })
 })

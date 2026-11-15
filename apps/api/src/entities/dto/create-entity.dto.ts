@@ -32,6 +32,6 @@ export class CreateEntityDto {
 
   @ApiPropertyOptional({ example: 'https://prefeitura.sp.gov.br' })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   website?: string
 }

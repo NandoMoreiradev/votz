@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common'
 import { OrgPermission } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
+import { StorageService } from '../storage/storage.service'
 import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
@@ -18,6 +19,7 @@ export class EntitiesService {
   constructor(
     private readonly repo: EntitiesRepository,
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
   ) {}
 
   async register(userId: string, dto: CreateEntityDto) {
@@ -82,6 +84,9 @@ export class EntitiesService {
     })
     if (!membership || !membership.role.permissions.includes(OrgPermission.MANAGE_PROFILE)) {
       throw new ForbiddenException()
+    }
+    if (dto.logoUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.logoUrl, 'entities')
     }
     return this.repo.update(id, dto as object)
   }

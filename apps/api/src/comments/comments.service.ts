@@ -5,7 +5,7 @@ import { CommentsRepository } from './comments.repository'
 import { NotificationsService } from '../notifications/notifications.service'
 import { PressureService } from '../press/pressure.service'
 import { TranscriptionService } from '../transcription/transcription.service'
-import { StorageService } from '../storage/storage.service'
+import { StorageService, isCommentMediaKey } from '../storage/storage.service'
 import { MailService } from '../mail/mail.service'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
 import { CreateCommentDto, CommentMediaType } from './dto/create-comment.dto'
@@ -47,6 +47,7 @@ export class CommentsService {
       if (!dto.mediaUrl || !dto.mediaKey) {
         throw new BadRequestException('mediaUrl e mediaKey são obrigatórios para comentários de voz')
       }
+      this.validateCommentMedia(dto.mediaKey, dto.mediaUrl)
 
       const orgType = userType === UserType.POLITICIAN ? 'POLITICIAN' : 'ENTITY'
       const membership = await this.prisma.orgMembership.findFirst({
@@ -75,6 +76,11 @@ export class CommentsService {
           'Você precisa ser destinatário ou ter avocado o relato para comentar por voz',
         )
       }
+    } else if (dto.mediaKey !== undefined || dto.mediaUrl !== undefined) {
+      if (!dto.mediaKey || !dto.mediaUrl) {
+        throw new BadRequestException('mediaUrl e mediaKey são obrigatórios juntos')
+      }
+      this.validateCommentMedia(dto.mediaKey, dto.mediaUrl)
     }
 
     const rawContent = isVoice ? (dto.content ?? '') : (dto.content ?? '')
@@ -154,5 +160,15 @@ export class CommentsService {
     const deleted = await this.repo.delete(id)
     cleanupR2Keys(this.storage, [comment.mediaKey], this.logger)
     return deleted
+  }
+
+  private validateCommentMedia(mediaKey: string, mediaUrl: string) {
+    if (!isCommentMediaKey(mediaKey)) {
+      throw new BadRequestException('Chave de mídia de comentário inválida')
+    }
+    const expectedUrl = this.storage.getPublicUrl(mediaKey)
+    if (mediaUrl !== expectedUrl) {
+      throw new BadRequestException('mediaUrl não corresponde ao arquivo enviado no Votz')
+    }
   }
 }

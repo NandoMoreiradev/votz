@@ -23,7 +23,7 @@ export class UpdateStatusDto {
   @ApiPropertyOptional({ type: [String], description: 'URLs de mídia já enviadas ao R2 (máx. 4)' })
   @IsOptional()
   @IsArray()
-  @IsUrl({}, { each: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { each: true })
   @ArrayMaxSize(4)
   media?: string[]
 }
