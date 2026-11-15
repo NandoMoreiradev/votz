@@ -265,8 +265,13 @@ export function Planos() {
         plan: planKey,
       })
       window.location.href = data.url
-    } catch {
-      alert('Erro ao iniciar checkout. Tente novamente.')
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 403) {
+        alert('Só quem administra a organização pode contratar ou gerenciar o plano')
+      } else {
+        alert('Erro ao iniciar checkout. Tente novamente.')
+      }
     } finally {
       setLoadingPlan(null)
     }

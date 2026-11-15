@@ -6,6 +6,7 @@ import { UpdateCommentDto } from './dto/update-comment.dto'
 import { DeleteCommentDto } from './dto/delete-comment.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('comments')
 @Controller('reports/:reportId/comments')
@@ -24,6 +25,7 @@ export class CommentsController {
     return this.commentsService.create(reportId, user.id, user.type, dto)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List comments for a report (threaded)' })
   findByReport(@Param('reportId') reportId: string) {

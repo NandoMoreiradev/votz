@@ -138,6 +138,7 @@ enum OrgPermission {
   VIEW_ANALYTICS
   EXPORT_DATA
   MANAGE_BRANCHES
+  MANAGE_BILLING
 }
 
 enum MembershipStatus {
@@ -255,9 +256,10 @@ model User {
   mfaBackupCodes       String[]
   lastLoginAt              DateTime?
   inactivityNoticeSentAt   DateTime?
-  refreshTokenHash     String?
   failedLoginAttempts      Int       @default(0)
   lockedUntil              DateTime?
+  mfaFailedAttempts        Int       @default(0)
+  mfaLockedUntil           DateTime?
   emailVerificationToken   String?   @unique
   emailVerificationExpires DateTime?
   termsAcceptedAt          DateTime?
@@ -285,6 +287,7 @@ model User {
   debatePollVotes      DebatePollVote[]
   moderationActions    ModerationAction[] @relation("ModerationActor")
   contentFlags         ContentFlag[]      @relation("FlagReporter")
+  refreshTokens        RefreshToken[]
 
   @@map("users")
 }
@@ -908,4 +911,29 @@ model ContentFlag {
   @@unique([reporterId, targetType, targetId])
   @@index([status, createdAt])
   @@map("content_flags")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+
+  @@map("stripe_events")
 }

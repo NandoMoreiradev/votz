@@ -4,6 +4,7 @@ import { VotesService } from './votes.service'
 import { CastVoteDto } from './dto/cast-vote.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('votes')
 @Controller('reports/:reportId/votes')
@@ -34,6 +35,7 @@ export class VotesController {
     return this.votesService.myVotes(reportId, user.id)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Get vote counts for a report' })
   counts(@Param('reportId') reportId: string) {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import { FlagStatus } from '@prisma/client'
@@ -55,7 +55,7 @@ export class AdminFlagsController {
   @Patch(':id/resolve')
   @ApiOperation({ summary: 'Resolver sinalização (descartar ou remover conteúdo)' })
   resolveFlag(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ResolveFlagDto,
     @CurrentUser() actor: { id: string; type: string },
   ) {

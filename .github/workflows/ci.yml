@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Typecheck, Tests, Build & Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/votz
+        run: npm run db:generate
+
+      - name: Build shared packages
+        run: |
+          npm run build --workspace=packages/shared-types
+          npm run build --workspace=packages/zod-schemas
+
+      - name: Typecheck API and Web
+        run: |
+          npx tsc --noEmit -p apps/api/tsconfig.json
+          npx tsc --noEmit -p apps/web/tsconfig.json
+
+      - name: Run API unit and security tests
+        run: npm test --workspace=apps/api
+
+      - name: Build API and Web
+        run: |
+          npm run build --workspace=apps/api
+          npm run build --workspace=apps/web
+
+      - name: Audit production dependencies against allowlist
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const allowlistedHighOrCritical = new Set([
+              "@mapbox/node-pre-gyp",
+              "@nestjs/config",
+              "@nestjs/platform-express",
+              "@nestjs/swagger",
+              "adm-zip",
+              "body-parser",
+              "js-yaml",
+              "lodash",
+              "multer",
+              "tar",
+            ]);
+            let jsonOut = "";
+            try {
+              jsonOut = execSync("npm audit --omit=dev --json", { encoding: "utf8" });
+            } catch (err) {
+              jsonOut = err.stdout ? String(err.stdout) : "";
+            }
+            if (!jsonOut) {
+              console.error("Failed to run npm audit --omit=dev --json");
+              process.exit(1);
+            }
+            const report = JSON.parse(jsonOut);
+            const unexpected = Object.entries(report.vulnerabilities || {})
+              .filter(([, info]) => info.severity === "high" || info.severity === "critical")
+              .filter(([pkg]) => !allowlistedHighOrCritical.has(pkg));
+            if (unexpected.length > 0) {
+              console.error("Unallowlisted high/critical production vulnerabilities:", unexpected);
+              process.exit(1);
+            }
+            console.log("All high/critical production vulnerabilities match docs/security/audit-allowlist.md");
+          '

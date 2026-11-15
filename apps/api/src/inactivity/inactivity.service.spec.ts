@@ -188,4 +188,93 @@ describe('InactivityService', () => {
       })
     })
   })
+
+  it('does not set inactivityNoticeSentAt or anonymize user later when sendInactivityNotice throws', async () => {
+    const noticeRunDate = new Date('2026-10-01T05:00:00.000Z')
+    const laterDate = new Date('2026-11-15T05:00:00.000Z')
+    const users = [
+      {
+        id: 'u-fail-mail',
+        email: 'fail@votz.app',
+        name: 'Fail',
+        type: UserType.CITIZEN,
+        banned: false,
+        lastLoginAt: new Date('2023-01-01T00:00:00.000Z'),
+        createdAt: new Date('2023-01-01T00:00:00.000Z'),
+        inactivityNoticeSentAt: null as Date | null,
+      },
+    ]
+
+    mockPrisma.user.findMany
+      .mockResolvedValueOnce(users)
+      .mockImplementationOnce(async () =>
+        users.filter((u) => u.inactivityNoticeSentAt !== null),
+      )
+
+    mockMail.sendInactivityNotice.mockRejectedValueOnce(new Error('SMTP down'))
+
+    const notified = await service.sendInactivityNotices(noticeRunDate)
+    expect(notified).toBe(0)
+    expect(mockPrisma.user.update).not.toHaveBeenCalled()
+    expect(users[0].inactivityNoticeSentAt).toBeNull()
+
+    const anonymized = await service.anonymizeInactiveUsers(laterDate)
+    expect(anonymized).toBe(0)
+    expect(mockUsersService.eraseUserData).not.toHaveBeenCalled()
+  })
+
+  it('processes more than 100 records across multiple batches without cursor skipping', async () => {
+    const now = new Date('2026-11-14T05:00:00.000Z')
+    const total = 105
+    const allUsers = Array.from({ length: total }, (_, idx) => ({
+      id: `u-${String(idx + 1).padStart(3, '0')}`,
+      email: `user${idx + 1}@votz.app`,
+      name: `User ${idx + 1}`,
+      type: UserType.CITIZEN,
+      banned: false,
+      lastLoginAt: new Date('2023-01-01T00:00:00.000Z'),
+      createdAt: new Date('2023-01-01T00:00:00.000Z'),
+      inactivityNoticeSentAt: null as Date | null,
+    }))
+
+    mockPrisma.user.update.mockImplementation(async ({ where, data }: any) => {
+      const target = allUsers.find((u) => u.id === where.id)
+      if (target && 'inactivityNoticeSentAt' in data) {
+        target.inactivityNoticeSentAt = data.inactivityNoticeSentAt
+      }
+      return target
+    })
+
+    mockPrisma.user.findMany.mockImplementation(async (args: any) => {
+      const excluded = new Set<string>(args?.where?.id?.notIn ?? [])
+      return allUsers
+        .filter((u) => u.inactivityNoticeSentAt === null && !excluded.has(u.id))
+        .slice(0, args?.take ?? 100)
+    })
+
+    const notified = await service.sendInactivityNotices(now)
+    expect(notified).toBe(total)
+    expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2)
+    expect(mockPrisma.user.findMany.mock.calls[1][0]).not.toHaveProperty('cursor')
+    expect(mockPrisma.user.findMany.mock.calls[1][0]).not.toHaveProperty('skip')
+    expect(allUsers.every((u) => u.inactivityNoticeSentAt === now)).toBe(true)
+
+    const later = new Date('2026-12-20T05:00:00.000Z')
+    const erasedIds = new Set<string>()
+    mockUsersService.eraseUserData.mockImplementation(async (id: string) => {
+      erasedIds.add(id)
+    })
+    mockPrisma.user.findMany.mockClear()
+    mockPrisma.user.findMany.mockImplementation(async (args: any) => {
+      const excluded = new Set<string>(args?.where?.id?.notIn ?? [])
+      return allUsers
+        .filter((u) => !erasedIds.has(u.id) && !excluded.has(u.id))
+        .slice(0, args?.take ?? 100)
+    })
+
+    const anonymized = await service.anonymizeInactiveUsers(later)
+    expect(anonymized).toBe(total)
+    expect(erasedIds.size).toBe(total)
+    expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2)
+  })
 })

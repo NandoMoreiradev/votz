@@ -1,11 +1,13 @@
 import { Body, Controller, Headers, Post, RawBodyRequest, Req, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { IsEnum, IsString } from 'class-validator'
-import { OrgType } from '@prisma/client'
+import { OrgPermission, OrgType } from '@prisma/client'
 import { Request } from 'express'
 import { SubscricoesService } from './subscricoes.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
+import { OrgPermissionGuard, RequireOrgPermission } from '../org-memberships/org-memberships.guard'
 
 class CheckoutDto {
   @IsString() orgId: string
@@ -24,7 +26,8 @@ export class SubscricoesController {
   constructor(private readonly service: SubscricoesService) {}
 
   @Post('checkout')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_BILLING)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Criar sessão de checkout Stripe para upgrade de plano' })
   checkout(
@@ -35,13 +38,15 @@ export class SubscricoesController {
   }
 
   @Post('portal')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_BILLING)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Criar sessão do portal de cobrança Stripe (gerenciar/cancelar)' })
   portal(@Body() dto: PortalDto) {
     return this.service.criarPortal(dto.orgId, dto.orgType)
   }
 
+  @Public()
   @Post('webhook')
   @ApiOperation({ summary: 'Receber eventos do Stripe (uso interno — verificado por assinatura)' })
   webhook(

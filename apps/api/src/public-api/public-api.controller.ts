@@ -23,6 +23,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler'
 import { PublicApiService } from './public-api.service'
 import { ApiKeyGuard } from './guards/api-key.guard'
+import { Public } from '../auth/decorators/public.decorator'
 import { ListPublicReportsDto } from './dto/list-public-reports.dto'
 import { ListPublicSurtosDto } from './dto/list-public-surtos.dto'
 import { ListPublicEntitiesDto } from './dto/list-public-entities.dto'
@@ -33,6 +34,7 @@ import { ListPublicEntitiesDto } from './dto/list-public-entities.dto'
 @ApiUnauthorizedResponse({ description: 'API key ausente ou inválida' })
 @ApiTooManyRequestsResponse({ description: 'Limite de 1.000 req/h excedido (FREE) ou 10.000 req/h (PAID)' })
 @Controller('api-publica')
+@Public()
 @UseGuards(ApiKeyGuard)
 @SkipThrottle()
 export class PublicApiController {

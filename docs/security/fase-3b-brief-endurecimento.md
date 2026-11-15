@@ -33,7 +33,7 @@ O `render.yaml` do `votz-web` só define `Cache-Control`. Adicione, em `headers`
 ## T4 — M6: escapar HTML no popup do mapa e nos e-mails
 
 1. **Mapa** (`apps/web/src/pages/MapView.tsx`): o popup monta uma string HTML com `props.title`, `categoryLabel` etc. e usa `setHTML`. Troque por **nós DOM criados com `textContent`** (ou `setDOMContent`), nunca interpolando texto de usuário em HTML. Mantenha a aparência.
-2. **E-mails** (`apps/api/src/mail/mail.service.ts`): crie `escapeHtml()` (`& < > " '`) e aplique a **todo** valor interpolado vindo de usuário/organização: `name`, `orgName`, `roleName`, `reviewNote`, etc. No `subject`, remova quebras de linha (`\r\n`) para evitar injeção de cabeçalho. Teste: `name = '<a href="https://x">clique</a>'` aparece escapado no HTML enviado.
+2. **E-mails** (`apps/api/src/mail/mail.service.ts`): crie `escapeHtml()` (`& < > " '`) e aplique a **todo** valor interpolado vindo de usuário/organização/moderador: `name`, `orgName`, `roleName`, `reviewNote`, e também o `reason` e o `name` de `sendModerationNotice` e o `name` de `sendInactivityNotice` (métodos criados nos briefs 2B e 2C). No `subject`, remova quebras de linha (`\r\n`) para evitar injeção de cabeçalho. Teste: `name = '<a href="https://x">clique</a>'` aparece escapado no HTML enviado.
 
 ## T5 — M7: autorização "negada por padrão"
 

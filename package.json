@@ -21,7 +21,8 @@
     "db:studio": "npm run db:studio --workspace=packages/database",
     "db:seed": "npx prisma db seed",
     "db:import-public": "dotenv -e .env -- npx ts-node --project packages/database/tsconfig.json packages/database/prisma/import-public-data.ts",
-    "db:import-fotos": "dotenv -e .env -- npx ts-node --project packages/database/tsconfig.json packages/database/prisma/import-fotos-tse.ts"
+    "db:import-fotos": "dotenv -e .env -- npx ts-node --project packages/database/tsconfig.json packages/database/prisma/import-fotos-tse.ts",
+    "security:encrypt-mfa-secrets": "npm run security:encrypt-mfa-secrets --workspace=apps/api"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

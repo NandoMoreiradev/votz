@@ -5,24 +5,28 @@ import { ListCompaniesDto } from './dto/list-companies.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('companies')
 @Controller('companies')
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List companies with optional filters' })
   findAll(@Query() query: ListCompaniesDto) {
     return this.companiesService.findAll(query)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get company public profile with stats' })
   findById(@Param('id') id: string) {
     return this.companiesService.findById(id)
   }
 
+  @Public()
   @Get(':id/reports')
   @ApiOperation({ summary: 'List reports directed at a company' })
   @ApiQuery({ name: 'page', required: false })

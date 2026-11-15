@@ -7,6 +7,7 @@ import { ListPropostasQueryDto } from './dto/list-propostas-query.dto'
 import { VotePropostaDto } from './dto/vote-proposta.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('propostas')
 @Controller('propostas')
@@ -24,12 +25,14 @@ export class PropostasController {
     return this.propostasService.create(dto, user)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Listar propostas com filtros e paginação' })
   findAll(@Query() query: ListPropostasQueryDto) {
     return this.propostasService.findAll(query)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Buscar proposta por ID com timeline' })
   findById(@Param('id') id: string) {

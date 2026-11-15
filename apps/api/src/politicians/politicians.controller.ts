@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PlanGuard } from '../auth/guards/plan.guard'
 import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('politicians')
 @Controller('politicians')
@@ -30,12 +31,14 @@ export class PoliticiansController {
     return this.service.register(user.id, dto)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List politicians with optional filters' })
   findAll(@Query() query: ListPoliticiansDto) {
     return this.service.findAll(query)
   }
 
+  @Public()
   @Get('cities')
   @ApiOperation({ summary: 'List distinct cities that have politicians, optionally filtered by state' })
   @ApiQuery({ name: 'state', required: false })
@@ -43,12 +46,14 @@ export class PoliticiansController {
     return this.service.findCities(state)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get politician public profile with Mandatômetro stats' })
   findById(@Param('id') id: string) {
     return this.service.findById(id)
   }
 
+  @Public()
   @Get(':id/reports')
   @ApiOperation({ summary: 'List reports directed at a politician' })
   @ApiQuery({ name: 'page', required: false })

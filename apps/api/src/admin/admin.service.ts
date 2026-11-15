@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import { UserType } from '@prisma/client'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
+import { SocketSessionRegistry } from '../common/security/socket-session.registry'
 import { MailService } from '../mail/mail.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
@@ -15,6 +16,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly mail: MailService,
+    @Optional() private readonly socketRegistry?: SocketSessionRegistry,
   ) {}
 
   stats() { return this.repo.stats() }
@@ -45,6 +47,11 @@ export class AdminService {
     const { user, actionId } = await this.repo.setBan(id, banned, actorId, auditReason)
 
     if (banned) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      })
+      this.socketRegistry?.disconnectUser(id)
       await deliverModerationNotice(this.mail, this.prisma, this.logger, {
         actionId,
         email: target.email,

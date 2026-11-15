@@ -16,6 +16,7 @@ export interface JwtPayload {
   sub: string
   email: string
   type: string
+  typ?: string
   ctx?: ActiveContextPayload
 }
 
@@ -29,10 +30,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
+      algorithms: ['HS256'],
     })
   }
 
   async validate(payload: JwtPayload) {
+    if (payload.typ !== 'access') {
+      throw new UnauthorizedException()
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, type: true, banned: true, emailVerified: true },

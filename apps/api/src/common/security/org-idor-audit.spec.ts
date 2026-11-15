@@ -1,0 +1,315 @@
+jest.mock('otplib', () => ({
+  generateSecret: jest.fn(() => 'SECRET'),
+  generateURI: jest.fn(() => 'otpauth://totp/Votz'),
+  verify: jest.fn(async () => ({ valid: false })),
+}))
+jest.mock('isomorphic-dompurify', () => ({
+  __esModule: true,
+  default: { sanitize: (v: string) => v },
+}))
+
+import { getQueueToken } from '@nestjs/bullmq'
+import {
+  ExecutionContext,
+  INestApplication,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { Reflector } from '@nestjs/core'
+import { Test } from '@nestjs/testing'
+import { OrgPermission, OrgType, UserType } from '@prisma/client'
+import { PropostaStatus } from '@votz/shared-types'
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
+import { RolesGuard } from '../../auth/guards/roles.guard'
+import { DebatesController } from '../../debates/debates.controller'
+import { DebatesRepository } from '../../debates/debates.repository'
+import { DEBATES_QUEUE, DebatesService } from '../../debates/debates.service'
+import { OrgMembershipsController } from '../../org-memberships/org-memberships.controller'
+import { OrgPermissionGuard } from '../../org-memberships/org-memberships.guard'
+import { OrgMembershipsRepository } from '../../org-memberships/org-memberships.repository'
+import { OrgMembershipsService } from '../../org-memberships/org-memberships.service'
+import { PropostasController } from '../../propostas/propostas.controller'
+import { PropostasRepository } from '../../propostas/propostas.repository'
+import { PropostasService } from '../../propostas/propostas.service'
+import { RegistrationRequestsController } from '../../registration-requests/registration-requests.controller'
+import { RegistrationRequestsService } from '../../registration-requests/registration-requests.service'
+import { SubscricoesController } from '../../subscricoes/subscricoes.controller'
+import { SubscricoesService } from '../../subscricoes/subscricoes.service'
+
+const ORG_A_ID = '11111111-1111-4111-8111-111111111111'
+const ORG_B_ID = '22222222-2222-4222-8222-222222222222'
+const TARGET_USER_ID = '33333333-3333-4333-8333-333333333333'
+const ROLE_B_ID = '44444444-4444-4444-8444-444444444444'
+const PROPOSTA_B_ID = '55555555-5555-4555-8555-555555555555'
+const PROPOSTA_MISSING_ID = '66666666-6666-4666-8666-666666666666'
+const DEBATE_B_ID = '77777777-7777-4777-8777-777777777777'
+
+describe('Cross-tenant & Organization Authorization IDOR audit', () => {
+  let app: INestApplication
+  let baseUrl: string
+  let orgMembershipRepo: any
+  let propostasRepo: any
+  let debatesRepo: any
+  let orgMembershipsService: any
+  let subscricoesService: any
+  let regReqService: any
+
+  const userA = {
+    id: 'user-a',
+    email: 'a@votz.app',
+    type: UserType.POLITICIAN,
+  }
+
+  beforeAll(async () => {
+    orgMembershipRepo = {
+      findMembership: jest.fn(async (userId: string, orgType: OrgType, orgId: string) => {
+        if (userId === userA.id && orgType === OrgType.ENTITY && orgId === ORG_A_ID) {
+          return {
+            status: 'ACTIVE',
+            role: { permissions: [OrgPermission.MANAGE_MEMBERS, OrgPermission.MANAGE_BILLING] },
+          }
+        }
+        return null
+      }),
+    }
+
+    orgMembershipsService = {
+      listRoles: jest.fn().mockResolvedValue([]),
+      createRole: jest.fn().mockResolvedValue({ id: 'role-new' }),
+      updateRole: jest.fn().mockResolvedValue({}),
+      deleteRole: jest.fn().mockResolvedValue({}),
+      listMembers: jest.fn().mockResolvedValue([]),
+      updateMemberRole: jest.fn().mockResolvedValue({}),
+      removeMember: jest.fn().mockResolvedValue({}),
+      invite: jest.fn().mockResolvedValue({}),
+    }
+
+    subscricoesService = {
+      criarCheckout: jest.fn().mockResolvedValue({ url: 'https://checkout.stripe.com/test' }),
+      criarPortal: jest.fn().mockResolvedValue({ url: 'https://billing.stripe.com/test' }),
+      handleWebhook: jest.fn().mockResolvedValue({ received: true }),
+    }
+
+    regReqService = {
+      create: jest.fn(),
+      findMyRequests: jest.fn().mockResolvedValue([]),
+      findAll: jest.fn().mockResolvedValue({ data: [], total: 0 }),
+      approve: jest.fn().mockResolvedValue({}),
+      reject: jest.fn().mockResolvedValue({}),
+      getDocumentUrls: jest.fn().mockResolvedValue({}),
+    }
+
+    propostasRepo = {
+      findPoliticianByUserId: jest.fn(async (userId: string) =>
+        userId === userA.id ? { id: ORG_A_ID, plan: 'MANDATOMETRO_PRO' } : null,
+      ),
+      findById: jest.fn(async (id: string) => {
+        if (id === PROPOSTA_B_ID) return { id: PROPOSTA_B_ID, politicoId: ORG_B_ID }
+        return null
+      }),
+      updateStatus: jest.fn().mockResolvedValue({}),
+      addTimeline: jest.fn().mockResolvedValue({}),
+    }
+
+    debatesRepo = {
+      findPoliticianByUserId: jest.fn(async (userId: string) =>
+        userId === userA.id ? { orgId: ORG_A_ID } : null,
+      ),
+      findById: jest.fn(async (id: string) => {
+        if (id === DEBATE_B_ID) return { id: DEBATE_B_ID, creatorId: ORG_B_ID, status: 'SCHEDULED' }
+        return null
+      }),
+      update: jest.fn().mockResolvedValue({}),
+      findParticipant: jest.fn().mockResolvedValue(null),
+      isParticipant: jest.fn().mockResolvedValue(false),
+    }
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [
+        OrgMembershipsController,
+        SubscricoesController,
+        RegistrationRequestsController,
+        PropostasController,
+        DebatesController,
+      ],
+      providers: [
+        Reflector,
+        RolesGuard,
+        OrgPermissionGuard,
+        PropostasService,
+        DebatesService,
+        { provide: OrgMembershipsRepository, useValue: orgMembershipRepo },
+        { provide: OrgMembershipsService, useValue: orgMembershipsService },
+        { provide: SubscricoesService, useValue: subscricoesService },
+        { provide: RegistrationRequestsService, useValue: regReqService },
+        { provide: PropostasRepository, useValue: propostasRepo },
+        { provide: DebatesRepository, useValue: debatesRepo },
+        { provide: ConfigService, useValue: { get: jest.fn(), getOrThrow: jest.fn() } },
+        { provide: getQueueToken(DEBATES_QUEUE), useValue: { add: jest.fn() } },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate(ctx: ExecutionContext) {
+          const req = ctx.switchToHttp().getRequest()
+          const header = req.headers['x-test-user']
+          if (!header || typeof header !== 'string') {
+            throw new UnauthorizedException()
+          }
+          req.user = JSON.parse(header)
+          return true
+        },
+      })
+      .compile()
+
+    app = moduleRef.createNestApplication()
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    )
+    await app.init()
+    await app.listen(0, '127.0.0.1')
+    baseUrl = await app.getUrl()
+  })
+
+  afterAll(async () => {
+    await app?.close()
+  })
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  async function requestAs(
+    method: string,
+    path: string,
+    body?: unknown,
+    user: Record<string, unknown> = userA,
+  ) {
+    return fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify(user),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  }
+
+  it('org-memberships: blocks user from Org A across Org B endpoints with 403 while allowing Org A', async () => {
+    const allowed = await requestAs('GET', `/org-memberships/ENTITY/${ORG_A_ID}/roles`)
+    expect(allowed.status).toBe(200)
+
+    const crossRead = await requestAs('GET', `/org-memberships/ENTITY/${ORG_B_ID}/roles`)
+    expect(crossRead.status).toBe(403)
+
+    const crossMembers = await requestAs('GET', `/org-memberships/ENTITY/${ORG_B_ID}/members`)
+    expect(crossMembers.status).toBe(403)
+
+    const crossCreateRole = await requestAs('POST', '/org-memberships/roles', {
+      orgType: 'ENTITY',
+      orgId: ORG_B_ID,
+      name: 'IntruderRole',
+      permissions: ['MANAGE_MEMBERS'],
+    })
+    expect(crossCreateRole.status).toBe(403)
+
+    const crossPatchRole = await requestAs(
+      'PATCH',
+      `/org-memberships/ENTITY/${ORG_B_ID}/roles/${ROLE_B_ID}`,
+      { name: 'Hijacked' },
+    )
+    expect(crossPatchRole.status).toBe(403)
+
+    const crossDeleteMember = await requestAs(
+      'DELETE',
+      `/org-memberships/ENTITY/${ORG_B_ID}/members/${TARGET_USER_ID}`,
+    )
+    expect(crossDeleteMember.status).toBe(403)
+
+    expect(orgMembershipsService.listRoles).toHaveBeenCalledTimes(1)
+    expect(orgMembershipsService.createRole).not.toHaveBeenCalled()
+    expect(orgMembershipsService.updateRole).not.toHaveBeenCalled()
+    expect(orgMembershipsService.removeMember).not.toHaveBeenCalled()
+  })
+
+  it('subscricoes: blocks checkout and portal creation for Org B with 403', async () => {
+    const allowedCheckout = await requestAs('POST', '/subscricoes/checkout', {
+      orgId: ORG_A_ID,
+      orgType: OrgType.ENTITY,
+      plan: 'GESTAO',
+    })
+    expect(allowedCheckout.status).toBe(201)
+
+    const crossCheckout = await requestAs('POST', '/subscricoes/checkout', {
+      orgId: ORG_B_ID,
+      orgType: OrgType.ENTITY,
+      plan: 'GESTAO',
+    })
+    expect(crossCheckout.status).toBe(403)
+
+    const crossPortal = await requestAs('POST', '/subscricoes/portal', {
+      orgId: ORG_B_ID,
+      orgType: OrgType.ENTITY,
+    })
+    expect(crossPortal.status).toBe(403)
+
+    expect(subscricoesService.criarCheckout).toHaveBeenCalledTimes(1)
+    expect(subscricoesService.criarPortal).not.toHaveBeenCalled()
+  })
+
+  it('registration-requests: blocks non-moderator users from listing, reviewing, or accessing doc URLs', async () => {
+    const rList = await requestAs('GET', '/registration-requests')
+    const rApprove = await requestAs('POST', `/registration-requests/${ORG_B_ID}/approve`, {
+      reviewNote: 'bypass',
+    })
+    const rReject = await requestAs('POST', `/registration-requests/${ORG_B_ID}/reject`, {
+      reviewNote: 'bypass',
+    })
+    const rDocs = await requestAs('GET', `/registration-requests/${ORG_B_ID}/document-urls`)
+
+    expect(rList.status).toBe(403)
+    expect(rApprove.status).toBe(403)
+    expect(rReject.status).toBe(403)
+    expect(rDocs.status).toBe(403)
+    expect(regReqService.findAll).not.toHaveBeenCalled()
+    expect(regReqService.approve).not.toHaveBeenCalled()
+    expect(regReqService.reject).not.toHaveBeenCalled()
+    expect(regReqService.getDocumentUrls).not.toHaveBeenCalled()
+  })
+
+  it('propostas: blocks Politician A from mutating Politician B proposal (403) and returns 404 when missing', async () => {
+    const validStatus = Object.values(PropostaStatus)[0]
+    const payload = {
+      status: validStatus,
+      conteudo: 'Atualização não autorizada em proposta alheia.',
+    }
+
+    const crossUpdate = await requestAs('PATCH', `/propostas/${PROPOSTA_B_ID}/status`, payload)
+    expect(crossUpdate.status).toBe(403)
+
+    const missingUpdate = await requestAs('PATCH', `/propostas/${PROPOSTA_MISSING_ID}/status`, payload)
+    expect(missingUpdate.status).toBe(404)
+
+    expect(propostasRepo.updateStatus).not.toHaveBeenCalled()
+  })
+
+  it('debates: blocks Politician A from managing Org B debates or responding to Org B invites (403)', async () => {
+    const crossUpdate = await requestAs('PATCH', `/debates/${DEBATE_B_ID}`, {
+      title: 'Título alterado indevidamente',
+    })
+    const crossStart = await requestAs('POST', `/debates/${DEBATE_B_ID}/start`)
+    const crossEnd = await requestAs('POST', `/debates/${DEBATE_B_ID}/end`)
+    const crossRespond = await requestAs(
+      'POST',
+      `/debates/${DEBATE_B_ID}/invite/${ORG_B_ID}/respond`,
+      { accept: true },
+    )
+
+    expect(crossUpdate.status).toBe(403)
+    expect(crossStart.status).toBe(403)
+    expect(crossEnd.status).toBe(403)
+    expect(crossRespond.status).toBe(403)
+    expect(debatesRepo.update).not.toHaveBeenCalled()
+  })
+})

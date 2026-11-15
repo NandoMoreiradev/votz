@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PlanGuard } from '../auth/guards/plan.guard'
 import { RequiresPlan } from '../auth/decorators/requires-plan.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('entities')
 @Controller('entities')
@@ -40,12 +41,14 @@ export class EntitiesController {
     return this.entitiesService.register(user.id, dto)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List entities with optional filters' })
   findAll(@Query() query: ListEntitiesDto) {
     return this.entitiesService.findAll(query)
   }
 
+  @Public()
   @Get('cities')
   @ApiOperation({ summary: 'List distinct cities that have entities, optionally filtered by state' })
   @ApiQuery({ name: 'state', required: false })
@@ -53,12 +56,14 @@ export class EntitiesController {
     return this.entitiesService.findCities(state)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get entity public profile with stats' })
   findById(@Param('id') id: string) {
     return this.entitiesService.findById(id)
   }
 
+  @Public()
   @Get(':id/reports')
   @ApiOperation({ summary: 'List reports directed at an entity' })
   @ApiQuery({ name: 'page', required: false })

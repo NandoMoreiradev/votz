@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
 import { ScheduleModule } from '@nestjs/schedule'
 import { BullModule } from '@nestjs/bullmq'
 import { LoggerModule } from 'nestjs-pino'
+import { createPinoHttpConfig } from './common/logger/pino-config'
 import { PrismaModule } from './prisma/prisma.module'
 import { MailModule } from './mail/mail.module'
 import { CryptoModule } from './crypto/crypto.module'
@@ -42,34 +43,36 @@ import { AccessLogModule } from './access-log/access-log.module'
 import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
 import { InactivityModule } from './inactivity/inactivity.module'
 import { ModerationModule } from './moderation/moderation.module'
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
+import { validateEnv } from './config/env.validation'
+import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
+import { SecurityModule } from './common/security/security.module'
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env', '../../.env.local', '../../.env'],
+      validate: validateEnv,
     }),
+    SecurityModule,
 
     LoggerModule.forRoot({
-      pinoHttp: {
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty', options: { colorize: true } }
-            : undefined,
-        serializers: {
-          req(req: { method: string; url: string }) {
-            return { method: req.method, url: req.url }
-          },
-        },
-      },
+      pinoHttp: createPinoHttpConfig(),
     }),
 
     // Rate limiting — section 16.1
-    ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 10 },
-      { name: 'medium', ttl: 10000, limit: 50 },
-      { name: 'long', ttl: 60000, limit: 200 },
-    ]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          { name: 'short', ttl: 1000, limit: 10 },
+          { name: 'medium', ttl: 10000, limit: 50 },
+          { name: 'long', ttl: 60000, limit: 200 },
+        ],
+        storage: new RedisThrottlerStorage(config.get<string>('REDIS_URL')),
+      }),
+    }),
 
     ScheduleModule.forRoot(),
 
@@ -134,6 +137,7 @@ import { ModerationModule } from './moderation/moderation.module'
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

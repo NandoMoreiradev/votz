@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
+
+maplibregl.setWorkerUrl(workerUrl)
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Navbar } from '../components/layout/Navbar'
@@ -236,7 +239,7 @@ interface MapFeature {
   }
 }
 
-interface GeoJSON {
+interface MapGeoJSON {
   type: 'FeatureCollection'
   features: MapFeature[]
 }
@@ -246,7 +249,7 @@ function useMapReports(category?: Category, status?: ReportStatus) {
     queryKey: ['map-reports', category, status],
     queryFn: () =>
       api
-        .get<GeoJSON>('/map/reports', {
+        .get<MapGeoJSON>('/map/reports', {
           params: { ...(category && { category }), ...(status && { status }), limit: 500 },
         })
         .then((r) => r.data),
@@ -257,6 +260,103 @@ function useMapReports(category?: Category, status?: ReportStatus) {
 // ── Componente ─────────────────────────────────────────────────────────────
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined
+
+function buildReportPopupNode(params: {
+  id: string
+  title: string
+  categoryLabel: string
+  statusLabel: string
+  color: string
+  votes: number
+  comments: number
+  pressureScore: number
+}): HTMLDivElement {
+  const container = document.createElement('div')
+  container.style.minWidth = '220px'
+  container.style.maxWidth = '280px'
+  container.style.fontFamily = "'Inter',sans-serif"
+
+  const titleEl = document.createElement('p')
+  titleEl.style.fontWeight = '600'
+  titleEl.style.fontSize = '0.9375rem'
+  titleEl.style.color = '#0D0D0D'
+  titleEl.style.margin = '0 0 8px'
+  titleEl.style.lineHeight = '1.35'
+  titleEl.textContent = params.title
+  container.appendChild(titleEl)
+
+  const badges = document.createElement('div')
+  badges.style.display = 'flex'
+  badges.style.gap = '6px'
+  badges.style.flexWrap = 'wrap'
+  badges.style.marginBottom = '10px'
+
+  const catBadge = document.createElement('span')
+  catBadge.style.fontSize = '0.7rem'
+  catBadge.style.fontWeight = '600'
+  catBadge.style.padding = '2px 7px'
+  catBadge.style.borderRadius = '99px'
+  catBadge.style.background = `${params.color}22`
+  catBadge.style.color = params.color
+  catBadge.style.textTransform = 'uppercase'
+  catBadge.style.letterSpacing = '0.04em'
+  catBadge.textContent = params.categoryLabel
+  badges.appendChild(catBadge)
+
+  const statusBadge = document.createElement('span')
+  statusBadge.style.fontSize = '0.7rem'
+  statusBadge.style.fontWeight = '600'
+  statusBadge.style.padding = '2px 7px'
+  statusBadge.style.borderRadius = '99px'
+  statusBadge.style.background = '#6B728022'
+  statusBadge.style.color = '#6B7280'
+  statusBadge.style.textTransform = 'uppercase'
+  statusBadge.style.letterSpacing = '0.04em'
+  statusBadge.textContent = params.statusLabel
+  badges.appendChild(statusBadge)
+
+  container.appendChild(badges)
+
+  const stats = document.createElement('div')
+  stats.style.display = 'flex'
+  stats.style.gap = '12px'
+  stats.style.fontSize = '0.8125rem'
+  stats.style.color = '#6B7280'
+  stats.style.fontFamily = "'JetBrains Mono',monospace"
+  stats.style.marginBottom = '12px'
+
+  const votesEl = document.createElement('span')
+  votesEl.textContent = `▲ ${params.votes}`
+  stats.appendChild(votesEl)
+
+  const commentsEl = document.createElement('span')
+  commentsEl.textContent = `💬 ${params.comments}`
+  stats.appendChild(commentsEl)
+
+  const pressureEl = document.createElement('span')
+  pressureEl.style.marginLeft = 'auto'
+  pressureEl.style.fontStyle = 'normal'
+  pressureEl.textContent = `⚡ ${params.pressureScore}`
+  stats.appendChild(pressureEl)
+
+  container.appendChild(stats)
+
+  const link = document.createElement('a')
+  link.href = `/relatos/${encodeURIComponent(String(params.id ?? ''))}`
+  link.style.display = 'block'
+  link.style.textAlign = 'center'
+  link.style.padding = '7px 0'
+  link.style.borderRadius = '8px'
+  link.style.background = '#1A1A2E'
+  link.style.color = '#fff'
+  link.style.fontSize = '0.875rem'
+  link.style.fontWeight = '600'
+  link.style.textDecoration = 'none'
+  link.textContent = 'Ver relato →'
+  container.appendChild(link)
+
+  return container
+}
 
 type ViewMode = 'clusters' | 'heatmap'
 
@@ -316,7 +416,7 @@ export function MapView() {
     if (map.getSource('reports-cl')) map.removeSource('reports-cl')
     if (map.getSource('reports-raw')) map.removeSource('reports-raw')
 
-    const geoData = data as unknown as GeoJSON.FeatureCollection
+    const geoData = data as unknown as Parameters<maplibregl.GeoJSONSource['setData']>[0]
 
     // Source para clusters
     map.addSource('reports-cl', {
@@ -418,50 +518,43 @@ export function MapView() {
     })
 
     // Interações de cluster
-    map.on('click', 'reports-clusters', (e) => {
+    map.on('click', 'reports-clusters', (e: maplibregl.MapLayerMouseEvent) => {
       const features = map.queryRenderedFeatures(e.point, { layers: ['reports-clusters'] })
       const clusterId = features[0]?.properties?.cluster_id as number | undefined
       if (!clusterId) return
-      const coords = (features[0].geometry as GeoJSON.Point).coordinates as [number, number]
+      const coords = (features[0].geometry as { coordinates: [number, number] }).coordinates
       ;(map.getSource('reports-cl') as maplibregl.GeoJSONSource)
         .getClusterExpansionZoom(clusterId)
-        .then((zoom) => map.easeTo({ center: coords, zoom }))
+        .then((zoom: number) => map.easeTo({ center: coords, zoom }))
         .catch(() => {})
     })
 
-    map.on('click', 'reports-pins', (e) => {
+    map.on('click', 'reports-pins', (e: maplibregl.MapLayerMouseEvent) => {
       const feature = e.features?.[0]
       if (!feature) return
 
       const props = feature.properties as MapFeature['properties']
-      const coords = (feature.geometry as GeoJSON.Point).coordinates as [number, number]
+      const coords = (feature.geometry as { coordinates: [number, number] }).coordinates
 
-      const color = CATEGORY_COLORS[props.category]
+      const color = CATEGORY_COLORS[props.category] ?? '#6B7280'
       const categoryLabel = CATEGORY_CONFIG[props.category]?.label ?? props.category
       const statusLabel = STATUS_LABELS[props.status] ?? props.status
 
-      const html = `
-        <div style="min-width:220px;max-width:280px;font-family:'Inter',sans-serif">
-          <p style="font-weight:600;font-size:0.9375rem;color:#0D0D0D;margin:0 0 8px;line-height:1.35">${props.title}</p>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-            <span style="font-size:0.7rem;font-weight:600;padding:2px 7px;border-radius:99px;background:${color}22;color:${color};text-transform:uppercase;letter-spacing:0.04em">${categoryLabel}</span>
-            <span style="font-size:0.7rem;font-weight:600;padding:2px 7px;border-radius:99px;background:#6B728022;color:#6B7280;text-transform:uppercase;letter-spacing:0.04em">${statusLabel}</span>
-          </div>
-          <div style="display:flex;gap:12px;font-size:0.8125rem;color:#6B7280;font-family:'JetBrains Mono',monospace;margin-bottom:12px">
-            <span>▲ ${props.votes}</span>
-            <span>💬 ${props.comments}</span>
-            <span style="margin-left:auto;font-style:normal">⚡ ${props.pressureScore}</span>
-          </div>
-          <a href="/relatos/${props.id}" style="display:block;text-align:center;padding:7px 0;border-radius:8px;background:#1A1A2E;color:#fff;font-size:0.875rem;font-weight:600;text-decoration:none">
-            Ver relato →
-          </a>
-        </div>
-      `
+      const popupNode = buildReportPopupNode({
+        id: props.id,
+        title: props.title,
+        categoryLabel,
+        statusLabel,
+        color,
+        votes: props.votes,
+        comments: props.comments,
+        pressureScore: props.pressureScore,
+      })
 
       if (popupRef.current) popupRef.current.remove()
       popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: '300px' })
         .setLngLat(coords)
-        .setHTML(html)
+        .setDOMContent(popupNode)
         .addTo(map)
     })
 

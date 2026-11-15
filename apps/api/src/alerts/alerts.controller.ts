@@ -1,8 +1,10 @@
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 import { AlertsService } from './alerts.service'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('alerts')
+@Public()
 @Controller('alerts')
 export class AlertsController {
   constructor(private readonly alertsService: AlertsService) {}

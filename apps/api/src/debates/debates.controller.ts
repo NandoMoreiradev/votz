@@ -17,6 +17,7 @@ import { CreateQuestionDto } from './dto/create-question.dto'
 import { CreatePollDto } from './dto/create-poll.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('debates')
 @Controller('debates')
@@ -31,12 +32,14 @@ export class DebatesController {
     return this.service.create(user.id, dto)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Listar debates (filtros: status, politicianId, upcoming)' })
   findAll(@Query() query: ListDebatesDto) {
     return this.service.findAll(query)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Detalhe de um debate' })
   findById(@Param('id') id: string) {
@@ -93,12 +96,14 @@ export class DebatesController {
     return this.service.getLivekitToken(id, user.id)
   }
 
+  @Public()
   @Get(':id/messages')
   @ApiOperation({ summary: 'Últimas 50 mensagens do chat (carregadas ao entrar no debate)' })
   findMessages(@Param('id') id: string) {
     return this.service.findMessages(id)
   }
 
+  @Public()
   @Get(':id/polls/active')
   @ApiOperation({ summary: 'Enquete ativa no momento (null se não houver)' })
   findActivePoll(@Param('id') id: string) {
@@ -125,6 +130,7 @@ export class DebatesController {
     return this.service.upvoteQuestion(debateId, questionId)
   }
 
+  @Public()
   @Get(':id/questions')
   @ApiOperation({ summary: 'Listar perguntas ordenadas por upvotes' })
   findQuestions(@Param('id') debateId: string) {

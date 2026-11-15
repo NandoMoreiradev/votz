@@ -61,27 +61,58 @@ describe('OrgMembershipsService', () => {
       expect(created.id).toBe('r2')
     })
 
-    it('updateRole & deleteRole guard missing or default roles', async () => {
+    it('updateRole & deleteRole guard missing, wrong-org, or default roles', async () => {
       repo.findRoleById.mockResolvedValueOnce(null)
-      await expect(service.updateRole('r1', { name: 'X' })).rejects.toThrow(NotFoundException)
+      await expect(service.updateRole(OrgType.ENTITY, 'e1', 'r1', { name: 'X' })).rejects.toThrow(NotFoundException)
 
-      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', isDefault: true })
-      await expect(service.updateRole('r1', { name: 'X' })).rejects.toThrow(BadRequestException)
+      repo.findRoleById.mockResolvedValueOnce({
+        id: 'r-other',
+        orgType: OrgType.ENTITY,
+        orgId: 'e-other',
+        isDefault: false,
+      })
+      await expect(service.updateRole(OrgType.ENTITY, 'e1', 'r-other', { name: 'X' })).rejects.toThrow(NotFoundException)
+
+      repo.findRoleById.mockResolvedValueOnce({
+        id: 'r1',
+        orgType: OrgType.ENTITY,
+        orgId: 'e1',
+        isDefault: true,
+      })
+      await expect(service.updateRole(OrgType.ENTITY, 'e1', 'r1', { name: 'X' })).rejects.toThrow(BadRequestException)
 
       repo.findRoleById.mockResolvedValueOnce(null)
-      await expect(service.deleteRole('r1')).rejects.toThrow(NotFoundException)
+      await expect(service.deleteRole(OrgType.ENTITY, 'e1', 'r1')).rejects.toThrow(NotFoundException)
 
-      repo.findRoleById.mockResolvedValueOnce({ id: 'r1', isDefault: true })
-      await expect(service.deleteRole('r1')).rejects.toThrow(BadRequestException)
+      repo.findRoleById.mockResolvedValueOnce({
+        id: 'r-other',
+        orgType: OrgType.ENTITY,
+        orgId: 'e-other',
+        isDefault: false,
+      })
+      await expect(service.deleteRole(OrgType.ENTITY, 'e1', 'r-other')).rejects.toThrow(NotFoundException)
 
-      repo.findRoleById.mockResolvedValueOnce({ id: 'r2', isDefault: false })
-      await service.deleteRole('r2')
+      repo.findRoleById.mockResolvedValueOnce({
+        id: 'r1',
+        orgType: OrgType.ENTITY,
+        orgId: 'e1',
+        isDefault: true,
+      })
+      await expect(service.deleteRole(OrgType.ENTITY, 'e1', 'r1')).rejects.toThrow(BadRequestException)
+
+      repo.findRoleById.mockResolvedValueOnce({
+        id: 'r2',
+        orgType: OrgType.ENTITY,
+        orgId: 'e1',
+        isDefault: false,
+      })
+      await service.deleteRole(OrgType.ENTITY, 'e1', 'r2')
       expect(repo.deleteRole).toHaveBeenCalledWith('r2')
     })
   })
 
   describe('members', () => {
-    it('updateMemberRole validates membership and role existence', async () => {
+    it('updateMemberRole validates membership, role existence, and same organization', async () => {
       repo.findMembership.mockResolvedValueOnce(null)
       await expect(service.updateMemberRole('u1', OrgType.ENTITY, 'e1', 'r2')).rejects.toThrow(NotFoundException)
 
@@ -90,7 +121,11 @@ describe('OrgMembershipsService', () => {
       await expect(service.updateMemberRole('u1', OrgType.ENTITY, 'e1', 'r2')).rejects.toThrow(NotFoundException)
 
       repo.findMembership.mockResolvedValueOnce({ id: 'm1' })
-      repo.findRoleById.mockResolvedValueOnce({ id: 'r2' })
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r-other', orgType: OrgType.ENTITY, orgId: 'e2' })
+      await expect(service.updateMemberRole('u1', OrgType.ENTITY, 'e1', 'r-other')).rejects.toThrow(BadRequestException)
+
+      repo.findMembership.mockResolvedValueOnce({ id: 'm1' })
+      repo.findRoleById.mockResolvedValueOnce({ id: 'r2', orgType: OrgType.ENTITY, orgId: 'e1' })
       await service.updateMemberRole('u1', OrgType.ENTITY, 'e1', 'r2')
       expect(repo.updateMemberRole).toHaveBeenCalledWith('u1', OrgType.ENTITY, 'e1', 'r2')
     })

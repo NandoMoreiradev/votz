@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Stripe from 'stripe'
 import { PrismaService } from '../prisma/prisma.service'
@@ -21,6 +21,7 @@ const PRICE_IDS: Record<string, string | undefined> = {
 
 @Injectable()
 export class SubscricoesService {
+  private readonly logger = new Logger(SubscricoesService.name)
   private stripe: InstanceType<typeof Stripe>
 
   constructor(
@@ -57,12 +58,13 @@ export class SubscricoesService {
   }
 
   async criarPortal(orgId: string, orgType: OrgType) {
-    const stripeCustomerId = await this.getStripeCustomerId(orgId, orgType)
-    if (!stripeCustomerId) throw new NotFoundException('Nenhuma assinatura ativa encontrada')
+    const org = await this.findOrgBilling(orgId, orgType)
+    if (!org) throw new NotFoundException('Organização não encontrada')
+    if (!org.stripeCustomerId) throw new NotFoundException('Nenhuma assinatura ativa encontrada')
 
     const webUrl = this.config.getOrThrow('WEB_URL')
     const session = await this.stripe.billingPortal.sessions.create({
-      customer: stripeCustomerId,
+      customer: org.stripeCustomerId,
       return_url: `${webUrl}/planos`,
     })
 
@@ -80,60 +82,90 @@ export class SubscricoesService {
       throw new BadRequestException('Webhook signature inválida')
     }
 
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object
-        if (session.metadata?.orgId) {
-          if (session.mode === 'subscription') {
-            await this.ativarPlano(
-              session.metadata.orgId,
-              session.metadata.orgType as OrgType,
-              session.metadata.plan,
-              session.subscription as string,
-            )
-          } else if (session.mode === 'payment') {
-            await this.ativarPlano(
-              session.metadata.orgId,
-              session.metadata.orgType as OrgType,
-              session.metadata.plan,
-              session.payment_intent as string,
-            )
-          }
-        }
-        break
+    if (event.id) {
+      const alreadyProcessed = await this.prisma.stripeEvent.findUnique({
+        where: { id: event.id },
+        select: { id: true },
+      })
+      if (alreadyProcessed) {
+        return { received: true, duplicate: true }
       }
-
-      case 'customer.subscription.updated': {
-        const sub = event.data.object
-        const { orgId, orgType, plan } = sub.metadata
-        if (orgId && orgType && plan && sub.status === 'active') {
-          await this.ativarPlano(orgId, orgType as OrgType, plan, sub.id)
+      try {
+        await this.prisma.stripeEvent.create({
+          data: { id: event.id, type: String(event.type ?? 'unknown') },
+        })
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          return { received: true, duplicate: true }
         }
-        break
-      }
-
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object
-        const { orgId, orgType } = sub.metadata
-        if (orgId && orgType) {
-          await this.rebaixarParaBasico(orgId, orgType as OrgType)
-        }
-        break
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object
-        console.warn(`Pagamento falhou para customer ${invoice.customer}`)
-        break
+        throw err
       }
     }
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object
+          const metadata = session.metadata ?? {}
+          if (metadata.orgId) {
+            if (session.mode === 'subscription') {
+              await this.ativarPlano(
+                metadata.orgId,
+                metadata.orgType as OrgType,
+                metadata.plan,
+                session.subscription as string,
+              )
+            } else if (session.mode === 'payment') {
+              await this.ativarPlano(
+                metadata.orgId,
+                metadata.orgType as OrgType,
+                metadata.plan,
+                session.payment_intent as string,
+              )
+            }
+          }
+          break
+        }
+
+        case 'customer.subscription.updated': {
+          const sub = event.data.object
+          const { orgId, orgType, plan } = sub.metadata ?? {}
+          if (orgId && orgType && plan && sub.status === 'active') {
+            await this.ativarPlano(orgId, orgType as OrgType, plan, sub.id)
+          }
+          break
+        }
+
+        case 'customer.subscription.deleted': {
+          const sub = event.data.object
+          const { orgId, orgType } = sub.metadata ?? {}
+          if (orgId && orgType) {
+            await this.rebaixarParaBasico(orgId, orgType as OrgType)
+          }
+          break
+        }
+
+        case 'invoice.payment_failed': {
+          this.logger.warn(`Pagamento falhou no webhook Stripe (evento ${event.id ?? 'sem-id'})`)
+          break
+        }
+      }
+    } catch (err) {
+      if (event.id) {
+        await this.prisma.stripeEvent.delete({ where: { id: event.id } }).catch(() => undefined)
+      }
+      throw err
+    }
+
+    return { received: true }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private async getOrCreateCustomer(orgId: string, orgType: OrgType, email: string): Promise<string> {
-    const existing = await this.getStripeCustomerId(orgId, orgType)
-    if (existing) return existing
+    const org = await this.findOrgBilling(orgId, orgType)
+    if (!org) throw new NotFoundException('Organização não encontrada')
+    if (org.stripeCustomerId) return org.stripeCustomerId
 
     const customer = await this.stripe.customers.create({
       email,
@@ -144,18 +176,18 @@ export class SubscricoesService {
     return customer.id
   }
 
-  private async getStripeCustomerId(orgId: string, orgType: OrgType): Promise<string | null> {
+  private async findOrgBilling(
+    orgId: string,
+    orgType: OrgType,
+  ): Promise<{ stripeCustomerId: string | null } | null> {
     if (orgType === OrgType.ENTITY) {
-      const e = await this.prisma.entity.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
-      return e?.stripeCustomerId ?? null
+      return this.prisma.entity.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
     }
     if (orgType === OrgType.POLITICIAN) {
-      const p = await this.prisma.politician.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
-      return p?.stripeCustomerId ?? null
+      return this.prisma.politician.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
     }
     if (orgType === OrgType.COMPANY) {
-      const c = await this.prisma.company.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
-      return c?.stripeCustomerId ?? null
+      return this.prisma.company.findUnique({ where: { id: orgId }, select: { stripeCustomerId: true } })
     }
     return null
   }

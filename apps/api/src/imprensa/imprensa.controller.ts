@@ -4,18 +4,21 @@ import { Throttle } from '@nestjs/throttler'
 import { ImprensaService } from './imprensa.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('imprensa')
 @Controller('imprensa')
 export class ImprensaController {
   constructor(private readonly service: ImprensaService) {}
 
+  @Public()
   @Get('resumo')
   @ApiOperation({ summary: 'Snapshot geral da plataforma para imprensa' })
   resumo() {
     return this.service.getResumo()
   }
 
+  @Public()
   @Get('tendencias')
   @ApiOperation({ summary: 'Tendências por categoria e cidade (últimos N dias)' })
   tendencias(
@@ -24,6 +27,7 @@ export class ImprensaController {
     return this.service.getTendencias(days)
   }
 
+  @Public()
   @Get('relatos-destaque')
   @ApiOperation({ summary: 'Relatos com maior pressão (não-anônimos)' })
   relatosDestaque(
@@ -32,6 +36,7 @@ export class ImprensaController {
     return this.service.getRelatosDestaque(limit)
   }
 
+  @Public()
   @Get('entidades-ranking')
   @ApiOperation({ summary: 'Entidades com mais relatos direcionados (últimos 90 dias)' })
   entidadesRanking(
@@ -40,6 +45,7 @@ export class ImprensaController {
     return this.service.getEntidadesRanking(limit)
   }
 
+  @Public()
   @Get('surtos-ativos')
   @ApiOperation({ summary: 'Surtos ativos ordenados por volume' })
   surtosAtivos() {

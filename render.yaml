@@ -1,4 +1,4 @@
-﻿# render.yaml — Votz infrastructure blueprint
+# render.yaml — Votz infrastructure blueprint
 # Docs: https://render.com/docs/blueprint-spec
 
 services:
@@ -66,6 +66,25 @@ services:
       - path: /*
         name: Cache-Control
         value: no-cache
+      # Ajuste connect-src conforme as URLs reais do ambiente de deploy:
+      # - API HTTP/WS (VITE_API_URL): substitua https://votz-api.onrender.com e wss://votz-api.onrender.com pela origem do backend em produção
+      # - LiveKit (VITE_LIVEKIT_URL): mantido https://*.livekit.cloud e wss://*.livekit.cloud (troque pela origem real caso use LiveKit self-hosted)
+      # - Mapas / IBGE / CNPJ / CEP: https://api.maptiler.com e https://brasilapi.com.br
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://votz-api.onrender.com wss://votz-api.onrender.com https://api.maptiler.com https://*.livekit.cloud wss://*.livekit.cloud https://brasilapi.com.br; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: "camera=(), microphone=(self), geolocation=(self)"
+      - path: /*
+        name: Strict-Transport-Security
+        value: "max-age=31536000; includeSubDomains"
     routes:
       - type: rewrite
         source: /*

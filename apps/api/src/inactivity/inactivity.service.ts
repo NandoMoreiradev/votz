@@ -53,11 +53,12 @@ export class InactivityService {
   async sendInactivityNotices(now = new Date()): Promise<number> {
     const inactiveCutoff = subtractMonths(now, INACTIVITY_MONTHS)
     let notified = 0
-    let cursor: string | undefined
+    const excludeIds = new Set<string>()
 
     while (true) {
       const batch = await this.prisma.user.findMany({
         where: {
+          ...(excludeIds.size > 0 ? { id: { notIn: Array.from(excludeIds) } } : {}),
           type: UserType.CITIZEN,
           banned: false,
           inactivityNoticeSentAt: null,
@@ -79,12 +80,12 @@ export class InactivityService {
         },
         orderBy: { id: 'asc' },
         take: BATCH_SIZE,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       })
 
-      if (batch.length === 0) break
+      if (!batch || batch.length === 0) break
 
       for (const user of batch) {
+        excludeIds.add(user.id)
         if (user.type !== UserType.CITIZEN || user.banned) continue
         if (user.inactivityNoticeSentAt != null) continue
         const lastActivity = user.lastLoginAt ?? user.createdAt
@@ -103,9 +104,7 @@ export class InactivityService {
         }
       }
 
-      const lastId = batch[batch.length - 1]?.id
-      if (batch.length < BATCH_SIZE || !lastId || lastId === cursor) break
-      cursor = lastId
+      if (batch.length < BATCH_SIZE) break
     }
 
     if (notified > 0) {
@@ -118,11 +117,12 @@ export class InactivityService {
   async anonymizeInactiveUsers(now = new Date()): Promise<number> {
     const noticeCutoff = subtractDays(now, INACTIVITY_GRACE_DAYS)
     let anonymized = 0
-    let cursor: string | undefined
+    const excludeIds = new Set<string>()
 
     while (true) {
       const batch = await this.prisma.user.findMany({
         where: {
+          ...(excludeIds.size > 0 ? { id: { notIn: Array.from(excludeIds) } } : {}),
           type: UserType.CITIZEN,
           banned: false,
           inactivityNoticeSentAt: { not: null, lt: noticeCutoff },
@@ -137,12 +137,12 @@ export class InactivityService {
         },
         orderBy: { id: 'asc' },
         take: BATCH_SIZE,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       })
 
-      if (batch.length === 0) break
+      if (!batch || batch.length === 0) break
 
       for (const user of batch) {
+        excludeIds.add(user.id)
         if (user.type !== UserType.CITIZEN || user.banned) continue
         if (!user.inactivityNoticeSentAt || user.inactivityNoticeSentAt >= noticeCutoff) continue
 
@@ -165,9 +165,7 @@ export class InactivityService {
         }
       }
 
-      const lastId = batch[batch.length - 1]?.id
-      if (batch.length < BATCH_SIZE || !lastId || lastId === cursor) break
-      cursor = lastId
+      if (batch.length < BATCH_SIZE) break
     }
 
     if (anonymized > 0) {

@@ -7,6 +7,7 @@ import { AcceptConsentDto } from './dto/accept-consent.dto'
 import { DeleteAccountDto } from './dto/delete-account.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('users')
 @Controller('users')
@@ -56,12 +57,14 @@ export class UsersController {
     return this.usersService.deleteAccount(user.id, dto)
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get public user profile' })
   findById(@Param('id') id: string) {
     return this.usersService.findById(id)
   }
 
+  @Public()
   @Get(':id/reports')
   @ApiOperation({ summary: "List user's public non-anonymous reports" })
   @ApiQuery({ name: 'page', required: false, example: 1 })

@@ -54,6 +54,24 @@ export function useUpdateMemberRole(orgType: OrgType, orgId: string) {
   })
 }
 
+export function useUpdateOrgRole(orgType: OrgType, orgId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ roleId, ...data }: { roleId: string; name?: string; permissions?: string[] }) =>
+      api.patch(`/org-memberships/${orgType}/${orgId}/roles/${roleId}`, data).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['org-roles', orgType, orgId] }),
+  })
+}
+
+export function useDeleteOrgRole(orgType: OrgType, orgId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (roleId: string) =>
+      api.delete(`/org-memberships/${orgType}/${orgId}/roles/${roleId}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['org-roles', orgType, orgId] }),
+  })
+}
+
 export function useRemoveMember(orgType: OrgType, orgId: string) {
   const qc = useQueryClient()
   return useMutation({

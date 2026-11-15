@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  ParseEnumPipe,
   ParseUUIDPipe,
 } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
@@ -18,6 +19,7 @@ import { OrgMembershipsService } from './org-memberships.service'
 import { OrgPermissionGuard, RequireOrgPermission } from './org-memberships.guard'
 import { InviteMemberDto } from './dto/invite-member.dto'
 import { CreateRoleDto } from './dto/create-role.dto'
+import { UpdateRoleDto } from './dto/update-role.dto'
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto'
 
 @ApiTags('org-memberships')
@@ -34,7 +36,7 @@ export class OrgMembershipsController {
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Get(':orgType/:orgId/roles')
   listRoles(
-    @Param('orgType') orgType: OrgType,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
   ) {
     return this.service.listRoles(orgType, orgId)
@@ -51,20 +53,29 @@ export class OrgMembershipsController {
   @ApiOperation({ summary: 'Atualizar role customizada' })
   @UseGuards(OrgPermissionGuard)
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
-  @Patch('roles/:id')
+  @Patch(':orgType/:orgId/roles/:id')
   updateRole(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateRoleDto>,
+    @Body() dto: UpdateRoleDto,
   ) {
-    return this.service.updateRole(id, { name: dto.name, permissions: dto.permissions })
+    return this.service.updateRole(orgType, orgId, id, {
+      name: dto.name,
+      permissions: dto.permissions,
+    })
   }
 
   @ApiOperation({ summary: 'Excluir role customizada' })
   @UseGuards(OrgPermissionGuard)
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
-  @Delete('roles/:id')
-  deleteRole(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.deleteRole(id)
+  @Delete(':orgType/:orgId/roles/:id')
+  deleteRole(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.deleteRole(orgType, orgId, id)
   }
 
   // ── Members ────────────────────────────────────────────────────────────────
@@ -74,7 +85,7 @@ export class OrgMembershipsController {
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Get(':orgType/:orgId/members')
   listMembers(
-    @Param('orgType') orgType: OrgType,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
   ) {
     return this.service.listMembers(orgType, orgId)
@@ -85,7 +96,7 @@ export class OrgMembershipsController {
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Patch(':orgType/:orgId/members/:userId/role')
   updateMemberRole(
-    @Param('orgType') orgType: OrgType,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateMemberRoleDto,
@@ -98,7 +109,7 @@ export class OrgMembershipsController {
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Delete(':orgType/:orgId/members/:userId')
   removeMember(
-    @Param('orgType') orgType: OrgType,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
   ) {

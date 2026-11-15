@@ -196,6 +196,7 @@ describe('UsersService', () => {
         vote: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         notification: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         orgMembership: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        refreshToken: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
         accessLog: {
           deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
           delete: jest.fn(),
@@ -322,6 +323,7 @@ describe('UsersService', () => {
       expect(tx.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
       expect(tx.orgMembership.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
       expect(tx.registrationRequest.deleteMany).toHaveBeenCalledWith({ where: { requesterId: 'u1' } })
+      expect(tx.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
       expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: 'u1' } })
 
       expect(storage.delete).toHaveBeenCalledWith('verification/a.pdf')

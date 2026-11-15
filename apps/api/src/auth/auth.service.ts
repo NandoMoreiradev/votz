@@ -7,18 +7,20 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcrypt'
-import { randomBytes, randomUUID } from 'crypto'
+import { createHash, randomBytes, randomUUID } from 'crypto'
 import { generateSecret, generateURI, verify as otpVerify } from 'otplib'
 import * as QRCode from 'qrcode'
-import { AccessEvent, OrgPermission, MembershipStatus } from '@prisma/client'
+import { AccessEvent, OrgPermission, MembershipStatus, Prisma } from '@prisma/client'
 import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 import { AccessLogService } from '../access-log/access-log.service'
+import { CryptoService } from '../crypto/crypto.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 import { ContextType } from './dto/switch-context.dto'
@@ -26,12 +28,36 @@ import { ActiveContextPayload } from './strategies/jwt.strategy'
 
 const OTP_EPOCH_TOLERANCE = 30 // aceita código do período anterior (clock skew)
 
+// Tolerância curta (10s) para corridas legítimas de refresh simultâneo (React StrictMode, multi-aba,
+// AuthInit + interceptor 401) sem revogar a família do usuário. Após essa janela, o reuso continua
+// sendo tratado como comprometimento e revoga toda a família.
+const REFRESH_REUSE_LEEWAY_MS = 10_000
+
 // Apenas ADMIN exige MFA no login — políticos/entidades/empresas exigem MFA na troca de contexto
 const MFA_REQUIRED_TYPES = ['ADMIN'] as const
 type MfaRequiredType = (typeof MFA_REQUIRED_TYPES)[number]
 
 function requiresMandatoryMfa(type: string): type is MfaRequiredType {
   return MFA_REQUIRED_TYPES.includes(type as MfaRequiredType)
+}
+
+export function hashRefreshToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function parseDurationMs(raw: string | undefined, fallbackMs = 7 * 24 * 60 * 60 * 1000): number {
+  if (!raw) return fallbackMs
+  const match = raw.trim().match(/^(\d+)\s*([smhd])$/i)
+  if (!match) return fallbackMs
+  const value = Number(match[1])
+  const unit = match[2].toLowerCase()
+  const multipliers: Record<string, number> = {
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+  }
+  return value * multipliers[unit]
 }
 
 const USER_PUBLIC_SELECT = {
@@ -88,15 +114,29 @@ function toPublicUser<T extends {
   }
 }
 
+// Valid cost-12 bcrypt hash used to equalize password verification timing for unknown accounts.
+const DUMMY_BCRYPT_HASH = '$2b$12$C6UzMDM.H6dfI/f/IKcEeO6Y.7r7O5F7E8yN0W2L7gK3v6gL9S6mK'
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
     private readonly accessLog: AccessLogService,
+    private readonly crypto: CryptoService,
   ) {}
+
+  private decryptMfaSecret(stored: string): string {
+    // Plaintext Base32 secrets never contain ':'; encrypted ciphertexts always do.
+    if (!stored.includes(':')) {
+      return stored
+    }
+    return this.crypto.decrypt(stored)
+  }
 
   // ─────────────────────────────────────────────
   // REGISTER
@@ -153,7 +193,6 @@ export class AuthService {
     await this.mail.sendVerificationEmail(user.email, user.name, verificationToken)
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, String(user.type))
-    await this.storeRefreshHash(user.id, refreshToken)
     void this.accessLog.record(user.id, AccessEvent.REGISTER, ip)
 
     return { user, accessToken, refreshToken }
@@ -166,7 +205,10 @@ export class AuthService {
   async login(dto: LoginDto, ip = 'unknown') {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
 
-    if (!user || !user.password) throw new UnauthorizedException('Invalid credentials')
+    if (!user || !user.password) {
+      await bcrypt.compare(dto.password, DUMMY_BCRYPT_HASH)
+      throw new UnauthorizedException('Invalid credentials')
+    }
     if (user.banned) throw new UnauthorizedException('Account suspended')
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -205,7 +247,7 @@ export class AuthService {
     if (user.mfaEnabled) {
       const mfaToken = await this.jwt.signAsync(
         { sub: user.id, type: 'mfa_pending' },
-        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '5m' },
+        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '5m', algorithm: 'HS256' },
       )
       return { requiresMfa: true, mfaToken }
     }
@@ -214,13 +256,12 @@ export class AuthService {
     if (requiresMandatoryMfa(user.type)) {
       const mfaSetupToken = await this.jwt.signAsync(
         { sub: user.id, type: 'mfa_setup_required' },
-        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30m' },
+        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30m', algorithm: 'HS256' },
       )
       return { requiresMfaSetup: true, mfaSetupToken }
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
-    await this.storeRefreshHash(user.id, refreshToken)
     void this.accessLog.record(user.id, AccessEvent.LOGIN, ip)
 
     const publicUser = toPublicUser(user)
@@ -232,21 +273,136 @@ export class AuthService {
   // REFRESH / LOGOUT / ME
   // ─────────────────────────────────────────────
 
-  async refresh(userId: string, email: string, type: string, ip = 'unknown') {
-    const { accessToken, refreshToken } = await this.generateTokens(userId, email, type)
-    await this.storeRefreshHash(userId, refreshToken)
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
+  async refresh(rawRefreshToken: string | undefined) {
+    if (!rawRefreshToken) {
+      throw new UnauthorizedException('Missing refresh token')
+    }
+
+    const tokenHash = hashRefreshToken(rawRefreshToken)
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: { select: { id: true, email: true, type: true, banned: true } },
+      },
     })
-    void this.accessLog.record(userId, AccessEvent.TOKEN_REFRESH, ip)
+
+    const now = new Date()
+    if (!stored || stored.revokedAt || stored.expiresAt <= now) {
+      throw new UnauthorizedException('Invalid or expired refresh token')
+    }
+    if (!stored.user || stored.user.banned) {
+      throw new UnauthorizedException('Account suspended')
+    }
+
+    if (stored.usedAt) {
+      if (this.isWithinReuseLeeway(stored.usedAt, now)) {
+        return this.issueLeewayRefresh(stored.user, stored.familyId, now)
+      }
+      await this.revokeFamily(stored.familyId, now)
+      throw new UnauthorizedException('Refresh token reuse detected')
+    }
+
+    const newRefreshToken = randomBytes(48).toString('base64url')
+    const newTokenHash = hashRefreshToken(newRefreshToken)
+    const expiresAt = new Date(
+      now.getTime() + parseDurationMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '7d')),
+    )
+
+    const rotated = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.refreshToken.updateMany({
+        where: { id: stored.id, usedAt: null, revokedAt: null },
+        data: { usedAt: now },
+      })
+      if (claim.count !== 1) return false
+
+      await tx.refreshToken.create({
+        data: {
+          userId: stored.userId,
+          familyId: stored.familyId,
+          tokenHash: newTokenHash,
+          expiresAt,
+        },
+      })
+
+      await tx.user.update({
+        where: { id: stored.userId },
+        data: { lastLoginAt: now, inactivityNoticeSentAt: null },
+      })
+
+      return true
+    })
+
+    if (!rotated) {
+      const latest = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash },
+        select: { usedAt: true, revokedAt: true },
+      })
+      if (!latest || latest.revokedAt) {
+        throw new UnauthorizedException('Invalid or expired refresh token')
+      }
+      if (latest.usedAt && this.isWithinReuseLeeway(latest.usedAt, now)) {
+        return this.issueLeewayRefresh(stored.user, stored.familyId, now)
+      }
+      await this.revokeFamily(stored.familyId, now)
+      throw new UnauthorizedException('Refresh token reuse detected')
+    }
+
+    const accessToken = await this.signAccessToken(
+      stored.user.id,
+      stored.user.email,
+      stored.user.type,
+    )
+    return { accessToken, refreshToken: newRefreshToken }
+  }
+
+  private isWithinReuseLeeway(usedAt: Date, now: Date): boolean {
+    return now.getTime() - usedAt.getTime() < REFRESH_REUSE_LEEWAY_MS
+  }
+
+  private async revokeFamily(familyId: string, now: Date): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { familyId, revokedAt: null },
+      data: { revokedAt: now },
+    })
+  }
+
+  private async issueLeewayRefresh(
+    user: { id: string; email: string; type: string },
+    familyId: string,
+    now: Date,
+  ) {
+    this.logger.warn(
+      `Concurrent refresh tolerated within ${REFRESH_REUSE_LEEWAY_MS}ms leeway for user ${user.id}`,
+    )
+    const [accessToken, refreshToken] = await Promise.all([
+      this.signAccessToken(user.id, user.email, user.type),
+      this.issueRefreshToken(user.id, familyId),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: now, inactivityNoticeSentAt: null },
+      }),
+    ])
     return { accessToken, refreshToken }
   }
 
-  async logout(userId: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: null },
+  async logout(userId: string, rawRefreshToken?: string) {
+    if (!rawRefreshToken) return
+    const tokenHash = hashRefreshToken(rawRefreshToken)
+    const token = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: { userId: true, familyId: true },
+    })
+    if (!token || token.userId !== userId) return
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, familyId: token.familyId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+  }
+
+  async logoutAll(userId: string) {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     })
   }
 
@@ -313,8 +469,11 @@ export class AuthService {
     const otpauthUrl = generateURI({ issuer: 'Votz', label: user.email, secret })
     const qrCode = await QRCode.toDataURL(otpauthUrl)
 
-    // Salva secret temporariamente (ainda não está habilitado)
-    await this.prisma.user.update({ where: { id: userId }, data: { mfaSecret: secret } })
+    // Salva secret cifrado temporariamente (ainda não está habilitado)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaSecret: this.crypto.encrypt(secret) },
+    })
 
     return { secret, otpauthUrl, qrCode }
   }
@@ -332,7 +491,8 @@ export class AuthService {
     if (user.mfaEnabled) throw new BadRequestException('MFA already enabled')
     if (!user.mfaSecret) throw new BadRequestException('Run MFA setup first')
 
-    const { valid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    const mfaSecret = this.decryptMfaSecret(user.mfaSecret)
+    const { valid } = await otpVerify({ token: code, secret: mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
     if (!valid) throw new UnauthorizedException('Invalid TOTP code')
 
     // Gera 8 backup codes
@@ -351,7 +511,6 @@ export class AuthService {
     // Fluxo de setup obrigatório: emite tokens completos para concluir o login
     if (fromSetupFlow) {
       const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
-      await this.storeRefreshHash(user.id, refreshToken)
       await this.prisma.user.update({
         where: { id: userId },
         data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
@@ -373,6 +532,7 @@ export class AuthService {
     try {
       payload = await this.jwt.verifyAsync(mfaToken, {
         secret: this.config.getOrThrow('JWT_SECRET'),
+        algorithms: ['HS256'],
       })
     } catch {
       throw new UnauthorizedException('Invalid or expired MFA token')
@@ -386,23 +546,53 @@ export class AuthService {
         ...USER_PUBLIC_SELECT,
         mfaSecret: true,
         mfaBackupCodes: true,
+        mfaFailedAttempts: true,
+        mfaLockedUntil: true,
       },
     })
     if (!user || !user.mfaEnabled || !user.mfaSecret) throw new UnauthorizedException()
 
-    // Tenta TOTP primeiro; se falhar, tenta backup codes
-    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    if (user.mfaLockedUntil && user.mfaLockedUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.mfaLockedUntil.getTime() - Date.now()) / 60_000)
+      throw new HttpException(
+        `MFA temporarily locked. Try again in ${minutesLeft} minute(s).`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
 
-    if (!totpValid) {
+    // Tenta TOTP primeiro; se falhar, tenta backup codes
+    const mfaSecret = this.decryptMfaSecret(user.mfaSecret)
+    const { valid: totpValid } = await otpVerify({ token: code, secret: mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+
+    let mfaValid = totpValid
+    if (!mfaValid) {
       const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
-      if (backupIndex === -1) throw new UnauthorizedException('Invalid MFA code')
+      mfaValid = backupIndex !== -1
+    }
+
+    if (!mfaValid) {
+      const baseAttempts = user.mfaLockedUntil ? 0 : (user.mfaFailedAttempts ?? 0)
+      const attempts = baseAttempts + 1
+      const shouldLock = attempts >= 5
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          mfaFailedAttempts: attempts,
+          mfaLockedUntil: shouldLock ? new Date(Date.now() + 15 * 60_000) : null,
+        },
+      })
+      throw new UnauthorizedException('Invalid MFA code')
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
-    await this.storeRefreshHash(user.id, refreshToken)
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
+      data: {
+        lastLoginAt: new Date(),
+        inactivityNoticeSentAt: null,
+        mfaFailedAttempts: 0,
+        mfaLockedUntil: null,
+      },
     })
     void this.accessLog.record(user.id, AccessEvent.MFA_LOGIN, ip)
 
@@ -428,7 +618,8 @@ export class AuthService {
       throw new ForbiddenException('MFA cannot be disabled for this account type')
     }
 
-    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    const mfaSecret = this.decryptMfaSecret(user.mfaSecret)
+    const { valid: totpValid } = await otpVerify({ token: code, secret: mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
 
     if (!totpValid) {
       const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
@@ -456,7 +647,8 @@ export class AuthService {
       throw new BadRequestException('MFA is not enabled')
     }
 
-    const { valid: totpValid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    const currentSecret = this.decryptMfaSecret(user.mfaSecret)
+    const { valid: totpValid } = await otpVerify({ token: code, secret: currentSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
 
     if (!totpValid) {
       const backupIndex = await this.findAndConsumeBackupCode(user.id, user.mfaBackupCodes, code)
@@ -470,7 +662,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { mfaEnabled: false, mfaSecret: newSecret, mfaBackupCodes: [] },
+      data: { mfaEnabled: false, mfaSecret: this.crypto.encrypt(newSecret), mfaBackupCodes: [] },
     })
 
     return { secret: newSecret, otpauthUrl, qrCode }
@@ -489,7 +681,8 @@ export class AuthService {
       throw new BadRequestException('MFA is not enabled')
     }
 
-    const { valid } = await otpVerify({ token: code, secret: user.mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
+    const mfaSecret = this.decryptMfaSecret(user.mfaSecret)
+    const { valid } = await otpVerify({ token: code, secret: mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
     if (!valid) throw new UnauthorizedException('Invalid TOTP code')
 
     const plainCodes = Array.from({ length: 8 }, () =>
@@ -529,9 +722,18 @@ export class AuthService {
         select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
       })
     } else if (!user.googleId) {
+      if (!user.emailVerified) {
+        // M1: conta cadastrada com senha sem verificação de e-mail pode ser pré-sequestro;
+        // anula a senha e revoga sessões existentes antes de vincular o Google OAuth.
+        await this.logoutAll(user.id)
+      }
       user = await this.prisma.user.update({
         where: { id: user.id },
-        data: { googleId: profile.googleId, emailVerified: true },
+        data: {
+          googleId: profile.googleId,
+          emailVerified: true,
+          ...(!user.emailVerified ? { password: null } : {}),
+        },
         select: { ...USER_PUBLIC_SELECT, googleId: true, type: true },
       })
     }
@@ -542,7 +744,6 @@ export class AuthService {
     })
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
-    await this.storeRefreshHash(user.id, refreshToken)
     void this.accessLog.record(user.id, AccessEvent.GOOGLE_LOGIN, ip)
 
     return { user: toPublicUser(user), accessToken, refreshToken }
@@ -682,10 +883,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException()
 
     if (contextType === 'personal') {
-      const accessToken = await this.jwt.signAsync(
-        { sub: userId, email: user.email, type: user.type },
-        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: this.config.get('JWT_EXPIRES_IN', '15m') },
-      )
+      const accessToken = await this.signAccessToken(userId, user.email, user.type)
       return { accessToken, ctx: null }
     }
 
@@ -700,14 +898,12 @@ export class AuthService {
       return { requiresMfa: true }
     }
 
-    const { valid } = await otpVerify({ token: mfaCode, secret: user.mfaSecret!, epochTolerance: OTP_EPOCH_TOLERANCE })
+    const mfaSecret = this.decryptMfaSecret(user.mfaSecret!)
+    const { valid } = await otpVerify({ token: mfaCode, secret: mfaSecret, epochTolerance: OTP_EPOCH_TOLERANCE })
     if (!valid) throw new UnauthorizedException('Código MFA inválido')
 
     const ctx = await this.resolveOrgContext(userId, contextType, contextId)
-    const accessToken = await this.jwt.signAsync(
-      { sub: userId, email: user.email, type: user.type, ctx },
-      { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: this.config.get('JWT_EXPIRES_IN', '15m') },
-    )
+    const accessToken = await this.signAccessToken(userId, user.email, user.type, ctx)
     return { accessToken, ctx }
   }
 
@@ -791,23 +987,43 @@ export class AuthService {
     return owner?.avatarUrl ?? null
   }
 
-  private async generateTokens(userId: string, email: string, type: string) {
-    const payload = { sub: userId, email, type }
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwt.signAsync(payload, {
+  private async signAccessToken(
+    userId: string,
+    email: string,
+    type: string,
+    ctx?: ActiveContextPayload,
+  ): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: userId, email, type, typ: 'access', ...(ctx ? { ctx } : {}) },
+      {
         secret: this.config.getOrThrow('JWT_SECRET'),
         expiresIn: this.config.get('JWT_EXPIRES_IN', '15m'),
-      }),
-      this.jwt.signAsync(payload, {
-        secret: this.config.getOrThrow('JWT_REFRESH_SECRET'),
-        expiresIn: this.config.get('JWT_REFRESH_EXPIRES_IN', '7d'),
-      }),
-    ])
-    return { accessToken, refreshToken }
+        algorithm: 'HS256',
+      },
+    )
   }
 
-  private async storeRefreshHash(userId: string, refreshToken: string) {
-    const hash = await bcrypt.hash(refreshToken, 10)
-    await this.prisma.user.update({ where: { id: userId }, data: { refreshTokenHash: hash } })
+  private async issueRefreshToken(
+    userId: string,
+    familyId: string = randomUUID(),
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string> {
+    const refreshToken = randomBytes(48).toString('base64url')
+    const tokenHash = hashRefreshToken(refreshToken)
+    const expiresAt = new Date(
+      Date.now() + parseDurationMs(this.config.get('JWT_REFRESH_EXPIRES_IN', '7d')),
+    )
+    await db.refreshToken.create({
+      data: { userId, familyId, tokenHash, expiresAt },
+    })
+    return refreshToken
+  }
+
+  private async generateTokens(userId: string, email: string, type: string) {
+    const [accessToken, refreshToken] = await Promise.all([
+      this.signAccessToken(userId, email, type),
+      this.issueRefreshToken(userId),
+    ])
+    return { accessToken, refreshToken }
   }
 }

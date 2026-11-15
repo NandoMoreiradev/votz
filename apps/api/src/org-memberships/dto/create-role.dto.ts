@@ -1,6 +1,6 @@
-import { IsArray, IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator'
+import { IsArray, IsEnum, IsString, IsUUID, MaxLength } from 'class-validator'
 import { OrgPermission, OrgType } from '@prisma/client'
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateRoleDto {
   @ApiProperty({ enum: OrgType })
@@ -20,9 +20,4 @@ export class CreateRoleDto {
   @IsArray()
   @IsEnum(OrgPermission, { each: true })
   permissions: OrgPermission[]
-
-  @ApiPropertyOptional()
-  @IsBoolean()
-  @IsOptional()
-  isDefault?: boolean
 }

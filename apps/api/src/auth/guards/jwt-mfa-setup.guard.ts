@@ -25,6 +25,7 @@ export class JwtMfaSetupGuard implements CanActivate {
     try {
       const payload = await this.jwt.verifyAsync<{ sub: string; type: string }>(token, {
         secret: this.config.getOrThrow('JWT_SECRET'),
+        algorithms: ['HS256'],
       })
 
       if (payload.type !== 'mfa_setup_required') throw new UnauthorizedException()

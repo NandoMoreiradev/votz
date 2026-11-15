@@ -19,6 +19,8 @@ function subtractMonths(date: Date, months: number): Date {
 
 /**
  * Registro mínimo legal de acessos (Marco Civil da Internet, art. 15).
+ * Registra apenas eventos de início de sessão (login / Google / verificação MFA);
+ * renovações de access token via refresh não são gravadas.
  * Não há endpoint público/admin de leitura: os registros permanecem apenas
  * no banco para atendimento de ordem judicial e na exportação LGPD do titular.
  */

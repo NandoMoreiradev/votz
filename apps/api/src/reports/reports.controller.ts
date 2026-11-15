@@ -10,6 +10,7 @@ import { ListReportsQueryDto } from './dto/list-reports-query.dto'
 import { SimilarReportsQueryDto } from './dto/similar-reports-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Public } from '../auth/decorators/public.decorator'
 
 @ApiTags('reports')
 @Controller('reports')
@@ -27,12 +28,14 @@ export class ReportsController {
     return this.reportsService.create(dto, user)
   }
 
+  @Public()
   @Get('similar')
   @ApiOperation({ summary: 'Buscar relatos similares por trigram, full-text e embedding semântico' })
   findSimilar(@Query() query: SimilarReportsQueryDto) {
     return this.reportsService.findSimilar(query.title, query.description, query.limit ?? 5)
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List reports with filters and pagination' })
   findAll(@Query() query: ListReportsQueryDto) {
@@ -46,6 +49,7 @@ export class ReportsController {
     })
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get report by ID with timeline' })
   findById(@Param('id') id: string) {
@@ -100,6 +104,7 @@ export class ReportsController {
     return this.reportsService.resolveDispute(id, dto, user)
   }
 
+  @Public()
   @Get(':id/followers')
   @ApiOperation({ summary: 'Listar políticos e entidades que acompanham o relato' })
   getFollowers(@Param('id') id: string) {

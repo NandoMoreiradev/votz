@@ -26,14 +26,14 @@
     "hls.js": "^1.6.16",
     "libphonenumber-js": "^1.13.2",
     "livekit-client": "^2.19.1",
-    "maplibre-gl": "^4.7.0",
+    "maplibre-gl": "^6.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",
     "react-router-dom": "^6.26.2",
     "socket.io-client": "^4.8.3",
     "styled-components": "^6.1.13",
-    "zod": "^3.23.8",
+    "zod": "^4.6.7",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

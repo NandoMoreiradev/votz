@@ -6,12 +6,13 @@ import {
   HttpStatus,
   Ip,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
-import { Response } from 'express'
+import { Request, Response } from 'express'
 import { AuthService } from './auth.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
@@ -19,10 +20,11 @@ import { VerifyEmailDto } from './dto/verify-email.dto'
 import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
 import { SwitchContextDto } from './dto/switch-context.dto'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
-import { JwtRefreshGuard } from './guards/jwt-refresh.guard'
 import { JwtMfaSetupGuard } from './guards/jwt-mfa-setup.guard'
 import { GoogleAuthGuard } from './guards/google-auth.guard'
+import { OriginCsrfGuard } from '../common/security/origin-csrf.guard'
 import { CurrentUser } from './decorators/current-user.decorator'
+import { Public } from './decorators/public.decorator'
 import { ConfigService } from '@nestjs/config'
 
 const REFRESH_COOKIE = 'votz_refresh_token'
@@ -45,6 +47,7 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
+  @Public()
   @Post('register')
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Register new citizen' })
@@ -54,6 +57,7 @@ export class AuthController {
     return { user, accessToken }
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
@@ -66,6 +70,7 @@ export class AuthController {
     return { requiresMfa: false, requiresMfaSetup: false, user: result.user, accessToken: result.accessToken }
   }
 
+  @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
@@ -93,6 +98,7 @@ export class AuthController {
     return this.authService.mfaSetup(user.id)
   }
 
+  @Public()
   @Post('mfa/setup/forced')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtMfaSetupGuard)
@@ -110,6 +116,7 @@ export class AuthController {
     return this.authService.mfaEnable(user.id, dto.code, false)
   }
 
+  @Public()
   @Post('mfa/enable/forced')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtMfaSetupGuard)
@@ -125,6 +132,7 @@ export class AuthController {
     return { backupCodes: result.backupCodes, accessToken: result.accessToken, user: result.user }
   }
 
+  @Public()
   @Post('mfa/verify')
   @HttpCode(HttpStatus.OK)
   @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
@@ -162,30 +170,46 @@ export class AuthController {
     return this.authService.mfaRegenerateBackupCodes(user.id, dto.code)
   }
 
+  @Public()
   @Post('refresh')
+  @UseGuards(OriginCsrfGuard)
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtRefreshGuard)
   @ApiOperation({ summary: 'Rotate refresh token and get new access token' })
   async refresh(
-    @CurrentUser() user: { id: string; email: string; type: string },
-    @Ip() ip: string,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.authService.refresh(user.id, user.email, user.type, ip)
+    const rawRefreshToken = (req.cookies as Record<string, string | undefined> | undefined)?.[REFRESH_COOKIE]
+    const { accessToken, refreshToken } = await this.authService.refresh(rawRefreshToken)
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
     return { accessToken }
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OriginCsrfGuard, JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout and invalidate refresh token' })
+  @ApiOperation({ summary: 'Logout current session family and invalidate refresh token cookie' })
   async logout(
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const rawRefreshToken = (req.cookies as Record<string, string | undefined> | undefined)?.[REFRESH_COOKIE]
+    await this.authService.logout(user.id, rawRefreshToken)
+    res.clearCookie(REFRESH_COOKIE, { path: '/', secure: isProd, sameSite: isProd ? 'none' : 'lax' })
+  }
+
+  @Post('logout-all')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(OriginCsrfGuard, JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout from all devices and revoke all refresh token families' })
+  async logoutAll(
     @CurrentUser() user: { id: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.authService.logout(user.id)
+    await this.authService.logoutAll(user.id)
     res.clearCookie(REFRESH_COOKIE, { path: '/', secure: isProd, sameSite: isProd ? 'none' : 'lax' })
   }
 
@@ -218,6 +242,7 @@ export class AuthController {
 
   // ── Google OAuth ────────────────────────────────────────────────────────
 
+  @Public()
   @Get('google')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Redirect to Google OAuth' })
@@ -225,6 +250,7 @@ export class AuthController {
     // Passport redireciona automaticamente
   }
 
+  @Public()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Google OAuth callback' })
@@ -233,10 +259,10 @@ export class AuthController {
     @Ip() ip: string,
     @Res() res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.authService.googleLogin(profile, ip)
+    const { refreshToken } = await this.authService.googleLogin(profile, ip)
     const appUrl = this.config.get('APP_URL', 'http://localhost:5173')
 
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
-    res.redirect(`${appUrl}/auth/google/callback?token=${encodeURIComponent(accessToken)}`)
+    res.redirect(`${appUrl}/auth/google/callback`)
   }
 }

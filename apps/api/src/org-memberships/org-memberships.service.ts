@@ -26,19 +26,28 @@ export class OrgMembershipsService {
   }
 
   createRole(dto: CreateRoleDto) {
-    return this.repo.createRole(dto.orgType, dto.orgId, dto.name, dto.permissions, dto.isDefault)
+    return this.repo.createRole(dto.orgType, dto.orgId, dto.name, dto.permissions, false)
   }
 
-  async updateRole(id: string, data: { name?: string; permissions?: OrgPermission[] }) {
+  async updateRole(
+    orgType: OrgType,
+    orgId: string,
+    id: string,
+    data: { name?: string; permissions?: OrgPermission[] },
+  ) {
     const role = await this.repo.findRoleById(id)
-    if (!role) throw new NotFoundException('Role não encontrada')
+    if (!role || role.orgType !== orgType || role.orgId !== orgId) {
+      throw new NotFoundException('Role não encontrada')
+    }
     if (role.isDefault) throw new BadRequestException('Não é possível editar roles padrão')
     return this.repo.updateRole(id, data)
   }
 
-  async deleteRole(id: string) {
+  async deleteRole(orgType: OrgType, orgId: string, id: string) {
     const role = await this.repo.findRoleById(id)
-    if (!role) throw new NotFoundException('Role não encontrada')
+    if (!role || role.orgType !== orgType || role.orgId !== orgId) {
+      throw new NotFoundException('Role não encontrada')
+    }
     if (role.isDefault) throw new BadRequestException('Não é possível excluir roles padrão')
     return this.repo.deleteRole(id)
   }
@@ -54,6 +63,9 @@ export class OrgMembershipsService {
     if (!membership) throw new NotFoundException('Membro não encontrado')
     const role = await this.repo.findRoleById(roleId)
     if (!role) throw new NotFoundException('Role não encontrada')
+    if (role.orgType !== orgType || role.orgId !== orgId) {
+      throw new BadRequestException('Role não pertence a esta organização')
+    }
     return this.repo.updateMemberRole(userId, orgType, orgId, roleId)
   }
 

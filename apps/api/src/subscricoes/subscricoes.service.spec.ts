@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common'
 import { OrgType } from '@prisma/client'
 
 process.env.STRIPE_POLITICIAN_PRO_PRICE_ID = 'price_pol_pro'
@@ -27,6 +27,11 @@ describe('SubscricoesService', () => {
       entity: { findUnique: jest.fn(), update: jest.fn() },
       politician: { findUnique: jest.fn(), update: jest.fn() },
       company: { findUnique: jest.fn(), update: jest.fn() },
+      stripeEvent: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+        delete: jest.fn().mockResolvedValue({}),
+      },
     }
     config = {
       getOrThrow: jest.fn((k: string) => {
@@ -92,6 +97,7 @@ describe('SubscricoesService', () => {
 
   it('handles checkout.session.completed and customer.subscription.deleted webhooks', async () => {
     stripeMock.webhooks.constructEvent.mockReturnValueOnce({
+      id: 'evt_checkout_1',
       type: 'checkout.session.completed',
       data: {
         object: {
@@ -103,12 +109,16 @@ describe('SubscricoesService', () => {
     })
 
     await service.handleWebhook(Buffer.from('{}'), 'sig')
+    expect(prisma.stripeEvent.create).toHaveBeenCalledWith({
+      data: { id: 'evt_checkout_1', type: 'checkout.session.completed' },
+    })
     expect(prisma.entity.update).toHaveBeenCalledWith({
       where: { id: 'e1' },
       data: { plan: 'GESTAO', stripeSubscriptionId: 'sub_1' },
     })
 
     stripeMock.webhooks.constructEvent.mockReturnValueOnce({
+      id: 'evt_sub_del_1',
       type: 'customer.subscription.deleted',
       data: { object: { metadata: { orgId: 'c1', orgType: OrgType.COMPANY } } },
     })
@@ -118,5 +128,55 @@ describe('SubscricoesService', () => {
       where: { id: 'c1' },
       data: { plan: 'STARTER', stripeSubscriptionId: null },
     })
+  })
+
+  it('ignores duplicate Stripe event IDs idempotently and logs invoice failures without customer PII', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    prisma.stripeEvent.findUnique.mockResolvedValueOnce({ id: 'evt_dup_1' })
+    stripeMock.webhooks.constructEvent.mockReturnValueOnce({
+      id: 'evt_dup_1',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          mode: 'subscription',
+          subscription: 'sub_dup',
+          metadata: { orgId: 'e1', orgType: OrgType.ENTITY, plan: 'GESTAO' },
+        },
+      },
+    })
+
+    const dupResult = await service.handleWebhook(Buffer.from('{}'), 'sig')
+    expect(dupResult).toEqual({ received: true, duplicate: true })
+    expect(prisma.entity.update).not.toHaveBeenCalled()
+
+    stripeMock.webhooks.constructEvent.mockReturnValueOnce({
+      id: 'evt_fail_1',
+      type: 'invoice.payment_failed',
+      data: { object: { customer: 'cus_secret_pii_123' } },
+    })
+
+    const failResult = await service.handleWebhook(Buffer.from('{}'), 'sig')
+    expect(failResult).toEqual({ received: true })
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0][0]).toContain('evt_fail_1')
+    expect(warnSpy.mock.calls[0][0]).not.toContain('cus_secret_pii_123')
+    warnSpy.mockRestore()
+  })
+
+  it('throws NotFoundException when organization does not exist and never overwrites existing stripeCustomerId', async () => {
+    prisma.entity.findUnique.mockResolvedValueOnce(null)
+    await expect(
+      service.criarCheckout('missing-e', OrgType.ENTITY, 'GESTAO', 'owner@votz.app'),
+    ).rejects.toThrow(NotFoundException)
+    expect(stripeMock.customers.create).not.toHaveBeenCalled()
+
+    prisma.entity.findUnique.mockResolvedValueOnce(null)
+    await expect(service.criarPortal('missing-e', OrgType.ENTITY)).rejects.toThrow(NotFoundException)
+
+    prisma.entity.findUnique.mockResolvedValueOnce({ stripeCustomerId: 'cus_keep' })
+    stripeMock.checkout.sessions.create.mockResolvedValueOnce({ url: 'https://checkout.stripe.com/keep' })
+    await service.criarCheckout('e1', OrgType.ENTITY, 'GESTAO', 'owner@votz.app')
+    expect(stripeMock.customers.create).not.toHaveBeenCalled()
+    expect(prisma.entity.update).not.toHaveBeenCalled()
   })
 })

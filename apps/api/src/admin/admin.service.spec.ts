@@ -13,6 +13,7 @@ describe('AdminService', () => {
   let prisma: any
   let storage: any
   let mail: any
+  let socketRegistry: any
 
   beforeEach(() => {
     repo = {
@@ -35,6 +36,9 @@ describe('AdminService', () => {
       moderationAction: {
         update: jest.fn().mockResolvedValue({ id: 'act-1', notifiedAt: new Date() }),
       },
+      refreshToken: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     }
     storage = {
       extractKeyFromUrl: jest.fn((url: string) =>
@@ -45,7 +49,10 @@ describe('AdminService', () => {
     mail = {
       sendModerationNotice: jest.fn().mockResolvedValue(true),
     }
-    service = new AdminService(repo, prisma, storage, mail)
+    socketRegistry = {
+      disconnectUser: jest.fn().mockReturnValue(1),
+    }
+    service = new AdminService(repo, prisma, storage, mail, socketRegistry)
   })
 
   it('delegates stats and clamps pagination limit to 50', async () => {
@@ -116,6 +123,11 @@ describe('AdminService', () => {
 
       expect(res).toEqual({ id: 'u1', banned: true })
       expect(repo.setBan).toHaveBeenCalledWith('u1', true, 'mod-1', 'Publicações repetidas com spam.')
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      })
+      expect(socketRegistry.disconnectUser).toHaveBeenCalledWith('u1')
       expect(mail.sendModerationNotice).toHaveBeenCalledWith(
         'carlos@votz.app',
         'Carlos',
@@ -142,6 +154,8 @@ describe('AdminService', () => {
 
       expect(res).toEqual({ id: 'u1', banned: false })
       expect(repo.setBan).toHaveBeenCalledWith('u1', false, 'admin-1', 'Desbanido pela moderação')
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled()
+      expect(socketRegistry.disconnectUser).not.toHaveBeenCalled()
       expect(mail.sendModerationNotice).not.toHaveBeenCalled()
       expect(prisma.moderationAction.update).not.toHaveBeenCalled()
     })

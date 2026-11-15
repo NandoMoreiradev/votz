@@ -59,11 +59,12 @@ export class VerificationRetentionService {
     let purgedRequests = 0
     let deletedFiles = 0
     let failedFiles = 0
-    let cursor: string | undefined
+    const excludeIds = new Set<string>()
 
     while (true) {
       const batch = await this.prisma.registrationRequest.findMany({
         where: {
+          ...(excludeIds.size > 0 ? { id: { notIn: Array.from(excludeIds) } } : {}),
           OR: [
             { status: RegistrationRequestStatus.REJECTED, updatedAt: { lt: rejectedCutoff } },
             { status: RegistrationRequestStatus.APPROVED, updatedAt: { lt: approvedCutoff } },
@@ -72,12 +73,12 @@ export class VerificationRetentionService {
         select: { id: true, status: true, updatedAt: true, payload: true },
         orderBy: { id: 'asc' },
         take: BATCH_SIZE,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       })
 
-      if (batch.length === 0) break
+      if (!batch || batch.length === 0) break
 
       for (const req of batch) {
+        excludeIds.add(req.id)
         scanned++
         if (!this.isEligibleForPurge(req.status, req.updatedAt, rejectedCutoff, approvedCutoff)) {
           continue
@@ -88,9 +89,7 @@ export class VerificationRetentionService {
         failedFiles += res.failed
       }
 
-      const lastId = batch[batch.length - 1]?.id
-      if (batch.length < BATCH_SIZE || !lastId || lastId === cursor) break
-      cursor = lastId
+      if (batch.length < BATCH_SIZE) break
     }
 
     if (purgedRequests > 0 || failedFiles > 0) {

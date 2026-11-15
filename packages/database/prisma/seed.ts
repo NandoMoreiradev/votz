@@ -437,6 +437,7 @@ async function main() {
         OrgPermission.VIEW_ANALYTICS,
         OrgPermission.EXPORT_DATA,
         OrgPermission.MANAGE_BRANCHES,
+        OrgPermission.MANAGE_BILLING,
       ],
       isDefault: true,
     },
@@ -468,6 +469,12 @@ async function main() {
     for (const r of DEFAULT_ROLES) {
       const existing = await prisma.orgRole.findFirst({ where: { orgType, orgId, name: r.name } })
       if (existing) {
+        if (r.name === 'Proprietário' && !existing.permissions.includes(OrgPermission.MANAGE_BILLING)) {
+          await prisma.orgRole.update({
+            where: { id: existing.id },
+            data: { permissions: r.permissions },
+          })
+        }
         roleMap[r.name] = existing.id
         continue
       }

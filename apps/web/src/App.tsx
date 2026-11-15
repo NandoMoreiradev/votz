@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import axios from 'axios'
 import { ThemeProvider } from 'styled-components'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -7,8 +6,8 @@ import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { theme } from './theme'
 import { GlobalStyle } from './theme/GlobalStyle'
 import { queryClient } from './lib/query-client'
-import { api } from './lib/api'
-import { setToken, getToken } from './lib/token'
+import { api, refreshSession } from './lib/api'
+import { getToken } from './lib/token'
 import { useAuthStore } from './store/auth.store'
 import { SwitchContextResponse } from './types/api'
 import { Home } from './pages/Home'
@@ -68,13 +67,8 @@ function AuthInit() {
     // usando getState() para garantir o valor hidratado do localStorage
     const savedContext = useAuthStore.getState().activeContext
 
-    const apiBase = import.meta.env.VITE_API_URL ?? '/api/v1'
-    axios
-      .post<{ accessToken: string }>(`${apiBase}/auth/refresh`, {}, { withCredentials: true })
-      .then(({ data }) => {
-        setToken(data.accessToken)
-        return api.get('/auth/me')
-      })
+    refreshSession()
+      .then(() => api.get('/auth/me'))
       .then(({ data: user }) => {
         const token = getToken()
         if (!token) return

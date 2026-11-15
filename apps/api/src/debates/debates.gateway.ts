@@ -1,4 +1,4 @@
-import { Logger, Optional } from '@nestjs/common'
+import { Logger, OnModuleDestroy, Optional } from '@nestjs/common'
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -11,6 +11,12 @@ import {
 import { JwtService } from '@nestjs/jwt'
 import { Server, Socket } from 'socket.io'
 import { DebateStatus, ReactionType } from '@prisma/client'
+import { PrismaService } from '../prisma/prisma.service'
+import {
+  SocketSessionRegistry,
+  startSocketSessionTracking,
+  stopSocketSessionTracking,
+} from '../common/security/socket-session.registry'
 import { DebatesRepository } from './debates.repository'
 
 interface ReactionBurst {
@@ -25,7 +31,9 @@ interface ReactionBurst {
     credentials: true,
   },
 })
-export class DebatesGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class DebatesGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   @WebSocketServer() server: Server
 
   private readonly logger = new Logger(DebatesGateway.name)
@@ -40,9 +48,14 @@ export class DebatesGateway implements OnGatewayConnection, OnGatewayDisconnect 
   // viewer count intervals per debate room
   private readonly viewerCountIntervals = new Map<string, ReturnType<typeof setInterval>>()
 
+  // periodic user ban/existence revalidation intervals per socket
+  private readonly revalidationIntervals = new Map<string, ReturnType<typeof setInterval>>()
+
   constructor(
     private readonly jwt: JwtService,
     private readonly repo: DebatesRepository,
+    private readonly prisma: PrismaService,
+    @Optional() private readonly socketRegistry?: SocketSessionRegistry,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -51,8 +64,26 @@ export class DebatesGateway implements OnGatewayConnection, OnGatewayDisconnect 
       const token = raw?.startsWith('Bearer ') ? raw.slice(7) : raw
       if (!token) { client.disconnect(); return }
 
-      const payload = this.jwt.verify<{ sub: string }>(token)
+      const payload = this.jwt.verify<{ sub?: string; typ?: string }>(token, {
+        algorithms: ['HS256'],
+      })
+      if (!payload?.sub || payload.typ !== 'access') { client.disconnect(); return }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, banned: true },
+      })
+      if (!user || user.banned) { client.disconnect(); return }
+
       client.data.userId = payload.sub
+      startSocketSessionTracking({
+        client,
+        userId: payload.sub,
+        prisma: this.prisma,
+        intervals: this.revalidationIntervals,
+        registry: this.socketRegistry,
+        logger: this.logger,
+      })
       this.logger.debug(`[ws/debates] connected: ${payload.sub}`)
     } catch {
       client.disconnect()
@@ -60,11 +91,19 @@ export class DebatesGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   async handleDisconnect(client: Socket) {
-    const rooms = [...client.rooms].filter((r) => r.startsWith('debate:'))
+    stopSocketSessionTracking(client, this.revalidationIntervals, this.socketRegistry)
+    const rooms = [...(client.rooms ?? [])].filter((r) => r.startsWith('debate:'))
     for (const room of rooms) {
       await this.broadcastViewerCount(room.replace('debate:', ''))
     }
     this.logger.debug(`[ws/debates] disconnected: ${client.data.userId ?? client.id}`)
+  }
+
+  onModuleDestroy() {
+    for (const interval of this.revalidationIntervals.values()) {
+      clearInterval(interval)
+    }
+    this.revalidationIntervals.clear()
   }
 
   @SubscribeMessage('debate:join')

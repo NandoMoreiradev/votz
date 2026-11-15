@@ -1,4 +1,11 @@
-import { CanActivate, ExecutionContext, Injectable, ForbiddenException, SetMetadata } from '@nestjs/common'
+import {
+  BadRequestException,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  SetMetadata,
+} from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { OrgPermission, OrgType } from '@prisma/client'
 import { OrgMembershipsRepository } from './org-memberships.repository'
@@ -27,6 +34,9 @@ export class OrgPermissionGuard implements CanActivate {
     const orgId = (req.params.orgId ?? req.body?.orgId) as string
 
     if (!orgType || !orgId) throw new ForbiddenException('orgType e orgId obrigatórios')
+    if (!Object.values(OrgType).includes(orgType)) {
+      throw new BadRequestException('orgType inválido')
+    }
 
     const membership = await this.repo.findMembership(user.id, orgType, orgId)
     if (!membership || membership.status !== 'ACTIVE') {

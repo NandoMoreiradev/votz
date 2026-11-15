@@ -220,4 +220,35 @@ describe('VerificationRetentionService', () => {
       },
     })
   })
+
+  it('processes more than 100 requests across multiple batches without cursor skipping', async () => {
+    const now = new Date('2026-11-14T04:00:00.000Z')
+    const total = 105
+    const rows = Array.from({ length: total }, (_, idx) => ({
+      id: `req-${String(idx + 1).padStart(3, '0')}`,
+      status: RegistrationRequestStatus.REJECTED,
+      updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      payload: {
+        orgName: `Org ${idx + 1}`,
+        documents: { doc: `verification/${idx + 1}.pdf` },
+      },
+    }))
+
+    mockPrisma.registrationRequest.findMany.mockImplementation(async (args: any) => {
+      const excluded = new Set<string>(args?.where?.id?.notIn ?? [])
+      return rows.filter((r) => !excluded.has(r.id)).slice(0, args?.take ?? 100)
+    })
+
+    const res = await service.purgeExpiredDocuments(now)
+
+    expect(res).toEqual({
+      scanned: total,
+      purgedRequests: total,
+      deletedFiles: total,
+      failedFiles: 0,
+    })
+    expect(mockPrisma.registrationRequest.findMany).toHaveBeenCalledTimes(2)
+    expect(mockPrisma.registrationRequest.findMany.mock.calls[1][0]).not.toHaveProperty('cursor')
+    expect(mockPrisma.registrationRequest.findMany.mock.calls[1][0]).not.toHaveProperty('skip')
+  })
 })

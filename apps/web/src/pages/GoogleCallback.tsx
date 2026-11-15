@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
-import { setToken } from '../lib/token'
+import { api, refreshSession } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
 import { useSwitchContext } from '../hooks/useAuth'
 import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
@@ -15,28 +14,33 @@ export function GoogleCallback() {
   const { mutate: switchContext, isPending: switching, isError: switchError } = useSwitchContext()
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const token = params.get('token')
+    let active = true
 
-    if (!token) {
-      navigate('/entrar', { replace: true })
-      return
+    if (window.location.search) {
+      window.history.replaceState({}, document.title, window.location.pathname)
     }
 
-    setToken(token)
-    api.get('/auth/me').then(({ data: user }) => {
-      setAuth(user, token)
-      return api.get<MyProfilesResponse>('/auth/my-profiles')
-    }).then(({ data: p }) => {
-      if (p.orgs.length === 0) {
-        navigate('/', { replace: true })
-      } else {
-        setProfiles(p)
-      }
-    }).catch(() => {
-      navigate('/entrar', { replace: true })
-    })
-  }, [])
+    refreshSession()
+      .then(async (token) => {
+        const { data: user } = await api.get('/auth/me')
+        if (!active) return
+        setAuth(user, token)
+        const { data: p } = await api.get<MyProfilesResponse>('/auth/my-profiles')
+        if (!active) return
+        if (p.orgs.length === 0) {
+          navigate('/', { replace: true })
+        } else {
+          setProfiles(p)
+        }
+      })
+      .catch(() => {
+        if (active) navigate('/entrar', { replace: true })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [navigate, setAuth])
 
   function handleProfileSelect(contextType: string, contextId?: string, mfaCode?: string) {
     setMfaSetupRequired(false)

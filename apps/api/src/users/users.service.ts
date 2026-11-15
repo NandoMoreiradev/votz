@@ -230,6 +230,7 @@ export class UsersService {
       await tx.notification.deleteMany({ where: { userId } })
       await tx.orgMembership.deleteMany({ where: { userId } })
       await tx.registrationRequest.deleteMany({ where: { requesterId: userId } })
+      await tx.refreshToken.deleteMany({ where: { userId } })
 
       // AccessLog NÃO é apagado: guarda legal obrigatória por 6 meses (Marco Civil, art. 15).
       await tx.user.delete({ where: { id: userId } })
