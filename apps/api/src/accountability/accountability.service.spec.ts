@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { AccountabilityReportStatus, OrgType } from '@prisma/client'
+import PDFDocument from 'pdfkit'
 import { AccountabilityService } from './accountability.service'
 import { ReportRendererService } from './report-renderer.service'
 
@@ -55,6 +56,148 @@ describe('ReportRendererService & AccountabilityService', () => {
     expect(Buffer.isBuffer(pdf)).toBe(true)
     expect(pdf.length).toBeGreaterThan(2000)
     expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-')
+  })
+
+  it('V3: renders both POLITICIAN and ENTITY PDFs with pt-BR dates, commas, days > 48h, and truncated titles', async () => {
+    const renderer = new ReportRendererService()
+    const capturedTexts: string[] = []
+    const origText = PDFDocument.prototype.text
+    const textSpy = jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+      this: unknown,
+      ...args: unknown[]
+    ) {
+      if (typeof args[0] === 'string') capturedTexts.push(args[0])
+      return (origText as (...a: unknown[]) => unknown).apply(this, args) as any
+    })
+
+    try {
+      const politicianPdf = await renderer.renderAccountabilityPdf({
+        orgType: 'POLITICIAN',
+        orgId: 'pol-1',
+        orgName: 'Marina Silva Exemplo',
+        roleOrTypeLabel: 'Vereadora · PSB',
+        territoryLabel: 'São Paulo / SP',
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-31',
+        previousPeriodStart: '2026-09-01',
+        previousPeriodEnd: '2026-09-30',
+        code: 'VTZ-2026-POL891',
+        verificationUrl: 'https://votz.org.br/prestacao/VTZ-2026-POL891',
+        metrics: {
+          received: 1248,
+          responded: 1094,
+          advocated: 184,
+          resolved: 892,
+          medianResponseHours: 18.5,
+          medianResolutionHours: 141.6,
+          responseRatePercent: 87.7,
+          resolutionRatePercent: 71.5,
+          previousReceived: 1020,
+          previousResolved: 710,
+          suppressed: false,
+        },
+        topCategories: [{ category: 'Mobilidade', receivedCount: 410, resolvedCount: 295 }],
+        topResolvedReports: [
+          {
+            title:
+              'Drenagem de galeria pluvial com acúmulo recorrente de água e necessidade urgente de intervenção viária na avenida principal',
+            category: 'Saneamento',
+            resolvedAt: '2026-10-12',
+            supportCount: 184,
+          },
+        ],
+        methodology: {
+          dictionaryVersion: 'v1.0',
+          dictionaryDate: '2026-11-15',
+          timezone: 'America/Sao_Paulo',
+          computedAt: '2026-11-01T12:00:00.000Z',
+          note: 'Relatório factual sem dados pessoais de cidadãos.',
+        },
+      })
+      const polJoined = capturedTexts.join('\n')
+      expect(politicianPdf.subarray(0, 5).toString('utf8')).toBe('%PDF-')
+      expect(polJoined).toContain('PRESTAÇÃO DE CONTAS — VOTZ')
+      expect(polJoined).toContain('01/10/2026 a 31/10/2026')
+      expect(polJoined).toContain('01/09/2026 a 30/09/2026')
+      expect(polJoined).toContain('18,5 h')
+      expect(polJoined).toContain('71,5%')
+      expect(polJoined).toContain('12/10/2026')
+      expect(polJoined).toContain('15/11/2026')
+      expect(polJoined).toContain('01/11/2026 09:00')
+      expect(polJoined).toContain('...')
+      expect(polJoined).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/)
+
+      capturedTexts.length = 0
+
+      const entityPdf = await renderer.renderAccountabilityPdf({
+        orgType: 'ENTITY',
+        orgId: 'ent-1',
+        orgName: 'Secretaria Municipal de Infraestrutura Urbana',
+        roleOrTypeLabel: 'Órgão Executivo Municipal',
+        territoryLabel: 'São Paulo / SP',
+        periodStart: '2026-10-01',
+        periodEnd: '2026-10-31',
+        previousPeriodStart: '2026-09-01',
+        previousPeriodEnd: '2026-09-30',
+        code: 'VTZ-2026-ENT402',
+        verificationUrl: 'https://votz.org.br/prestacao/VTZ-2026-ENT402',
+        metrics: {
+          received: 3420,
+          responded: 2890,
+          advocated: 0,
+          resolved: 2150,
+          medianResponseHours: 141.6,
+          medianResolutionHours: 240,
+          responseRatePercent: 84.5,
+          resolutionRatePercent: 62.9,
+          slaMet: 1508,
+          slaBreached: 1382,
+          slaCompliancePercent: 52.2,
+          previousReceived: 3100,
+          previousResolved: 1940,
+          suppressed: false,
+        },
+        topCategories: [{ category: 'Drenagem e alagamentos', receivedCount: 890, resolvedCount: 510 }],
+        recurrence: {
+          windowEnd: '2026-10-31',
+          visibleCellsCount: 18,
+          suppressedCellsCount: 6,
+          recurrenceIndexPercent: 34.8,
+          topCells: [{ cell7: '89a8100c3ffffff', category: 'Drenagem', count90d: 42 }],
+        },
+        topResolvedReports: [
+          {
+            title:
+              'Desobstrução completa de bueiro entupido com risco de enchente e necessidade urgente de reparo na via principal',
+            category: 'Drenagem e alagamentos',
+            resolvedAt: '2026-10-12',
+            supportCount: 278,
+          },
+        ],
+        methodology: {
+          dictionaryVersion: 'v1.0',
+          dictionaryDate: '2026-11-15',
+          timezone: 'America/Sao_Paulo',
+          computedAt: '2026-11-01T12:00:00.000Z',
+          note: 'Relatório factual sem dados pessoais de cidadãos.',
+        },
+      })
+
+      const entJoined = capturedTexts.join('\n')
+      expect(entityPdf.subarray(0, 5).toString('utf8')).toBe('%PDF-')
+      expect(entJoined).toContain('RELATÓRIO DE ATENDIMENTO — VOTZ')
+      expect(entJoined).toContain('01/10/2026 a 31/10/2026')
+      expect(entJoined).toContain('52,2%')
+      expect(entJoined).toContain('5,9 dias')
+      expect(entJoined).toContain('62,9%')
+      expect(entJoined).toContain('34,8%')
+      expect(entJoined).toContain('até 31/10/2026')
+      expect(entJoined).toContain('12/10/2026')
+      expect(entJoined).toContain('...')
+      expect(entJoined).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/)
+    } finally {
+      textSpy.mockRestore()
+    }
   })
 
   it('enforces monthly quota (MANDATO=4), keeps public verification immutable, and purges PDFs older than 7 days', async () => {

@@ -16,6 +16,8 @@ O cartão usa cores de outra paleta (`#0F172A`, azul `#1D4ED8` e tons de ardósi
 
 ## V3 — Datas e textos no PDF e no cartão
 
+> **Atenção:** o brief 4D acrescentou ao mesmo `report-renderer.service.ts` o modelo **"Relatório de atendimento — Votz"** (entidades). As correções abaixo valem para **os dois modelos de PDF**: o de prestação de contas do político e o de atendimento da entidade. Conferir os dois.
+
 - O PDF mostra datas em formato ISO ("2026-10-01 a 2026-10-31", "2026-10-12"). Trocar para **dd/mm/aaaa** em todo o PDF (o cartão já faz isso).
 - Horas: "18.5h" → "18,5 h" (vírgula decimal). Percentuais: "52.2%" → "52,2%". Dias para tempos acima de 48 h (ex.: "5,9 dias").
 - Conferir acentos e quebras de linha em títulos longos de relato (truncar com reticências, sem estourar a margem).
@@ -24,6 +26,10 @@ O cartão usa cores de outra paleta (`#0F172A`, azul `#1D4ED8` e tons de ardósi
 
 Já conferi **estrutura e posição** do PDF por extração de texto (1 página, nada fora das margens, todos os blocos presentes). Falta olhar o visual (cores, QR, espaçamento). Gerar o PDF de exemplo, **converter a página em imagem** (por exemplo com `pdfjs-dist` + `@napi-rs/canvas` num script de desenvolvimento, **sem adicioná-los ao `package.json` do app**), abrir e descrever: posição e nitidez do QR, hierarquia dos títulos, contraste, espaço vazio entre as seções e o rodapé. Corrigir o que estiver ruim.
 
+## V5 — Descrição visual obrigatória no relatório
+
+"Testes passaram" **não** basta para este brief. No relatório, para **cada** arquivo gerado (cartão FEED, cartão STORIES, PDF do político, PDF da entidade), escreva um parágrafo dizendo **o que você viu ao abrir a imagem**: o que aparece no topo, no meio e no rodapé; se algo encosta ou ultrapassa as bordas; as cores usadas; o tamanho relativo dos títulos e números; e a posição do QR no PDF. Se não conseguir abrir uma imagem, **diga isso explicitamente** em vez de presumir que está correto. Caminhos dos arquivos de exemplo gerados devem constar no relatório.
+
 ## Pronto quando
 
-`tsc` da API e do web limpos; suítes verdes (informar o número); `npm run build` ok; relatório com as imagens do cartão (FEED e STORIES) e do PDF **descritas** e o resultado do teste de regressão visual. **Não commitar.**
+`tsc` da API e do web limpos; suítes verdes (informar o número); `npm run build` ok; relatório com as imagens do cartão (FEED e STORIES) e dos **dois** PDFs **descritas** (V5) e o resultado do teste de regressão visual. **Não commitar.**

@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common'
 import PDFDocument from 'pdfkit'
 import * as QRCode from 'qrcode'
+import {
+  formatCountPtBr,
+  formatDateBr,
+  formatDateTimeBr,
+  formatDurationPtBr,
+  formatPercentPtBr,
+  truncateWithEllipsis,
+  VOTZ_BRAND_COLORS,
+} from '../common/branding/votz-visual'
 import { loadBundledFonts } from '../common/fonts/fonts.loader'
 
 export interface AccountabilitySnapshot {
@@ -69,9 +78,9 @@ export class ReportRendererService {
     const fonts = loadBundledFonts()
     const qrPngBuffer = await QRCode.toBuffer(snapshot.verificationUrl, {
       type: 'png',
-      width: 140,
+      width: 240,
       margin: 1,
-      color: { dark: '#1A1A2E', light: '#FFFFFF' },
+      color: { dark: VOTZ_BRAND_COLORS.primary, light: VOTZ_BRAND_COLORS.white },
     })
 
     const documentHeading =
@@ -79,6 +88,9 @@ export class ReportRendererService {
       (snapshot.orgType === 'ENTITY'
         ? 'RELATÓRIO DE ATENDIMENTO — VOTZ'
         : 'PRESTAÇÃO DE CONTAS — VOTZ')
+
+    const periodLabel = `${formatDateBr(snapshot.periodStart)} a ${formatDateBr(snapshot.periodEnd)}`
+    const previousPeriodLabel = `${formatDateBr(snapshot.previousPeriodStart)} a ${formatDateBr(snapshot.previousPeriodEnd)}`
 
     const doc = new PDFDocument({
       size: 'A4',
@@ -89,7 +101,7 @@ export class ReportRendererService {
             ? `Relatório de Atendimento Votz — ${snapshot.orgName}`
             : `Prestação de Contas Votz — ${snapshot.orgName}`,
         Author: 'Votz',
-        Subject: `Período ${snapshot.periodStart} a ${snapshot.periodEnd} (${snapshot.code})`,
+        Subject: `Período ${periodLabel} (${snapshot.code})`,
       },
     })
 
@@ -107,72 +119,108 @@ export class ReportRendererService {
     doc.registerFont('MonoBold', fonts.jetBrainsMonoBold)
 
     const pageWidth = doc.page.width - 96
+    const headerTextWidth = pageWidth - 108
+
+    // Barra institucional superior Votz
+    doc.rect(48, 36, 40, 4).fill(VOTZ_BRAND_COLORS.action)
 
     // Cabeçalho institucional neutro (sem propaganda eleitoral)
     doc
-      .fillColor('#1A1A2E')
+      .fillColor(VOTZ_BRAND_COLORS.primary)
       .font('Heading')
-      .fontSize(20)
-      .text(documentHeading, 48, 46, { width: pageWidth - 110 })
+      .fontSize(19)
+      .text(truncateWithEllipsis(documentHeading, 46), 48, 46, { width: headerTextWidth })
 
+    const orgLineY = Math.max(72, doc.y + 4)
     doc
-      .fillColor('#475569')
+      .fillColor(VOTZ_BRAND_COLORS.muted)
       .font('Body')
       .fontSize(10)
       .text(
-        `${snapshot.orgName} · ${snapshot.roleOrTypeLabel} · ${snapshot.territoryLabel}`,
+        truncateWithEllipsis(
+          `${snapshot.orgName} · ${snapshot.roleOrTypeLabel} · ${snapshot.territoryLabel}`,
+          120,
+        ),
         48,
-        74,
-        { width: pageWidth - 110 },
+        orgLineY,
+        { width: headerTextWidth },
       )
-      .text(`Período auditado: ${snapshot.periodStart} a ${snapshot.periodEnd}`, 48, 90, {
-        width: pageWidth - 110,
+
+    const periodLineY = Math.max(89, doc.y + 3)
+    doc
+      .fillColor(VOTZ_BRAND_COLORS.text)
+      .font('Body')
+      .fontSize(10)
+      .text(`Período auditado: ${periodLabel}`, 48, periodLineY, {
+        width: headerTextWidth,
       })
 
+    const codeLineY = Math.max(107, doc.y + 4)
     doc
       .font('MonoBold')
       .fontSize(9)
-      .fillColor('#1A1A2E')
-      .text(`Código: ${snapshot.code}`, 48, 108, { width: pageWidth - 110 })
+      .fillColor(VOTZ_BRAND_COLORS.primary)
+      .text(`Código: ${snapshot.code}`, 48, codeLineY, { width: headerTextWidth })
 
-    doc.image(qrPngBuffer, doc.page.width - 138, 42, { width: 88, height: 88 })
+    doc.image(qrPngBuffer, doc.page.width - 136, 40, { width: 88, height: 88 })
 
+    const dividerY = Math.max(138, doc.y + 12)
     doc
-      .moveTo(48, 140)
-      .lineTo(doc.page.width - 48, 140)
-      .strokeColor('#E2E8F0')
+      .moveTo(48, dividerY)
+      .lineTo(doc.page.width - 48, dividerY)
+      .strokeColor(VOTZ_BRAND_COLORS.border)
       .lineWidth(1)
       .stroke()
 
     // Grade de KPIs factuais
-    let y = 156
-    doc.font('Heading').fontSize(12).fillColor('#1A1A2E').text('Indicadores do período', 48, y)
-    y += 20
+    let y = dividerY + 14
+    doc
+      .font('Heading')
+      .fontSize(12)
+      .fillColor(VOTZ_BRAND_COLORS.primary)
+      .text('Indicadores do período', 48, y)
+    y += 19
 
     const m = snapshot.metrics
     const thirdCard =
       snapshot.orgType === 'ENTITY' || m.slaCompliancePercent !== undefined
         ? {
             label: 'Cumprimento de prazo (SLA)',
-            value:
-              m.slaCompliancePercent !== null && m.slaCompliancePercent !== undefined
-                ? `${m.slaCompliancePercent}%`
-                : '—',
+            value: formatPercentPtBr(m.slaCompliancePercent),
+            accent: VOTZ_BRAND_COLORS.positive,
           }
-        : { label: 'Avocados', value: String(m.advocated) }
+        : {
+            label: 'Avocados',
+            value: formatCountPtBr(m.advocated),
+            accent: VOTZ_BRAND_COLORS.primary,
+          }
 
     const kpiCards = [
-      { label: 'Relatos no recorte', value: String(m.received) },
-      { label: 'Respondidos', value: String(m.responded) },
+      {
+        label: 'Relatos no recorte',
+        value: formatCountPtBr(m.received),
+        accent: VOTZ_BRAND_COLORS.primary,
+      },
+      {
+        label: 'Respondidos',
+        value: formatCountPtBr(m.responded),
+        accent: VOTZ_BRAND_COLORS.primary,
+      },
       thirdCard,
-      { label: 'Resolvidos', value: String(m.resolved) },
+      {
+        label: 'Resolvidos',
+        value: formatCountPtBr(m.resolved),
+        accent: VOTZ_BRAND_COLORS.positive,
+      },
       {
         label: 'Mediana 1ª resposta',
-        value: m.medianResponseHours !== null ? `${m.medianResponseHours}h` : '—',
+        value: formatDurationPtBr(m.medianResponseHours),
+        accent: VOTZ_BRAND_COLORS.primary,
       },
       {
         label: 'Taxa de resolução',
-        value: m.resolutionRatePercent !== null ? `${m.resolutionRatePercent}%` : '—',
+        value: formatPercentPtBr(m.resolutionRatePercent),
+        accent: VOTZ_BRAND_COLORS.positive,
       },
     ]
 
@@ -181,47 +229,56 @@ export class ReportRendererService {
       const col = idx % 3
       const row = Math.floor(idx / 3)
       const cx = 48 + col * (cardWidth + 10)
-      const cy = y + row * 56
+      const cy = y + row * 54
       doc
-        .roundedRect(cx, cy, cardWidth, 48, 6)
-        .fillAndStroke('#F8FAFC', '#E2E8F0')
+        .roundedRect(cx, cy, cardWidth, 46, 6)
+        .fillAndStroke(VOTZ_BRAND_COLORS.neutral, VOTZ_BRAND_COLORS.border)
+      doc.rect(cx, cy + 8, 3.5, 30).fill(card.accent)
       doc
-        .fillColor('#64748B')
+        .fillColor(VOTZ_BRAND_COLORS.muted)
         .font('Body')
         .fontSize(8)
-        .text(card.label, cx + 10, cy + 8, { width: cardWidth - 20 })
+        .text(card.label, cx + 11, cy + 7, { width: cardWidth - 20 })
       doc
-        .fillColor('#1A1A2E')
+        .fillColor(VOTZ_BRAND_COLORS.text)
         .font('MonoBold')
-        .fontSize(14)
-        .text(card.value, cx + 10, cy + 23, { width: cardWidth - 20 })
+        .fontSize(13.5)
+        .text(card.value, cx + 11, cy + 22, { width: cardWidth - 20 })
     })
 
-    y += 124
+    y += 118
 
     // Comparativo com período anterior
-    doc.font('Heading').fontSize(12).fillColor('#1A1A2E').text('Comparativo com o período anterior', 48, y)
-    y += 18
+    doc
+      .font('Heading')
+      .fontSize(12)
+      .fillColor(VOTZ_BRAND_COLORS.primary)
+      .text('Comparativo com o período anterior', 48, y)
+    y += 17
     doc
       .font('Body')
       .fontSize(9.5)
-      .fillColor('#334155')
+      .fillColor(VOTZ_BRAND_COLORS.text)
       .text(
-        `Período anterior (${snapshot.previousPeriodStart} a ${snapshot.previousPeriodEnd}): ${m.previousReceived} relatos na área e ${m.previousResolved} resolvidos.`,
+        `Período anterior (${previousPeriodLabel}): ${formatCountPtBr(m.previousReceived)} relatos na área e ${formatCountPtBr(m.previousResolved)} resolvidos.`,
         48,
         y,
         { width: pageWidth },
       )
-    y += 28
+    y += 26
 
     // Categorias principais
-    doc.font('Heading').fontSize(12).fillColor('#1A1A2E').text('Principais categorias na área', 48, y)
-    y += 18
+    doc
+      .font('Heading')
+      .fontSize(12)
+      .fillColor(VOTZ_BRAND_COLORS.primary)
+      .text('Principais categorias na área', 48, y)
+    y += 17
     if (snapshot.topCategories.length === 0) {
       doc
         .font('Body')
         .fontSize(9)
-        .fillColor('#64748B')
+        .fillColor(VOTZ_BRAND_COLORS.mutedLight)
         .text('Sem categorias registradas no período selecionado.', 48, y)
       y += 20
     } else {
@@ -229,95 +286,121 @@ export class ReportRendererService {
         doc
           .font('BodyBold')
           .fontSize(9)
-          .fillColor('#1A1A2E')
-          .text(cat.category, 48, y, { width: 220, continued: false })
+          .fillColor(VOTZ_BRAND_COLORS.primary)
+          .text(truncateWithEllipsis(cat.category, 32), 48, y, { width: 215, continued: false })
         doc
           .font('Mono')
           .fontSize(9)
-          .fillColor('#334155')
-          .text(`Recebidos: ${cat.receivedCount}   ·   Resolvidos: ${cat.resolvedCount}`, 270, y, {
-            width: pageWidth - 222,
-          })
-        y += 16
+          .fillColor(VOTZ_BRAND_COLORS.muted)
+          .text(
+            `Recebidos: ${formatCountPtBr(cat.receivedCount)}   ·   Resolvidos: ${formatCountPtBr(cat.resolvedCount)}`,
+            268,
+            y,
+            { width: pageWidth - 220 },
+          )
+        y += 15
       }
       y += 10
     }
 
     if (snapshot.recurrence) {
-      doc.font('Heading').fontSize(12).fillColor('#1A1A2E').text('Reincidência por área (janela 90d)', 48, y)
-      y += 18
       const rec = snapshot.recurrence
+      const windowSuffix = rec.windowEnd ? ` · até ${formatDateBr(rec.windowEnd)}` : ''
+      doc
+        .font('Heading')
+        .fontSize(12)
+        .fillColor(VOTZ_BRAND_COLORS.primary)
+        .text(`Reincidência por área (janela 90d${windowSuffix})`, 48, y)
+      y += 17
       const recSummary =
         rec.recurrenceIndexPercent !== null
-          ? `Índice de reincidência: ${rec.recurrenceIndexPercent}% · Células visíveis (>= 10): ${rec.visibleCellsCount} · Suprimidas (< 10): ${rec.suppressedCellsCount}`
-          : `Células visíveis (>= 10): ${rec.visibleCellsCount} · Suprimidas por privacidade (< 10): ${rec.suppressedCellsCount}`
-      doc.font('Body').fontSize(9).fillColor('#334155').text(recSummary, 48, y, { width: pageWidth })
+          ? `Índice de reincidência: ${formatPercentPtBr(rec.recurrenceIndexPercent)} · Células visíveis (>= 10): ${formatCountPtBr(rec.visibleCellsCount)} · Suprimidas (< 10): ${formatCountPtBr(rec.suppressedCellsCount)}`
+          : `Células visíveis (>= 10): ${formatCountPtBr(rec.visibleCellsCount)} · Suprimidas por privacidade (< 10): ${formatCountPtBr(rec.suppressedCellsCount)}`
+      doc.font('Body').fontSize(9).fillColor(VOTZ_BRAND_COLORS.text).text(recSummary, 48, y, {
+        width: pageWidth,
+      })
       y += 16
       for (const cell of rec.topCells.slice(0, 4)) {
         if (y > doc.page.height - 200) break
         doc
           .font('Mono')
           .fontSize(8.5)
-          .fillColor('#475569')
-          .text(`${cell.category} · região ${cell.cell7}: ${cell.count90d} ocorrências em 90d`, 56, y, {
-            width: pageWidth - 16,
-          })
+          .fillColor(VOTZ_BRAND_COLORS.muted)
+          .text(
+            truncateWithEllipsis(
+              `${cell.category} · região ${cell.cell7}: ${formatCountPtBr(cell.count90d)} ocorrências em 90d`,
+              88,
+            ),
+            56,
+            y,
+            { width: pageWidth - 16 },
+          )
         y += 14
       }
-      y += 8
+      y += 10
     }
 
     // Relatos resolvidos com maior apoio (somente título e data; zero dados pessoais)
     doc
       .font('Heading')
       .fontSize(12)
-      .fillColor('#1A1A2E')
+      .fillColor(VOTZ_BRAND_COLORS.primary)
       .text('Relatos resolvidos de maior apoio (sem dados pessoais)', 48, y)
-    y += 18
+    y += 17
+
+    const footerY = doc.page.height - 104
+    const maxListY = footerY - 22
 
     if (snapshot.topResolvedReports.length === 0) {
       doc
         .font('Body')
         .fontSize(9)
-        .fillColor('#64748B')
+        .fillColor(VOTZ_BRAND_COLORS.mutedLight)
         .text('Nenhum relato resolvido registrado no recorte deste período.', 48, y)
-      y += 20
     } else {
       for (const item of snapshot.topResolvedReports.slice(0, 8)) {
-        if (y > doc.page.height - 140) break
-        const cleanTitle = item.title.replace(/\s+/g, ' ').trim().slice(0, 82)
+        if (y > maxListY) break
+        const cleanTitle = truncateWithEllipsis(item.title, 66)
         doc
           .font('Body')
           .fontSize(9)
-          .fillColor('#1A1A2E')
-          .text(`• ${cleanTitle}`, 48, y, { width: pageWidth - 150 })
+          .fillColor(VOTZ_BRAND_COLORS.text)
+          .text(`• ${cleanTitle}`, 48, y, {
+            width: pageWidth - 160,
+            lineBreak: false,
+            ellipsis: '...',
+          })
         doc
           .font('Mono')
           .fontSize(8.5)
-          .fillColor('#64748B')
-          .text(`${item.resolvedAt} · ${item.supportCount} apoios`, doc.page.width - 195, y, {
-            width: 147,
-            align: 'right',
-          })
-        y += 16
+          .fillColor(VOTZ_BRAND_COLORS.muted)
+          .text(
+            `${formatDateBr(item.resolvedAt)} · ${formatCountPtBr(item.supportCount)} apoios`,
+            doc.page.width - 200,
+            y,
+            {
+              width: 152,
+              align: 'right',
+            },
+          )
+        y += 15
       }
     }
 
     // Rodapé fixo de metodologia e autenticidade
-    const footerY = doc.page.height - 108
     doc
       .moveTo(48, footerY)
       .lineTo(doc.page.width - 48, footerY)
-      .strokeColor('#E2E8F0')
+      .strokeColor(VOTZ_BRAND_COLORS.border)
       .lineWidth(1)
       .stroke()
 
     doc
       .font('Mono')
-      .fontSize(8)
-      .fillColor('#475569')
+      .fontSize(7.8)
+      .fillColor(VOTZ_BRAND_COLORS.muted)
       .text(
-        `Metodologia: Dicionário Votz ${snapshot.methodology.dictionaryVersion} (${snapshot.methodology.dictionaryDate}) · Fuso ${snapshot.methodology.timezone} · Calculado em ${snapshot.methodology.computedAt}`,
+        `Metodologia: Dicionário Votz ${snapshot.methodology.dictionaryVersion} (${formatDateBr(snapshot.methodology.dictionaryDate)}) · Fuso ${snapshot.methodology.timezone} · Calculado em ${formatDateTimeBr(snapshot.methodology.computedAt)}`,
         48,
         footerY + 8,
         { width: pageWidth },
@@ -325,14 +408,14 @@ export class ReportRendererService {
       .text(
         `Verificação pública imutável: ${snapshot.verificationUrl} · Código ${snapshot.code}`,
         48,
-        footerY + 24,
+        footerY + 23,
         { width: pageWidth },
       )
     doc
       .font('Body')
       .fontSize(7.5)
-      .fillColor('#64748B')
-      .text(snapshot.methodology.note, 48, footerY + 40, { width: pageWidth })
+      .fillColor(VOTZ_BRAND_COLORS.mutedLight)
+      .text(snapshot.methodology.note, 48, footerY + 39, { width: pageWidth })
 
     doc.end()
     return endPromise
