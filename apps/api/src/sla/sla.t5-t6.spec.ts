@@ -1,5 +1,5 @@
 import { ForbiddenException, HttpException, HttpStatus } from '@nestjs/common'
-import { ApiKeyTier, MembershipStatus, OrgType, WebhookEventType } from '@prisma/client'
+import { ApiKeyTier, MembershipStatus, OrgPermission, OrgType, WebhookEventType } from '@prisma/client'
 import { ReportRendererService } from '../accountability/report-renderer.service'
 import { ApiKeyGuard } from '../public-api/guards/api-key.guard'
 import { PublicApiService } from '../public-api/public-api.service'
@@ -129,10 +129,14 @@ describe('Brief 4D T5 & T6 verification (Entity PDF, Scoped Data API, Per-Key+IP
     }
     const prisma = {
       orgMembership: {
-        findFirst: jest.fn(async ({ where }: any) => {
-          if (where.userId === 'user-gestao') return { orgId: 'ent-gestao' }
-          if (where.userId === 'user-integracao') return { orgId: 'ent-integracao' }
-          return null
+        findMany: jest.fn(async ({ where }: any) => {
+          if (where.userId === 'user-gestao') {
+            return [{ orgId: 'ent-gestao', role: { permissions: [OrgPermission.EXPORT_DATA] } }]
+          }
+          if (where.userId === 'user-integracao') {
+            return [{ orgId: 'ent-integracao', role: { permissions: [OrgPermission.EXPORT_DATA] } }]
+          }
+          return []
         }),
       },
       entity: {

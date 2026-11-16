@@ -15,8 +15,8 @@ const partyId = sql(`select id from parties where abbreviation='AGIR' limit 1`)
 
 note(S, 'BUG-1: POST /registration-requests com o campo opcional note devolve 500 (coluna note nao existe no modelo)')
 const mod = new Session('mod')
-const lm = await login(mod, 'qa.moderador@votz.test')
-check(S, 'moderador loga (sem MFA, ver achado F1)', lm.ok, JSON.stringify(lm.r?.json ?? {}).slice(0, 100))
+const lm = await login(mod, 'qa.moderador@votz.test', undefined, state.users.moderador?.mfaSecret)
+check(S, 'moderador loga com MFA (obrigatório desde a fase 3D)', lm.ok, JSON.stringify(lm.r?.json ?? {}).slice(0, 100))
 
 const defs = {
   entidade: { type: 'ENTITY', payload: { legalName: 'QA Prefeitura Teste Um', cnpj: cnpj('990000010001'), entityType: 'CITY_HALL', city: 'Aracaju', state: 'SE' } },

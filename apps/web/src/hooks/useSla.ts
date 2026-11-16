@@ -84,6 +84,7 @@ export interface SlaWorkloadResponse {
 export interface SlaPolicyResponse {
   entityId: string
   legalName: string
+  hasOwnSla: boolean
   slaHours: Record<string, number>
   resolutionSlaHours: Record<string, number>
   defaultSlaHoursByCategory: Record<string, number>
@@ -94,6 +95,7 @@ export interface SlaPolicyResponse {
 export interface SlaPerformanceResponse {
   definitionVersion: string
   timezone: string
+  hasOwnSla: boolean
   period: { from: string; to: string }
   summary: {
     slaMet: number
@@ -105,6 +107,7 @@ export interface SlaPerformanceResponse {
   byCategory: Array<{
     category: string
     declaredHours: number
+    isDefaultPolicy: boolean
     medianResponseHours: number | null
     slaMet: number
     slaBreached: number

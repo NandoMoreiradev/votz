@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common'
-import { MembershipStatus, OrgType, RecipientType } from '@prisma/client'
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common'
+import { MembershipStatus, OrgPermission, OrgType, RecipientType } from '@prisma/client'
 import {
   ANALYTICS_DEFINITION_DATE,
   ANALYTICS_DEFINITION_VERSION,
@@ -12,6 +12,7 @@ import {
 } from '@votz/shared-types'
 import { addDaysDateString, buildRatio, toSaoPauloDateString } from '../analytics/analytics.constants'
 import { AnalyticsRepository } from '../analytics/analytics.repository'
+import { planRequiredException } from '../auth/plan-errors'
 import { PrismaService } from '../prisma/prisma.service'
 import { PublicApiRepository } from './public-api.repository'
 import { ListPublicReportsDto } from './dto/list-public-reports.dto'
@@ -58,23 +59,43 @@ export class PublicApiService {
     return entity
   }
 
-  private async resolveApiKeyEntity(apiKeyUserId: string, requestedEntityId?: string) {
+  private async resolveApiKeyEntity(
+    apiKeyUserId: string,
+    requiredPermission: OrgPermission,
+    requestedEntityId?: string,
+  ) {
     if (!this.prisma) {
       throw new ForbiddenException('Serviço de entidade indisponível')
     }
-    const membership = await this.prisma.orgMembership.findFirst({
+    const memberships = await this.prisma.orgMembership.findMany({
       where: {
         userId: apiKeyUserId,
         orgType: OrgType.ENTITY,
         status: MembershipStatus.ACTIVE,
         ...(requestedEntityId ? { orgId: requestedEntityId } : {}),
       },
-      orderBy: { createdAt: 'asc' },
-      select: { orgId: true },
+      select: {
+        orgId: true,
+        role: { select: { permissions: true } },
+      },
     })
-    if (!membership) {
+    if (memberships.length === 0) {
       throw new ForbiddenException('API key não vinculada a uma entidade ativa')
     }
+    if (!requestedEntityId && memberships.length > 1) {
+      throw new BadRequestException(
+        'Usuário possui vínculo ativo com mais de uma entidade; informe o parâmetro entityId.',
+      )
+    }
+
+    const membership = memberships[0]
+    const permissions = membership.role?.permissions ?? []
+    if (!permissions.includes(requiredPermission)) {
+      throw new ForbiddenException(
+        `Permissão ${requiredPermission} necessária para acessar este recurso da entidade.`,
+      )
+    }
+
     const entity = await this.prisma.entity.findUnique({
       where: { id: membership.orgId },
       select: { id: true, legalName: true, state: true, city: true, plan: true },
@@ -83,18 +104,26 @@ export class PublicApiService {
       throw new NotFoundException('Entidade não encontrada')
     }
     if (!hasFeature('ENTITY', entity.plan, 'api_access')) {
-      throw new ForbiddenException('API de dados da entidade disponível apenas no plano Integração')
+      throw planRequiredException('ENTITY', 'api_access')
     }
     return entity
   }
 
   async getMyEntityReports(apiKeyUserId: string, dto: ListPublicReportsDto, entityId?: string) {
-    const entity = await this.resolveApiKeyEntity(apiKeyUserId, entityId)
+    const entity = await this.resolveApiKeyEntity(
+      apiKeyUserId,
+      OrgPermission.EXPORT_DATA,
+      entityId,
+    )
     return this.repo.findReportsForEntity(entity.id, dto)
   }
 
   async getMyEntityAggregates(apiKeyUserId: string, rawDays = 30, entityId?: string) {
-    const entity = await this.resolveApiKeyEntity(apiKeyUserId, entityId)
+    const entity = await this.resolveApiKeyEntity(
+      apiKeyUserId,
+      OrgPermission.VIEW_ANALYTICS,
+      entityId,
+    )
     if (!this.analyticsRepo) {
       throw new ForbiddenException('Repositório analítico indisponível')
     }

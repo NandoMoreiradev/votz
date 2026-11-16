@@ -84,6 +84,43 @@ export function toSaoPauloDateKey(date: Date): string {
   return SP_DATE_FORMATTER.format(date)
 }
 
+export function hasConfiguredOwnSla(slaHours: unknown): boolean {
+  if (!slaHours || typeof slaHours !== 'object' || Array.isArray(slaHours)) {
+    return false
+  }
+  return Object.values(slaHours as Record<string, unknown>).some(
+    (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+  )
+}
+
+export interface PublicSlaDisplayState {
+  showPercentage: boolean
+  label: string
+  emptyMessage: string | null
+  showConfigureInvite: boolean
+}
+
+export function resolvePublicSlaDisplayState(params: {
+  hasOwnSla: boolean
+  suppressed: boolean
+  canConfigureSla?: boolean
+}): PublicSlaDisplayState {
+  if (params.hasOwnSla) {
+    return {
+      showPercentage: !params.suppressed,
+      label: 'Cumprimento dos prazos declarados pela entidade',
+      emptyMessage: null,
+      showConfigureInvite: false,
+    }
+  }
+  return {
+    showPercentage: false,
+    label: 'Prazos declarados (SLA)',
+    emptyMessage: 'Esta entidade ainda não declarou seus prazos de resposta.',
+    showConfigureInvite: Boolean(params.canConfigureSla),
+  }
+}
+
 export function resolveCategorySlaHours(
   category: Category,
   slaHours?: Partial<Record<Category | string, number>> | null,

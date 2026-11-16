@@ -797,7 +797,7 @@ export class AnalyticsRepository {
   async findPublicEntityMeta(id: string) {
     return this.prisma.entity.findUnique({
       where: { id },
-      select: { id: true, legalName: true, state: true, city: true },
+      select: { id: true, legalName: true, state: true, city: true, slaHours: true },
     })
   }
 

@@ -52,6 +52,18 @@ export interface ComputedSlaResult {
     resolution: SlaDeadlineResult | null;
 }
 export declare function toSaoPauloDateKey(date: Date): string;
+export declare function hasConfiguredOwnSla(slaHours: unknown): boolean;
+export interface PublicSlaDisplayState {
+    showPercentage: boolean;
+    label: string;
+    emptyMessage: string | null;
+    showConfigureInvite: boolean;
+}
+export declare function resolvePublicSlaDisplayState(params: {
+    hasOwnSla: boolean;
+    suppressed: boolean;
+    canConfigureSla?: boolean;
+}): PublicSlaDisplayState;
 export declare function resolveCategorySlaHours(category: Category, slaHours?: Partial<Record<Category | string, number>> | null): number;
 export declare function resolveOptionalResolutionSlaHours(category: Category, resolutionSlaHours?: Partial<Record<Category | string, number>> | null): number | null;
 /**

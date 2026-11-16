@@ -1,5 +1,5 @@
 import { Category, RecipientType } from '@prisma/client'
-import { MIN_CELL_SIZE } from '@votz/shared-types'
+import { MIN_CELL_SIZE, resolvePublicSlaDisplayState } from '@votz/shared-types'
 import { ActingUser } from '../auth/acting-org'
 import { ANALYTICS_CACHE_EPOCH_KEY } from './analytics.constants'
 import { AnalyticsRepository, SummaryRollupRow } from './analytics.repository'
@@ -209,7 +209,7 @@ describe('AnalyticsService', () => {
     expect(res.suppressed).toBe(false)
     expect(res.sampleSize).toBe(25)
     expect(res.minCellSize).toBe(MIN_CELL_SIZE)
-    expect(res.definitionVersion).toBe('v1.1.0')
+    expect(res.definitionVersion).toBe('v1.1.1')
     expect(res.kpis.resolutionRate).toEqual({ value: 75, numerator: 15, denominator: 20 })
     expect(res.kpis.responseRate).toEqual({ value: 80, numerator: 20, denominator: 25 })
     expect(res.kpis.contestRate).toEqual({ value: 11.76, numerator: 2, denominator: 17 })
@@ -278,14 +278,14 @@ describe('AnalyticsService', () => {
     repo.fetchAreaSummary.mockClear()
 
     const cached = await service.getOverview(user, { period: PeriodPreset.D7 })
-    expect(cached.definitionVersion).toBe('v1.1.0')
+    expect(cached.definitionVersion).toBe('v1.1.1')
     expect(repo.fetchAreaSummary).not.toHaveBeenCalled()
   })
 
   it('exports aggregated CSV with definition header and sanitized cells', async () => {
     const csvRes = await service.exportData(user, { format: ExportFormat.CSV })
     expect(csvRes.format).toBe(ExportFormat.CSV)
-    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.0')
+    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.1')
     expect((csvRes as any).body).toContain('2026-11-10,SP,Campinas,HEALTH,14')
   })
 
@@ -309,5 +309,82 @@ describe('AnalyticsService', () => {
     expect(peer.status).toBe('soon')
     expect(peer.reason).toBe('POPULATION_DATA_UNAVAILABLE')
     expect(peer.minPeersRequired).toBe(5)
+  })
+
+  it('P2: hides public SLA compliance percentage unless entity declares own slaHours (>= 1 positive category) and respects MIN_CELL_SIZE', async () => {
+    // Entidade sem slaHours (ou só 0 / {}) -> hasOwnSla: false e slaComplianceRate oculto, demais métricas públicas mantidas
+    repo.findPublicEntityMeta.mockResolvedValueOnce({
+      id: 'ent-sem-sla',
+      legalName: 'Prefeitura Sem SLA',
+      state: 'SP',
+      city: 'Campinas',
+      slaHours: null,
+    })
+    const noSlaPub = await service.getPublicEntity('ent-sem-sla', { period: PeriodPreset.D30 })
+    expect(noSlaPub.suppressed).toBe(false)
+    expect((noSlaPub as any).hasOwnSla).toBe(false)
+    expect(noSlaPub.kpis.slaComplianceRate.value).toBeNull()
+    expect(noSlaPub.kpis.volume).toBe(25)
+    expect(noSlaPub.kpis.resolutionRate.value).toBe(75)
+
+    // UI sem prazo próprio: não mostra percentual e exibe mensagem + convite só para quem pode editar
+    expect(
+      resolvePublicSlaDisplayState({ hasOwnSla: false, suppressed: false, canConfigureSla: false }),
+    ).toEqual({
+      showPercentage: false,
+      label: 'Prazos declarados (SLA)',
+      emptyMessage: 'Esta entidade ainda não declarou seus prazos de resposta.',
+      showConfigureInvite: false,
+    })
+    expect(
+      resolvePublicSlaDisplayState({ hasOwnSla: false, suppressed: false, canConfigureSla: true }),
+    ).toMatchObject({
+      showPercentage: false,
+      showConfigureInvite: true,
+    })
+
+    // Entidade com pelo menos 1 categoria positiva -> hasOwnSla: true e percentual aparece (70%)
+    repo.findPublicEntityMeta.mockResolvedValueOnce({
+      id: 'ent-com-sla',
+      legalName: 'Prefeitura Com SLA',
+      state: 'SP',
+      city: 'Campinas',
+      slaHours: { HEALTH: 24 },
+    })
+    const withSlaPub = await service.getPublicEntity('ent-com-sla', { period: PeriodPreset.D30 })
+    expect(withSlaPub.suppressed).toBe(false)
+    expect((withSlaPub as any).hasOwnSla).toBe(true)
+    expect(withSlaPub.kpis.slaComplianceRate).toEqual({
+      value: 70,
+      numerator: 14,
+      denominator: 20,
+    })
+    expect(
+      resolvePublicSlaDisplayState({ hasOwnSla: true, suppressed: false, canConfigureSla: false }),
+    ).toEqual({
+      showPercentage: true,
+      label: 'Cumprimento dos prazos declarados pela entidade',
+      emptyMessage: null,
+      showConfigureInvite: false,
+    })
+
+    // Amostra abaixo de MIN_CELL_SIZE mesmo com prazo próprio -> suprimido e sem percentual
+    repo.findPublicEntityMeta.mockResolvedValueOnce({
+      id: 'ent-com-sla-small',
+      legalName: 'Prefeitura Pequena',
+      state: 'SP',
+      city: 'Campinas',
+      slaHours: { HEALTH: 24 },
+    })
+    repo.fetchDirectedSummary.mockResolvedValueOnce(makeSummary({ createdCount: 4 }))
+    const smallWithSla = await service.getPublicEntity('ent-com-sla-small', {
+      period: PeriodPreset.D30,
+    })
+    expect(smallWithSla.suppressed).toBe(true)
+    expect((smallWithSla as any).hasOwnSla).toBe(true)
+    expect(smallWithSla.kpis.slaComplianceRate.value).toBeNull()
+    expect(
+      resolvePublicSlaDisplayState({ hasOwnSla: true, suppressed: true }).showPercentage,
+    ).toBe(false)
   })
 })

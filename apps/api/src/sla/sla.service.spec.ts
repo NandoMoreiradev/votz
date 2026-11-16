@@ -384,5 +384,18 @@ describe('SlaService — Watcher, Deduplication, Authorization, Privacy & Reconc
     expect(perf.summary.slaBreached).toBe(6)
     expect(perf.summary.complianceRate).toEqual(rawRate)
     expect(perf.summary.complianceRate.value).toBe(50)
+    expect(perf.hasOwnSla).toBe(true)
+    expect(perf.byCategory[0].isDefaultPolicy).toBe(false)
+
+    // Sem política própria em Entity.slaHours: rollups internos continuam calculando, mas sinalizam prazo padrão (hasOwnSla: false / isDefaultPolicy: true)
+    ;(prisma.entity.findUnique as jest.Mock).mockResolvedValueOnce({
+      slaHours: null,
+      resolutionSlaHours: null,
+      slaEscalationHours: 24,
+    })
+    const perfDefault = await service.getPerformance(makeActingUser(), {}, now)
+    expect(perfDefault.summary.complianceRate.value).toBe(50)
+    expect(perfDefault.hasOwnSla).toBe(false)
+    expect(perfDefault.byCategory[0].isDefaultPolicy).toBe(true)
   })
 })

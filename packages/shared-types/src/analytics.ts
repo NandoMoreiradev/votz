@@ -1,5 +1,5 @@
-export const ANALYTICS_DEFINITION_VERSION = 'v1.1.0'
-export const ANALYTICS_DEFINITION_DATE = '2026-11-15'
+export const ANALYTICS_DEFINITION_VERSION = 'v1.1.1'
+export const ANALYTICS_DEFINITION_DATE = '2026-11-16'
 export const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
 export const MIN_CELL_SIZE = 10
 export const MAX_ANALYTICS_RANGE_MONTHS = 24
@@ -348,9 +348,9 @@ export const ANALYTICS_METRIC_DICTIONARY: Record<AnalyticsMetricKey, MetricDicti
   },
   sla_compliance_rate: {
     key: 'sla_compliance_rate',
-    name: 'Cumprimento de prazo (SLA)',
+    name: 'Cumprimento dos prazos declarados pela entidade (SLA)',
     definition:
-      'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA declarado (MET ÷ (MET + MET_LATE + BREACHED)). Relatos no prazo ainda abertos não compõem o denominador.',
+      'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA (MET ÷ (MET + MET_LATE + BREACHED)). No perfil público, o percentual só é exibido quando a entidade declarou ao menos uma categoria positiva em Entity.slaHours (hasOwnSla = true); sem política própria, o painel interno rotula como "prazo padrão" e o perfil público oculta o percentual.',
     formula: 'sla_met_count ÷ (sla_met_count + sla_breached_count)',
     version: ANALYTICS_DEFINITION_VERSION,
   },

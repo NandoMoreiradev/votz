@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_SLA_HOURS_BY_CATEGORY = exports.SLA_PAUSABLE_STATUSES = exports.DEFAULT_SLA_ESCALATION_HOURS = exports.SLA_AT_RISK_THRESHOLD_RATIO = void 0;
 exports.toSaoPauloDateKey = toSaoPauloDateKey;
+exports.hasConfiguredOwnSla = hasConfiguredOwnSla;
+exports.resolvePublicSlaDisplayState = resolvePublicSlaDisplayState;
 exports.resolveCategorySlaHours = resolveCategorySlaHours;
 exports.resolveOptionalResolutionSlaHours = resolveOptionalResolutionSlaHours;
 exports.computeSla = computeSla;
@@ -36,6 +38,28 @@ const SP_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
 });
 function toSaoPauloDateKey(date) {
     return SP_DATE_FORMATTER.format(date);
+}
+function hasConfiguredOwnSla(slaHours) {
+    if (!slaHours || typeof slaHours !== 'object' || Array.isArray(slaHours)) {
+        return false;
+    }
+    return Object.values(slaHours).some((v) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+}
+function resolvePublicSlaDisplayState(params) {
+    if (params.hasOwnSla) {
+        return {
+            showPercentage: !params.suppressed,
+            label: 'Cumprimento dos prazos declarados pela entidade',
+            emptyMessage: null,
+            showConfigureInvite: false,
+        };
+    }
+    return {
+        showPercentage: false,
+        label: 'Prazos declarados (SLA)',
+        emptyMessage: 'Esta entidade ainda não declarou seus prazos de resposta.',
+        showConfigureInvite: Boolean(params.canConfigureSla),
+    };
 }
 function resolveCategorySlaHours(category, slaHours) {
     const configured = slaHours?.[category];

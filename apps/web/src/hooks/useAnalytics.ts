@@ -277,6 +277,7 @@ export interface PublicAnalyticsResponse {
   sampleSize: number | null
   minCellSize: number
   suppressed: boolean
+  hasOwnSla?: boolean
   definitionVersion: string
   definitionDate: string
   period: { from: string; to: string }

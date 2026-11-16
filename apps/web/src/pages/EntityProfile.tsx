@@ -567,6 +567,7 @@ export function EntityProfile() {
   )
 
   const isOwner = !!activeContext && activeContext.type === 'ENTITY' && activeContext.id === id
+  const canConfigureSla = isOwner && (activeContext?.permissions?.includes('MANAGE_PROFILE') ?? false)
 
   const logoMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -744,6 +745,7 @@ export function EntityProfile() {
               orgType="ENTITY"
               orgId={entity.id}
               showOwnerPanelLink={isOwner}
+              canConfigureSla={canConfigureSla}
             />
           </HeaderCard>
         ) : (

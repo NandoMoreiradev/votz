@@ -1,6 +1,6 @@
 import { Category, DEFAULT_SLA_HOURS_BY_CATEGORY } from '@votz/shared-types'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { MetricInfoModal } from '../components/analytics/MetricInfoModal'
 import { PlanLockedPreview } from '../components/analytics/PlanLockedPreview'
@@ -268,9 +268,19 @@ function defaultPeriodDates() {
   return { from: fromDate.toISOString().slice(0, 10), to }
 }
 
+const TAB_KEYS: TabKey[] = ['queue', 'workload', 'performance', 'config', 'reports']
+
 export function EntidadePrazos() {
   const { user, activeContext } = useAuthStore()
-  const [tab, setTab] = useState<TabKey>('queue')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawTab = searchParams.get('tab') as TabKey | null
+  const initialTab: TabKey = rawTab && TAB_KEYS.includes(rawTab) ? rawTab : 'queue'
+  const [tab, setTabState] = useState<TabKey>(initialTab)
+
+  function setTab(next: TabKey) {
+    setTabState(next)
+    setSearchParams(next === 'queue' ? {} : { tab: next }, { replace: true })
+  }
 
   // Queue filters
   const [urgency, setUrgency] = useState<SlaUrgencyFilter>('ALL')
@@ -694,10 +704,35 @@ export function EntidadePrazos() {
 
             {tab === 'performance' && (
               <>
+                {perfQ.data && !perfQ.data.hasOwnSla && (
+                  <AlertBanner>
+                    <strong>Prazo padrão em uso:</strong> esta entidade ainda não declarou prazos próprios. Os indicadores internos abaixo usam o <strong>prazo padrão</strong> da plataforma e não são exibidos como percentual no perfil público até que você salve sua política na aba{' '}
+                    <button
+                      type="button"
+                      onClick={() => setTab('config')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: 'inherit',
+                        fontWeight: 700,
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Configuração de prazos
+                    </button>
+                    .
+                  </AlertBanner>
+                )}
+
                 <KpiGrid>
                   <KpiCard $active={false}>
                     <KpiLabel>
-                      <span>Cumprimento de SLA</span>
+                      <span>
+                        Cumprimento de SLA
+                        {perfQ.data && !perfQ.data.hasOwnSla ? ' (prazo padrão)' : ''}
+                      </span>
                       <MetricInfoModal metricKey="sla_compliance_rate" />
                     </KpiLabel>
                     <KpiValue>
@@ -736,7 +771,7 @@ export function EntidadePrazos() {
                       <thead>
                         <tr>
                           <th>Categoria</th>
-                          <th>Prazo declarado</th>
+                          <th>Prazo de referência</th>
                           <th>Mediana real</th>
                           <th>No prazo</th>
                           <th>Vencidos</th>
@@ -747,7 +782,14 @@ export function EntidadePrazos() {
                         {perfQ.data.byCategory.map((row) => (
                           <tr key={row.category}>
                             <td>{CATEGORY_CONFIG[row.category as Category]?.label ?? row.category}</td>
-                            <td>{row.declaredHours}h</td>
+                            <td>
+                              {row.declaredHours}h
+                              {row.isDefaultPolicy && (
+                                <span style={{ marginLeft: 6, fontSize: 11, color: '#64748B' }}>
+                                  (prazo padrão)
+                                </span>
+                              )}
+                            </td>
                             <td>{row.medianResponseHours !== null ? `${row.medianResponseHours}h` : '—'}</td>
                             <td>{row.slaMet}</td>
                             <td>{row.slaBreached}</td>
@@ -804,7 +846,28 @@ export function EntidadePrazos() {
 
             {tab === 'config' && (
               <Card>
-                <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Política de prazos (SLA) por categoria</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>Política de prazos (SLA) por categoria</h2>
+                  {policyQ.data && !policyQ.data.hasOwnSla && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                      }}
+                    >
+                      prazo padrão
+                    </span>
+                  )}
+                </div>
+                {policyQ.data && !policyQ.data.hasOwnSla && (
+                  <AlertBanner>
+                    <strong>Usando prazo padrão:</strong> nenhum prazo próprio foi salvo ainda. Os valores preenchidos abaixo são o padrão da plataforma; ao salvar, os prazos passam a ser exibidos publicamente no perfil da entidade.
+                  </AlertBanner>
+                )}
                 <AlertBanner>
                   <strong>Efeito prospectivo:</strong> alterações de prazo valem apenas para <strong>novos relatos</strong> recebidos após salvar, salvo se você marcar explicitamente o recálculo dos relatos abertos sem resposta. Cálculo v1 em horas corridas; horário comercial e feriados serão suportados em versão futura.
                 </AlertBanner>
@@ -818,9 +881,20 @@ export function EntidadePrazos() {
                       </tr>
                     </thead>
                     <tbody>
-                      {ALL_CATEGORIES.map((cat) => (
-                        <tr key={cat}>
-                          <td>{CATEGORY_CONFIG[cat]?.label ?? cat}</td>
+                      {ALL_CATEGORIES.map((cat) => {
+                        const isOwnCat =
+                          typeof policyQ.data?.slaHours?.[cat] === 'number' &&
+                          policyQ.data.slaHours[cat] > 0
+                        return (
+                          <tr key={cat}>
+                            <td>
+                              {CATEGORY_CONFIG[cat]?.label ?? cat}
+                              {!isOwnCat && (
+                                <span style={{ marginLeft: 6, fontSize: 11, color: '#64748B' }}>
+                                  (prazo padrão)
+                                </span>
+                              )}
+                            </td>
                           <td>
                             <Input
                               type="number"
@@ -848,7 +922,8 @@ export function EntidadePrazos() {
                             />
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </Table>
 

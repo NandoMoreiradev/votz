@@ -13,6 +13,7 @@ import {
   RESPONSE_TIME_BUCKET_LABELS,
   computePercentileFromBuckets,
   decodeGeohashBounds,
+  hasConfiguredOwnSla,
   normalizeLocationKey,
 } from '@votz/shared-types'
 import { ActingUser } from '../auth/acting-org'
@@ -998,14 +999,20 @@ export class AnalyticsService {
     label: { type: 'MUNICIPALITY' | 'ENTITY' | 'POLITICIAN'; name: string; state: string; city?: string | null },
     from: string,
     to: string,
+    options?: { hasOwnSla?: boolean },
   ) {
     const suppressed = summary.createdCount < MIN_CELL_SIZE
+    const isEntity = label.type === 'ENTITY'
+    const hasOwnSla = isEntity ? Boolean(options?.hasOwnSla) : undefined
+    const hideEntitySlaRate = isEntity && !hasOwnSla
+
     return {
       subject: label,
       computedAt: new Date().toISOString(),
       sampleSize: suppressed ? null : summary.createdCount,
       minCellSize: MIN_CELL_SIZE,
       suppressed,
+      ...(isEntity ? { hasOwnSla } : {}),
       definitionVersion: ANALYTICS_DEFINITION_VERSION,
       definitionDate: ANALYTICS_DEFINITION_DATE,
       timezone: ANALYTICS_TIMEZONE,
@@ -1031,11 +1038,13 @@ export class AnalyticsService {
               50,
             ),
             responseRate: buildRatio(summary.responseCount, summary.createdCount, 100),
-            slaComplianceRate: buildRatio(
-              summary.slaMetCount,
-              summary.slaMetCount + summary.slaBreachedCount,
-              100,
-            ),
+            slaComplianceRate: hideEntitySlaRate
+              ? { value: null, numerator: 0, denominator: 0 }
+              : buildRatio(
+                  summary.slaMetCount,
+                  summary.slaMetCount + summary.slaBreachedCount,
+                  100,
+                ),
           },
     }
   }
@@ -1071,8 +1080,9 @@ export class AnalyticsService {
     const todayStr = toSaoPauloDateString(new Date())
     const from = addDaysDateString(todayStr, -(days - 1))
     const matureCutoff = addDaysDateString(todayStr, -7)
+    const hasOwnSla = hasConfiguredOwnSla(entity.slaHours)
 
-    return this.withCache('public:entity', { id, from, to: todayStr }, async () => {
+    return this.withCache('public:entity', { id, from, to: todayStr, hasOwnSla }, async () => {
       const summary = await this.repository.fetchDirectedSummary(
         { recipientType: RecipientType.ENTITY, recipientId: id, from, to: todayStr },
         matureCutoff,
@@ -1082,6 +1092,7 @@ export class AnalyticsService {
         { type: 'ENTITY', name: entity.legalName, state: entity.state ?? '', city: entity.city },
         from,
         todayStr,
+        { hasOwnSla },
       )
     })
   }

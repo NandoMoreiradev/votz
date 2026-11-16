@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
+import { resolvePublicSlaDisplayState } from '@votz/shared-types'
 import {
   AnalyticsPeriodPreset,
   usePublicEntityAnalytics,
@@ -93,12 +94,14 @@ interface PublicTransparencyCardProps {
   orgType: 'ENTITY' | 'POLITICIAN'
   orgId: string
   showOwnerPanelLink?: boolean
+  canConfigureSla?: boolean
 }
 
 export function PublicTransparencyCard({
   orgType,
   orgId,
   showOwnerPanelLink,
+  canConfigureSla,
 }: PublicTransparencyCardProps) {
   const [period, setPeriod] = useState<AnalyticsPeriodPreset>('30d')
 
@@ -122,6 +125,14 @@ export function PublicTransparencyCard({
   }
 
   const data = activeQ.data
+  const slaDisplay =
+    orgType === 'ENTITY'
+      ? resolvePublicSlaDisplayState({
+          hasOwnSla: Boolean(data.hasOwnSla),
+          suppressed: data.suppressed,
+          canConfigureSla,
+        })
+      : null
 
   return (
     <Box aria-label="Transparência pública de atendimento">
@@ -140,10 +151,22 @@ export function PublicTransparencyCard({
       </TopRow>
 
       {data.suppressed ? (
-        <SuppressedMsg>
-          Poucos relatos para mostrar com segurança neste recorte (mínimo de {data.minCellSize}{' '}
-          relatos por k-anonimato).
-        </SuppressedMsg>
+        <>
+          <SuppressedMsg>
+            Poucos relatos para mostrar com segurança neste recorte (mínimo de {data.minCellSize}{' '}
+            relatos por k-anonimato).
+          </SuppressedMsg>
+          {slaDisplay && slaDisplay.emptyMessage && (
+            <SuppressedMsg style={{ marginTop: 8 }}>
+              {slaDisplay.emptyMessage}{' '}
+              {slaDisplay.showConfigureInvite && (
+                <Link to="/entidade/prazos?tab=config" style={{ fontWeight: 600 }}>
+                  Configurar prazos →
+                </Link>
+              )}
+            </SuppressedMsg>
+          )}
+        </>
       ) : (
         <MetricsRow>
           <Item>
@@ -180,19 +203,35 @@ export function PublicTransparencyCard({
               {data.kpis.responseRate.value !== null ? `${data.kpis.responseRate.value}%` : '—'}
             </ItemVal>
           </Item>
-          {orgType === 'ENTITY' && (
-            <Item>
-              <ItemHead>
-                <span>Cumprimento de SLA</span>
-                <MetricInfoModal metricKey="sla_compliance_rate" />
-              </ItemHead>
-              <ItemVal>
-                {data.kpis.slaComplianceRate && data.kpis.slaComplianceRate.value !== null
-                  ? `${data.kpis.slaComplianceRate.value}%`
-                  : '—'}
-              </ItemVal>
-            </Item>
-          )}
+          {slaDisplay &&
+            (slaDisplay.showPercentage ? (
+              <Item>
+                <ItemHead>
+                  <span>{slaDisplay.label}</span>
+                  <MetricInfoModal metricKey="sla_compliance_rate" />
+                </ItemHead>
+                <ItemVal>
+                  {data.kpis.slaComplianceRate && data.kpis.slaComplianceRate.value !== null
+                    ? `${data.kpis.slaComplianceRate.value}%`
+                    : '—'}
+                </ItemVal>
+              </Item>
+            ) : (
+              <Item>
+                <ItemHead>
+                  <span>{slaDisplay.label}</span>
+                  <MetricInfoModal metricKey="sla_compliance_rate" />
+                </ItemHead>
+                <SuppressedMsg style={{ marginTop: 6 }}>
+                  {slaDisplay.emptyMessage}{' '}
+                  {slaDisplay.showConfigureInvite && (
+                    <Link to="/entidade/prazos?tab=config" style={{ fontWeight: 600 }}>
+                      Configurar prazos →
+                    </Link>
+                  )}
+                </SuppressedMsg>
+              </Item>
+            ))}
         </MetricsRow>
       )}
 

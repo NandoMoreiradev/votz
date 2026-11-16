@@ -5,8 +5,8 @@ exports.normalizeLocationKey = normalizeLocationKey;
 exports.encodeGeohash7 = encodeGeohash7;
 exports.decodeGeohashBounds = decodeGeohashBounds;
 exports.computePercentileFromBuckets = computePercentileFromBuckets;
-exports.ANALYTICS_DEFINITION_VERSION = 'v1.1.0';
-exports.ANALYTICS_DEFINITION_DATE = '2026-11-15';
+exports.ANALYTICS_DEFINITION_VERSION = 'v1.1.1';
+exports.ANALYTICS_DEFINITION_DATE = '2026-11-16';
 exports.ANALYTICS_TIMEZONE = 'America/Sao_Paulo';
 exports.MIN_CELL_SIZE = 10;
 exports.MAX_ANALYTICS_RANGE_MONTHS = 24;
@@ -296,8 +296,8 @@ exports.ANALYTICS_METRIC_DICTIONARY = {
     },
     sla_compliance_rate: {
         key: 'sla_compliance_rate',
-        name: 'Cumprimento de prazo (SLA)',
-        definition: 'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA declarado (MET ÷ (MET + MET_LATE + BREACHED)). Relatos no prazo ainda abertos não compõem o denominador.',
+        name: 'Cumprimento dos prazos declarados pela entidade (SLA)',
+        definition: 'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA (MET ÷ (MET + MET_LATE + BREACHED)). No perfil público, o percentual só é exibido quando a entidade declarou ao menos uma categoria positiva em Entity.slaHours (hasOwnSla = true); sem política própria, o painel interno rotula como "prazo padrão" e o perfil público oculta o percentual.',
         formula: 'sla_met_count ÷ (sla_met_count + sla_breached_count)',
         version: exports.ANALYTICS_DEFINITION_VERSION,
     },

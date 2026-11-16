@@ -28,6 +28,7 @@ import {
   EventType as SharedEventType,
   computePercentileFromBuckets,
   computeSla,
+  hasConfiguredOwnSla,
   toSaoPauloDateKey,
   RESPONSE_TIME_BUCKET_BOUNDS_HOURS,
 } from '@votz/shared-types'
@@ -591,10 +592,12 @@ export class SlaService {
     })
     if (!entity) throw new NotFoundException('Entidade não encontrada')
 
+    const slaHours = (entity.slaHours as Record<string, number> | null) ?? {}
     return {
       entityId: entity.id,
       legalName: entity.legalName,
-      slaHours: (entity.slaHours as Record<string, number> | null) ?? {},
+      hasOwnSla: hasConfiguredOwnSla(slaHours),
+      slaHours,
       resolutionSlaHours: (entity.resolutionSlaHours as Record<string, number> | null) ?? {},
       defaultSlaHoursByCategory: DEFAULT_SLA_HOURS_BY_CATEGORY,
       slaEscalationHours: entity.slaEscalationHours,
@@ -770,11 +773,14 @@ export class SlaService {
     ])
 
     const slaHours = (entity?.slaHours as Record<string, number> | null) ?? {}
+    const hasOwnSla = hasConfiguredOwnSla(slaHours)
     const totalEvaluated = summary.slaMetCount + summary.slaBreachedCount
 
     const byCategory = categories.map((c) => {
       const catDen = c.slaMetCount + c.slaBreachedCount
-      const declaredHours = slaHours[c.category] ?? DEFAULT_SLA_HOURS_BY_CATEGORY[c.category] ?? 120
+      const ownHours = slaHours[c.category]
+      const isDefaultPolicy = !(typeof ownHours === 'number' && Number.isFinite(ownHours) && ownHours > 0)
+      const declaredHours = isDefaultPolicy ? (DEFAULT_SLA_HOURS_BY_CATEGORY[c.category] ?? 120) : ownHours
       const medianResponseHours =
         c.responseCount > 0
           ? computePercentileFromBuckets(c.respBuckets, RESPONSE_TIME_BUCKET_BOUNDS_HOURS, 50)
@@ -783,6 +789,7 @@ export class SlaService {
       return {
         category: c.category,
         declaredHours,
+        isDefaultPolicy,
         medianResponseHours,
         slaMet: c.slaMetCount,
         slaBreached: c.slaBreachedCount,
@@ -813,6 +820,7 @@ export class SlaService {
     return {
       definitionVersion: ANALYTICS_DEFINITION_VERSION,
       timezone: ANALYTICS_TIMEZONE,
+      hasOwnSla,
       period: { from: fromStr, to: toStr },
       summary: {
         slaMet: summary.slaMetCount,

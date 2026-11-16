@@ -1,7 +1,7 @@
-# Dicionário de Métricas — Votz Analytics (v1.1.0)
+# Dicionário de Métricas — Votz Analytics (v1.1.1)
 
-- **Versão da definição:** `v1.1.0`
-- **Data da definição:** `2026-11-15`
+- **Versão da definição:** `v1.1.1`
+- **Data da definição:** `2026-11-16`
 - **Fuso horário de corte diário:** `America/Sao_Paulo` (`timezone('America/Sao_Paulo', ts)::date`)
 - **Limiar mínimo de privacidade (k-anonimato):** `MIN_CELL_SIZE = 10`
 - **Precisão espacial:** Célula **Geohash precisão 7** (~150 m × 150 m). Coordenadas originais (`latitude`/`longitude`) e `authorId` nunca são retornados pela camada de análise.
@@ -27,7 +27,7 @@
 | `category_mix` | Mix por categoria | Distribuição absoluta e percentual por `Category`. | `num = SUM(created_count) por category`; `den = SUM(created_count) total` | `area_metrics_daily` | `[from, to]` | Categorias com `0 < count < 10` têm números suprimidos (`null`, `suppressed: true`). | — | `v1.0.0` |
 | `support_volume` e `comment_volume` | Engajamento agregado | Soma de votos (`SUPPORT` + `ME_TOO`) e comentários nos relatos criados no período. | `SUM(support_count)` e `SUM(comment_count)` | `area_metrics_daily` | `[from, to]` | `0` quando vazio; `null` quando suprimido por `MIN_CELL_SIZE`. | Mede engajamento na coorte de criação do relato. | `v1.0.0` |
 | `outbreak_history` | Histórico de surtos | Surtos registrados pelo detector de surtos na área territorial da organização. | Contagem e listagem de `Surto` no estado/município do escopo | `surtos` | `[from, to]` | Lista vazia quando não houve surtos no recorte. | Detector dispara em `>= 5` relatos/24h por categoria/cidade (`alerts.service.ts`). | `v1.0.0` |
-| `sla_met`, `sla_breached` e `sla_compliance_rate` | Cumprimento de prazo declarado (SLA) | Proporção de relatos elegíveis de entidade atendidos até `sla_due_at` frente ao total cujo prazo já foi cumprido ou violado (`MET` vs `BREACHED` + `MET_LATE`). | `num = SUM(sla_met_count)`; `den = SUM(sla_met_count) + SUM(sla_breached_count)`; razão `num ÷ den * 100` | `area_metrics_daily` e `recipient_metrics_daily` (`sla_met_count`, `sla_breached_count`) | `[from, to]` | `null` quando `den = 0` ou recorte suprimido (`MIN_CELL_SIZE = 10` em consultas públicas ou territoriais). | Na v1 usa horas corridas (`America/Sao_Paulo`, sem horário comercial nem pausa de "aguardando cidadão"). Alterações de `Entity.slaHours` valem prospectivamente para novos relatos (recálculo explícito opcional para abertos). | `v1.1.0` |
+| `sla_met`, `sla_breached` e `sla_compliance_rate` | Cumprimento dos prazos declarados pela entidade (SLA) | Proporção de relatos elegíveis de entidade atendidos até `sla_due_at` frente ao total cujo prazo já foi cumprido ou violado (`MET` vs `BREACHED` + `MET_LATE`). | `num = SUM(sla_met_count)`; `den = SUM(sla_met_count) + SUM(sla_breached_count)`; razão `num ÷ den * 100` | `area_metrics_daily` e `recipient_metrics_daily` (`sla_met_count`, `sla_breached_count`) | `[from, to]` | `null` quando `den = 0`, recorte suprimido (`MIN_CELL_SIZE = 10` em consultas públicas/territoriais) **ou** no perfil público quando `hasOwnSla = false` (entidade sem categoria positiva em `Entity.slaHours`). | Na v1 usa horas corridas (`America/Sao_Paulo`, sem horário comercial nem pausa de "aguardando cidadão"). Sem política própria (`hasOwnSla = false`), rollups internos usam o prazo padrão da plataforma rotulados como **"prazo padrão"** e o perfil público omite o percentual. Alterações de `Entity.slaHours` valem prospectivamente para novos relatos (recálculo explícito opcional para abertos). | `v1.1.1` |
 
 ---
 
@@ -42,10 +42,11 @@
 
 ---
 
-## Regras de prazo (SLA) — v1.1.0
+## Regras de prazo (SLA) — v1.1.1
 
 - **Início do relógio:** na criação (`createdAt`) quando o relato já nasce endereçado à entidade (`recipientType = 'ENTITY'`), ou na data de atribuição à entidade (`slaStartedAt`) se reatribuído posteriormente.
 - **Prazo de primeira resposta (`sla_due_at`):** definido por `Entity.slaHours[categoria]`; quando ausente, aplica-se o padrão da plataforma por categoria (`SAFETY: 24h`, `HEALTH/CORRUPTION: 48h`, `EDUCATION/HOUSING: 96h`, `OTHER: 120h`, demais categorias `72h`).
+- **Exibição pública (`hasOwnSla`):** considera-se entidade **com prazo próprio** (`hasOwnSla = true`) somente quando `Entity.slaHours` possui ao menos uma categoria com valor positivo (`> 0`). Apenas com `hasOwnSla = true` (e amostra `>= MIN_CELL_SIZE`) o perfil público exibe o percentual sob o rótulo *"Cumprimento dos prazos declarados pela entidade"*; sem prazo próprio, os rollups continuam sendo calculados com o prazo padrão apenas para uso interno no painel da entidade (identificados como *"prazo padrão"*), enquanto o perfil público omite o percentual e exibe *"Esta entidade ainda não declarou seus prazos de resposta."* (mantendo públicos volume, resolução e mediana de resposta).
 - **Prazo de resolução (opcional):** `Entity.resolutionSlaHours[categoria]` acompanha a meta de conclusão (`resolvedAt`).
 - **Pausa e jornada:** na v1, não existe status "aguardando o cidadão", logo o relógio não pausa (`SLA_PAUSABLE_STATUSES = []`) e corre em horas corridas no fuso `America/Sao_Paulo` (horário comercial e feriados ficam para v2).
 - **Marcos:** `ON_TIME` (< 75% do prazo), `AT_RISK` (>= 75%), `BREACHED` (vencido sem resposta), `MET` (respondido antes/até `sla_due_at`), `MET_LATE` (respondido após `sla_due_at`). Alterar `slaHours` não reescreve relatos antigos nem abertos, salvo pedido explícito da entidade.
