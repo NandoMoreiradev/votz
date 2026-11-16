@@ -9,6 +9,7 @@ import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { useRegister, type RegisterPayload } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
+import logoSrc from '../assets/brand/votz-logo.svg'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -31,14 +32,15 @@ const Card = styled.div`
 `
 
 const Logo = styled(Link)`
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+`
+
+const LogoImg = styled.img`
+  height: 44px;
+  width: auto;
   display: block;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1.5rem;
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.primary};
-  text-align: center;
-  margin-bottom: 8px;
-  span { color: ${({ theme }) => theme.colors.action}; }
 `
 
 const Subtitle = styled.p`
@@ -248,7 +250,7 @@ export function Register() {
   return (
     <Page>
       <Card>
-        <Logo to="/"><span>◆</span> VOTZ</Logo>
+        <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
         <Subtitle>Grátis para sempre. Sua voz importa.</Subtitle>
 
         <Form onSubmit={handleSubmit(onSubmit)}>

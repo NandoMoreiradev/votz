@@ -2,6 +2,7 @@
 import styled from 'styled-components'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
+import logoSrc from '../assets/brand/votz-logo.svg'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -23,14 +24,15 @@ const Card = styled.div`
 `
 
 const Logo = styled(Link)`
-  display: block;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1.5rem;
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.primary};
-  margin-bottom: 32px;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+`
 
-  span { color: ${({ theme }) => theme.colors.action}; }
+const LogoImg = styled.img`
+  height: 44px;
+  width: auto;
+  display: block;
 `
 
 const Icon = styled.div<{ $success?: boolean }>`
@@ -87,7 +89,7 @@ export function VerifyEmail() {
   return (
     <Page>
       <Card>
-        <Logo to="/"><span>◆</span> VOTZ</Logo>
+        <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
         <Icon>{icon}</Icon>
         <Title>{title}</Title>
         <Message>{message}</Message>

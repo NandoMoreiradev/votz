@@ -8,6 +8,8 @@ import {
   formatMonthOrDateBr,
   formatPercentPtBr,
   formatSlaQueueLabel,
+  getAccountabilityStatusLabel,
+  getReportStatusLabel,
 } from '@votz/shared-types'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -706,7 +708,8 @@ export function EntidadePrazos() {
                               {item.title}
                             </Link>
                             <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                              Pressão: {formatCountPtBr(item.pressureScore)} · Status: {item.status}
+                              Pressão: {formatCountPtBr(item.pressureScore)} · Status:{' '}
+                              {getReportStatusLabel(item.status)}
                               {item.slaDueAt && ` · Prazo: ${formatDateTimeBr(item.slaDueAt)}`}
                             </div>
                           </div>
@@ -1106,7 +1109,7 @@ export function EntidadePrazos() {
                             <td>
                               {formatDateBr(rep.periodStart)} a {formatDateBr(rep.periodEnd)}
                             </td>
-                            <td>{rep.status}</td>
+                            <td>{getAccountabilityStatusLabel(rep.status)}</td>
                             <td style={{ display: 'flex', gap: 12 }}>
                               {rep.status === 'READY' && (
                                 <button

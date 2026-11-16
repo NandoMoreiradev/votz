@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { clearLastOrgContext, saveLastOrgContext } from '../lib/org-context-storage'
 import { useAuthStore } from '../store/auth.store'
 import {
   AuthResponse,
@@ -117,7 +118,7 @@ export function useMyProfiles(enabled: boolean) {
   })
 }
 
-export function useSwitchContext() {
+export function useSwitchContext(options?: { returnTo?: string }) {
   const applyContext = useAuthStore((s) => s.applyContext)
 
   return useMutation({
@@ -126,6 +127,21 @@ export function useSwitchContext() {
     onSuccess: (data) => {
       if ('accessToken' in data) {
         applyContext(data.accessToken, data.ctx)
+        const currentUser = useAuthStore.getState().user
+        if (data.ctx && currentUser?.id) {
+          const fallbackRoute =
+            typeof window !== 'undefined'
+              ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+              : '/'
+          saveLastOrgContext({
+            type: data.ctx.type,
+            id: data.ctx.id,
+            returnTo: options?.returnTo ?? fallbackRoute,
+            userId: currentUser.id,
+          })
+        } else {
+          clearLastOrgContext()
+        }
       }
     },
   })

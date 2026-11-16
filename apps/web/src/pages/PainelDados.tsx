@@ -137,6 +137,7 @@ const KpiGrid = styled.div`
 `
 
 const KpiCard = styled.div`
+  min-width: 0;
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
@@ -159,9 +160,15 @@ const KpiLabel = styled.span`
 
 const KpiValue = styled.div`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-size: clamp(1.125rem, 1.5vw, 1.375rem);
+  line-height: 1.25;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.primary};
+`
+
+const KpiToken = styled.span`
+  display: inline-block;
+  white-space: nowrap;
 `
 
 const KpiSub = styled.div`
@@ -487,8 +494,9 @@ export function PainelDados() {
                       <MetricInfoModal metricKey="first_response_median_h" />
                     </KpiHeader>
                     <KpiValue>
-                      {formatHours(overviewQ.data.kpis.firstResponseMedianH)} /{' '}
-                      {formatHours(overviewQ.data.kpis.firstResponseP90H)}
+                      <KpiToken>{formatHours(overviewQ.data.kpis.firstResponseMedianH)}</KpiToken>{' '}
+                      /{' '}
+                      <KpiToken>{formatHours(overviewQ.data.kpis.firstResponseP90H)}</KpiToken>
                     </KpiValue>
                     <KpiSub>
                       Taxa de resposta: {formatRatioPct(overviewQ.data.kpis.responseRate)} (

@@ -1,5 +1,11 @@
 import styled from 'styled-components'
-import { Category, CATEGORY_LABELS, ReportStatus, PropostaStatus } from '@votz/shared-types'
+import {
+  Category,
+  CATEGORY_LABELS,
+  ReportStatus,
+  REPORT_STATUS_LABELS,
+  PropostaStatus,
+} from '@votz/shared-types'
 
 export const CATEGORY_CONFIG: Record<Category, { label: string; color: string }> = {
   [Category.HEALTH]:        { label: CATEGORY_LABELS[Category.HEALTH],         color: '#F59E0B' },
@@ -18,12 +24,12 @@ export const CATEGORY_CONFIG: Record<Category, { label: string; color: string }>
 }
 
 export const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string }> = {
-  [ReportStatus.OPEN]:         { label: 'Aberto',        color: '#E63946' },
-  [ReportStatus.UNDER_REVIEW]: { label: 'Em análise',    color: '#F59E0B' },
-  [ReportStatus.IN_PROGRESS]:  { label: 'Em andamento',  color: '#3B82F6' },
-  [ReportStatus.RESOLVED]:     { label: 'Resolvido',     color: '#2DC653' },
-  [ReportStatus.DISPUTED]:     { label: 'Contestado',    color: '#F97316' },
-  [ReportStatus.ARCHIVED]:     { label: 'Arquivado',     color: '#6B7280' },
+  [ReportStatus.OPEN]:         { label: REPORT_STATUS_LABELS[ReportStatus.OPEN],         color: '#E63946' },
+  [ReportStatus.UNDER_REVIEW]: { label: REPORT_STATUS_LABELS[ReportStatus.UNDER_REVIEW], color: '#F59E0B' },
+  [ReportStatus.IN_PROGRESS]:  { label: REPORT_STATUS_LABELS[ReportStatus.IN_PROGRESS],  color: '#3B82F6' },
+  [ReportStatus.RESOLVED]:     { label: REPORT_STATUS_LABELS[ReportStatus.RESOLVED],     color: '#2DC653' },
+  [ReportStatus.DISPUTED]:     { label: REPORT_STATUS_LABELS[ReportStatus.DISPUTED],     color: '#F97316' },
+  [ReportStatus.ARCHIVED]:     { label: REPORT_STATUS_LABELS[ReportStatus.ARCHIVED],     color: '#6B7280' },
 }
 
 interface BadgeRootProps {

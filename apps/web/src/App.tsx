@@ -9,7 +9,6 @@ import { queryClient } from './lib/query-client'
 import { api, refreshSession } from './lib/api'
 import { getToken } from './lib/token'
 import { useAuthStore } from './store/auth.store'
-import { SwitchContextResponse } from './types/api'
 import { Home } from './pages/Home'
 import { ReportDetail } from './pages/ReportDetail'
 import { CreateReport } from './pages/CreateReport'
@@ -53,13 +52,13 @@ import { Cookies } from './pages/Cookies'
 import { Diretrizes } from './pages/Diretrizes'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
+import { OrgReauthGate } from './components/ui/OrgReauthGate'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
 
 function AuthInit() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
-  const applyContext = useAuthStore((s) => s.applyContext)
   const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
@@ -69,29 +68,12 @@ function AuthInit() {
     }
     window.addEventListener('votz:logout', handleForceLogout)
 
-    // Lê o contexto salvo ANTES de qualquer operação assíncrona ou setAuth,
-    // usando getState() para garantir o valor hidratado do localStorage
-    const savedContext = useAuthStore.getState().activeContext
-
     refreshSession()
       .then(() => api.get('/auth/me'))
       .then(({ data: user }) => {
         const token = getToken()
         if (!token) return
         setAuth(user, token)
-
-        if (savedContext) {
-          api
-            .post<SwitchContextResponse>('/auth/switch-context', {
-              contextType: savedContext.type.toLowerCase(),
-              contextId: savedContext.id,
-            })
-            .then(({ data: res }) => {
-              if ('accessToken' in res) applyContext(res.accessToken, res.ctx)
-              else applyContext(token, null)
-            })
-            .catch(() => applyContext(token, null))
-        }
       })
       .catch(() => {
         logout()
@@ -112,6 +94,7 @@ function App() {
         <MediaViewerProvider>
           <BrowserRouter>
             <AuthInit />
+            <OrgReauthGate />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />

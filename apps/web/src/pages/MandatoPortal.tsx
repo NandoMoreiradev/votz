@@ -1,4 +1,15 @@
-import { Category, ReportStatus } from '@votz/shared-types'
+import {
+  Category,
+  ReportStatus,
+  formatDateBr,
+  getAccountabilityStatusLabel,
+  getAlertFrequencyLabel,
+  getAlertRuleTypeLabel,
+  getReportStatusLabel,
+  getShareCardFormatLabel,
+  getWebhookDeliveryStatusLabel,
+  getWebhookEventLabel,
+} from '@votz/shared-types'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
@@ -299,7 +310,7 @@ function ReportInboxCard({
           <Row style={{ gap: 8, marginBottom: 6 }}>
             <TagBadge>#{item.protocol}</TagBadge>
             <TagBadge>{CATEGORY_CONFIG[item.category]?.label ?? item.category}</TagBadge>
-            <TagBadge>{item.status}</TagBadge>
+            <TagBadge>{getReportStatusLabel(item.status)}</TagBadge>
             <TagBadge>Pressão {Math.round(item.pressureScore)}</TagBadge>
             {item.advocatedByMe && <TagBadge>Avocado pelo gabinete</TagBadge>}
           </Row>
@@ -367,7 +378,7 @@ function ReportInboxCard({
               onChange={(e) => setNewStatus(e.target.value as ReportStatus | '')}
               aria-label="Alterar status"
             >
-              <option value="">Manter status atual ({item.status})</option>
+              <option value="">Manter status atual ({getReportStatusLabel(item.status)})</option>
               <option value={ReportStatus.UNDER_REVIEW}>Em análise</option>
               <option value={ReportStatus.IN_PROGRESS}>Em andamento</option>
               <option value={ReportStatus.RESOLVED}>Resolvido</option>
@@ -875,7 +886,8 @@ export function MandatoPortal() {
                       <div>
                         <strong>{r.name}</strong>
                         <MutedNote>
-                          Tipo: {r.ruleType} · Frequência: {r.frequency} ·{' '}
+                          Tipo: {getAlertRuleTypeLabel(r.ruleType)} · Frequência:{' '}
+                          {getAlertFrequencyLabel(r.frequency)} ·{' '}
                           {r.active ? 'Ativa' : 'Pausada'}
                         </MutedNote>
                       </div>
@@ -907,7 +919,7 @@ export function MandatoPortal() {
                     {alertHistoryQuery.data.map((h) => (
                       <MutedNote key={h.id}>
                         {new Date(h.deliveredAt).toLocaleString('pt-BR')} · {h.rule.name} (
-                        {h.rule.ruleType})
+                        {getAlertRuleTypeLabel(h.rule.ruleType)})
                       </MutedNote>
                     ))}
                   </Card>
@@ -1049,10 +1061,12 @@ export function MandatoPortal() {
                     <Row style={{ justifyContent: 'space-between' }}>
                       <div>
                         <strong>
-                          Código {rep.code} · {rep.periodStart} a {rep.periodEnd}
+                          Código {rep.code} · {formatDateBr(rep.periodStart)} a{' '}
+                          {formatDateBr(rep.periodEnd)}
                         </strong>
                         <MutedNote>
-                          Status: {rep.status} · Versão {rep.dictionaryVersion}
+                          Status: {getAccountabilityStatusLabel(rep.status)} · Versão{' '}
+                          {rep.dictionaryVersion}
                         </MutedNote>
                       </div>
                       <Row>
@@ -1143,7 +1157,8 @@ export function MandatoPortal() {
                     <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <strong>
-                          {c.format} · {c.periodStart} a {c.periodEnd}
+                          {getShareCardFormatLabel(c.format)} · {formatDateBr(c.periodStart)} a{' '}
+                          {formatDateBr(c.periodEnd)}
                         </strong>
                         <MutedNote>Hash das métricas: {c.metricsHash}</MutedNote>
                         <Row style={{ marginTop: 8 }}>
@@ -1242,7 +1257,7 @@ export function MandatoPortal() {
                             )
                           }
                         />{' '}
-                        {ev}
+                        {getWebhookEventLabel(ev)}
                       </label>
                     ))}
                   </Row>
@@ -1285,7 +1300,8 @@ export function MandatoPortal() {
                         ) : (
                           deliveriesQuery.data.map((d) => (
                             <MutedNote key={d.id}>
-                              {d.eventType} · {d.status} (HTTP {d.httpStatus ?? '—'},{' '}
+                              {getWebhookEventLabel(d.eventType)} ·{' '}
+                              {getWebhookDeliveryStatusLabel(d.status)} (HTTP {d.httpStatus ?? '—'},{' '}
                               {d.latencyMs ?? 0}ms, tentativa {d.attemptCount})
                             </MutedNote>
                           ))

@@ -8,6 +8,7 @@ import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
 import { useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced, useMyProfiles, useSwitchContext } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { AuthUser } from '../types/api'
+import logoSrc from '../assets/brand/votz-logo.svg'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -28,15 +29,15 @@ const Card = styled.div`
 `
 
 const Logo = styled(Link)`
-  display: block;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1.5rem;
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.primary};
-  text-align: center;
-  margin-bottom: 8px;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+`
 
-  span { color: ${({ theme }) => theme.colors.action}; }
+const LogoImg = styled.img`
+  height: 44px;
+  width: auto;
+  display: block;
 `
 
 const Subtitle = styled.p`
@@ -117,7 +118,9 @@ export function Login() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const { mutate: login, isPending: loginPending, error: loginError } = useLogin()
   const { mutate: verifyMfa, isPending: mfaPending, error: mfaError } = useMfaVerify()
-  const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
+  const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext({
+    returnTo: redirect,
+  })
 
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [mfaSetupToken, setMfaSetupToken] = useState<string | null>(null)
@@ -226,7 +229,7 @@ export function Login() {
       return (
         <Page>
           <Card>
-            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
             <Subtitle>Segurança obrigatória</Subtitle>
             <p style={{ fontSize: '0.9375rem', color: '#374151', marginBottom: 24, lineHeight: 1.6 }}>
               Sua conta exige autenticação em dois fatores (MFA). Configure agora para continuar.
@@ -246,7 +249,7 @@ export function Login() {
       return (
         <Page>
           <Card>
-            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
             <Subtitle>Escaneie o QR code</Subtitle>
             <div style={{ textAlign: 'center', marginBottom: 20 }}>
               <img src={qrData.qrCode} alt="QR Code MFA" style={{ width: 200, height: 200 }} />
@@ -277,7 +280,7 @@ export function Login() {
       return (
         <Page>
           <Card>
-            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
             <Subtitle>Confirme o código</Subtitle>
             <Form key="mfa-setup-form" onSubmit={handleMfa(onConfirmMfaSetup)}>
               <Field>
@@ -320,7 +323,7 @@ export function Login() {
       return (
         <Page>
           <Card>
-            <Logo to="/"><span>◆</span> VOTZ</Logo>
+            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
             <Subtitle>Guarde seus códigos de backup</Subtitle>
             <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: 16, lineHeight: 1.5 }}>
               Se perder acesso ao autenticador, use um destes códigos. Cada um funciona uma única vez.
@@ -366,7 +369,7 @@ export function Login() {
     return (
       <Page>
         <Card>
-          <Logo to="/"><span>◆</span> VOTZ</Logo>
+          <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
           <Subtitle>Autenticação em dois fatores</Subtitle>
 
           <Form key="mfa-verify-form" onSubmit={handleMfa(onMfa)}>
@@ -427,7 +430,7 @@ export function Login() {
   return (
     <Page>
       <Card>
-        <Logo to="/"><span>◆</span> VOTZ</Logo>
+        <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
         <Subtitle>Entre para apoiar e cobrar.</Subtitle>
 
         <Form key="credentials-form" onSubmit={handleCreds(onCredentials)}>

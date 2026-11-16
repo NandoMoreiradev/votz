@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { setToken } from '../lib/token'
+import { clearLastOrgContext, readLastOrgContext } from '../lib/org-context-storage'
 import { AuthenticatedUser } from '@votz/shared-types'
 import { ActiveContext } from '../types/api'
 
@@ -24,23 +25,34 @@ export const useAuthStore = create<AuthState>()(
       sessionReady: false,
       setAuth: (user, accessToken) => {
         setToken(accessToken)
+        const savedHint = readLastOrgContext()
+        if (savedHint && savedHint.userId !== user.id) {
+          clearLastOrgContext()
+        }
         set({ user, sessionReady: true, activeContext: null })
       },
       setUser: (user) => set({ user }),
       applyContext: (accessToken, ctx) => {
         setToken(accessToken)
+        if (!ctx) {
+          clearLastOrgContext()
+        }
         set({ activeContext: ctx })
       },
-      clearContext: () => set({ activeContext: null }),
+      clearContext: () => {
+        clearLastOrgContext()
+        set({ activeContext: null })
+      },
       setSessionReady: () => set({ sessionReady: true }),
       logout: () => {
         setToken(null)
+        clearLastOrgContext()
         set({ user: null, activeContext: null, sessionReady: true })
       },
     }),
     {
       name: 'votz:auth',
-      partialize: (state) => ({ user: state.user, activeContext: state.activeContext }),
+      partialize: (state) => ({ user: state.user }),
     },
   ),
 )
