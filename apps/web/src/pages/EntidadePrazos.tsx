@@ -1,4 +1,14 @@
-import { Category, DEFAULT_SLA_HOURS_BY_CATEGORY } from '@votz/shared-types'
+import {
+  Category,
+  DEFAULT_SLA_HOURS_BY_CATEGORY,
+  formatCountPtBr,
+  formatDateBr,
+  formatDateTimeBr,
+  formatDurationPtBr,
+  formatMonthOrDateBr,
+  formatPercentPtBr,
+  formatSlaQueueLabel,
+} from '@votz/shared-types'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
@@ -30,11 +40,15 @@ const ALL_CATEGORIES = Object.values(Category)
 
 const Page = styled.main`
   min-height: 100vh;
+  width: 100%;
+  overflow-x: clip;
   background: ${({ theme }) => theme.colors.neutral};
   padding-bottom: ${({ theme }) => theme.spacing[8]};
 `
 
 const Container = styled.div`
+  width: 100%;
+  box-sizing: border-box;
   max-width: 1180px;
   margin: 0 auto;
   padding: ${({ theme }) => theme.spacing[6]} ${({ theme }) => theme.spacing[4]};
@@ -201,19 +215,23 @@ const SlaPill = styled.span<{ $state: SlaStateValue | null }>`
   background: ${({ $state }) =>
     $state === 'BREACHED'
       ? '#FEE2E2'
-      : $state === 'AT_RISK'
+      : $state === 'AT_RISK' || $state === 'MET_LATE'
         ? '#FEF3C7'
         : $state === 'MET'
           ? '#DCFCE7'
-          : '#E0F2FE'};
+          : $state === 'ON_TIME'
+            ? '#E0F2FE'
+            : '#F1F5F9'};
   color: ${({ $state }) =>
     $state === 'BREACHED'
       ? '#991B1B'
-      : $state === 'AT_RISK'
+      : $state === 'AT_RISK' || $state === 'MET_LATE'
         ? '#92400E'
         : $state === 'MET'
           ? '#166534'
-          : '#075985'};
+          : $state === 'ON_TIME'
+            ? '#075985'
+            : '#475569'};
 `
 
 const Table = styled.table`
@@ -246,19 +264,7 @@ const AlertBanner = styled.div<{ $tone?: 'info' | 'warn' }>`
 `
 
 function formatSlaLabel(item: SlaQueueItem): string {
-  if (item.slaState === 'BREACHED') {
-    const overdue = item.hoursRemaining !== null ? Math.abs(item.hoursRemaining).toFixed(1) : '?'
-    return `Vencido há ${overdue}h`
-  }
-  if (item.slaState === 'AT_RISK') {
-    return item.hoursRemaining !== null ? `Em risco · resta ${item.hoursRemaining}h` : 'Em risco (75%)'
-  }
-  if (item.slaDueAt) {
-    return item.isDueToday
-      ? `Vence hoje · resta ${item.hoursRemaining ?? 0}h`
-      : `No prazo · resta ${item.hoursRemaining ?? 0}h`
-  }
-  return 'Sem prazo definido'
+  return formatSlaQueueLabel(item)
 }
 
 function defaultPeriodDates() {
@@ -498,18 +504,9 @@ export function EntidadePrazos() {
                     }}
                   >
                     <KpiLabel>Vencidos</KpiLabel>
-                    <KpiValue $color="#DC2626">{queueQ.data?.summary.breached ?? 0}</KpiValue>
-                  </KpiCard>
-                  <KpiCard
-                    $active={urgency === 'DUE_TODAY'}
-                    $tone="#EA580C"
-                    onClick={() => {
-                      setUrgency(urgency === 'DUE_TODAY' ? 'ALL' : 'DUE_TODAY')
-                      setPage(1)
-                    }}
-                  >
-                    <KpiLabel>Vence hoje</KpiLabel>
-                    <KpiValue $color="#EA580C">{queueQ.data?.summary.dueToday ?? 0}</KpiValue>
+                    <KpiValue $color="#DC2626">
+                      {formatCountPtBr(queueQ.data?.summary.breached ?? 0)}
+                    </KpiValue>
                   </KpiCard>
                   <KpiCard
                     $active={urgency === 'AT_RISK'}
@@ -520,7 +517,9 @@ export function EntidadePrazos() {
                     }}
                   >
                     <KpiLabel>Em risco (&ge; 75%)</KpiLabel>
-                    <KpiValue $color="#D97706">{queueQ.data?.summary.atRisk ?? 0}</KpiValue>
+                    <KpiValue $color="#D97706">
+                      {formatCountPtBr(queueQ.data?.summary.atRisk ?? 0)}
+                    </KpiValue>
                   </KpiCard>
                   <KpiCard
                     $active={urgency === 'ON_TIME'}
@@ -531,21 +530,66 @@ export function EntidadePrazos() {
                     }}
                   >
                     <KpiLabel>No prazo</KpiLabel>
-                    <KpiValue $color="#16A34A">{queueQ.data?.summary.onTime ?? 0}</KpiValue>
+                    <KpiValue $color="#16A34A">
+                      {formatCountPtBr(queueQ.data?.summary.onTime ?? 0)}
+                    </KpiValue>
                   </KpiCard>
-                  {(queueQ.data?.summary.noSla ?? 0) > 0 && (
-                    <KpiCard
-                      $active={urgency === 'NO_SLA'}
-                      $tone="#64748B"
-                      onClick={() => {
-                        setUrgency(urgency === 'NO_SLA' ? 'ALL' : 'NO_SLA')
-                        setPage(1)
-                      }}
-                    >
-                      <KpiLabel>Sem prazo definido</KpiLabel>
-                      <KpiValue $color="#64748B">{queueQ.data?.summary.noSla ?? 0}</KpiValue>
-                    </KpiCard>
-                  )}
+                  <KpiCard
+                    $active={
+                      urgency === 'RESPONDED' ||
+                      urgency === 'RESPONDED_ON_TIME' ||
+                      urgency === 'RESPONDED_LATE'
+                    }
+                    $tone="#0284C7"
+                    onClick={() => {
+                      setUrgency(
+                        urgency === 'RESPONDED' ||
+                          urgency === 'RESPONDED_ON_TIME' ||
+                          urgency === 'RESPONDED_LATE'
+                          ? 'ALL'
+                          : 'RESPONDED',
+                      )
+                      setPage(1)
+                    }}
+                  >
+                    <KpiLabel>Respondidos</KpiLabel>
+                    <KpiValue $color="#0284C7">
+                      {formatCountPtBr(queueQ.data?.summary.responded ?? 0)}
+                    </KpiValue>
+                    <div style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                      {formatCountPtBr(queueQ.data?.summary.respondedOnTime ?? 0)} no prazo ·{' '}
+                      {formatCountPtBr(queueQ.data?.summary.respondedLate ?? 0)} fora
+                    </div>
+                  </KpiCard>
+                  <KpiCard
+                    $active={urgency === 'NO_SLA'}
+                    $tone="#64748B"
+                    onClick={() => {
+                      setUrgency(urgency === 'NO_SLA' ? 'ALL' : 'NO_SLA')
+                      setPage(1)
+                    }}
+                  >
+                    <KpiLabel>Sem prazo definido</KpiLabel>
+                    <KpiValue $color="#64748B">
+                      {formatCountPtBr(queueQ.data?.summary.noSla ?? 0)}
+                    </KpiValue>
+                  </KpiCard>
+                  <KpiCard
+                    $active={urgency === 'DUE_TODAY'}
+                    $tone="#EA580C"
+                    onClick={() => {
+                      setUrgency(urgency === 'DUE_TODAY' ? 'ALL' : 'DUE_TODAY')
+                      setPage(1)
+                    }}
+                  >
+                    <KpiLabel>Vence hoje</KpiLabel>
+                    <KpiValue $color="#EA580C">
+                      {formatCountPtBr(queueQ.data?.summary.dueToday ?? 0)}
+                    </KpiValue>
+                    <div style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                      incluídos em No prazo / Em risco
+                    </div>
+                  </KpiCard>
                 </KpiGrid>
 
                 <Card>
@@ -557,7 +601,7 @@ export function EntidadePrazos() {
                         setPage(1)
                       }}
                     >
-                      Todos ({queueQ.data?.summary.totalOpen ?? 0})
+                      Todos ({formatCountPtBr(queueQ.data?.summary.totalOpen ?? 0)})
                     </PillBtn>
                     <PillBtn
                       $active={assigneeFilter === 'MINE'}
@@ -566,7 +610,7 @@ export function EntidadePrazos() {
                         setPage(1)
                       }}
                     >
-                      Meus relatos ({queueQ.data?.summary.mine ?? 0})
+                      Meus relatos ({formatCountPtBr(queueQ.data?.summary.mine ?? 0)})
                     </PillBtn>
                     <PillBtn
                       $active={assigneeFilter === 'UNASSIGNED'}
@@ -575,8 +619,27 @@ export function EntidadePrazos() {
                         setPage(1)
                       }}
                     >
-                      Não atribuídos ({queueQ.data?.summary.unassigned ?? 0})
+                      Não atribuídos ({formatCountPtBr(queueQ.data?.summary.unassigned ?? 0)})
                     </PillBtn>
+
+                    <Select
+                      aria-label="Filtrar por estado de prazo"
+                      value={urgency}
+                      onChange={(e) => {
+                        setUrgency(e.target.value as SlaUrgencyFilter)
+                        setPage(1)
+                      }}
+                    >
+                      <option value="ALL">Todos os estados de prazo</option>
+                      <option value="BREACHED">Vencidos</option>
+                      <option value="AT_RISK">Em risco (&ge; 75%)</option>
+                      <option value="ON_TIME">No prazo</option>
+                      <option value="RESPONDED">Respondidos (todos)</option>
+                      <option value="RESPONDED_ON_TIME">Respondidos no prazo</option>
+                      <option value="RESPONDED_LATE">Respondidos fora do prazo</option>
+                      <option value="NO_SLA">Sem prazo definido</option>
+                      <option value="DUE_TODAY">Vence hoje (destaque)</option>
+                    </Select>
 
                     <Select
                       aria-label="Filtrar por categoria"
@@ -643,8 +706,8 @@ export function EntidadePrazos() {
                               {item.title}
                             </Link>
                             <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                              Pressão: {Math.round(item.pressureScore)} · Status: {item.status}
-                              {item.slaDueAt && ` · Prazo: ${new Date(item.slaDueAt).toLocaleString('pt-BR')}`}
+                              Pressão: {formatCountPtBr(item.pressureScore)} · Status: {item.status}
+                              {item.slaDueAt && ` · Prazo: ${formatDateTimeBr(item.slaDueAt)}`}
                             </div>
                           </div>
 
@@ -749,16 +812,15 @@ export function EntidadePrazos() {
                       <MetricInfoModal metricKey="sla_compliance_rate" />
                     </KpiLabel>
                     <KpiValue>
-                      {perfQ.data?.summary.complianceRate.value !== null &&
-                      perfQ.data?.summary.complianceRate.value !== undefined
-                        ? `${perfQ.data.summary.complianceRate.value}%`
-                        : '—'}
+                      {formatPercentPtBr(perfQ.data?.summary.complianceRate.value, 2)}
                     </KpiValue>
                   </KpiCard>
                   <KpiCard $active={false}>
                     <KpiLabel>No prazo / Vencidos</KpiLabel>
                     <KpiValue>
-                      {perfQ.data ? `${perfQ.data.summary.slaMet} / ${perfQ.data.summary.slaBreached}` : '0 / 0'}
+                      {perfQ.data
+                        ? `${formatCountPtBr(perfQ.data.summary.slaMet)} / ${formatCountPtBr(perfQ.data.summary.slaBreached)}`
+                        : '0 / 0'}
                     </KpiValue>
                   </KpiCard>
                   <KpiCard $active={false}>
@@ -767,10 +829,10 @@ export function EntidadePrazos() {
                       <MetricInfoModal metricKey="first_response_median_h" />
                     </KpiLabel>
                     <KpiValue>
-                      {perfQ.data?.summary.firstResponseMedianH !== null &&
-                      perfQ.data?.summary.firstResponseMedianH !== undefined
-                        ? `${perfQ.data.summary.firstResponseMedianH}h`
-                        : '—'}
+                      {formatDurationPtBr(perfQ.data?.summary.firstResponseMedianH, {
+                        dayThresholdHours: 24,
+                        dayUnit: 'd',
+                      })}
                     </KpiValue>
                   </KpiCard>
                 </KpiGrid>
@@ -796,19 +858,22 @@ export function EntidadePrazos() {
                           <tr key={row.category}>
                             <td>{CATEGORY_CONFIG[row.category as Category]?.label ?? row.category}</td>
                             <td>
-                              {row.declaredHours}h
+                              {formatCountPtBr(row.declaredHours)} h
                               {row.isDefaultPolicy && (
                                 <span style={{ marginLeft: 6, fontSize: 11, color: '#64748B' }}>
                                   (prazo padrão)
                                 </span>
                               )}
                             </td>
-                            <td>{row.medianResponseHours !== null ? `${row.medianResponseHours}h` : '—'}</td>
-                            <td>{row.slaMet}</td>
-                            <td>{row.slaBreached}</td>
                             <td>
-                              {row.complianceRate.value !== null ? `${row.complianceRate.value}%` : '—'}
+                              {formatDurationPtBr(row.medianResponseHours, {
+                                dayThresholdHours: 24,
+                                dayUnit: 'd',
+                              })}
                             </td>
+                            <td>{formatCountPtBr(row.slaMet)}</td>
+                            <td>{formatCountPtBr(row.slaBreached)}</td>
+                            <td>{formatPercentPtBr(row.complianceRate.value, 2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -841,10 +906,10 @@ export function EntidadePrazos() {
                               fill={pct >= 75 ? '#16A34A' : '#E63946'}
                             />
                             <text x={x + 21} y={100 - barH} textAnchor="middle" fontSize="10" fill="#1A1A2E">
-                              {m.complianceRate.value !== null ? `${pct}%` : '—'}
+                              {formatPercentPtBr(m.complianceRate.value, 1)}
                             </text>
                             <text x={x + 21} y={128} textAnchor="middle" fontSize="10" fill="#64748B">
-                              {m.month}
+                              {formatMonthOrDateBr(m.month)}
                             </text>
                           </g>
                         )
@@ -1039,7 +1104,7 @@ export function EntidadePrazos() {
                               <code>{rep.code}</code>
                             </td>
                             <td>
-                              {rep.periodStart} a {rep.periodEnd}
+                              {formatDateBr(rep.periodStart)} a {formatDateBr(rep.periodEnd)}
                             </td>
                             <td>{rep.status}</td>
                             <td style={{ display: 'flex', gap: 12 }}>

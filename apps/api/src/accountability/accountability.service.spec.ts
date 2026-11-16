@@ -389,4 +389,94 @@ describe('ReportRendererService & AccountabilityService', () => {
     const pdf = await new ReportRendererService().renderAccountabilityPdf((createdData as any).snapshot)
     expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-')
   })
+
+  it('G3: anchors methodology footer directly below last section across minimal, medium (4 categories + 2 reports) and full PDFs on a single page', async () => {
+    const renderer = new ReportRendererService()
+    const baseMetrics = {
+      received: 42,
+      responded: 28,
+      advocated: 9,
+      resolved: 18,
+      medianResponseHours: 16.4,
+      medianResolutionHours: 72.5,
+      responseRatePercent: 66.7,
+      resolutionRatePercent: 42.9,
+      previousReceived: 35,
+      previousResolved: 14,
+      suppressed: false,
+    }
+    const categoriesPool = [
+      { category: 'INFRASTRUCTURE', receivedCount: 14, resolvedCount: 6 },
+      { category: 'SANITATION', receivedCount: 12, resolvedCount: 5 },
+      { category: 'MOBILITY', receivedCount: 9, resolvedCount: 4 },
+      { category: 'URBAN_SERVICES', receivedCount: 7, resolvedCount: 3 },
+      { category: 'ENVIRONMENT', receivedCount: 5, resolvedCount: 2 },
+      { category: 'EDUCATION', receivedCount: 4, resolvedCount: 1 },
+    ]
+    const resolvedPool = Array.from({ length: 8 }, (_, idx) => ({
+      title: `Relato resolvido ${idx + 1} de pavimentação e iluminação`,
+      category: 'INFRASTRUCTURE',
+      resolvedAt: '2026-10-15',
+      supportCount: 20 - idx,
+    }))
+
+    for (const orgType of ['POLITICIAN', 'ENTITY'] as const) {
+      for (const variant of ['min', 'med', 'full'] as const) {
+        const snap: any = {
+          orgType,
+          orgId: 'org-1',
+          orgName: orgType === 'ENTITY' ? 'Prefeitura Teste' : 'Vereador Teste',
+          roleOrTypeLabel: orgType === 'ENTITY' ? 'Prefeitura Municipal' : 'Vereador · AGIR',
+          territoryLabel: 'Aracaju / SE',
+          periodStart: '2026-10-01',
+          periodEnd: '2026-10-31',
+          previousPeriodStart: '2026-09-01',
+          previousPeriodEnd: '2026-09-30',
+          code: `VTZ-G3-${orgType}-${variant}`,
+          verificationUrl: `https://votz.org.br/prestacao/VTZ-G3-${orgType}-${variant}`,
+          metrics:
+            orgType === 'ENTITY'
+              ? { ...baseMetrics, slaMet: 24, slaBreached: 4, slaCompliancePercent: 85.7 }
+              : baseMetrics,
+          topCategories:
+            variant === 'min'
+              ? []
+              : variant === 'med'
+                ? categoriesPool.slice(0, 4)
+                : categoriesPool,
+          recurrence:
+            variant === 'full' && orgType === 'ENTITY'
+              ? {
+                  windowEnd: '2026-10-31',
+                  visibleCellsCount: 3,
+                  suppressedCellsCount: 4,
+                  recurrenceIndexPercent: 34.5,
+                  topCells: [
+                    { areaLabel: 'Bairro Centro', category: 'INFRASTRUCTURE', count90d: 14 },
+                    { areaLabel: 'Bairro Atalaia', category: 'SANITATION', count90d: 13 },
+                    { areaLabel: 'Bairro Farolândia', category: 'MOBILITY', count90d: 12 },
+                  ],
+                }
+              : undefined,
+          topResolvedReports:
+            variant === 'min'
+              ? []
+              : variant === 'med'
+                ? resolvedPool.slice(0, 2)
+                : resolvedPool,
+          methodology: {
+            dictionaryVersion: 'v1.1.3',
+            dictionaryDate: '2026-11-16',
+            timezone: 'America/Sao_Paulo',
+            computedAt: '2026-11-16T12:00:00.000Z',
+            note: 'Snapshot imutável.',
+          },
+        }
+        const pdf = await renderer.renderAccountabilityPdf(snap)
+        expect(pdf.subarray(0, 5).toString('utf8')).toBe('%PDF-')
+        const pageMarkers = pdf.toString('latin1').match(/\/Type\s*\/Page\b(?!s)/g) ?? []
+        expect(pageMarkers.length).toBe(1)
+      }
+    }
+  }, 15000)
 })

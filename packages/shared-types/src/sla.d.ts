@@ -71,4 +71,19 @@ export declare function resolveOptionalResolutionSlaHours(category: Category, re
  * no fuso America/Sao_Paulo, exigindo injeção explícita de `now`.
  */
 export declare function computeSla(report: SlaReportInput, policy: SlaPolicyInput, now: Date): ComputedSlaResult;
+export interface SlaQueueLabelInput {
+    slaState: SlaStateValue | null;
+    slaDueAt?: string | Date | null;
+    slaMetAt?: string | Date | null;
+    firstResponseAt?: string | Date | null;
+    isDueToday?: boolean;
+    hoursRemaining?: number | null;
+    hoursOverdue?: number | null;
+    hoursLate?: number | null;
+}
+/**
+ * Formata o rótulo de prazo de um item da fila SLA em pt-BR,
+ * distinguindo relatos respondidos (MET/MET_LATE) e nunca exibindo horas negativas.
+ */
+export declare function formatSlaQueueLabel(item: SlaQueueLabelInput): string;
 //# sourceMappingURL=sla.d.ts.map

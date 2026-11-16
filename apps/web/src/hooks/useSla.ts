@@ -3,7 +3,16 @@ import { Category } from '@votz/shared-types'
 import { extractPlanRequired } from './useAnalytics'
 import { api } from '../lib/api'
 
-export type SlaUrgencyFilter = 'ALL' | 'BREACHED' | 'DUE_TODAY' | 'AT_RISK' | 'ON_TIME' | 'NO_SLA'
+export type SlaUrgencyFilter =
+  | 'ALL'
+  | 'BREACHED'
+  | 'DUE_TODAY'
+  | 'AT_RISK'
+  | 'ON_TIME'
+  | 'RESPONDED'
+  | 'RESPONDED_ON_TIME'
+  | 'RESPONDED_LATE'
+  | 'NO_SLA'
 export type SlaQueueSortBy = 'due_asc' | 'pressure_desc' | 'newest'
 export type SlaStateValue = 'ON_TIME' | 'AT_RISK' | 'BREACHED' | 'MET' | 'MET_LATE'
 
@@ -35,6 +44,8 @@ export interface SlaQueueItem {
   resolutionSlaState: SlaStateValue | null
   isDueToday: boolean
   hoursRemaining: number | null
+  hoursOverdue?: number | null
+  hoursLate?: number | null
   assignment: {
     id: string
     assignedAt: string
@@ -54,7 +65,10 @@ export interface SlaQueueResponse {
     dueToday: number
     atRisk: number
     onTime: number
-    noSla?: number
+    responded: number
+    respondedOnTime: number
+    respondedLate: number
+    noSla: number
     unassigned: number
     mine: number
   }

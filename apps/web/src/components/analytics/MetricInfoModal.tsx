@@ -1,7 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Info, X } from '@phosphor-icons/react'
 import styled from 'styled-components'
-import { ANALYTICS_DEFINITION_DATE, ANALYTICS_METRIC_DICTIONARY, AnalyticsMetricKey } from '@votz/shared-types'
+import {
+  ANALYTICS_DEFINITION_DATE,
+  ANALYTICS_METRIC_DICTIONARY,
+  AnalyticsMetricKey,
+  formatDateBr,
+} from '@votz/shared-types'
 
 const IconTrigger = styled.button`
   display: inline-flex;
@@ -144,7 +149,7 @@ export function MetricInfoModal({ metricKey }: MetricInfoModalProps) {
               <FormulaBox>{entry.formula}</FormulaBox>
             </div>
             <MetaLine>
-              Versão do dicionário: {entry.version} · Vigência: {ANALYTICS_DEFINITION_DATE}
+              Versão do dicionário: {entry.version} · Vigência: {formatDateBr(ANALYTICS_DEFINITION_DATE)}
             </MetaLine>
           </Body>
         </Content>

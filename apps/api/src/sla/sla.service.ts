@@ -121,16 +121,28 @@ export class SlaService {
 
     const where: Prisma.ReportWhereInput = { ...scopeWhere }
     if (query.urgency === 'BREACHED') {
+      where.slaDueAt = { not: null }
       where.slaState = SlaState.BREACHED
     } else if (query.urgency === 'AT_RISK') {
+      where.slaDueAt = { not: null }
       where.slaState = SlaState.AT_RISK
     } else if (query.urgency === 'ON_TIME') {
+      where.slaDueAt = { not: null }
       where.slaState = SlaState.ON_TIME
+    } else if (query.urgency === 'RESPONDED') {
+      where.slaDueAt = { not: null }
+      where.slaState = { in: [SlaState.MET, SlaState.MET_LATE] }
+    } else if (query.urgency === 'RESPONDED_ON_TIME') {
+      where.slaDueAt = { not: null }
+      where.slaState = SlaState.MET
+    } else if (query.urgency === 'RESPONDED_LATE') {
+      where.slaDueAt = { not: null }
+      where.slaState = SlaState.MET_LATE
     } else if (query.urgency === 'NO_SLA') {
-      where.OR = [{ slaState: null }, { slaState: { notIn: [SlaState.BREACHED, SlaState.AT_RISK, SlaState.ON_TIME] } }]
+      where.OR = [{ slaDueAt: null }, { slaState: null }]
     } else if (query.urgency === 'DUE_TODAY') {
       where.slaState = { in: [SlaState.ON_TIME, SlaState.AT_RISK] }
-      where.slaDueAt = { gte: todayStartUtc, lte: todayEndUtc }
+      where.slaDueAt = { not: null, gte: todayStartUtc, lte: todayEndUtc }
     }
 
     if (query.assignee === 'MINE') {
@@ -166,6 +178,9 @@ export class SlaService {
       breachedCount,
       atRiskCount,
       onTimeCount,
+      respondedOnTimeCount,
+      respondedLateCount,
+      noSlaCount,
       dueTodayCount,
       unassignedCount,
       mineCount,
@@ -206,14 +221,29 @@ export class SlaService {
         },
       }),
       this.prisma.report.count({ where: scopeWhere }),
-      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.BREACHED } }),
-      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.AT_RISK } }),
-      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.ON_TIME } }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, slaDueAt: { not: null }, slaState: SlaState.BREACHED },
+      }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, slaDueAt: { not: null }, slaState: SlaState.AT_RISK },
+      }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, slaDueAt: { not: null }, slaState: SlaState.ON_TIME },
+      }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, slaDueAt: { not: null }, slaState: SlaState.MET },
+      }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, slaDueAt: { not: null }, slaState: SlaState.MET_LATE },
+      }),
+      this.prisma.report.count({
+        where: { ...scopeWhere, OR: [{ slaDueAt: null }, { slaState: null }] },
+      }),
       this.prisma.report.count({
         where: {
           ...scopeWhere,
           slaState: { in: [SlaState.ON_TIME, SlaState.AT_RISK] },
-          slaDueAt: { gte: todayStartUtc, lte: todayEndUtc },
+          slaDueAt: { not: null, gte: todayStartUtc, lte: todayEndUtc },
         },
       }),
       this.prisma.report.count({
@@ -258,9 +288,22 @@ export class SlaService {
       const dueSp = r.slaDueAt ? toSaoPauloDateKey(r.slaDueAt) : null
       const isDueToday =
         dueSp === nowDaySp && (r.slaState === SlaState.ON_TIME || r.slaState === SlaState.AT_RISK)
-      const hoursRemaining = r.slaDueAt
-        ? Number(((r.slaDueAt.getTime() - now.getTime()) / 3_600_000).toFixed(1))
-        : null
+      const isAwaiting =
+        Boolean(r.slaDueAt) &&
+        (r.slaState === SlaState.ON_TIME || r.slaState === SlaState.AT_RISK)
+      const hoursRemaining =
+        isAwaiting && r.slaDueAt
+          ? Math.max(0, Number(((r.slaDueAt.getTime() - now.getTime()) / 3_600_000).toFixed(1)))
+          : null
+      const hoursOverdue =
+        r.slaState === SlaState.BREACHED && r.slaDueAt
+          ? Math.max(0, Number(((now.getTime() - r.slaDueAt.getTime()) / 3_600_000).toFixed(1)))
+          : null
+      const responseAt = r.slaMetAt ?? r.firstResponseAt
+      const hoursLate =
+        r.slaState === SlaState.MET_LATE && r.slaDueAt && responseAt
+          ? Math.max(0, Number(((responseAt.getTime() - r.slaDueAt.getTime()) / 3_600_000).toFixed(1)))
+          : null
 
       return {
         id: r.id,
@@ -281,6 +324,8 @@ export class SlaService {
         resolutionSlaState: r.resolutionSlaState,
         isDueToday,
         hoursRemaining,
+        hoursOverdue,
+        hoursLate,
         assignment: activeAssign
           ? {
               id: activeAssign.id,
@@ -298,6 +343,8 @@ export class SlaService {
       }
     })
 
+    const respondedCount = respondedOnTimeCount + respondedLateCount
+
     return {
       summary: {
         totalOpen: totalOpenCount,
@@ -305,7 +352,10 @@ export class SlaService {
         dueToday: dueTodayCount,
         atRisk: atRiskCount,
         onTime: onTimeCount,
-        noSla: Math.max(0, totalOpenCount - (breachedCount + atRiskCount + onTimeCount)),
+        responded: respondedCount,
+        respondedOnTime: respondedOnTimeCount,
+        respondedLate: respondedLateCount,
+        noSla: noSlaCount,
         unassigned: unassignedCount,
         mine: mineCount,
       },

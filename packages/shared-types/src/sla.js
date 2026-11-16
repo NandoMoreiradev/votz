@@ -7,7 +7,9 @@ exports.resolvePublicSlaDisplayState = resolvePublicSlaDisplayState;
 exports.resolveCategorySlaHours = resolveCategorySlaHours;
 exports.resolveOptionalResolutionSlaHours = resolveOptionalResolutionSlaHours;
 exports.computeSla = computeSla;
+exports.formatSlaQueueLabel = formatSlaQueueLabel;
 const enums_1 = require("./enums");
+const formatters_1 = require("./formatters");
 /**
  * TODO(v2): considerar horário comercial, feriados nacionais/municipais
  * e status de pausa ("aguardando cidadão"). Na v1 o SLA corre em horas corridas.
@@ -198,5 +200,64 @@ function computeSla(report, policy, now) {
         shouldEscalate: responseResult.state === 'BREACHED' && hoursOverdue >= escalationThreshold,
         resolution,
     };
+}
+/**
+ * Formata o rótulo de prazo de um item da fila SLA em pt-BR,
+ * distinguindo relatos respondidos (MET/MET_LATE) e nunca exibindo horas negativas.
+ */
+function formatSlaQueueLabel(item) {
+    if (item.slaState === 'MET') {
+        return 'Respondido no prazo';
+    }
+    if (item.slaState === 'MET_LATE') {
+        let late = item.hoursLate !== null && item.hoursLate !== undefined && Number.isFinite(item.hoursLate)
+            ? Math.max(0, item.hoursLate)
+            : null;
+        if (late === null && item.slaDueAt && (item.slaMetAt || item.firstResponseAt)) {
+            const dueMs = new Date(item.slaDueAt).getTime();
+            const metMs = new Date(item.slaMetAt ?? item.firstResponseAt).getTime();
+            if (Number.isFinite(dueMs) && Number.isFinite(metMs)) {
+                late = Math.max(0, (metMs - dueMs) / 3_600_000);
+            }
+        }
+        return late !== null
+            ? `Respondido fora do prazo (+${(0, formatters_1.formatDecimalPtBr)(late, 1)} h)`
+            : 'Respondido fora do prazo';
+    }
+    if (!item.slaDueAt || !item.slaState) {
+        return 'Sem prazo definido';
+    }
+    if (item.slaState === 'BREACHED') {
+        const overdue = item.hoursOverdue !== null &&
+            item.hoursOverdue !== undefined &&
+            Number.isFinite(item.hoursOverdue)
+            ? Math.max(0, item.hoursOverdue)
+            : item.hoursRemaining !== null &&
+                item.hoursRemaining !== undefined &&
+                Number.isFinite(item.hoursRemaining)
+                ? Math.abs(item.hoursRemaining)
+                : null;
+        return overdue !== null ? `Vencido há ${(0, formatters_1.formatDecimalPtBr)(overdue, 1)} h` : 'Vencido';
+    }
+    const rem = item.hoursRemaining !== null &&
+        item.hoursRemaining !== undefined &&
+        Number.isFinite(item.hoursRemaining)
+        ? Math.max(0, item.hoursRemaining)
+        : null;
+    if (item.slaState === 'AT_RISK') {
+        if (rem === null)
+            return 'Em risco';
+        return item.isDueToday
+            ? `Em risco · Vence hoje · Resta ${(0, formatters_1.formatDecimalPtBr)(rem, 1)} h`
+            : `Em risco · Resta ${(0, formatters_1.formatDecimalPtBr)(rem, 1)} h`;
+    }
+    if (item.slaState === 'ON_TIME') {
+        if (rem === null)
+            return 'No prazo';
+        return item.isDueToday
+            ? `Vence hoje · Resta ${(0, formatters_1.formatDecimalPtBr)(rem, 1)} h`
+            : `Resta ${(0, formatters_1.formatDecimalPtBr)(rem, 1)} h`;
+    }
+    return 'Sem prazo definido';
 }
 //# sourceMappingURL=sla.js.map

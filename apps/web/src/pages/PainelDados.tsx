@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
-import { Category } from '@votz/shared-types'
+import {
+  Category,
+  formatCountPtBr,
+  formatDateBr,
+  formatDateTimeBr,
+  formatDecimalPtBr,
+  formatDurationPtBr,
+  formatGapDaysPtBr,
+  formatPercentPtBr,
+} from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { AnalyticsHeatmap } from '../components/analytics/AnalyticsHeatmap'
@@ -225,13 +234,11 @@ const SecondaryBtn = styled(ActionBtn)`
 
 function formatRatioPct(ratio?: { value: number | null; numerator: number; denominator: number }) {
   if (!ratio || ratio.value === null) return '—'
-  return `${ratio.value}%`
+  return formatPercentPtBr(ratio.value, 2)
 }
 
 function formatHours(h: number | null | undefined) {
-  if (h === null || h === undefined) return '—'
-  if (h >= 24) return `${(h / 24).toFixed(1)}d`
-  return `${h}h`
+  return formatDurationPtBr(h, { dayThresholdHours: 24, dayUnit: 'd' })
 }
 
 export function PainelDados() {
@@ -340,12 +347,15 @@ export function PainelDados() {
           </div>
           {metaSource && (
             <MetaBanner>
-              <span>Amostra: {metaSource.sampleSize ?? 'Suprimida (<10)'}</span>
-              <span>Definição: {metaSource.definitionVersion}</span>
-              <span>Vigência: {metaSource.definitionDate}</span>
               <span>
-                Atualizado: {new Date(metaSource.computedAt).toLocaleString('pt-BR')}
+                Amostra:{' '}
+                {metaSource.sampleSize !== null
+                  ? formatCountPtBr(metaSource.sampleSize)
+                  : 'Suprimida (<10)'}
               </span>
+              <span>Definição: {metaSource.definitionVersion}</span>
+              <span>Vigência: {formatDateBr(metaSource.definitionDate)}</span>
+              <span>Atualizado: {formatDateTimeBr(metaSource.computedAt)}</span>
             </MetaBanner>
           )}
         </TopBar>
@@ -451,10 +461,10 @@ export function PainelDados() {
                       <KpiLabel>Volume de relatos</KpiLabel>
                       <MetricInfoModal metricKey="volume" />
                     </KpiHeader>
-                    <KpiValue>{overviewQ.data.kpis.volume}</KpiValue>
+                    <KpiValue>{formatCountPtBr(overviewQ.data.kpis.volume)}</KpiValue>
                     <KpiSub>
-                      Apoios: {overviewQ.data.kpis.supportVolume ?? 0} · Comentários:{' '}
-                      {overviewQ.data.kpis.commentVolume ?? 0}
+                      Apoios: {formatCountPtBr(overviewQ.data.kpis.supportVolume ?? 0)} ·
+                      Comentários: {formatCountPtBr(overviewQ.data.kpis.commentVolume ?? 0)}
                     </KpiSub>
                   </KpiCard>
 
@@ -465,8 +475,9 @@ export function PainelDados() {
                     </KpiHeader>
                     <KpiValue>{formatRatioPct(overviewQ.data.kpis.resolutionRate)}</KpiValue>
                     <KpiSub>
-                      {overviewQ.data.kpis.resolutionRate.numerator} ÷{' '}
-                      {overviewQ.data.kpis.resolutionRate.denominator} (resolvidos + abertos &gt;7d)
+                      {formatCountPtBr(overviewQ.data.kpis.resolutionRate.numerator)} ÷{' '}
+                      {formatCountPtBr(overviewQ.data.kpis.resolutionRate.denominator)} (resolvidos
+                      + abertos &gt;7d)
                     </KpiSub>
                   </KpiCard>
 
@@ -481,8 +492,8 @@ export function PainelDados() {
                     </KpiValue>
                     <KpiSub>
                       Taxa de resposta: {formatRatioPct(overviewQ.data.kpis.responseRate)} (
-                      {overviewQ.data.kpis.responseRate.numerator}/
-                      {overviewQ.data.kpis.responseRate.denominator})
+                      {formatCountPtBr(overviewQ.data.kpis.responseRate.numerator)}/
+                      {formatCountPtBr(overviewQ.data.kpis.responseRate.denominator)})
                     </KpiSub>
                   </KpiCard>
 
@@ -491,7 +502,7 @@ export function PainelDados() {
                       <KpiLabel>Backlog em aberto</KpiLabel>
                       <MetricInfoModal metricKey="backlog" />
                     </KpiHeader>
-                    <KpiValue>{overviewQ.data.kpis.backlog}</KpiValue>
+                    <KpiValue>{formatCountPtBr(overviewQ.data.kpis.backlog)}</KpiValue>
                     <KpiSub>
                       Idade p50: {formatHours(overviewQ.data.kpis.backlogAgeP50H)} · p90:{' '}
                       {formatHours(overviewQ.data.kpis.backlogAgeP90H)}
@@ -516,8 +527,8 @@ export function PainelDados() {
                     </KpiHeader>
                     <KpiValue>{formatRatioPct(overviewQ.data.kpis.contestRate)}</KpiValue>
                     <KpiSub>
-                      Pressão p50: {overviewQ.data.kpis.pressureP50 ?? '—'} · p90:{' '}
-                      {overviewQ.data.kpis.pressureP90 ?? '—'}
+                      Pressão p50: {formatDecimalPtBr(overviewQ.data.kpis.pressureP50, 1)} · p90:{' '}
+                      {formatDecimalPtBr(overviewQ.data.kpis.pressureP90, 1)}
                     </KpiSub>
                   </KpiCard>
                 </KpiGrid>
@@ -607,10 +618,10 @@ export function PainelDados() {
                             </td>
                             <td>{CATEGORY_CONFIG[item.category as Category]?.label ?? item.category}</td>
                             <td className="num">
-                              {item.suppressed ? 'Suprimido (<10)' : item.reportCount}
+                              {item.suppressed ? 'Suprimido (<10)' : formatCountPtBr(item.reportCount)}
                             </td>
                             <td>{item.active ? 'Ativo' : 'Encerrado'}</td>
-                            <td>{new Date(item.detectedAt).toLocaleDateString('pt-BR')}</td>
+                            <td>{formatDateBr(item.detectedAt)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -667,10 +678,10 @@ export function PainelDados() {
                 <p style={{ marginTop: 0 }}>
                   Índice de reincidência:{' '}
                   <strong>{formatRatioPct(recurrenceQ.data.recurrenceIndex)}</strong> (
-                  {recurrenceQ.data.recurrenceIndex.numerator}/
-                  {recurrenceQ.data.recurrenceIndex.denominator}) · Células abaixo de{' '}
+                  {formatCountPtBr(recurrenceQ.data.recurrenceIndex.numerator)}/
+                  {formatCountPtBr(recurrenceQ.data.recurrenceIndex.denominator)}) · Células abaixo de{' '}
                   {recurrenceQ.data.minCellSize} relatos suprimidas:{' '}
-                  {recurrenceQ.data.suppressedCells}
+                  {formatCountPtBr(recurrenceQ.data.suppressedCells)}
                 </p>
                 <DataTable>
                   <thead>
@@ -678,7 +689,7 @@ export function PainelDados() {
                       <th>Área (~150 m)</th>
                       <th>Categoria</th>
                       <th style={{ textAlign: 'right' }}>Relatos (90d)</th>
-                      <th style={{ textAlign: 'right' }}>Intervalo médio (dias)</th>
+                      <th style={{ textAlign: 'right' }}>Intervalo médio</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -690,8 +701,8 @@ export function PainelDados() {
                             CATEGORY_CONFIG[item.category as Category]?.label ??
                             item.category}
                         </td>
-                        <td className="num">{item.count90d}</td>
-                        <td className="num">{item.avgGapDays ?? '—'}</td>
+                        <td className="num">{formatCountPtBr(item.count90d)}</td>
+                        <td className="num">{formatGapDaysPtBr(item.avgGapDays)}</td>
                       </tr>
                     ))}
                   </tbody>

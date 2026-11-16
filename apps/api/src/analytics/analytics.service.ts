@@ -807,7 +807,7 @@ export class AnalyticsService {
             count90d: row.count90d,
             firstSeen: row.firstSeen.toISOString(),
             lastSeen: row.lastSeen.toISOString(),
-            avgGapDays: row.avgGapDays,
+            avgGapDays: row.avgGapDays !== null ? Number(row.avgGapDays.toFixed(1)) : null,
           }
         })
 
@@ -1033,6 +1033,7 @@ export class AnalyticsService {
         `# Votz Painel de Dados - Exportacao Agregada (${ANALYTICS_DEFINITION_VERSION} / ${ANALYTICS_DEFINITION_DATE})`,
         `# Gerado em: ${meta.computedAt} | Fuso: ${ANALYTICS_TIMEZONE} | Periodo: ${scope.from}..${scope.to}`,
         `# Escopo: ${scope.scopeMode} (${scope.state}${scope.cityKey ? '/' + scope.cityKey : ''}) | K-anonimato minimo: ${MIN_CELL_SIZE} relatos por linha`,
+        '# Formato tecnico: datas em ISO (YYYY-MM-DD em America/Sao_Paulo) e decimais com ponto decimal',
         '# Definicoes: created_count=volume; resolved_count=resolvidos; open_current_count=backlog; contested_count=contestados; response_count=com resposta oficial; support_count=apoios; comment_count=comentarios; area_label=bairro dominante',
         'day,state,city,category,created_count,resolved_count,open_current_count,contested_count,response_count,support_count,comment_count,area_label',
       ]

@@ -1,4 +1,5 @@
 import { Category, ReportStatus } from './enums'
+import { formatDecimalPtBr } from './formatters'
 
 export type SlaStateValue = 'ON_TIME' | 'AT_RISK' | 'BREACHED' | 'MET' | 'MET_LATE'
 
@@ -305,4 +306,76 @@ export function computeSla(
       responseResult.state === 'BREACHED' && hoursOverdue >= escalationThreshold,
     resolution,
   }
+}
+
+export interface SlaQueueLabelInput {
+  slaState: SlaStateValue | null
+  slaDueAt?: string | Date | null
+  slaMetAt?: string | Date | null
+  firstResponseAt?: string | Date | null
+  isDueToday?: boolean
+  hoursRemaining?: number | null
+  hoursOverdue?: number | null
+  hoursLate?: number | null
+}
+
+/**
+ * Formata o rótulo de prazo de um item da fila SLA em pt-BR,
+ * distinguindo relatos respondidos (MET/MET_LATE) e nunca exibindo horas negativas.
+ */
+export function formatSlaQueueLabel(item: SlaQueueLabelInput): string {
+  if (item.slaState === 'MET') {
+    return 'Respondido no prazo'
+  }
+  if (item.slaState === 'MET_LATE') {
+    let late =
+      item.hoursLate !== null && item.hoursLate !== undefined && Number.isFinite(item.hoursLate)
+        ? Math.max(0, item.hoursLate)
+        : null
+    if (late === null && item.slaDueAt && (item.slaMetAt || item.firstResponseAt)) {
+      const dueMs = new Date(item.slaDueAt).getTime()
+      const metMs = new Date(item.slaMetAt ?? item.firstResponseAt!).getTime()
+      if (Number.isFinite(dueMs) && Number.isFinite(metMs)) {
+        late = Math.max(0, (metMs - dueMs) / 3_600_000)
+      }
+    }
+    return late !== null
+      ? `Respondido fora do prazo (+${formatDecimalPtBr(late, 1)} h)`
+      : 'Respondido fora do prazo'
+  }
+  if (!item.slaDueAt || !item.slaState) {
+    return 'Sem prazo definido'
+  }
+  if (item.slaState === 'BREACHED') {
+    const overdue =
+      item.hoursOverdue !== null &&
+      item.hoursOverdue !== undefined &&
+      Number.isFinite(item.hoursOverdue)
+        ? Math.max(0, item.hoursOverdue)
+        : item.hoursRemaining !== null &&
+            item.hoursRemaining !== undefined &&
+            Number.isFinite(item.hoursRemaining)
+          ? Math.abs(item.hoursRemaining)
+          : null
+    return overdue !== null ? `Vencido há ${formatDecimalPtBr(overdue, 1)} h` : 'Vencido'
+  }
+  const rem =
+    item.hoursRemaining !== null &&
+    item.hoursRemaining !== undefined &&
+    Number.isFinite(item.hoursRemaining)
+      ? Math.max(0, item.hoursRemaining)
+      : null
+  if (item.slaState === 'AT_RISK') {
+    if (rem === null) return 'Em risco'
+    return item.isDueToday
+      ? `Em risco · Vence hoje · Resta ${formatDecimalPtBr(rem, 1)} h`
+      : `Em risco · Resta ${formatDecimalPtBr(rem, 1)} h`
+  }
+  if (item.slaState === 'ON_TIME') {
+    if (rem === null) return 'No prazo'
+    return item.isDueToday
+      ? `Vence hoje · Resta ${formatDecimalPtBr(rem, 1)} h`
+      : `Resta ${formatDecimalPtBr(rem, 1)} h`
+  }
+  return 'Sem prazo definido'
 }

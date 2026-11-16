@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import styled, { useTheme } from 'styled-components'
-import { AnalyticsMetricKey } from '@votz/shared-types'
+import {
+  AnalyticsMetricKey,
+  formatCountPtBr,
+  formatDecimalPtBr,
+  formatMonthOrDateBr,
+  formatPercentPtBr,
+  formatShortDateBr,
+} from '@votz/shared-types'
 import { MetricInfoModal } from './MetricInfoModal'
 
 const Card = styled.section`
@@ -207,6 +214,11 @@ export function MetricChart({
   }
   if (currentSeg.length > 0) solidSegments.push(currentSeg)
   const hasSuppressedPoints = data.some((d) => d.suppressed || d.value === null)
+  const formatVal = (val: number | null | undefined, suppressed?: boolean) => {
+    if (suppressed || val === null || val === undefined) return 'Suprimido (<10)'
+    if (unit === '%') return formatPercentPtBr(val, 2)
+    return unit ? `${formatDecimalPtBr(val, 1)}${unit}` : formatDecimalPtBr(val, 1)
+  }
 
   return (
     <Card>
@@ -261,7 +273,7 @@ export function MetricChart({
                     fill={theme.colors.muted}
                     fontFamily={theme.fonts.mono}
                   >
-                    {val}
+                    {formatCountPtBr(val)}
                   </text>
                 </g>
               )
@@ -284,7 +296,7 @@ export function MetricChart({
                         fill={d.suppressed ? theme.colors.border : theme.colors.primary}
                       >
                         <title>
-                          {d.label}: {d.suppressed || d.value === null ? 'Suprimido (<10)' : `${d.value}${unit}`}
+                          {formatMonthOrDateBr(d.label)}: {formatVal(d.value, d.suppressed)}
                         </title>
                       </rect>
                     </g>
@@ -323,8 +335,7 @@ export function MetricChart({
                   pt.y !== null ? (
                     <circle key={pt.d.label} cx={pt.x} cy={pt.y} r={3.5} fill={theme.colors.action}>
                       <title>
-                        {pt.d.label}: {pt.d.value}
-                        {unit}
+                        {formatMonthOrDateBr(pt.d.label)}: {formatVal(pt.d.value, pt.d.suppressed)}
                       </title>
                     </circle>
                   ) : (
@@ -338,7 +349,7 @@ export function MetricChart({
                       strokeWidth="1.5"
                       strokeDasharray="2 2"
                     >
-                      <title>{pt.d.label}: Suprimido (&lt;10 relatos)</title>
+                      <title>{formatMonthOrDateBr(pt.d.label)}: Suprimido (&lt;10 relatos)</title>
                     </circle>
                   ),
                 )}
@@ -355,6 +366,7 @@ export function MetricChart({
                   : data.length === 1
                     ? padLeft + innerW / 2
                     : padLeft + (i / (data.length - 1)) * innerW
+              const tickText = formatShortDateBr(d.label)
               return (
                 <text
                   key={`tick-${d.label}`}
@@ -365,7 +377,7 @@ export function MetricChart({
                   fill={theme.colors.muted}
                   fontFamily={theme.fonts.mono}
                 >
-                  {d.label.length > 10 ? d.label.slice(0, 10) : d.label}
+                  {tickText.length > 10 ? tickText.slice(0, 10) : tickText}
                 </text>
               )
             })}
@@ -412,8 +424,8 @@ export function MetricChart({
           <tbody>
             {data.map((d) => (
               <tr key={d.label}>
-                <td>{d.label}</td>
-                <td>{d.suppressed || d.value === null ? 'Suprimido (<10)' : `${d.value}${unit}`}</td>
+                <td>{formatMonthOrDateBr(d.label)}</td>
+                <td>{formatVal(d.value, d.suppressed)}</td>
               </tr>
             ))}
           </tbody>
@@ -433,10 +445,8 @@ export function MetricChart({
             <tbody>
               {data.map((d) => (
                 <tr key={d.label}>
-                  <td>{d.label}</td>
-                  <td className="num">
-                    {d.suppressed || d.value === null ? 'Suprimido (<10)' : `${d.value}${unit}`}
-                  </td>
+                  <td>{formatMonthOrDateBr(d.label)}</td>
+                  <td className="num">{formatVal(d.value, d.suppressed)}</td>
                   {data.some((row) => row.extra) && <td>{d.extra ?? '-'}</td>}
                 </tr>
               ))}

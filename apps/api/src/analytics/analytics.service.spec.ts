@@ -228,7 +228,7 @@ describe('AnalyticsService', () => {
     expect(res.suppressed).toBe(false)
     expect(res.sampleSize).toBe(25)
     expect(res.minCellSize).toBe(MIN_CELL_SIZE)
-    expect(res.definitionVersion).toBe('v1.1.2')
+    expect(res.definitionVersion).toBe('v1.1.3')
     expect(res.kpis.resolutionRate).toEqual({ value: 75, numerator: 15, denominator: 20 })
     expect(res.kpis.responseRate).toEqual({ value: 80, numerator: 20, denominator: 25 })
     expect(res.kpis.contestRate).toEqual({ value: 11.76, numerator: 2, denominator: 17 })
@@ -297,14 +297,15 @@ describe('AnalyticsService', () => {
     repo.fetchAreaSummary.mockClear()
 
     const cached = await service.getOverview(user, { period: PeriodPreset.D7 })
-    expect(cached.definitionVersion).toBe('v1.1.2')
+    expect(cached.definitionVersion).toBe('v1.1.3')
     expect(repo.fetchAreaSummary).not.toHaveBeenCalled()
   })
 
   it('exports aggregated CSV with definition header and sanitized cells', async () => {
     const csvRes = await service.exportData(user, { format: ExportFormat.CSV })
     expect(csvRes.format).toBe(ExportFormat.CSV)
-    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.2')
+    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.3')
+    expect((csvRes as any).body).toContain('# Formato tecnico: datas em ISO')
     expect((csvRes as any).body).toContain('2026-11-10,SP,Campinas,HEALTH,14')
   })
 

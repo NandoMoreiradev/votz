@@ -75,6 +75,34 @@ Feito com API + site locais, contas QA (entidade INTEGRACAO, político MANDATO_P
 
 **Scripts de QA:** `02-orgs.mjs` agora loga o moderador com MFA (ajuste feito e rodado com sucesso: 01, 02 e 03). O brief 4D.1 (`fase-4d1-brief-correcoes-api-e-prazo-publico.md`) está escrito.
 
+## Verificação do 4F e do 4D.1 (16/11/2026, com os dados demo)
+
+**Confirmado por mim no navegador/PDF:** V-1 barra sem rolagem lateral em 1280, 1100 e 800 px, com menu "Minha organização" (Painel de dados, Prazos & Fila); V-2 campo do código MFA vazio, `one-time-code`, numérico, 6 dígitos; V-3 série semanal por padrão com pontos visíveis e lacuna tracejada, mapa em "Visão ampla (1,2 km)" legível e alternância de detalhe; V-4 margens iguais; V-6 PDF da entidade com categorias em português e "Infraestrutura · Bairro Centro (área de ~150 m)" (sem geohash). 4D.1: prazo público da Prefeitura (com prazo próprio) = 84,06%; da Saúde (sem prazo próprio) sem percentual.
+
+**Novos defeitos achados:**
+
+| # | Defeito | Gravidade |
+|---|---|---|
+| N-1 | **"Sem prazo definido (40)" na fila de prazos está errado**: são relatos **já respondidos** (`MET` ou `MET_LATE`) que ainda não foram resolvidos. A conta `totalOpen − (vencidos + em risco + no prazo)` mistura os dois. Além disso um relato respondido aparece como "No prazo · resta -1741.7h" (horas negativas). | Média |
+| N-2 | Recarregar a página (F5) com uma organização ativa **volta ao perfil pessoal** (o contexto institucional só vive em memória). Apontado pelo Gemini; fora do escopo dele. | Média (UX) |
+| N-3 | Tabela de Reincidência: `avgGapDays` aparece com float sem arredondar (`0.9999997622863248`), relatado pelo Gemini; os dados demo não têm reincidência (células de 150 m com menos de 10 por categoria), então **não consegui ver a tabela**. | Baixa |
+| N-4 | Painel usa ponto decimal ("29.79%", "1.6d") e datas ISO no eixo do gráfico, enquanto PDFs e cartões usam vírgula e dd/mm/aaaa. | Baixa |
+| N-5 | F7 só reduz o vazio do PDF do político quando há menos de 3 categorias **e** menos de 3 relatos resolvidos; com 4 categorias e 2 relatos o terço inferior continua vazio. | Cosmética |
+| N-6 | Dados demo não mostram **reincidência** nem mapa com várias células no modo detalhe. Acrescentar "pontos quentes" ao seed (12+ relatos da mesma categoria na mesma célula). | Dev |
+
+## 4G (16/11/2026): resolvido e pendente
+
+**Resolvido e conferido por mim (API + testes):** N-1 fila de prazos com estados exclusivos (demo: vencidos 22 + em risco 2 + no prazo 7 + respondidos 55 [52 no prazo, 3 fora] + sem prazo 0 = 86 = total; nenhum item com horas negativas); N-4 formatação pt-BR no painel e formatadores compartilhados em `@votz/shared-types`; N-5 rodapé dos PDFs logo abaixo do último bloco; N-6 pontos quentes no seed (179 relatos demo; os dados originais continuam intactos: 9 usuários, 8 relatos, 5.573 entidades, 65.778 políticos). N-3 (`avgGapDays` arredondado) resolvido segundo o relatório; a aba de Reincidência com linhas **não foi vista por mim**.
+
+**Ainda aberto:**
+
+| # | Pendência | Decisão |
+|---|---|---|
+| N-2 | Recarregar a página volta ao perfil pessoal (G5 do brief 4G, não executado) | Aguarda OK do dono do produto |
+| 4G-1 | Na fila de prazos, a linha auxiliar mostra o status cru em inglês ("Status: OPEN", "IN_PROGRESS") | Traduzir com o mapa de rótulos |
+| 4G-2 | No card "1ª resposta" o "d" de "1,5 d / 5,4 d" quebra para a linha de baixo em 1440 px | Ajuste de estilo |
+| 4G-3 | Medição `scrollWidth === clientWidth` da tela de prazos não foi feita pelo Gemini (só captura) | Conferir quando houver teste visual |
+
 ## Estado dos commits
 
 3D, 4A e 4B estão no diretório de trabalho (parte já em stage) e **nada foi commitado**. Os documentos de negócio e os briefs também não.

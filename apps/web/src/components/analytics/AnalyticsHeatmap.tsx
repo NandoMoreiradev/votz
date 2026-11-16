@@ -3,6 +3,7 @@ import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import styled, { useTheme } from 'styled-components'
+import { formatCountPtBr, formatDecimalPtBr } from '@votz/shared-types'
 import { AnalyticsHeatmapResponse } from '../../hooks/useAnalytics'
 import { MetricInfoModal } from './MetricInfoModal'
 
@@ -215,10 +216,10 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
 
       const lines = [
         props.cityDisplay ? `Cidade: ${String(props.cityDisplay)}` : null,
-        `Relatos: ${String(props.count ?? 0)}`,
-        `Em aberto: ${String(props.openCount ?? 0)}`,
-        `Resolvidos: ${String(props.resolvedCount ?? 0)}`,
-        `Pressão média: ${String(props.avgPressure ?? 0)}`,
+        `Relatos: ${formatCountPtBr(Number(props.count ?? 0))}`,
+        `Em aberto: ${formatCountPtBr(Number(props.openCount ?? 0))}`,
+        `Resolvidos: ${formatCountPtBr(Number(props.resolvedCount ?? 0))}`,
+        `Pressão média: ${formatDecimalPtBr(Number(props.avgPressure ?? 0), 1)}`,
       ].filter((l): l is string => l !== null)
 
       for (const text of lines) {
@@ -426,9 +427,9 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
                     <tr key={code}>
                       <td style={{ fontFamily: theme.fonts.mono }}>{code}</td>
                       <td>{cell.cityDisplay || '-'}</td>
-                      <td className="num">{cell.count}</td>
-                      <td className="num">{cell.openCount}</td>
-                      <td className="num">{cell.avgPressure}</td>
+                      <td className="num">{formatCountPtBr(cell.count)}</td>
+                      <td className="num">{formatCountPtBr(cell.openCount)}</td>
+                      <td className="num">{formatDecimalPtBr(cell.avgPressure, 1)}</td>
                     </tr>
                   )
                 })}

@@ -4,7 +4,7 @@
 
 ## O que já existe no banco do Docker
 
-Além dos dados do seed original (`prisma/seed.ts`: 5.573 entidades, 65.778 políticos, 32 partidos e 8 relatos em São Paulo, com as contas `admin@votz.app`, `moderador@votz.app` etc.), há **dados de demonstração em Aracaju (SE)**: 140 relatos de 8 bairros, com apoios, comentários e linha do tempo, nos últimos 75 dias.
+Além dos dados do seed original (`prisma/seed.ts`: 5.573 entidades, 65.778 políticos, 32 partidos e 8 relatos em São Paulo, com as contas `admin@votz.app`, `moderador@votz.app` etc.), há **dados de demonstração em Aracaju (SE)**: 179 relatos de 8 bairros (140 distribuídos nos últimos 75 dias + 39 em 3 pontos quentes reincidentes nos últimos 80 dias — Centro/Infraestrutura com 14, Atalaia/Saneamento com 13 e Farolândia/Mobilidade com 12 — na mesma célula geohash-7 direcionados à Prefeitura), com apoios, comentários e linha do tempo.
 
 ### Contas de demonstração
 
@@ -52,5 +52,5 @@ O `--reset` apaga somente o que for "demo" (contas `demo.*@votz.test`, organiza�
 
 ## Observações
 
-- A Prefeitura tem relatos "vencidos", "em risco" e "no prazo" para a fila de prazos ter variedade. O estado muda com o tempo (um relato "no prazo" vira "em risco" e depois "vencido"); para renovar, use o `--reset`.
+- A Prefeitura tem relatos "vencidos", "em risco", "no prazo" e "respondidos" (em andamento/análise após a 1ª resposta) para a fila de prazos ter variedade, além de 3 pontos quentes geohash-7 para visualizar **Reincidência** e células no modo **Detalhe (150 m)** do mapa de calor. O estado de SLA muda com o tempo (um relato "no prazo" vira "em risco" e depois "vencido"); para renovar, use o `--reset`.
 - Os testes automáticos de QA (`docs/security/qa-scripts/`) usam contas `qa.*` e limpam depois (`09-cleanup.mjs`). Não afetam estas contas.

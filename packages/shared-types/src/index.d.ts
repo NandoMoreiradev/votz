@@ -8,5 +8,6 @@ export * from './election';
 export * from './legal';
 export * from './plans';
 export * from './analytics';
+export * from './formatters';
 export * from './sla';
 //# sourceMappingURL=index.d.ts.map

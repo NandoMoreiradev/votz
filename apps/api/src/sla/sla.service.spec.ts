@@ -8,7 +8,7 @@ import {
   SlaState,
   UserType,
 } from '@prisma/client'
-import { Category as SharedCategory, computeSla } from '@votz/shared-types'
+import { Category as SharedCategory, computeSla, formatSlaQueueLabel } from '@votz/shared-types'
 import { buildRatio } from '../analytics/analytics.constants'
 import { ReportsRepository } from '../reports/reports.repository'
 import { SlaService } from './sla.service'
@@ -400,7 +400,189 @@ describe('SlaService — Watcher, Deduplication, Authorization, Privacy & Reconc
     expect(perfDefault.byCategory[0].isDefaultPolicy).toBe(true)
   })
 
-  it('F5: keeps listQueue summary totals consistent even with legacy reports lacking slaState/slaDueAt', async () => {
+  it('G1/F5: listQueue uses mutually exclusive buckets summing to totalOpen, handles DISPUTED/MET/MET_LATE/noSla, and never exposes negative hours', async () => {
+    const now = new Date('2026-11-16T15:00:00.000Z') // 12:00BRT
+    const h = (deltaHours: number) => new Date(now.getTime() + deltaHours * 3_600_000)
+
+    const fixtures = [
+      {
+        id: 'rep-breached',
+        title: 'Buraco na av. central',
+        category: Category.INFRASTRUCTURE,
+        status: ReportStatus.OPEN,
+        neighborhood: 'Centro',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 10,
+        createdAt: h(-84),
+        firstResponseAt: null,
+        slaStartedAt: h(-84),
+        slaDueAt: h(-12),
+        slaState: SlaState.BREACHED,
+        slaMetAt: null,
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+      {
+        id: 'rep-disputed-met',
+        title: 'Calçada contestada',
+        category: Category.INFRASTRUCTURE,
+        status: ReportStatus.DISPUTED,
+        neighborhood: 'Centro',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 8,
+        createdAt: h(-132),
+        firstResponseAt: h(-65),
+        slaStartedAt: h(-132),
+        slaDueAt: h(-60),
+        slaState: SlaState.MET,
+        slaMetAt: h(-65),
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [{ id: 'a-1', orgType: OrgType.ENTITY, orgId: 'ent-1', active: true, assigneeUserId: 'user-gestor', createdAt: h(-100), note: null }],
+      },
+      {
+        id: 'rep-in-progress-met-late',
+        title: 'Esgoto respondido com atraso',
+        category: Category.SANITATION,
+        status: ReportStatus.IN_PROGRESS,
+        neighborhood: 'Atalaia',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 12,
+        createdAt: h(-1800),
+        firstResponseAt: h(-1738.2),
+        slaStartedAt: h(-1800),
+        slaDueAt: h(-1741.7),
+        slaState: SlaState.MET_LATE,
+        slaMetAt: h(-1738.2),
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+      {
+        id: 'rep-under-review-met',
+        title: 'Semáforo respondido no prazo',
+        category: Category.MOBILITY,
+        status: ReportStatus.UNDER_REVIEW,
+        neighborhood: 'Farolândia',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 6,
+        createdAt: h(-58),
+        firstResponseAt: h(-20),
+        slaStartedAt: h(-58),
+        slaDueAt: h(-10),
+        slaState: SlaState.MET,
+        slaMetAt: h(-20),
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+      {
+        id: 'rep-at-risk-due-today',
+        title: 'Poste apagado vence hoje',
+        category: Category.URBAN_SERVICES,
+        status: ReportStatus.OPEN,
+        neighborhood: 'Luzia',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 7,
+        createdAt: h(-67),
+        firstResponseAt: null,
+        slaStartedAt: h(-67),
+        slaDueAt: h(5),
+        slaState: SlaState.AT_RISK,
+        slaMetAt: null,
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+      {
+        id: 'rep-on-time',
+        title: 'Coleta de lixo em andamento normal',
+        category: Category.SANITATION,
+        status: ReportStatus.OPEN,
+        neighborhood: 'Jardins',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 4,
+        createdAt: h(-28),
+        firstResponseAt: null,
+        slaStartedAt: h(-28),
+        slaDueAt: h(20),
+        slaState: SlaState.ON_TIME,
+        slaMetAt: null,
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [{ id: 'a-2', orgType: OrgType.ENTITY, orgId: 'ent-1', active: true, assigneeUserId: 'user-gestor', createdAt: h(-20), note: null }],
+      },
+      {
+        id: 'rep-no-sla',
+        title: 'Relato legado sem prazo',
+        category: Category.OTHER,
+        status: ReportStatus.OPEN,
+        neighborhood: 'Centro',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 2,
+        createdAt: h(-200),
+        firstResponseAt: null,
+        slaStartedAt: null,
+        slaDueAt: null,
+        slaState: null,
+        slaMetAt: null,
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+      {
+        id: 'rep-resolved-excluded',
+        title: 'Já resolvido',
+        category: Category.OTHER,
+        status: ReportStatus.RESOLVED,
+        neighborhood: 'Centro',
+        city: 'Aracaju',
+        state: 'SE',
+        pressureScore: 5,
+        createdAt: h(-100),
+        firstResponseAt: h(-90),
+        slaStartedAt: h(-100),
+        slaDueAt: h(-50),
+        slaState: SlaState.MET,
+        slaMetAt: h(-90),
+        resolutionSlaDueAt: null,
+        resolutionSlaState: null,
+        assignments: [],
+      },
+    ]
+
+    const matchesWhere = (row: (typeof fixtures)[number], where: any): boolean => {
+      if (where.status?.in && !where.status.in.includes(row.status)) return false
+      if (where.OR) {
+        if (!where.OR.some((clause: any) => matchesWhere(row, clause))) return false
+      }
+      if (where.slaDueAt) {
+        if (where.slaDueAt.not === null && row.slaDueAt === null) return false
+        if (where.slaDueAt.gte && (!row.slaDueAt || row.slaDueAt < where.slaDueAt.gte)) return false
+        if (where.slaDueAt.lte && (!row.slaDueAt || row.slaDueAt > where.slaDueAt.lte)) return false
+      }
+      if ('slaDueAt' in where && where.slaDueAt === null && row.slaDueAt !== null) return false
+      if ('slaState' in where) {
+        if (where.slaState === null && row.slaState !== null) return false
+        if (typeof where.slaState === 'string' && row.slaState !== where.slaState) return false
+        if (where.slaState?.in && !where.slaState.in.includes(row.slaState)) return false
+      }
+      if (where.assignments?.none && row.assignments.length > 0) return false
+      if (where.assignments?.some) {
+        const uid = where.assignments.some.assigneeUserId
+        if (!row.assignments.some((a) => a.assigneeUserId === uid)) return false
+      }
+      return true
+    }
+
     const prisma = {
       orgMembership: {
         findUnique: jest.fn(async () => ({
@@ -409,18 +591,10 @@ describe('SlaService — Watcher, Deduplication, Authorization, Privacy & Reconc
         })),
       },
       report: {
-        count: jest.fn(async ({ where }: any) => {
-          if (where.slaState === SlaState.BREACHED) return 0
-          if (where.slaState === SlaState.AT_RISK) return 0
-          if (where.slaState === SlaState.ON_TIME) return 1
-          if (where.slaState?.in) return 0 // dueToday
-          if (where.assignments?.none) return 52 // unassigned
-          if (where.assignments?.some) return 0 // mine
-          return 52 // totalOpen (scopeWhere sem excluir slaState = null)
-        }),
-        findMany: jest.fn(async () => []),
+        count: jest.fn(async ({ where }: any) => fixtures.filter((r) => matchesWhere(r, where)).length),
+        findMany: jest.fn(async ({ where }: any) => fixtures.filter((r) => matchesWhere(r, where))),
       },
-      user: { findMany: jest.fn(async () => []) },
+      user: { findMany: jest.fn(async () => [{ id: 'user-gestor', name: 'Gestor', avatarUrl: null }]) },
     }
     const service = new SlaService(
       prisma as any,
@@ -430,17 +604,55 @@ describe('SlaService — Watcher, Deduplication, Authorization, Privacy & Reconc
       { sendSlaAlertDigest: jest.fn() } as any,
     )
 
-    const queue = await service.listQueue(makeActingUser(), {})
-    expect(queue.summary.totalOpen).toBe(52)
-    expect(queue.summary.unassigned).toBe(52)
-    expect(queue.summary.noSla).toBe(51)
-    expect(queue.summary.unassigned).toBeLessThanOrEqual(queue.summary.totalOpen)
+    const queue = await service.listQueue(makeActingUser(), {}, now)
+    expect(queue.summary).toEqual({
+      totalOpen: 7,
+      breached: 1,
+      dueToday: 1,
+      atRisk: 1,
+      onTime: 1,
+      responded: 3,
+      respondedOnTime: 2,
+      respondedLate: 1,
+      noSla: 1,
+      unassigned: 5,
+      mine: 2,
+    })
+
+    // Soma dos 5 estados exclusivos === Todos, e Meus + Não atribuídos === Todos
     expect(
       queue.summary.breached +
         queue.summary.atRisk +
         queue.summary.onTime +
+        queue.summary.responded +
         queue.summary.noSla,
     ).toBe(queue.summary.totalOpen)
+    expect(queue.summary.mine + queue.summary.unassigned).toBe(queue.summary.totalOpen)
+
+    // Todos os itens formatam rótulo sem horas negativas nem "resta" para respondidos
+    const labelsById = new Map(queue.items.map((item) => [item.id, formatSlaQueueLabel(item)]))
+    expect(labelsById.get('rep-breached')).toBe('Vencido há 12 h')
+    expect(labelsById.get('rep-disputed-met')).toBe('Respondido no prazo')
+    expect(labelsById.get('rep-in-progress-met-late')).toBe('Respondido fora do prazo (+3,5 h)')
+    expect(labelsById.get('rep-under-review-met')).toBe('Respondido no prazo')
+    expect(labelsById.get('rep-at-risk-due-today')).toBe('Em risco · Vence hoje · Resta 5 h')
+    expect(labelsById.get('rep-on-time')).toBe('Resta 20 h')
+    expect(labelsById.get('rep-no-sla')).toBe('Sem prazo definido')
+
+    for (const item of queue.items) {
+      expect(formatSlaQueueLabel(item)).not.toMatch(/-\d/)
+      if (item.hoursRemaining !== null) expect(item.hoursRemaining).toBeGreaterThanOrEqual(0)
+      if (item.hoursOverdue !== null) expect(item.hoursOverdue).toBeGreaterThanOrEqual(0)
+      if (item.hoursLate !== null) expect(item.hoursLate).toBeGreaterThanOrEqual(0)
+    }
+
+    // Filtro RESPONDED retorna apenas MET + MET_LATE (inclusive em DISPUTED/IN_PROGRESS/UNDER_REVIEW)
+    const respondedOnly = await service.listQueue(makeActingUser(), { urgency: 'RESPONDED' }, now)
+    expect(respondedOnly.items.map((i) => i.id)).toEqual([
+      'rep-disputed-met',
+      'rep-in-progress-met-late',
+      'rep-under-review-met',
+    ])
   })
 
   it('F5: ReportsRepository.create populates slaDueAt, slaStartedAt and slaState for every new report directed to an entity', async () => {

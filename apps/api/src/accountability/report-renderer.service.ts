@@ -356,7 +356,7 @@ export class ReportRendererService {
     y += 17
 
     const defaultFooterY = doc.page.height - 104
-    const maxListY = defaultFooterY - 22
+    const maxListY = defaultFooterY - 46
 
     if (snapshot.topResolvedReports.length === 0) {
       doc
@@ -395,14 +395,8 @@ export class ReportRendererService {
       }
     }
 
-    // F7: em relatórios esparsos (< 3 categorias e < 3 relatos resolvidos), ancora o rodapé após o último bloco evitando o terço inferior vazio
-    const isCompactFooter =
-      !snapshot.recurrence &&
-      snapshot.topCategories.length < 3 &&
-      snapshot.topResolvedReports.length < 3
-    const footerY = isCompactFooter
-      ? Math.min(defaultFooterY, Math.max(460, y + 32))
-      : defaultFooterY
+    // G3: posiciona o rodapé logo abaixo do último bloco para qualquer modelo/quantidade sem estourar o rodapé padrão nem gerar página 2
+    const footerY = Math.min(defaultFooterY, y + 36)
 
     // Rodapé fixo de metodologia e autenticidade
     doc

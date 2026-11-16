@@ -1,4 +1,4 @@
-export const ANALYTICS_DEFINITION_VERSION = 'v1.1.2'
+export const ANALYTICS_DEFINITION_VERSION = 'v1.1.3'
 export const ANALYTICS_DEFINITION_DATE = '2026-11-16'
 export const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
 export const MIN_CELL_SIZE = 10

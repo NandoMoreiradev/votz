@@ -1,10 +1,11 @@
-# Dicionário de Métricas — Votz Analytics (v1.1.2)
+# Dicionário de Métricas — Votz Analytics (v1.1.3)
 
-- **Versão da definição:** `v1.1.2`
+- **Versão da definição:** `v1.1.3`
 - **Data da definição:** `2026-11-16`
 - **Fuso horário de corte diário:** `America/Sao_Paulo` (`timezone('America/Sao_Paulo', ts)::date`)
 - **Limiar mínimo de privacidade (k-anonimato):** `MIN_CELL_SIZE = 10`
 - **Precisão espacial:** Célula **Geohash precisão 7** (~150 m × 150 m) e **Geohash precisão 6** (~1,2 km × 0,6 km) no mapa de calor quando a maioria das células de 150 m está suprimida (sempre respeitando `>= 10` relatos). Coordenadas originais (`latitude`/`longitude`) e `authorId` nunca são retornados; relatórios e tabelas exibem apenas rótulos de bairro dominante (`areaLabel`).
+- **Formatação:** Painel, telas de Prazos, PDFs e cartões usam pt-BR (vírgula decimal, milhar com ponto, datas `dd/mm` / `dd/mm/aaaa`). Exportação CSV mantém datas ISO (`YYYY-MM-DD`) e ponto decimal por ser dado técnico (declarado no cabeçalho do arquivo).
 
 > **Regra de razões:** toda métrica percentual ou razão publica obrigatoriamente **numerador**, **denominador**, `sampleSize`, `computedAt` e `definitionVersion`.  
 > **Regra de supressão (`MIN_CELL_SIZE = 10`):** qualquer célula territorial/temática/pública com `0 < count < 10` tem seus valores detalhados mascarados (`null` + `suppressed: true`), ou é omitida no mapa de calor mantendo apenas o contador agregado `suppressedCells` para impedir reidentificação por exclusão.
@@ -28,6 +29,7 @@
 | `support_volume` e `comment_volume` | Engajamento agregado | Soma de votos (`SUPPORT` + `ME_TOO`) e comentários nos relatos criados no período. | `SUM(support_count)` e `SUM(comment_count)` | `area_metrics_daily` | `[from, to]` | `0` quando vazio; `null` quando suprimido por `MIN_CELL_SIZE`. | Mede engajamento na coorte de criação do relato. | `v1.0.0` |
 | `outbreak_history` | Histórico de surtos | Surtos registrados pelo detector de surtos na área territorial da organização. | Contagem e listagem de `Surto` no estado/município do escopo | `surtos` | `[from, to]` | Lista vazia quando não houve surtos no recorte. | Detector dispara em `>= 5` relatos/24h por categoria/cidade (`alerts.service.ts`). | `v1.0.0` |
 | `sla_met`, `sla_breached` e `sla_compliance_rate` | Cumprimento dos prazos declarados pela entidade (SLA) | Proporção de relatos elegíveis de entidade atendidos até `sla_due_at` frente ao total cujo prazo já foi cumprido ou violado (`MET` vs `BREACHED` + `MET_LATE`). | `num = SUM(sla_met_count)`; `den = SUM(sla_met_count) + SUM(sla_breached_count)`; razão `num ÷ den * 100` | `area_metrics_daily` e `recipient_metrics_daily` (`sla_met_count`, `sla_breached_count`) | `[from, to]` | `null` quando `den = 0`, recorte suprimido (`MIN_CELL_SIZE = 10` em consultas públicas/territoriais) **ou** no perfil público quando `hasOwnSla = false` (entidade sem categoria positiva em `Entity.slaHours`). | Na v1 usa horas corridas (`America/Sao_Paulo`, sem horário comercial nem pausa de "aguardando cidadão"). Sem política própria (`hasOwnSla = false`), rollups internos usam o prazo padrão da plataforma rotulados como **"prazo padrão"** e o perfil público omite o percentual. Alterações de `Entity.slaHours` valem prospectivamente para novos relatos (recálculo explícito opcional para abertos). | `v1.1.1` |
+| `sla_queue_states` | Fila de prazos da entidade (estados mutuamente exclusivos) | Partição dos relatos não resolvidos/arquivados (`OPEN`, `UNDER_REVIEW`, `IN_PROGRESS`, `DISPUTED`) em 5 estados exclusivos: **Vencidos** (`BREACHED`), **Em risco** (`AT_RISK`), **No prazo** (`ON_TIME`), **Respondidos** (`MET` ou `MET_LATE`, subdivididos em no prazo / fora do prazo) e **Sem prazo definido** (`sla_due_at IS NULL`). | `Vencidos + Em risco + No prazo + Respondidos + Sem prazo definido = Todos`; `Vence hoje` é destaque dentro de `No prazo / Em risco` (não entra na soma). | `reports` (`sla_state`, `sla_due_at`) | Estado instantâneo na consulta (`/sla/queue`) | Relatos respondidos nunca exibem horas restantes; quando `sla_due_at` for nulo, entram exclusivamente em `Sem prazo definido`. | Sem horas negativas nos rótulos de prazo (`Vencido há X h`, `Resta X h`, `Respondido no prazo`, `Respondido fora do prazo (+X h)`). | `v1.1.3` |
 
 ---
 

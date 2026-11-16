@@ -173,7 +173,7 @@ save(state)
 
 // ── relatos, apoios, comentários e linha do tempo ───────────────────────────
 const existing = Number(sql(`select count(*) from reports where title like '[Demo]%'`))
-if (existing >= 100) {
+if (existing >= 170) {
   log(`já existem ${existing} relatos demo; mantendo.`)
 } else {
   let seed = 20261116
@@ -234,6 +234,59 @@ if (existing >= 100) {
     timeline.push({ id, type: 'CREATED', content: 'Relato criado', at: created })
     if (first && status !== 'OPEN') timeline.push({ id, type: 'STATUS_CHANGED', content: `Status alterado para ${status}`, at: first })
     if (resolved) timeline.push({ id, type: 'RESOLVED', content: 'Relato marcado como resolvido', at: resolved })
+  }
+
+  // Pontos quentes para reincidência e modo Detalhe (150 m) no mapa de calor:
+  // >= 12 relatos da mesma categoria dentro da mesma célula geohash-7 ao longo dos últimos 80 dias
+  const HOTSPOTS = [
+    { bairro: 'Centro', lat: -10.9112, lng: -37.0717, cat: 'INFRASTRUCTURE', count: 14 },
+    { bairro: 'Atalaia', lat: -11.0069, lng: -37.0550, cat: 'SANITATION', count: 13 },
+    { bairro: 'Farolândia', lat: -10.9640, lng: -37.0560, cat: 'MOBILITY', count: 12 },
+  ]
+  for (const hs of HOTSPOTS) {
+    const targetCell = encodeGeohash7(hs.lat, hs.lng)
+    for (let i = 0; i < hs.count; i++) {
+      const candLat = +(hs.lat + (rnd() - 0.5) * 0.00025).toFixed(5)
+      const candLng = +(hs.lng + (rnd() - 0.5) * 0.00025).toFixed(5)
+      const sameCell = encodeGeohash7(candLat, candLng) === targetCell
+      const lat = sameCell ? candLat : hs.lat
+      const lng = sameCell ? candLng : hs.lng
+      const ageDays = Math.max(2, Math.min(79, Math.round(((i + 0.5) / hs.count) * 76) + Math.floor(rnd() * 3)))
+      const ageH = ageDays * 24 + Math.floor(rnd() * 18)
+      const created = new Date(now - ageH * 3600_000)
+      const status = i % 4 === 0 ? 'RESOLVED' : i % 3 === 0 ? 'IN_PROGRESS' : i % 5 === 0 ? 'UNDER_REVIEW' : 'OPEN'
+      const first = status !== 'OPEN' ? new Date(created.getTime() + (10 + Math.floor(rnd() * 40)) * 3600_000) : null
+      const resolved = status === 'RESOLVED' ? new Date(Math.min(now - 3600_000, created.getTime() + 96 * 3600_000)) : null
+      const anonymous = rnd() < 0.25
+      const author = anonymous ? null : pick(citizens)
+      const id = randomUUID()
+      const title = `[Demo] ${pick(CATS[hs.cat])} - ${hs.bairro} (reincidente #${i + 1})`
+      const nSup = 1 + Math.floor(rnd() * 3)
+      const supporters = [...citizens].sort(() => rnd() - 0.5).slice(0, nSup)
+      const pressure = +(nSup * 1.5 + 2 + (status === 'OPEN' ? (ageH / 24) * 1.5 : 0)).toFixed(1)
+      rows.push({
+        id,
+        title,
+        cat: hs.cat,
+        status,
+        anonymous,
+        lat,
+        lng,
+        bairro: hs.bairro,
+        rt: 'ENTITY',
+        rid: ent('prefeitura'),
+        author,
+        created,
+        first,
+        resolved,
+        pressure,
+        cell7: targetCell,
+      })
+      supporters.forEach((u) => votes.push({ id, u, at: new Date(created.getTime() + 3600_000) }))
+      timeline.push({ id, type: 'CREATED', content: 'Relato criado', at: created })
+      if (first) timeline.push({ id, type: 'STATUS_CHANGED', content: `Status alterado para ${status}`, at: first })
+      if (resolved) timeline.push({ id, type: 'RESOLVED', content: 'Relato marcado como resolvido', at: resolved })
+    }
   }
   const iso = (d) => (d ? q(d.toISOString().replace('T', ' ').replace('Z', '')) : 'null')
   const rowSql = rows.map((r) => `(${q(r.id)}, ${q(r.title)}, ${q('Relato de demonstração criado pelo seed do ambiente local. Descreve um problema recorrente no bairro ' + r.bairro + ' e aguarda providências.')}, '${r.cat}'::"Category", '${r.status}'::"ReportStatus", ${r.anonymous}, ${r.lat}, ${r.lng}, 'Aracaju', 'SE', ${q(r.bairro)}, 'aracaju', ${q(r.bairro.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''))}, ${q(r.cell7)}, ${r.rt ? `'${r.rt}'::"RecipientType"` : 'null'}, ${q(r.rid)}, ${q(r.author)}, ${iso(r.created)}, ${iso(r.resolved ?? r.first ?? r.created)}, ${iso(r.first)}, ${iso(r.resolved)}, ${r.pressure})`).join(',\n')
