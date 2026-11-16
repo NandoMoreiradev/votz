@@ -40,11 +40,12 @@ describe('Plans Catalog (@votz/shared-types)', () => {
     expect(hasFeature('ENTITY', 'INTEGRACAO', 'api_access')).toBe(true)
   })
 
-  it('marks unbuilt roadmap features as soon and built 4B/4C features as available', () => {
-    const soonKeys = ['sla_panel', 'peer_comparison'] as const
+  it('marks unbuilt roadmap features as soon and built 4B/4C/4D features as available', () => {
+    const soonKeys = ['peer_comparison'] as const
     for (const key of soonKeys) {
       expect(FEATURE_STATUS[key]).toBe('soon')
     }
+    expect(FEATURE_STATUS.sla_panel).toBe('available')
     expect(FEATURE_STATUS.respond_reports).toBe('available')
     expect(FEATURE_STATUS.export_data).toBe('available')
     expect(FEATURE_STATUS.propostas).toBe('available')

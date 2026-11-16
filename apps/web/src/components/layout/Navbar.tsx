@@ -652,6 +652,9 @@ export function Navbar() {
             {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
               <NavLink to="/painel-dados">Painel</NavLink>
             )}
+            {activeContext?.type === 'ENTITY' && (
+              <NavLink to="/entidade/prazos">Prazos &amp; Fila</NavLink>
+            )}
             {activeContext?.type === 'POLITICIAN' && (
               <NavLink to="/mandato">Caixa do mandato</NavLink>
             )}
@@ -762,6 +765,11 @@ export function Navbar() {
           {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
             <MobileNavLink to="/painel-dados" onClick={() => setMobileOpen(false)}>
               Painel de dados
+            </MobileNavLink>
+          )}
+          {activeContext?.type === 'ENTITY' && (
+            <MobileNavLink to="/entidade/prazos" onClick={() => setMobileOpen(false)}>
+              Prazos &amp; Fila
             </MobileNavLink>
           )}
           {activeContext?.type === 'POLITICIAN' && (

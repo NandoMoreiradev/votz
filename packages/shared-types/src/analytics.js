@@ -5,7 +5,7 @@ exports.normalizeLocationKey = normalizeLocationKey;
 exports.encodeGeohash7 = encodeGeohash7;
 exports.decodeGeohashBounds = decodeGeohashBounds;
 exports.computePercentileFromBuckets = computePercentileFromBuckets;
-exports.ANALYTICS_DEFINITION_VERSION = 'v1.0.0';
+exports.ANALYTICS_DEFINITION_VERSION = 'v1.1.0';
 exports.ANALYTICS_DEFINITION_DATE = '2026-11-15';
 exports.ANALYTICS_TIMEZONE = 'America/Sao_Paulo';
 exports.MIN_CELL_SIZE = 10;
@@ -292,6 +292,13 @@ exports.ANALYTICS_METRIC_DICTIONARY = {
         name: 'Histórico de surtos',
         definition: 'Registro histórico de surtos detectados na área territorial por categoria e janela.',
         formula: 'Surto WHERE state/cityKey no escopo territorial',
+        version: exports.ANALYTICS_DEFINITION_VERSION,
+    },
+    sla_compliance_rate: {
+        key: 'sla_compliance_rate',
+        name: 'Cumprimento de prazo (SLA)',
+        definition: 'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA declarado (MET ÷ (MET + MET_LATE + BREACHED)). Relatos no prazo ainda abertos não compõem o denominador.',
+        formula: 'sla_met_count ÷ (sla_met_count + sla_breached_count)',
         version: exports.ANALYTICS_DEFINITION_VERSION,
     },
 };

@@ -18,6 +18,8 @@ function makeSummary(overrides?: Partial<SummaryRollupRow>): SummaryRollupRow {
     resolutionDurationCount: 15,
     supportCount: 60,
     commentCount: 14,
+    slaMetCount: 14,
+    slaBreachedCount: 6,
     pressureSum: 450,
     respBuckets: [5, 10, 3, 2, 0, 0, 0, 0],
     resBuckets: [0, 3, 5, 4, 2, 1, 0, 0],
@@ -77,6 +79,8 @@ describe('AnalyticsService', () => {
           resolutionDurationCount: 10,
           supportCount: 40,
           commentCount: 10,
+          slaMetCount: 10,
+          slaBreachedCount: 4,
           pressureSum: 300,
           respBuckets: [4, 7, 2, 2, 0, 0, 0, 0],
           resBuckets: [0, 2, 4, 3, 1, 0, 0, 0],
@@ -92,14 +96,16 @@ describe('AnalyticsService', () => {
           resolutionDurationCount: 5,
           supportCount: 20,
           commentCount: 4,
+          slaMetCount: 4,
+          slaBreachedCount: 2,
           pressureSum: 150,
           respBuckets: [1, 3, 1, 0, 0, 0, 0, 0],
           resBuckets: [0, 1, 1, 1, 1, 1, 0, 0],
         },
       ]),
       fetchDailySeries: jest.fn().mockResolvedValue([
-        { day: '2026-11-10', createdCount: 12, resolvedCount: 6, openCurrentCount: 4, openOver7dCount: 3, responseCount: 10, supportCount: 22, commentCount: 5 },
-        { day: '2026-11-11', createdCount: 4, resolvedCount: 2, openCurrentCount: 2, openOver7dCount: 0, responseCount: 3, supportCount: 8, commentCount: 2 },
+        { day: '2026-11-10', createdCount: 12, resolvedCount: 6, openCurrentCount: 4, openOver7dCount: 3, responseCount: 10, supportCount: 22, commentCount: 5, slaMetCount: 8, slaBreachedCount: 2 },
+        { day: '2026-11-11', createdCount: 4, resolvedCount: 2, openCurrentCount: 2, openOver7dCount: 0, responseCount: 3, supportCount: 8, commentCount: 2, slaMetCount: 2, slaBreachedCount: 1 },
       ]),
       fetchHeatmapCells: jest.fn().mockResolvedValue({
         visibleCells: [
@@ -203,7 +209,7 @@ describe('AnalyticsService', () => {
     expect(res.suppressed).toBe(false)
     expect(res.sampleSize).toBe(25)
     expect(res.minCellSize).toBe(MIN_CELL_SIZE)
-    expect(res.definitionVersion).toBe('v1.0.0')
+    expect(res.definitionVersion).toBe('v1.1.0')
     expect(res.kpis.resolutionRate).toEqual({ value: 75, numerator: 15, denominator: 20 })
     expect(res.kpis.responseRate).toEqual({ value: 80, numerator: 20, denominator: 25 })
     expect(res.kpis.contestRate).toEqual({ value: 11.76, numerator: 2, denominator: 17 })
@@ -272,14 +278,14 @@ describe('AnalyticsService', () => {
     repo.fetchAreaSummary.mockClear()
 
     const cached = await service.getOverview(user, { period: PeriodPreset.D7 })
-    expect(cached.definitionVersion).toBe('v1.0.0')
+    expect(cached.definitionVersion).toBe('v1.1.0')
     expect(repo.fetchAreaSummary).not.toHaveBeenCalled()
   })
 
   it('exports aggregated CSV with definition header and sanitized cells', async () => {
     const csvRes = await service.exportData(user, { format: ExportFormat.CSV })
     expect(csvRes.format).toBe(ExportFormat.CSV)
-    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.0.0')
+    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.0')
     expect((csvRes as any).body).toContain('2026-11-10,SP,Campinas,HEALTH,14')
   })
 

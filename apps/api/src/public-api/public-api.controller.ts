@@ -4,10 +4,12 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  Req,
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
 } from '@nestjs/common'
+import type { Request } from 'express'
 import {
   ApiTags,
   ApiOperation,
@@ -107,5 +109,33 @@ export class PublicApiController {
   @ApiNotFoundResponse({ description: 'Entidade não encontrada' })
   findEntityById(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findEntityById(id)
+  }
+
+  // ── Dados da própria entidade (plano Integração, Brief 4D T6) ────────────────
+
+  @Get('minha-entidade/agregados')
+  @ApiOperation({
+    summary: 'Agregados 4B e SLA da própria entidade vinculada à API key (plano Integração)',
+  })
+  @ApiQuery({ name: 'days', enum: [7, 30, 90, 365], required: false })
+  @ApiQuery({ name: 'entityId', required: false })
+  getMyEntityAggregates(
+    @Req() req: Request & { resolvedApiKey: { userId: string } },
+    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
+    @Query('entityId') entityId?: string,
+  ) {
+    return this.service.getMyEntityAggregates(req.resolvedApiKey.userId, days, entityId)
+  }
+
+  @Get('minha-entidade/relatos')
+  @ApiOperation({
+    summary: 'Relatos públicos direcionados à própria entidade vinculada à API key (zero PII/atribuições)',
+  })
+  getMyEntityReports(
+    @Req() req: Request & { resolvedApiKey: { userId: string } },
+    @Query() query: ListPublicReportsDto,
+    @Query('entityId') entityId?: string,
+  ) {
+    return this.service.getMyEntityReports(req.resolvedApiKey.userId, query, entityId)
   }
 }

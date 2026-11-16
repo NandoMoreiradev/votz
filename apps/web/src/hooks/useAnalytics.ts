@@ -285,6 +285,7 @@ export interface PublicAnalyticsResponse {
     resolutionRate: AnalyticsRatio
     firstResponseMedianH: number | null
     responseRate: AnalyticsRatio
+    slaComplianceRate?: AnalyticsRatio
   }
 }
 

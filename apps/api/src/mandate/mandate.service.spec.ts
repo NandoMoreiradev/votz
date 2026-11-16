@@ -318,7 +318,18 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
           plan: 'MANDATO',
         })),
       },
-      report: { findMany: jest.fn(async () => []) },
+      report: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'rep-anon-digest',
+            title: 'Bueiro entupido (anônimo)',
+            category: Category.SANITATION,
+            neighborhood: 'Centro',
+            city: 'Belo Horizonte',
+            pressureScore: 95,
+          },
+        ]),
+      },
       mandateSettings: {
         findUnique: jest.fn(async ({ where }: { where: { digestUnsubscribeToken?: string } }) => {
           if (where.digestUnsubscribeToken === 'invalid') return null
@@ -376,10 +387,26 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
     expect(first).toEqual({ sent: 1, weekKey: '2026-W46', mode: 'DETAILED' })
     expect(second).toEqual({ skipped: true, reason: 'already_sent_or_disabled' })
     expect(mail.sendWeeklyMandateDigest).toHaveBeenCalledTimes(1)
+    const digestPayload = mail.sendWeeklyMandateDigest.mock.calls[0][2]
+    expect(digestPayload.topUnanswered).toHaveLength(1)
+    expect(digestPayload.topUnanswered[0].id).toBe('rep-anon-digest')
+    const serializedDigest = JSON.stringify(digestPayload)
+    expect(serializedDigest).not.toContain('authorId')
+    expect(serializedDigest).not.toContain('orgNotes')
+    expect(serializedDigest).not.toContain('orgTags')
 
-    // Descadastro com 1 clique
-    const unsub = await svc.unsubscribeByToken('valid-token-1234567890')
-    expect(unsub.unsubscribed).toBe(true)
+    // C4: GET /unsubscribe (previewUnsubscribeByToken) nunca altera digestEnabled (proteção anti-prefetch)
+    const preview = await svc.previewUnsubscribeByToken('valid-token-1234567890')
+    expect(preview.valid).toBe(true)
+    expect(preview.alreadyUnsubscribed).toBe(false)
+    expect(digestEnabled).toBe(true)
+
+    // Confirmação explícita via POST desativa de forma idempotente
+    const unsub1 = await svc.confirmUnsubscribeByToken('valid-token-1234567890')
+    expect(unsub1.unsubscribed).toBe(true)
+    expect(digestEnabled).toBe(false)
+    const unsub2 = await svc.confirmUnsubscribeByToken('valid-token-1234567890')
+    expect(unsub2.unsubscribed).toBe(true)
     expect(digestEnabled).toBe(false)
   })
 })

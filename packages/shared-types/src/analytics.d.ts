@@ -1,4 +1,4 @@
-export declare const ANALYTICS_DEFINITION_VERSION = "v1.0.0";
+export declare const ANALYTICS_DEFINITION_VERSION = "v1.1.0";
 export declare const ANALYTICS_DEFINITION_DATE = "2026-11-15";
 export declare const ANALYTICS_TIMEZONE = "America/Sao_Paulo";
 export declare const MIN_CELL_SIZE = 10;
@@ -32,7 +32,7 @@ export interface GeohashCellBounds {
 }
 export declare function decodeGeohashBounds(geohash: string): GeohashCellBounds | null;
 export declare function computePercentileFromBuckets(counts: readonly number[], upperBounds: readonly number[], percentile: number, openTailUpperMultiplier?: number): number | null;
-export type AnalyticsMetricKey = 'volume' | 'resolution_rate' | 'first_response_median_h' | 'first_response_p90_h' | 'response_rate' | 'resolution_time_median_h' | 'resolution_time_p90_h' | 'backlog' | 'backlog_age_p50_h' | 'backlog_age_p90_h' | 'contest_rate' | 'reincidence' | 'recurrence_index' | 'trend' | 'pressure_p50_p90' | 'category_mix' | 'support_volume' | 'comment_volume' | 'outbreak_history';
+export type AnalyticsMetricKey = 'volume' | 'resolution_rate' | 'first_response_median_h' | 'first_response_p90_h' | 'response_rate' | 'resolution_time_median_h' | 'resolution_time_p90_h' | 'backlog' | 'backlog_age_p50_h' | 'backlog_age_p90_h' | 'contest_rate' | 'reincidence' | 'recurrence_index' | 'trend' | 'pressure_p50_p90' | 'category_mix' | 'support_volume' | 'comment_volume' | 'outbreak_history' | 'sla_compliance_rate';
 export interface MetricDictionaryEntry {
     key: AnalyticsMetricKey;
     name: string;

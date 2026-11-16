@@ -25,6 +25,7 @@ import {
   CreateReportTagDto,
   MandateInboxQueryDto,
   QuickRespondDto,
+  UnsubscribeDigestDto,
   UpdateDigestSettingsDto,
   UpdateMandateGoalDto,
   UpdateOnboardingDto,
@@ -117,9 +118,17 @@ export class MandateController {
   @Public()
   @Get('digest/unsubscribe')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Descadastro com 1 clique do resumo semanal via token do e-mail' })
-  unsubscribeDigest(@Query('token') token: string) {
-    return this.digest.unsubscribeByToken(token)
+  @ApiOperation({ summary: 'Validar token e exibir status sem alterar preferências (anti-prefetch)' })
+  previewUnsubscribeDigest(@Query('token') token: string) {
+    return this.digest.previewUnsubscribeByToken(token)
+  }
+
+  @Public()
+  @Post('digest/unsubscribe')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Confirmar descadastro idempotente do resumo semanal via botão (POST)' })
+  confirmUnsubscribeDigest(@Body() dto: UnsubscribeDigestDto) {
+    return this.digest.confirmUnsubscribeByToken(dto.token)
   }
 
   // ── Modelos de resposta e notas/tags internas (T4) ────────────────────────

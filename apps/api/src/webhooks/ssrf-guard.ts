@@ -55,9 +55,26 @@ function extractMappedIpv4FromIpv6(normalized: string): string | null {
   return null
 }
 
+function groupsToIpv4(hi: number, lo: number): string {
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+}
+
+function normalizeEmbeddedIpv4InIpv6(clean: string): string {
+  const lastColon = clean.lastIndexOf(':')
+  if (lastColon < 0) return clean
+  const tail = clean.slice(lastColon + 1)
+  if (!tail.includes('.') || !net.isIPv4(tail)) return clean
+
+  const octets = tail.split('.').map(Number)
+  const hi = ((octets[0] << 8) | octets[1]).toString(16)
+  const lo = ((octets[2] << 8) | octets[3]).toString(16)
+  return `${clean.slice(0, lastColon + 1)}${hi}:${lo}`
+}
+
 function expandIpv6(ip: string): number[] | null {
   const zoneIdx = ip.indexOf('%')
-  const clean = zoneIdx >= 0 ? ip.slice(0, zoneIdx) : ip
+  const withoutZone = zoneIdx >= 0 ? ip.slice(0, zoneIdx) : ip
+  const clean = normalizeEmbeddedIpv4InIpv6(withoutZone)
   const [leftRaw, rightRaw] = clean.split('::')
   if (clean.split('::').length > 2) return null
 
@@ -110,7 +127,19 @@ export function isPrivateOrReservedIp(rawIp: string): boolean {
     const isLoopback = groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1
     if (isZero || isLoopback) return true
 
-    // IPv4-mapped binary form ::ffff:0:0/96
+    // ::/96 IPv4-compatible IPv6 (obsoleto RFC 4291 — ex: [::127.0.0.1])
+    if (
+      groups[0] === 0 &&
+      groups[1] === 0 &&
+      groups[2] === 0 &&
+      groups[3] === 0 &&
+      groups[4] === 0 &&
+      groups[5] === 0
+    ) {
+      return true
+    }
+
+    // ::ffff:0:0/96 IPv4-mapped binary form
     if (
       groups[0] === 0 &&
       groups[1] === 0 &&
@@ -119,10 +148,34 @@ export function isPrivateOrReservedIp(rawIp: string): boolean {
       groups[4] === 0 &&
       groups[5] === 0xffff
     ) {
-      const hi = groups[6]
-      const lo = groups[7]
-      const v4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
-      return isPrivateOrReservedIp(v4)
+      return isPrivateOrReservedIp(groupsToIpv4(groups[6], groups[7]))
+    }
+
+    // 64:ff9b::/96 (NAT64 well-known RFC 6052) -> extrai IPv4 embutido e reaplica regra
+    if (
+      groups[0] === 0x0064 &&
+      groups[1] === 0xff9b &&
+      groups[2] === 0 &&
+      groups[3] === 0 &&
+      groups[4] === 0 &&
+      groups[5] === 0
+    ) {
+      return isPrivateOrReservedIp(groupsToIpv4(groups[6], groups[7]))
+    }
+
+    // 64:ff9b:1::/48 (NAT64 local-use RFC 8215)
+    if (groups[0] === 0x0064 && groups[1] === 0xff9b && groups[2] === 0x0001) {
+      return true
+    }
+
+    // 2002::/16 (6to4 RFC 3056) -> IPv4 nos bits 16..48 (groups[1], groups[2])
+    if (groups[0] === 0x2002) {
+      return isPrivateOrReservedIp(groupsToIpv4(groups[1], groups[2]))
+    }
+
+    // 2001::/32 (Teredo RFC 4380)
+    if (groups[0] === 0x2001 && groups[1] === 0x0000) {
+      return true
     }
 
     const first = groups[0]

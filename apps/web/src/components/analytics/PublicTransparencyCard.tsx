@@ -180,6 +180,19 @@ export function PublicTransparencyCard({
               {data.kpis.responseRate.value !== null ? `${data.kpis.responseRate.value}%` : '—'}
             </ItemVal>
           </Item>
+          {orgType === 'ENTITY' && (
+            <Item>
+              <ItemHead>
+                <span>Cumprimento de SLA</span>
+                <MetricInfoModal metricKey="sla_compliance_rate" />
+              </ItemHead>
+              <ItemVal>
+                {data.kpis.slaComplianceRate && data.kpis.slaComplianceRate.value !== null
+                  ? `${data.kpis.slaComplianceRate.value}%`
+                  : '—'}
+              </ItemVal>
+            </Item>
+          )}
         </MetricsRow>
       )}
 

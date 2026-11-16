@@ -396,4 +396,85 @@ export class MailService {
       })
       .catch((err) => this.logger.error('Failed to send org alert email', err))
   }
+
+  async sendSlaAlertDigest(
+    email: string,
+    recipientName: string,
+    data: {
+      orgName: string
+      atRiskCount: number
+      breachedCount: number
+      escalatedCount: number
+      highlights: Array<{ reportId: string; title: string; category: string; stageLabel: string }>
+    },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const queueUrl = `${baseUrl}/entidade/prazos`
+    const safeName = escapeHtml(recipientName || 'Equipe')
+    const safeOrg = escapeHtml(data.orgName)
+
+    const itemsHtml = data.highlights
+      .slice(0, 8)
+      .map(
+        (item) =>
+          `<li style="margin-bottom:6px;"><a href="${escapeHtml(`${baseUrl}/relatos/${encodeURIComponent(item.reportId)}`)}">${escapeHtml(item.title)}</a> · ${escapeHtml(item.category)} · <strong>${escapeHtml(item.stageLabel)}</strong></li>`,
+      )
+      .join('')
+
+    await this.transporter
+      .sendMail({
+        from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+        to: email,
+        subject: sanitizeSubject(
+          `[SLA Votz] ${data.breachedCount} vencido(s), ${data.atRiskCount} em risco — ${data.orgName}`,
+        ),
+        html: `
+          <h2>Painel de prazos (SLA) — ${safeOrg}</h2>
+          <p>Olá, ${safeName}. Resumo dos alertas de prazo desta janela:</p>
+          <ul>
+            <li>Em risco (&ge; 75% do prazo): <strong>${escapeHtml(String(data.atRiskCount))}</strong></li>
+            <li>Prazo vencido: <strong>${escapeHtml(String(data.breachedCount))}</strong></li>
+            <li>Escalonados à gestão: <strong>${escapeHtml(String(data.escalatedCount))}</strong></li>
+          </ul>
+          ${itemsHtml ? `<ul style="padding-left:18px;margin:12px 0 18px;">${itemsHtml}</ul>` : ''}
+          <p><a href="${escapeHtml(queueUrl)}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Abrir fila de prazos</a></p>
+        `,
+      })
+      .catch((err) => this.logger.error('Failed to send SLA digest email', err))
+  }
+
+  async sendMonthlyAttendanceReport(
+    email: string,
+    recipientName: string,
+    data: {
+      orgName: string
+      periodLabel: string
+      code: string
+      signedDownloadUrl: string | null
+      verificationUrl: string
+    },
+  ): Promise<void> {
+    const safeName = escapeHtml(recipientName || 'Gestor(a)')
+    const safeOrg = escapeHtml(data.orgName)
+    const safePeriod = escapeHtml(data.periodLabel)
+    const safeCode = escapeHtml(data.code)
+
+    await this.transporter
+      .sendMail({
+        from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+        to: email,
+        subject: sanitizeSubject(`Relatório mensal de atendimento (${data.periodLabel}) — ${data.orgName}`),
+        html: `
+          <h2>Relatório mensal de atendimento — ${safeOrg}</h2>
+          <p>Olá, ${safeName}. O relatório de atendimento referente a <strong>${safePeriod}</strong> foi gerado com código verificável <code>${safeCode}</code>.</p>
+          ${
+            data.signedDownloadUrl
+              ? `<p><a href="${escapeHtml(data.signedDownloadUrl)}" style="background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Baixar PDF (link assinado)</a></p>`
+              : ''
+          }
+          <p>Página pública de verificação: <a href="${escapeHtml(data.verificationUrl)}">${escapeHtml(data.verificationUrl)}</a></p>
+        `,
+      })
+      .catch((err) => this.logger.error('Failed to send monthly attendance report email', err))
+  }
 }

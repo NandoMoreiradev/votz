@@ -41,6 +41,7 @@ export interface RawReportForRollup {
   supportCount: number
   commentCount: number
   hasDispute: boolean
+  slaState?: string | null
 }
 
 export interface AggregatedAreaBucket {
@@ -62,6 +63,8 @@ export interface AggregatedAreaBucket {
   pressureSum: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
 }
 
 export interface AggregatedRecipientBucket {
@@ -81,6 +84,8 @@ export interface AggregatedRecipientBucket {
   pressureSum: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
 }
 
 export interface ReconciliationResult {
@@ -133,6 +138,8 @@ export function aggregateReportsForRollup(reports: readonly RawReportForRollup[]
         pressureSum: 0,
         supportCount: 0,
         commentCount: 0,
+        slaMetCount: 0,
+        slaBreachedCount: 0,
       }
       areaMap.set(areaKey, area)
     } else if (!area.cityDisplay && cityDisplay) {
@@ -162,6 +169,8 @@ export function aggregateReportsForRollup(reports: readonly RawReportForRollup[]
           pressureSum: 0,
           supportCount: 0,
           commentCount: 0,
+          slaMetCount: 0,
+          slaBreachedCount: 0,
         }
         recipientMap.set(recKey, rec)
       }
@@ -189,6 +198,8 @@ function accumulateBucket(
     pressureSum: number
     supportCount: number
     commentCount: number
+    slaMetCount: number
+    slaBreachedCount: number
   },
   r: RawReportForRollup,
 ) {
@@ -196,6 +207,10 @@ function accumulateBucket(
   if (r.status === 'RESOLVED') target.resolvedCount += 1
   if (OPEN_STATUSES.has(r.status)) target.openCurrentCount += 1
   if (r.status === 'DISPUTED' || r.hasDispute) target.contestedCount += 1
+  if (r.recipientType === RecipientType.ENTITY) {
+    if (r.slaState === 'MET') target.slaMetCount += 1
+    if (r.slaState === 'BREACHED' || r.slaState === 'MET_LATE') target.slaBreachedCount += 1
+  }
 
   if (r.firstResponseAt) {
     const hours = Math.max(0, (r.firstResponseAt.getTime() - r.createdAt.getTime()) / 3_600_000)
@@ -279,7 +294,8 @@ export class AnalyticsRollupService {
                   WHERE te."reportId" = r.id AND te.type = 'DISPUTED'
                 ) AS has_dispute,
                 (SELECT COUNT(*)::int FROM "votes" v WHERE v."reportId" = r.id) AS support_cnt,
-                (SELECT COUNT(*)::int FROM "comments" c WHERE c."reportId" = r.id) AS comment_cnt
+                (SELECT COUNT(*)::int FROM "comments" c WHERE c."reportId" = r.id) AS comment_cnt,
+                r.sla_state::text AS sla_state
               FROM "reports" r
               WHERE (r."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ANY(${uniqueDays}::date[])
             )
@@ -288,7 +304,8 @@ export class AnalyticsRollupService {
               "created_count", "resolved_count", "open_current_count", "contested_count",
               "response_count", "resolution_duration_count",
               "resp_buckets", "res_buckets", "pressure_buckets",
-              "pressure_sum", "support_count", "comment_count", "updated_at"
+              "pressure_sum", "support_count", "comment_count",
+              "sla_met_count", "sla_breached_count", "updated_at"
             )
             SELECT
               gen_random_uuid()::text,
@@ -338,6 +355,8 @@ export class AnalyticsRollupService {
               COALESCE(SUM(pressure), 0)::float8,
               COALESCE(SUM(support_cnt), 0)::int,
               COALESCE(SUM(comment_cnt), 0)::int,
+              COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state = 'MET')::int,
+              COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state IN ('BREACHED', 'MET_LATE'))::int,
               NOW()
             FROM filtered_reports
             GROUP BY day, state, city_key, cell7, category
@@ -370,7 +389,8 @@ export class AnalyticsRollupService {
                   WHERE te."reportId" = r.id AND te.type = 'DISPUTED'
                 ) AS has_dispute,
                 (SELECT COUNT(*)::int FROM "votes" v WHERE v."reportId" = r.id) AS support_cnt,
-                (SELECT COUNT(*)::int FROM "comments" c WHERE c."reportId" = r.id) AS comment_cnt
+                (SELECT COUNT(*)::int FROM "comments" c WHERE c."reportId" = r.id) AS comment_cnt,
+                r.sla_state::text AS sla_state
               FROM "reports" r
               WHERE r."recipientType" IS NOT NULL
                 AND r."recipientId" IS NOT NULL
@@ -381,7 +401,8 @@ export class AnalyticsRollupService {
               "created_count", "resolved_count", "open_current_count", "contested_count",
               "response_count", "resolution_duration_count",
               "resp_buckets", "res_buckets", "pressure_buckets",
-              "pressure_sum", "support_count", "comment_count", "updated_at"
+              "pressure_sum", "support_count", "comment_count",
+              "sla_met_count", "sla_breached_count", "updated_at"
             )
             SELECT
               gen_random_uuid()::text,
@@ -429,6 +450,8 @@ export class AnalyticsRollupService {
               COALESCE(SUM(pressure), 0)::float8,
               COALESCE(SUM(support_cnt), 0)::int,
               COALESCE(SUM(comment_cnt), 0)::int,
+              COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state = 'MET')::int,
+              COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state IN ('BREACHED', 'MET_LATE'))::int,
               NOW()
             FROM filtered_reports
             GROUP BY day, "recipientType", "recipientId", category
@@ -575,7 +598,7 @@ export class AnalyticsRollupService {
     }
 
     const rawTotals = await this.prisma.$queryRaw<
-      Array<{ day: string; created: number; resolved: number; responded: number; openCurrent: number }>
+      Array<{ day: string; created: number; resolved: number; responded: number; openCurrent: number; slaMet: number; slaBreached: number }>
     >(
       Prisma.sql`
         SELECT
@@ -583,7 +606,9 @@ export class AnalyticsRollupService {
           COUNT(*)::int AS created,
           COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
           COUNT(*) FILTER (WHERE first_response_at IS NOT NULL)::int AS responded,
-          COUNT(*) FILTER (WHERE status IN ('OPEN', 'UNDER_REVIEW', 'IN_PROGRESS', 'DISPUTED'))::int AS "openCurrent"
+          COUNT(*) FILTER (WHERE status IN ('OPEN', 'UNDER_REVIEW', 'IN_PROGRESS', 'DISPUTED'))::int AS "openCurrent",
+          COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state = 'MET')::int AS "slaMet",
+          COUNT(*) FILTER (WHERE "recipientType" = 'ENTITY' AND sla_state IN ('BREACHED', 'MET_LATE'))::int AS "slaBreached"
         FROM "reports"
         WHERE ("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ANY(${targetDays}::date[])
         GROUP BY 1
@@ -591,7 +616,7 @@ export class AnalyticsRollupService {
     )
 
     const rollupTotals = await this.prisma.$queryRaw<
-      Array<{ day: string; created: number; resolved: number; responded: number; openCurrent: number }>
+      Array<{ day: string; created: number; resolved: number; responded: number; openCurrent: number; slaMet: number; slaBreached: number }>
     >(
       Prisma.sql`
         SELECT
@@ -599,7 +624,9 @@ export class AnalyticsRollupService {
           COALESCE(SUM("created_count"), 0)::int AS created,
           COALESCE(SUM("resolved_count"), 0)::int AS resolved,
           COALESCE(SUM("response_count"), 0)::int AS responded,
-          COALESCE(SUM("open_current_count"), 0)::int AS "openCurrent"
+          COALESCE(SUM("open_current_count"), 0)::int AS "openCurrent",
+          COALESCE(SUM("sla_met_count"), 0)::int AS "slaMet",
+          COALESCE(SUM("sla_breached_count"), 0)::int AS "slaBreached"
         FROM "area_metrics_daily"
         WHERE "day" = ANY(${targetDays}::date[])
         GROUP BY 1
@@ -611,10 +638,10 @@ export class AnalyticsRollupService {
     const mismatches: ReconciliationResult['mismatches'] = []
 
     for (const day of targetDays) {
-      const raw = rawMap.get(day) ?? { day, created: 0, resolved: 0, responded: 0, openCurrent: 0 }
-      const roll = rollupMap.get(day) ?? { day, created: 0, resolved: 0, responded: 0, openCurrent: 0 }
+      const raw = rawMap.get(day) ?? { day, created: 0, resolved: 0, responded: 0, openCurrent: 0, slaMet: 0, slaBreached: 0 }
+      const roll = rollupMap.get(day) ?? { day, created: 0, resolved: 0, responded: 0, openCurrent: 0, slaMet: 0, slaBreached: 0 }
 
-      for (const field of ['created', 'resolved', 'responded', 'openCurrent'] as const) {
+      for (const field of ['created', 'resolved', 'responded', 'openCurrent', 'slaMet', 'slaBreached'] as const) {
         if (raw[field] !== roll[field]) {
           mismatches.push({ day, field, rawValue: raw[field], rollupValue: roll[field] })
         }

@@ -1016,6 +1016,7 @@ export class AnalyticsService {
             resolutionRate: { value: null, numerator: 0, denominator: 0 },
             firstResponseMedianH: null,
             responseRate: { value: null, numerator: 0, denominator: 0 },
+            slaComplianceRate: { value: null, numerator: 0, denominator: 0 },
           }
         : {
             volume: summary.createdCount,
@@ -1030,6 +1031,11 @@ export class AnalyticsService {
               50,
             ),
             responseRate: buildRatio(summary.responseCount, summary.createdCount, 100),
+            slaComplianceRate: buildRatio(
+              summary.slaMetCount,
+              summary.slaMetCount + summary.slaBreachedCount,
+              100,
+            ),
           },
     }
   }

@@ -21,6 +21,16 @@ export const WEBHOOKS_QUEUE = 'webhooks'
 export const CONSECUTIVE_FAILURE_DISABLE_THRESHOLD = 5
 export const WEBHOOK_DELIVERY_ATTEMPTS = 5
 
+const WEBHOOK_EVENT_NAMES: Record<WebhookEventType, string> = {
+  [WebhookEventType.REPORT_CREATED]: 'report.created',
+  [WebhookEventType.REPORT_STATUS_CHANGED]: 'report.status_changed',
+  [WebhookEventType.REPORT_PRESSURE_THRESHOLD]: 'report.pressure_threshold',
+  [WebhookEventType.OUTBREAK_DETECTED]: 'outbreak.detected',
+  [WebhookEventType.SLA_AT_RISK]: 'sla.at_risk',
+  [WebhookEventType.SLA_BREACHED]: 'sla.breached',
+  [WebhookEventType.REPORT_ASSIGNED]: 'report.assigned',
+}
+
 const FORBIDDEN_WEBHOOK_KEYS = new Set([
   'author',
   'authorId',
@@ -293,6 +303,7 @@ export class WebhooksService {
     const payload = {
       eventId,
       eventType,
+      event: WEBHOOK_EVENT_NAMES[eventType] ?? eventType,
       occurredAt: new Date().toISOString(),
       data: cleanData,
     }

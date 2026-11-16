@@ -172,6 +172,9 @@ export type WebhookEventType =
   | 'REPORT_STATUS_CHANGED'
   | 'REPORT_PRESSURE_THRESHOLD'
   | 'OUTBREAK_DETECTED'
+  | 'SLA_AT_RISK'
+  | 'SLA_BREACHED'
+  | 'REPORT_ASSIGNED'
 
 export interface WebhookEndpointItem {
   id: string

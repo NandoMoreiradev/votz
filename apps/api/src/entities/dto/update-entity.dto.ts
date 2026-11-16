@@ -1,9 +1,20 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator'
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator'
 import { Type } from 'class-transformer'
 import { Category } from '@votz/shared-types'
 
-class SlaHoursDto {
+export class SlaHoursDto {
   @ApiPropertyOptional({ example: 48 })
   @IsOptional()
   @IsInt()
@@ -18,7 +29,7 @@ class SlaHoursDto {
   @Max(8760)
   [Category.MOBILITY]?: number
 
-  @ApiPropertyOptional({ example: 72 })
+  @ApiPropertyOptional({ example: 24 })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -47,6 +58,48 @@ class SlaHoursDto {
   [Category.HOUSING]?: number
 
   @ApiPropertyOptional({ example: 72 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.ENVIRONMENT]?: number
+
+  @ApiPropertyOptional({ example: 72 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.INFRASTRUCTURE]?: number
+
+  @ApiPropertyOptional({ example: 72 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.URBAN_SERVICES]?: number
+
+  @ApiPropertyOptional({ example: 48 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.CORRUPTION]?: number
+
+  @ApiPropertyOptional({ example: 72 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.ACCESSIBILITY]?: number
+
+  @ApiPropertyOptional({ example: 72 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(8760)
+  [Category.SOCIAL_WELFARE]?: number
+
+  @ApiPropertyOptional({ example: 120 })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -89,4 +142,22 @@ export class UpdateEntityDto {
   @ValidateNested()
   @Type(() => SlaHoursDto)
   slaHours?: SlaHoursDto
+
+  @ApiPropertyOptional({ type: SlaHoursDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SlaHoursDto)
+  resolutionSlaHours?: SlaHoursDto
+
+  @ApiPropertyOptional({ example: 24 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  slaEscalationHours?: number
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  autoMonthlyReportEnabled?: boolean
 }

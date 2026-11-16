@@ -50,7 +50,7 @@ export const FEATURE_STATUS: Record<FeatureKey, FeatureAvailability> = {
   analytics_basic: 'available',
   analytics_full: 'available',
   heatmap: 'available',
-  sla_panel: 'soon',
+  sla_panel: 'available',
   pdf_report: 'available',
   share_card: 'available',
   api_access: 'available',

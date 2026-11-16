@@ -31,6 +31,27 @@
 | 3D-1 | **Menu mobile não foi visto na tela** (375, 768, 1280 px); o Gemini não conseguiu abrir o navegador. | Teste visual. |
 | 3D-2 | **Scripts de QA 02, 03 e 05 falham** porque o moderador agora exige código do MFA (`docs/security/qa-scripts`). Ajuste dos scripts, não do código. | Antes da próxima rodada de testes ponta a ponta. |
 
+## 4C — Ferramentas do político
+
+| # | Ressalva | Quando tratar |
+|---|---|---|
+| 4C-1 | **Cartão PNG cortado na lateral direita** (FEED e STORIES), confirmado ao gerar com dados de exemplo. Brief 4C.2 (V1). | Antes de qualquer uso público. |
+| 4C-2 | Cartão usa paleta diferente da identidade oficial. Brief 4C.2 (V2). | Junto com 4C-1. |
+| 4C-3 | PDF com datas ISO e decimais com ponto. Brief 4C.2 (V3). Estrutura verificada (1 página, nada fora da margem); visual (QR, cores) ainda não visto. | Junto com 4C-1. |
+| 4C-4 | Cota de cartões não é serializada em cache frio (dois pedidos simultâneos podem renderizar duas vezes). Só custo extra. | Melhoria futura. |
+| 4C-5 | Falta conferir `npm audit` contra a lista anterior (novas bibliotecas `pdfkit`, `satori`, `@resvg/resvg-js`). | Antes de ir ao ar. |
+
+## 4D — Prazos (SLA) para entidades
+
+| # | Ressalva | Quando tratar |
+|---|---|---|
+| 4D-1 | **API de dados sem checagem de papel.** `minha-entidade/*` aceita qualquer membro ACTIVE da entidade dono da chave (até VIEWER), sem exigir `VIEW_ANALYTICS`/`EXPORT_DATA`. Os dados são agregados e relatos públicos, mas a regra de permissão fica inconsistente com o resto. | Ajuste pequeno (brief 4D.1). |
+| 4D-2 | **Percentual público de cumprimento usa prazo padrão da plataforma** quando a entidade nunca configurou o próprio. Publicar "cumpriu X%" contra um prazo que ela não declarou pode ser injusto e gerar contestação. | Decisão de produto + texto na tela (mostrar "prazo padrão"). |
+| 4D-3 | Limite por IP da API usa `req.ip`: atrás de Cloudflare/Render precisa de `trust proxy` correto, senão todos compartilham o mesmo IP. | Na configuração de produção. |
+| 4D-4 | Sem horário comercial, feriados e pausa (TODO v2): prazo em horas corridas penaliza o órgão no fim de semana. | v2, depois dos primeiros clientes. |
+| 4D-5 | Tela `/entidade/prazos` e o fluxo de atribuição não foram vistos no navegador. | Teste visual antes de ir ao ar. |
+| 4D-6 | Fail-open do Redis no limite da API (decisão anterior L8) continua. | Registrar por escrito ou fechar. |
+
 ## Estado dos commits
 
 3D, 4A e 4B estão no diretório de trabalho (parte já em stage) e **nada foi commitado**. Os documentos de negócio e os briefs também não.

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma, RecipientType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { Category, ReportStatus, VoteType } from '@votz/shared-types'
 import { ListPublicReportsDto } from './dto/list-public-reports.dto'
@@ -36,15 +37,16 @@ export class PublicApiRepository {
 
   // ── Reports ─────────────────────────────────────────────────────────────────
 
-  async findReports(dto: ListPublicReportsDto) {
+  async findReports(dto: ListPublicReportsDto, scopedWhere?: Prisma.ReportWhereInput) {
     const page  = dto.page  ?? 1
     const limit = dto.limit ?? 20
 
-    const where = {
+    const where: Prisma.ReportWhereInput = {
       ...(dto.category && { category: dto.category }),
       status: dto.status ?? { not: ReportStatus.ARCHIVED },
       ...(dto.city  && { city:  { contains: dto.city,  mode: 'insensitive' as const } }),
       ...(dto.state && { state: dto.state.toUpperCase() }),
+      ...(scopedWhere ?? {}),
     }
 
     const [total, items] = await Promise.all([
@@ -60,6 +62,13 @@ export class PublicApiRepository {
 
     const withMeToo = await this.mergeMeToo(items)
     return { data: withMeToo, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
+  }
+
+  async findReportsForEntity(entityId: string, dto: ListPublicReportsDto) {
+    return this.findReports(dto, {
+      recipientType: RecipientType.ENTITY,
+      recipientId: entityId,
+    })
   }
 
   async findReportById(id: string) {

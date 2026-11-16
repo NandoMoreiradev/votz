@@ -177,7 +177,31 @@ export class WeeklyDigestService {
     }
   }
 
-  async unsubscribeByToken(token: string) {
+  async previewUnsubscribeByToken(token: string) {
+    const cleanToken = token?.trim()
+    if (!cleanToken || cleanToken.length < 16) {
+      throw new BadRequestException('Token de descadastro inválido')
+    }
+
+    const existing = await this.prisma.mandateSettings.findUnique({
+      where: { digestUnsubscribeToken: cleanToken },
+      select: { id: true, digestEnabled: true },
+    })
+    if (!existing) {
+      throw new NotFoundException('Preferência de resumo não encontrada para este token')
+    }
+
+    // Leitura pura sem mutação (evita descadastro acidental por prefetch de antivírus/e-mail)
+    return {
+      valid: true,
+      alreadyUnsubscribed: !existing.digestEnabled,
+      message: existing.digestEnabled
+        ? 'Confirme no botão abaixo para cancelar o recebimento do resumo semanal do mandato.'
+        : 'Este endereço já está descadastrado do resumo semanal do mandato.',
+    }
+  }
+
+  async confirmUnsubscribeByToken(token: string) {
     const cleanToken = token?.trim()
     if (!cleanToken || cleanToken.length < 16) {
       throw new BadRequestException('Token de descadastro inválido')
@@ -201,7 +225,7 @@ export class WeeklyDigestService {
         orgId: existing.orgId,
         itemType: 'MANDATE_DIGEST_PREFERENCE',
         itemId: existing.id,
-        summary: 'Descadastro com 1 clique via link do e-mail',
+        summary: 'Descadastro confirmado via POST (token de e-mail)',
       })
     }
 

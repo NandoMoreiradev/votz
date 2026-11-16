@@ -693,6 +693,14 @@ export function EntityProfile() {
                       Painel de dados
                     </ReportCta>
                   )}
+                  {isOwner && (
+                    <ReportCta
+                      to="/entidade/prazos"
+                      style={{ background: '#0F172A', color: '#FFFFFF' }}
+                    >
+                      Prazos SLA & Fila
+                    </ReportCta>
+                  )}
                   {!entity.verified && currentUser && !isOwner && (
                     <ReportCta
                       to={`/reivindicar/entidade/${entity.id}`}

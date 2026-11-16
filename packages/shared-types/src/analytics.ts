@@ -1,4 +1,4 @@
-export const ANALYTICS_DEFINITION_VERSION = 'v1.0.0'
+export const ANALYTICS_DEFINITION_VERSION = 'v1.1.0'
 export const ANALYTICS_DEFINITION_DATE = '2026-11-15'
 export const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
 export const MIN_CELL_SIZE = 10
@@ -200,6 +200,7 @@ export type AnalyticsMetricKey =
   | 'support_volume'
   | 'comment_volume'
   | 'outbreak_history'
+  | 'sla_compliance_rate'
 
 export interface MetricDictionaryEntry {
   key: AnalyticsMetricKey
@@ -343,6 +344,14 @@ export const ANALYTICS_METRIC_DICTIONARY: Record<AnalyticsMetricKey, MetricDicti
     name: 'Histórico de surtos',
     definition: 'Registro histórico de surtos detectados na área territorial por categoria e janela.',
     formula: 'Surto WHERE state/cityKey no escopo territorial',
+    version: ANALYTICS_DEFINITION_VERSION,
+  },
+  sla_compliance_rate: {
+    key: 'sla_compliance_rate',
+    name: 'Cumprimento de prazo (SLA)',
+    definition:
+      'Proporção de relatos com prazo de 1ª resposta encerrado no período que foram respondidos dentro do SLA declarado (MET ÷ (MET + MET_LATE + BREACHED)). Relatos no prazo ainda abertos não compõem o denominador.',
+    formula: 'sla_met_count ÷ (sla_met_count + sla_breached_count)',
     version: ANALYTICS_DEFINITION_VERSION,
   },
 }

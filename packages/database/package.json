@@ -9,6 +9,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "db:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "db:backfill-sla": "dotenv -e ../../.env -- ts-node prisma/backfill-sla.ts",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- ts-node prisma/seed.ts",
     "db:import": "dotenv -e ../../.env -- ts-node prisma/import-public-data.ts",

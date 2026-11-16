@@ -178,3 +178,9 @@ export class UpdateOnboardingDto {
   @IsBoolean()
   confirmTerritory?: boolean
 }
+
+export class UnsubscribeDigestDto {
+  @IsString()
+  @MaxLength(128)
+  token!: string
+}

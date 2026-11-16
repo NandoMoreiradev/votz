@@ -12,6 +12,7 @@ const ENTITY_PUBLIC_SELECT = {
   votzScore: true,
   plan: true,
   slaHours: true,
+  resolutionSlaHours: true,
   city: true,
   state: true,
   logoUrl: true,

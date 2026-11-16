@@ -17,6 +17,7 @@ interface PublicAccountabilityResponse {
     orgName: string
     roleOrTypeLabel: string
     territoryLabel: string
+    reportTitle?: string
     metrics: {
       received: number
       responded: number
@@ -26,7 +27,17 @@ interface PublicAccountabilityResponse {
       medianResolutionHours: number | null
       responseRatePercent: number | null
       resolutionRatePercent: number | null
+      slaMet?: number
+      slaBreached?: number
+      slaCompliancePercent?: number | null
       suppressed: boolean
+    }
+    recurrence?: {
+      windowEnd: string | null
+      visibleCellsCount: number
+      suppressedCellsCount: number
+      recurrenceIndexPercent: number | null
+      topCells: Array<{ cell7: string; category: string; count90d: number }>
     }
     topCategories: Array<{
       category: string
@@ -184,10 +195,22 @@ export function PrestacaoPublica() {
                     <StatLabel>Respondidos</StatLabel>
                     <StatValue>{data.snapshot.metrics.responded}</StatValue>
                   </Stat>
-                  <Stat>
-                    <StatLabel>Avocados</StatLabel>
-                    <StatValue>{data.snapshot.metrics.advocated}</StatValue>
-                  </Stat>
+                  {data.orgType === 'ENTITY' ? (
+                    <Stat>
+                      <StatLabel>Cumprimento de SLA</StatLabel>
+                      <StatValue>
+                        {data.snapshot.metrics.slaCompliancePercent !== null &&
+                        data.snapshot.metrics.slaCompliancePercent !== undefined
+                          ? `${data.snapshot.metrics.slaCompliancePercent}%`
+                          : '—'}
+                      </StatValue>
+                    </Stat>
+                  ) : (
+                    <Stat>
+                      <StatLabel>Avocados</StatLabel>
+                      <StatValue>{data.snapshot.metrics.advocated}</StatValue>
+                    </Stat>
+                  )}
                   <Stat>
                     <StatLabel>Resolvidos</StatLabel>
                     <StatValue>{data.snapshot.metrics.resolved}</StatValue>
@@ -217,6 +240,19 @@ export function PrestacaoPublica() {
                     ))}
                   </tbody>
                 </Table>
+              </Card>
+            )}
+
+            {data.snapshot.recurrence && (
+              <Card>
+                <Title>Reincidência por área (janela 90d)</Title>
+                <Subtitle style={{ marginTop: 6 }}>
+                  {data.snapshot.recurrence.recurrenceIndexPercent !== null
+                    ? `Índice de reincidência: ${data.snapshot.recurrence.recurrenceIndexPercent}% · `
+                    : ''}
+                  Células visíveis (&ge; 10): {data.snapshot.recurrence.visibleCellsCount} ·
+                  Células suprimidas (&lt; 10): {data.snapshot.recurrence.suppressedCellsCount}
+                </Subtitle>
               </Card>
             )}
 

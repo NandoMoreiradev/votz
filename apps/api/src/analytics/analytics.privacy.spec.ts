@@ -72,6 +72,8 @@ describe('AnalyticsService Privacy & K-Anonymity Invariants', () => {
       resolutionDurationCount: 2,
       supportCount: 9,
       commentCount: 2,
+      slaMetCount: 0,
+      slaBreachedCount: 0,
       pressureSum: 24,
       respBuckets: [1, 2, 0, 0, 0, 0, 0, 0],
       resBuckets: [0, 1, 1, 0, 0, 0, 0, 0],

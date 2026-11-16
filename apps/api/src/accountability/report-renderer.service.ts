@@ -9,6 +9,7 @@ export interface AccountabilitySnapshot {
   orgName: string
   roleOrTypeLabel: string
   territoryLabel: string
+  reportTitle?: string
   periodStart: string
   periodEnd: string
   previousPeriodStart: string
@@ -24,6 +25,9 @@ export interface AccountabilitySnapshot {
     medianResolutionHours: number | null
     responseRatePercent: number | null
     resolutionRatePercent: number | null
+    slaMet?: number
+    slaBreached?: number
+    slaCompliancePercent?: number | null
     previousReceived: number
     previousResolved: number
     suppressed: boolean
@@ -33,6 +37,17 @@ export interface AccountabilitySnapshot {
     receivedCount: number
     resolvedCount: number
   }>
+  recurrence?: {
+    windowEnd: string | null
+    visibleCellsCount: number
+    suppressedCellsCount: number
+    recurrenceIndexPercent: number | null
+    topCells: Array<{
+      cell7: string
+      category: string
+      count90d: number
+    }>
+  }
   topResolvedReports: Array<{
     title: string
     category: string
@@ -59,11 +74,20 @@ export class ReportRendererService {
       color: { dark: '#1A1A2E', light: '#FFFFFF' },
     })
 
+    const documentHeading =
+      snapshot.reportTitle ??
+      (snapshot.orgType === 'ENTITY'
+        ? 'RELATÓRIO DE ATENDIMENTO — VOTZ'
+        : 'PRESTAÇÃO DE CONTAS — VOTZ')
+
     const doc = new PDFDocument({
       size: 'A4',
       margin: 48,
       info: {
-        Title: `Prestação de Contas Votz — ${snapshot.orgName}`,
+        Title:
+          snapshot.orgType === 'ENTITY'
+            ? `Relatório de Atendimento Votz — ${snapshot.orgName}`
+            : `Prestação de Contas Votz — ${snapshot.orgName}`,
         Author: 'Votz',
         Subject: `Período ${snapshot.periodStart} a ${snapshot.periodEnd} (${snapshot.code})`,
       },
@@ -89,7 +113,7 @@ export class ReportRendererService {
       .fillColor('#1A1A2E')
       .font('Heading')
       .fontSize(20)
-      .text('PRESTAÇÃO DE CONTAS — VOTZ', 48, 46, { width: pageWidth - 110 })
+      .text(documentHeading, 48, 46, { width: pageWidth - 110 })
 
     doc
       .fillColor('#475569')
@@ -126,10 +150,21 @@ export class ReportRendererService {
     y += 20
 
     const m = snapshot.metrics
+    const thirdCard =
+      snapshot.orgType === 'ENTITY' || m.slaCompliancePercent !== undefined
+        ? {
+            label: 'Cumprimento de prazo (SLA)',
+            value:
+              m.slaCompliancePercent !== null && m.slaCompliancePercent !== undefined
+                ? `${m.slaCompliancePercent}%`
+                : '—',
+          }
+        : { label: 'Avocados', value: String(m.advocated) }
+
     const kpiCards = [
-      { label: 'Relatos na área', value: String(m.received) },
+      { label: 'Relatos no recorte', value: String(m.received) },
       { label: 'Respondidos', value: String(m.responded) },
-      { label: 'Avocados', value: String(m.advocated) },
+      thirdCard,
       { label: 'Resolvidos', value: String(m.resolved) },
       {
         label: 'Mediana 1ª resposta',
@@ -206,6 +241,30 @@ export class ReportRendererService {
         y += 16
       }
       y += 10
+    }
+
+    if (snapshot.recurrence) {
+      doc.font('Heading').fontSize(12).fillColor('#1A1A2E').text('Reincidência por área (janela 90d)', 48, y)
+      y += 18
+      const rec = snapshot.recurrence
+      const recSummary =
+        rec.recurrenceIndexPercent !== null
+          ? `Índice de reincidência: ${rec.recurrenceIndexPercent}% · Células visíveis (>= 10): ${rec.visibleCellsCount} · Suprimidas (< 10): ${rec.suppressedCellsCount}`
+          : `Células visíveis (>= 10): ${rec.visibleCellsCount} · Suprimidas por privacidade (< 10): ${rec.suppressedCellsCount}`
+      doc.font('Body').fontSize(9).fillColor('#334155').text(recSummary, 48, y, { width: pageWidth })
+      y += 16
+      for (const cell of rec.topCells.slice(0, 4)) {
+        if (y > doc.page.height - 200) break
+        doc
+          .font('Mono')
+          .fontSize(8.5)
+          .fillColor('#475569')
+          .text(`${cell.category} · região ${cell.cell7}: ${cell.count90d} ocorrências em 90d`, 56, y, {
+            width: pageWidth - 16,
+          })
+        y += 14
+      }
+      y += 8
     }
 
     // Relatos resolvidos com maior apoio (somente título e data; zero dados pessoais)

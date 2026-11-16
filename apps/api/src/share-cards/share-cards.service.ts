@@ -7,13 +7,13 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { OrgType, ShareCardFormat } from '@prisma/client'
+import { OrgType, PoliticianStatus, ShareCardFormat } from '@prisma/client'
 import {
   MIN_CELL_SIZE,
   RESPONSE_TIME_BUCKET_BOUNDS_HOURS,
   computePercentileFromBuckets,
   getPlanConfig,
-  normalizePersonName,
+  hasFeature,
 } from '@votz/shared-types'
 import { Queue } from 'bullmq'
 import { createHash } from 'crypto'
@@ -72,45 +72,31 @@ export class ShareCardsService {
 
   async resolvePoliticianBySlugOrId(slugOrId: string) {
     const trimmed = slugOrId.trim()
-    if (!trimmed) throw new NotFoundException('Mandato não encontrado')
-
-    const polSelect = {
-      id: true,
-      name: true,
-      office: true,
-      state: true,
-      city: true,
-      party: { select: { abbreviation: true } },
-      plan: true,
-      status: true,
-    } as const
-
-    if (UUID_REGEX.test(trimmed)) {
-      const byId = await this.prisma.politician.findUnique({
-        where: { id: trimmed },
-        select: polSelect,
-      })
-      if (!byId) {
-        throw new NotFoundException('Mandato não encontrado')
-      }
-      return byId
-    }
-
-    const normalizedTarget = normalizePersonName(trimmed.replace(/-/g, ' '))
-    const candidates = await this.prisma.politician.findMany({
-      select: polSelect,
-      take: 250,
-    })
-
-    const matched = candidates.find(
-      (p) =>
-        normalizePersonName(p.name) === normalizedTarget ||
-        normalizePersonName(p.name).replace(/\s+/g, '-') === trimmed.toLowerCase(),
-    )
-    if (!matched) {
+    if (!trimmed || !UUID_REGEX.test(trimmed)) {
       throw new NotFoundException('Mandato não encontrado')
     }
-    return matched
+
+    const byId = await this.prisma.politician.findUnique({
+      where: { id: trimmed },
+      select: {
+        id: true,
+        name: true,
+        office: true,
+        state: true,
+        city: true,
+        party: { select: { abbreviation: true } },
+        plan: true,
+        status: true,
+      },
+    })
+    if (
+      !byId ||
+      byId.status !== PoliticianStatus.ATIVO ||
+      !hasFeature('POLITICIAN', byId.plan, 'share_card')
+    ) {
+      throw new NotFoundException('Mandato não encontrado')
+    }
+    return byId
   }
 
   async computePublicMandateMetrics(politicianId: string, fromStr: string, toStr: string) {
@@ -123,10 +109,15 @@ export class ShareCardsService {
         state: true,
         city: true,
         party: { select: { abbreviation: true } },
+        plan: true,
         status: true,
       },
     })
-    if (!pol) {
+    if (
+      !pol ||
+      pol.status !== PoliticianStatus.ATIVO ||
+      !hasFeature('POLITICIAN', pol.plan, 'share_card')
+    ) {
       throw new NotFoundException('Mandato não encontrado')
     }
 
@@ -356,13 +347,28 @@ export class ShareCardsService {
       if (monthlyLimit !== null) {
         const todaySp = toSaoPauloDateString(new Date())
         const monthStart = new Date(`${todaySp.slice(0, 7)}-01T03:00:00.000Z`)
-        const used = await this.prisma.shareCardCache.count({
-          where: { politicianId: scope.orgId, createdAt: { gte: monthStart } },
-        })
-        if (used >= monthlyLimit) {
-          throw new ForbiddenException(
-            `Limite mensal de ${monthlyLimit} cartões compartilháveis atingido para o plano atual.`,
+        const reserveCheck = async (tx: typeof this.prisma) => {
+          const lockKey = `share_card_quota:${scope.orgId}:${todaySp.slice(0, 7)}`
+          if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === 'function') {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`.catch(
+              () => null,
+            )
+          }
+          const used = await tx.shareCardCache.count({
+            where: { politicianId: scope.orgId, createdAt: { gte: monthStart } },
+          })
+          if (used >= monthlyLimit) {
+            throw new ForbiddenException(
+              `Limite mensal de ${monthlyLimit} cartões compartilháveis atingido para o plano atual.`,
+            )
+          }
+        }
+        if (typeof (this.prisma as { $transaction?: unknown }).$transaction === 'function') {
+          await this.prisma.$transaction(async (tx) =>
+            reserveCheck(tx as unknown as typeof this.prisma),
           )
+        } else {
+          await reserveCheck(this.prisma)
         }
       }
     }

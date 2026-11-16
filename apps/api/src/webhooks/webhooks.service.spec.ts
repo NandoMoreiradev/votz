@@ -14,7 +14,7 @@ import {
 } from './webhooks.service'
 
 describe('Webhook SSRF Guard & Security', () => {
-  it('blocks private, loopback, link-local, metadata, IPv6 mapped and reserved IPs', () => {
+  it('blocks private, loopback, link-local, metadata, IPv6 mapped, NAT64, 6to4, Teredo and ::/96 IPs', () => {
     expect(isPrivateOrReservedIp('127.0.0.1')).toBe(true)
     expect(isPrivateOrReservedIp('10.0.0.5')).toBe(true)
     expect(isPrivateOrReservedIp('172.16.4.10')).toBe(true)
@@ -24,6 +24,18 @@ describe('Webhook SSRF Guard & Security', () => {
     expect(isPrivateOrReservedIp('::ffff:127.0.0.1')).toBe(true)
     expect(isPrivateOrReservedIp('fe80::1')).toBe(true)
     expect(isPrivateOrReservedIp('fc00::1')).toBe(true)
+
+    // C3: NAT64 (64:ff9b::/96), 6to4 (2002::/16), IPv4-compatible (::/96), Teredo (2001::/32)
+    expect(isPrivateOrReservedIp('[64:ff9b::7f00:1]')).toBe(true)
+    expect(isPrivateOrReservedIp('64:ff9b::169.254.169.254')).toBe(true)
+    expect(isPrivateOrReservedIp('64:ff9b::0808:0808')).toBe(false)
+    expect(isPrivateOrReservedIp('[2002:7f00:1::]')).toBe(true)
+    expect(isPrivateOrReservedIp('2002:a9fe:a9fe::')).toBe(true)
+    expect(isPrivateOrReservedIp('2002:0808:0808::')).toBe(false)
+    expect(isPrivateOrReservedIp('[::127.0.0.1]')).toBe(true)
+    expect(isPrivateOrReservedIp('2001::1')).toBe(true)
+    expect(isPrivateOrReservedIp('2001:0:53aa:64c:0:0:0:1')).toBe(true)
+
     expect(isPrivateOrReservedIp('8.8.8.8')).toBe(false)
     expect(isPrivateOrReservedIp('104.18.2.3')).toBe(false)
   })
@@ -138,6 +150,22 @@ describe('WebhooksService PII Stripping, Idempotency & Failure Disabling', () =>
     expect(cleaned.author).toBeUndefined()
     expect(cleaned.orgNotes).toBeUndefined()
     expect(cleaned.nested).toEqual({ category: 'HEALTH' })
+
+    const anonCleaned = sanitizeWebhookData({
+      reportId: 'rep-anon-1',
+      anonymous: true,
+      authorId: null,
+      author: null,
+      title: 'Buraco na via pública',
+      orgNotes: [{ content: 'Nota interna confidencial da assessoria' }],
+      orgTags: ['URGENTE_INTERNO'],
+    }) as Record<string, unknown>
+    expect(anonCleaned.reportId).toBe('rep-anon-1')
+    expect(anonCleaned.title).toBe('Buraco na via pública')
+    expect(anonCleaned.authorId).toBeUndefined()
+    expect(anonCleaned.author).toBeUndefined()
+    expect(anonCleaned.orgNotes).toBeUndefined()
+    expect(anonCleaned.orgTags).toBeUndefined()
   })
 
   it('deduplicates enqueueEvent by (endpointId, eventId) and disables endpoint after threshold consecutive failures', async () => {

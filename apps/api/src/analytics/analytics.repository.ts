@@ -30,6 +30,8 @@ export interface SummaryRollupRow {
   resolutionDurationCount: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
   pressureSum: number
   respBuckets: number[]
   resBuckets: number[]
@@ -47,6 +49,8 @@ export interface CategoryRollupRow {
   resolutionDurationCount: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
   pressureSum: number
   respBuckets: number[]
   resBuckets: number[]
@@ -61,6 +65,8 @@ export interface DailySeriesRow {
   responseCount: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
 }
 
 export interface OpenByDayRow {
@@ -99,6 +105,8 @@ export interface ExportAggregatedRow {
   responseCount: number
   supportCount: number
   commentCount: number
+  slaMetCount: number
+  slaBreachedCount: number
 }
 
 export interface RecurrenceRow {
@@ -175,6 +183,8 @@ export class AnalyticsRepository {
         COALESCE(SUM(resolution_duration_count), 0)::int AS resolution_duration_count,
         COALESCE(SUM(support_count), 0)::int AS support_count,
         COALESCE(SUM(comment_count), 0)::int AS comment_count,
+        COALESCE(SUM(sla_met_count), 0)::int AS sla_met_count,
+        COALESCE(SUM(sla_breached_count), 0)::int AS sla_breached_count,
         COALESCE(SUM(pressure_sum), 0)::float8 AS pressure_sum,
         ARRAY[
           COALESCE(SUM(resp_buckets[1]), 0),
@@ -229,6 +239,8 @@ export class AnalyticsRepository {
         COALESCE(SUM(resolution_duration_count), 0)::int AS resolution_duration_count,
         COALESCE(SUM(support_count), 0)::int AS support_count,
         COALESCE(SUM(comment_count), 0)::int AS comment_count,
+        COALESCE(SUM(sla_met_count), 0)::int AS sla_met_count,
+        COALESCE(SUM(sla_breached_count), 0)::int AS sla_breached_count,
         COALESCE(SUM(pressure_sum), 0)::float8 AS pressure_sum,
         ARRAY[
           COALESCE(SUM(resp_buckets[1]), 0),
@@ -279,6 +291,8 @@ export class AnalyticsRepository {
         resolutionDurationCount: 0,
         supportCount: 0,
         commentCount: 0,
+        slaMetCount: 0,
+        slaBreachedCount: 0,
         pressureSum: 0,
         respBuckets: emptyTimeArray(),
         resBuckets: emptyTimeArray(),
@@ -295,6 +309,8 @@ export class AnalyticsRepository {
       resolutionDurationCount: Number(row.resolution_duration_count ?? 0),
       supportCount: Number(row.support_count ?? 0),
       commentCount: Number(row.comment_count ?? 0),
+      slaMetCount: Number(row.sla_met_count ?? 0),
+      slaBreachedCount: Number(row.sla_breached_count ?? 0),
       pressureSum: Number(row.pressure_sum ?? 0),
       respBuckets: parseIntArray(row.resp_buckets, 8),
       resBuckets: parseIntArray(row.res_buckets, 8),
@@ -352,6 +368,8 @@ export class AnalyticsRepository {
               SUM(resolution_duration_count)::int AS resolution_duration_count,
               SUM(support_count)::int AS support_count,
               SUM(comment_count)::int AS comment_count,
+              SUM(sla_met_count)::int AS sla_met_count,
+              SUM(sla_breached_count)::int AS sla_breached_count,
               SUM(pressure_sum)::float8 AS pressure_sum,
               ARRAY[
                 COALESCE(SUM(resp_buckets[1]), 0),
@@ -391,6 +409,8 @@ export class AnalyticsRepository {
                 SUM(resolution_duration_count)::int AS resolution_duration_count,
                 SUM(support_count)::int AS support_count,
                 SUM(comment_count)::int AS comment_count,
+                SUM(sla_met_count)::int AS sla_met_count,
+                SUM(sla_breached_count)::int AS sla_breached_count,
                 SUM(pressure_sum)::float8 AS pressure_sum,
                 ARRAY[
                   COALESCE(SUM(resp_buckets[1]), 0),
@@ -430,6 +450,8 @@ export class AnalyticsRepository {
       resolutionDurationCount: Number(row.resolution_duration_count ?? 0),
       supportCount: Number(row.support_count ?? 0),
       commentCount: Number(row.comment_count ?? 0),
+      slaMetCount: Number(row.sla_met_count ?? 0),
+      slaBreachedCount: Number(row.sla_breached_count ?? 0),
       pressureSum: Number(row.pressure_sum ?? 0),
       respBuckets: parseIntArray(row.resp_buckets, 8),
       resBuckets: parseIntArray(row.res_buckets, 8),
@@ -453,7 +475,9 @@ export class AnalyticsRepository {
               SUM(open_current_count) FILTER (WHERE day <= ${matureCutoffDay}::date)::int AS open_over_7d_count,
               SUM(response_count)::int AS response_count,
               SUM(support_count)::int AS support_count,
-              SUM(comment_count)::int AS comment_count
+              SUM(comment_count)::int AS comment_count,
+              SUM(sla_met_count)::int AS sla_met_count,
+              SUM(sla_breached_count)::int AS sla_breached_count
             FROM area_metrics_daily
             WHERE ${this.buildAreaWhereSql(areaFilter)}
             GROUP BY day
@@ -469,7 +493,9 @@ export class AnalyticsRepository {
                 SUM(open_current_count) FILTER (WHERE day <= ${matureCutoffDay}::date)::int AS open_over_7d_count,
                 SUM(response_count)::int AS response_count,
                 SUM(support_count)::int AS support_count,
-                SUM(comment_count)::int AS comment_count
+                SUM(comment_count)::int AS comment_count,
+                SUM(sla_met_count)::int AS sla_met_count,
+                SUM(sla_breached_count)::int AS sla_breached_count
               FROM recipient_metrics_daily
               WHERE ${this.buildDirectedWhereSql(directedFilter)}
               GROUP BY day
@@ -486,6 +512,8 @@ export class AnalyticsRepository {
       responseCount: Number(r.response_count ?? 0),
       supportCount: Number(r.support_count ?? 0),
       commentCount: Number(r.comment_count ?? 0),
+      slaMetCount: Number(r.sla_met_count ?? 0),
+      slaBreachedCount: Number(r.sla_breached_count ?? 0),
     }))
   }
 
@@ -714,7 +742,9 @@ export class AnalyticsRepository {
               SUM(contested_count)::int AS contested_count,
               SUM(response_count)::int AS response_count,
               SUM(support_count)::int AS support_count,
-              SUM(comment_count)::int AS comment_count
+              SUM(comment_count)::int AS comment_count,
+              SUM(sla_met_count)::int AS sla_met_count,
+              SUM(sla_breached_count)::int AS sla_breached_count
             FROM area_metrics_daily
             WHERE ${this.buildAreaWhereSql(areaFilter)}
             GROUP BY day, state, city_key, category
@@ -735,7 +765,9 @@ export class AnalyticsRepository {
                 SUM(contested_count)::int AS contested_count,
                 SUM(response_count)::int AS response_count,
                 SUM(support_count)::int AS support_count,
-                SUM(comment_count)::int AS comment_count
+                SUM(comment_count)::int AS comment_count,
+                SUM(sla_met_count)::int AS sla_met_count,
+                SUM(sla_breached_count)::int AS sla_breached_count
               FROM recipient_metrics_daily
               WHERE ${this.buildDirectedWhereSql(directedFilter)}
               GROUP BY day, category
@@ -757,6 +789,8 @@ export class AnalyticsRepository {
       responseCount: Number(r.response_count ?? 0),
       supportCount: Number(r.support_count ?? 0),
       commentCount: Number(r.comment_count ?? 0),
+      slaMetCount: Number(r.sla_met_count ?? 0),
+      slaBreachedCount: Number(r.sla_breached_count ?? 0),
     }))
   }
 

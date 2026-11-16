@@ -12,8 +12,9 @@ import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
 import { ListEntitiesDto } from './dto/list-entities.dto'
-import { EventType, ReportStatus } from '@votz/shared-types'
+import { EventType, ReportStatus, hasFeature } from '@votz/shared-types'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
+import { planRequiredException } from '../auth/plan-errors'
 
 @Injectable()
 export class EntitiesService {
@@ -88,6 +89,18 @@ export class EntitiesService {
     }
     if (dto.logoUrl !== undefined) {
       this.storage.assertOwnStorageUrl(dto.logoUrl, 'entities')
+    }
+    if (
+      dto.slaHours !== undefined ||
+      dto.resolutionSlaHours !== undefined ||
+      dto.slaEscalationHours !== undefined ||
+      dto.autoMonthlyReportEnabled !== undefined
+    ) {
+      const entity = await this.repo.findByIdFull(id)
+      if (!entity) throw new NotFoundException('Entity not found')
+      if (!hasFeature('ENTITY', entity.plan, 'sla_panel')) {
+        throw planRequiredException('ENTITY', 'sla_panel')
+      }
     }
     return this.repo.update(id, dto as object)
   }

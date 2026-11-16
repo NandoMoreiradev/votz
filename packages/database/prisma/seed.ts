@@ -432,6 +432,7 @@ async function main() {
       name: 'Proprietário',
       permissions: [
         OrgPermission.RESPOND_REPORTS,
+        OrgPermission.ASSIGN_REPORTS,
         OrgPermission.MANAGE_MEMBERS,
         OrgPermission.MANAGE_PROFILE,
         OrgPermission.VIEW_ANALYTICS,
@@ -445,6 +446,7 @@ async function main() {
       name: 'Gestor',
       permissions: [
         OrgPermission.RESPOND_REPORTS,
+        OrgPermission.ASSIGN_REPORTS,
         OrgPermission.MANAGE_PROFILE,
         OrgPermission.VIEW_ANALYTICS,
         OrgPermission.EXPORT_DATA,

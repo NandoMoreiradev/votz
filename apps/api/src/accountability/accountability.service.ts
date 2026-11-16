@@ -5,14 +5,17 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import {
   AccountabilityReportStatus,
   EventType,
+  MembershipStatus,
   OrgPermission,
   OrgType,
   Prisma,
+  RecipientType,
   ReportStatus,
 } from '@prisma/client'
 import {
@@ -23,6 +26,8 @@ import {
   RESPONSE_TIME_BUCKET_BOUNDS_HOURS,
   computePercentileFromBuckets,
   getPlanConfig,
+  hasFeature,
+  normalizeLocationKey,
 } from '@votz/shared-types'
 import { Queue } from 'bullmq'
 import { randomBytes } from 'crypto'
@@ -36,6 +41,7 @@ import { AnalyticsScopeService } from '../analytics/analytics.scope'
 import { AnalyticsScopeMode } from '../analytics/dto/analytics-query.dto'
 import { ActingUser } from '../auth/acting-org'
 import { recordOrgAudit } from '../common/audit/org-audit'
+import { MailService } from '../mail/mail.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
 import { CreateAccountabilityReportDto } from './dto/accountability.dto'
@@ -59,6 +65,7 @@ export class AccountabilityService {
     private readonly storage: StorageService,
     private readonly config: ConfigService,
     @InjectQueue(ACCOUNTABILITY_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly mail?: MailService,
   ) {}
 
   private buildPeriodTimestamps(fromStr: string, toStr: string) {
@@ -82,7 +89,99 @@ export class AccountabilityService {
     )
 
     const orgType = scope.orgType === 'POLITICIAN' ? OrgType.POLITICIAN : OrgType.ENTITY
-    const planCfg = getPlanConfig(scope.orgType, scope.plan)
+    return this.buildAndQueueReportForOrg({
+      orgType,
+      orgId: scope.orgId,
+      orgName: scope.orgName,
+      state: scope.state,
+      cityKey: scope.cityKey,
+      plan: scope.plan,
+      fromStr,
+      toStr,
+      actorId: user.id,
+      notifyManagers: false,
+    })
+  }
+
+  async runMonthlyEntityAutoReports(now = new Date()): Promise<{ scheduled: number }> {
+    const todaySp = toSaoPauloDateString(now)
+    const [yearStr, monthStr] = todaySp.split('-')
+    const year = Number(yearStr)
+    const month = Number(monthStr)
+    const prevMonthDate = new Date(Date.UTC(year, month - 2, 1))
+    const prevLastDayDate = new Date(Date.UTC(year, month - 1, 0))
+    const fromStr = prevMonthDate.toISOString().slice(0, 10)
+    const toStr = prevLastDayDate.toISOString().slice(0, 10)
+
+    const entities = await this.prisma.entity.findMany({
+      where: {
+        autoMonthlyReportEnabled: true,
+        state: { not: null },
+      },
+      select: {
+        id: true,
+        legalName: true,
+        state: true,
+        city: true,
+        plan: true,
+      },
+    })
+
+    let scheduled = 0
+    for (const ent of entities) {
+      if (!ent.state || !hasFeature('ENTITY', ent.plan, 'pdf_report')) continue
+      const existing = await this.prisma.accountabilityReport.findFirst({
+        where: {
+          orgType: OrgType.ENTITY,
+          orgId: ent.id,
+          periodStart: fromStr,
+          periodEnd: toStr,
+        },
+        select: { id: true },
+      })
+      if (existing) continue
+
+      const cityKey = ent.city ? normalizeLocationKey(ent.city) : null
+      try {
+        await this.buildAndQueueReportForOrg({
+          orgType: OrgType.ENTITY,
+          orgId: ent.id,
+          orgName: ent.legalName,
+          state: ent.state,
+          cityKey,
+          plan: ent.plan,
+          fromStr,
+          toStr,
+          actorId: null,
+          notifyManagers: true,
+        })
+        scheduled++
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao gerar relatório mensal automático da entidade ${ent.id}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+    return { scheduled }
+  }
+
+  private async buildAndQueueReportForOrg(params: {
+    orgType: OrgType
+    orgId: string
+    orgName: string
+    state: string
+    cityKey: string | null
+    plan: string
+    fromStr: string
+    toStr: string
+    actorId: string | null
+    notifyManagers: boolean
+  }) {
+    const { orgType, orgId, orgName, state, cityKey, plan, fromStr, toStr, actorId, notifyManagers } =
+      params
+    const spanDays = diffDaysBetweenStrings(fromStr, toStr) + 1
+    const planScopeType = orgType === OrgType.POLITICIAN ? 'POLITICIAN' : 'ENTITY'
+    const planCfg = getPlanConfig(planScopeType, plan)
     const monthlyLimit = planCfg?.limits.maxPdfReportsPerMonth ?? 0
 
     if (monthlyLimit !== null) {
@@ -91,7 +190,7 @@ export class AccountabilityService {
       const createdInMonth = await this.prisma.accountabilityReport.count({
         where: {
           orgType,
-          orgId: scope.orgId,
+          orgId,
           createdAt: { gte: monthStart },
         },
       })
@@ -107,50 +206,59 @@ export class AccountabilityService {
     const todayStr = toSaoPauloDateString(new Date())
     const matureCutoff = addDaysDateString(todayStr, -7)
 
-    const areaFilter = { state: scope.state, cityKey: scope.cityKey, from: fromStr, to: toStr }
-    const prevAreaFilter = { state: scope.state, cityKey: scope.cityKey, from: prevStart, to: prevEnd }
+    const areaFilter = { state, cityKey, from: fromStr, to: toStr }
+    const prevAreaFilter = { state, cityKey, from: prevStart, to: prevEnd }
 
-    const [summary, prevSummary, categories] = await Promise.all([
+    const [summary, prevSummary, categories, directedSummary, recurrenceWindow] = await Promise.all([
       this.analyticsRepo.fetchAreaSummary(areaFilter, matureCutoff),
       this.analyticsRepo.fetchAreaSummary(prevAreaFilter, matureCutoff),
       this.analyticsRepo.fetchCategoryBreakdown('area', areaFilter, null, matureCutoff),
+      orgType === OrgType.ENTITY && typeof this.analyticsRepo.fetchDirectedSummary === 'function'
+        ? this.analyticsRepo.fetchDirectedSummary(
+            { recipientType: RecipientType.ENTITY, recipientId: orgId, from: fromStr, to: toStr },
+            matureCutoff,
+          )
+        : Promise.resolve(null),
+      orgType === OrgType.ENTITY && typeof this.analyticsRepo.fetchLatestRecurrenceWindow === 'function'
+        ? this.analyticsRepo.fetchLatestRecurrenceWindow(state, cityKey)
+        : Promise.resolve(null),
     ])
 
     const { start, end } = this.buildPeriodTimestamps(fromStr, toStr)
 
     let advocatedCount = 0
     let roleOrTypeLabel = 'Organização pública'
-    let territoryLabel = `${scope.state}`
+    let territoryLabel = `${state}`
 
     if (orgType === OrgType.POLITICIAN) {
       const pol = await this.prisma.politician.findUnique({
-        where: { id: scope.orgId },
+        where: { id: orgId },
         select: { office: true, city: true, state: true },
       })
       roleOrTypeLabel = pol?.office ?? 'Mandato'
-      territoryLabel = pol?.city ? `${pol.city}/${pol.state}` : scope.state
+      territoryLabel = pol?.city ? `${pol.city}/${pol.state}` : state
       advocatedCount = await this.prisma.timelineEvent.count({
         where: {
           type: EventType.RESPONDED,
           createdAt: { gte: start, lte: end },
           metadata: { path: ['action'], equals: 'advocated' },
-          AND: [{ metadata: { path: ['politicianId'], equals: scope.orgId } }],
+          AND: [{ metadata: { path: ['politicianId'], equals: orgId } }],
         },
       })
     } else {
       const ent = await this.prisma.entity.findUnique({
-        where: { id: scope.orgId },
+        where: { id: orgId },
         select: { type: true, city: true, state: true },
       })
       roleOrTypeLabel = ent?.type ?? 'Entidade'
-      territoryLabel = ent?.city ? `${ent.city}/${ent.state}` : scope.state
+      territoryLabel = ent?.city ? `${ent.city}/${ent.state}` : state
     }
 
-    // Relatos resolvidos de maior apoio na área (somente título, categoria, data e contagem — zero PII)
+    // Relatos resolvidos de maior apoio no recorte (somente título, categoria, data e contagem — zero PII)
     const resolvedRows = await this.prisma.report.findMany({
       where: {
-        state: scope.state,
-        ...(scope.cityKey ? { cityKey: scope.cityKey } : {}),
+        state,
+        ...(cityKey ? { cityKey } : {}),
         status: ReportStatus.RESOLVED,
         resolvedAt: { gte: start, lte: end },
       },
@@ -169,40 +277,55 @@ export class AccountabilityService {
     const appUrl = this.config.get('APP_URL', 'http://localhost:5173')
     const verificationUrl = `${appUrl}/prestacao/${code}`
 
-    const suppressed = summary.createdCount < MIN_CELL_SIZE
-    const matureDenom = summary.resolvedCount + summary.openOver7dCount
+    const baseMetricsSource =
+      orgType === OrgType.ENTITY && directedSummary && directedSummary.createdCount >= MIN_CELL_SIZE
+        ? directedSummary
+        : summary
+
+    const suppressed = baseMetricsSource.createdCount < MIN_CELL_SIZE
+    const matureDenom = baseMetricsSource.resolvedCount + baseMetricsSource.openOver7dCount
     const resolutionRatePercent =
       !suppressed && matureDenom > 0
-        ? Number(((summary.resolvedCount / matureDenom) * 100).toFixed(1))
+        ? Number(((baseMetricsSource.resolvedCount / matureDenom) * 100).toFixed(1))
         : null
     const responseRatePercent =
-      !suppressed && summary.createdCount > 0
-        ? Number(((summary.responseCount / summary.createdCount) * 100).toFixed(1))
+      !suppressed && baseMetricsSource.createdCount > 0
+        ? Number(((baseMetricsSource.responseCount / baseMetricsSource.createdCount) * 100).toFixed(1))
         : null
 
+    const slaMet = directedSummary?.slaMetCount ?? summary.slaMetCount ?? 0
+    const slaBreached = directedSummary?.slaBreachedCount ?? summary.slaBreachedCount ?? 0
+    const slaDenom = slaMet + slaBreached
+    const slaCompliancePercent =
+      !suppressed && slaDenom > 0 ? Number(((slaMet / slaDenom) * 100).toFixed(1)) : null
+
     const medianResponseHours =
-      summary.responseCount > 0
+      baseMetricsSource.responseCount > 0
         ? computePercentileFromBuckets(
-            summary.respBuckets,
+            baseMetricsSource.respBuckets,
             RESPONSE_TIME_BUCKET_BOUNDS_HOURS,
             0.5,
           )
         : null
     const medianResolutionHours =
-      summary.resolutionDurationCount > 0
+      baseMetricsSource.resolutionDurationCount > 0
         ? computePercentileFromBuckets(
-            summary.resBuckets,
+            baseMetricsSource.resBuckets,
             RESPONSE_TIME_BUCKET_BOUNDS_HOURS,
             0.5,
           )
         : null
 
     const snapshot: AccountabilitySnapshot = {
-      orgType: scope.orgType,
-      orgId: scope.orgId,
-      orgName: scope.orgName,
+      orgType: planScopeType,
+      orgId,
+      orgName,
       roleOrTypeLabel,
       territoryLabel,
+      reportTitle:
+        orgType === OrgType.ENTITY
+          ? 'RELATÓRIO DE ATENDIMENTO — VOTZ'
+          : 'PRESTAÇÃO DE CONTAS — VOTZ',
       periodStart: fromStr,
       periodEnd: toStr,
       previousPeriodStart: prevStart,
@@ -210,14 +333,17 @@ export class AccountabilityService {
       code,
       verificationUrl,
       metrics: {
-        received: summary.createdCount,
-        responded: summary.responseCount,
+        received: baseMetricsSource.createdCount,
+        responded: baseMetricsSource.responseCount,
         advocated: advocatedCount,
-        resolved: summary.resolvedCount,
+        resolved: baseMetricsSource.resolvedCount,
         medianResponseHours,
         medianResolutionHours,
         responseRatePercent,
         resolutionRatePercent,
+        ...(orgType === OrgType.ENTITY
+          ? { slaMet, slaBreached, slaCompliancePercent }
+          : {}),
         previousReceived: prevSummary.createdCount,
         previousResolved: prevSummary.resolvedCount,
         suppressed,
@@ -231,6 +357,31 @@ export class AccountabilityService {
           receivedCount: c.createdCount,
           resolvedCount: c.resolvedCount,
         })),
+      ...(recurrenceWindow
+        ? {
+            recurrence: {
+              windowEnd: recurrenceWindow.windowEnd
+                ? recurrenceWindow.windowEnd.toISOString().slice(0, 10)
+                : null,
+              visibleCellsCount: recurrenceWindow.visibleTotal,
+              suppressedCellsCount: recurrenceWindow.suppressedCellsCount,
+              recurrenceIndexPercent:
+                !suppressed && recurrenceWindow.total90dVolume >= MIN_CELL_SIZE
+                  ? Number(
+                      (
+                        (recurrenceWindow.allRecurrentVolume / recurrenceWindow.total90dVolume) *
+                        100
+                      ).toFixed(1),
+                    )
+                  : null,
+              topCells: recurrenceWindow.visibleRows.slice(0, 5).map((row) => ({
+                cell7: row.cell7,
+                category: String(row.category),
+                count90d: row.count90d,
+              })),
+            },
+          }
+        : {}),
       topResolvedReports: resolvedRows.map((r) => ({
         title: r.title,
         category: r.category,
@@ -247,27 +398,46 @@ export class AccountabilityService {
     }
 
     const report = await this.prisma.$transaction(async (tx) => {
+      if (monthlyLimit !== null) {
+        const todaySp = toSaoPauloDateString(new Date())
+        const monthStart = new Date(`${todaySp.slice(0, 7)}-01T03:00:00.000Z`)
+        const lockKey = `accountability_quota:${orgType}:${orgId}:${todaySp.slice(0, 7)}`
+        if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === 'function') {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`.catch(
+            () => null,
+          )
+        }
+        const currentCount = await tx.accountabilityReport.count({
+          where: { orgType, orgId, createdAt: { gte: monthStart } },
+        })
+        if (currentCount >= monthlyLimit) {
+          throw new ForbiddenException(
+            `Limite mensal de ${monthlyLimit} relatórios de prestação de contas atingido para o plano atual.`,
+          )
+        }
+      }
+
       const created = await tx.accountabilityReport.create({
         data: {
           code,
           orgType,
-          orgId: scope.orgId,
+          orgId,
           periodStart: fromStr,
           periodEnd: toStr,
           dictionaryVersion: ANALYTICS_DEFINITION_VERSION,
           computedAt,
           snapshot: snapshot as unknown as Prisma.InputJsonValue,
           status: AccountabilityReportStatus.PENDING,
-          createdById: user.id,
+          createdById: actorId,
         },
       })
       await recordOrgAudit(tx, {
         action: 'CREATED',
         orgType,
-        orgId: scope.orgId,
+        orgId,
         itemType: 'ACCOUNTABILITY_REPORT',
         itemId: created.id,
-        actorId: user.id,
+        actorId,
         summary: `Prestação de contas gerada (${fromStr} a ${toStr}, código ${code})`,
       })
       return created
@@ -275,7 +445,7 @@ export class AccountabilityService {
 
     await this.queue.add(
       'render-pdf',
-      { reportId: report.id },
+      { reportId: report.id, notifyManagers },
       {
         jobId: `accountability:${report.id}`,
         removeOnComplete: 50,
@@ -288,7 +458,7 @@ export class AccountabilityService {
     return report
   }
 
-  async renderReportPdfJob(reportId: string): Promise<void> {
+  async renderReportPdfJob(reportId: string, notifyManagers = false): Promise<void> {
     const report = await this.prisma.accountabilityReport.findUnique({
       where: { id: reportId },
     })
@@ -313,6 +483,32 @@ export class AccountabilityService {
           errorMessage: null,
         },
       })
+
+      if (notifyManagers && report.orgType === OrgType.ENTITY && this.mail) {
+        const signedDownloadUrl = await this.storage
+          .getSignedDownloadUrl(pdfKey, 7 * 86_400)
+          .catch(() => null)
+        const managers = await this.prisma.orgMembership.findMany({
+          where: {
+            orgType: OrgType.ENTITY,
+            orgId: report.orgId,
+            status: MembershipStatus.ACTIVE,
+            role: { permissions: { hasSome: [OrgPermission.MANAGE_PROFILE, OrgPermission.VIEW_ANALYTICS] } },
+          },
+          select: { user: { select: { email: true, name: true } } },
+        })
+        const periodLabel = `${report.periodStart} a ${report.periodEnd}`
+        for (const member of managers) {
+          if (!member.user.email) continue
+          await this.mail.sendMonthlyAttendanceReport(member.user.email, member.user.name ?? 'Gestor(a)', {
+            orgName: snapshot.orgName,
+            periodLabel,
+            code: report.code,
+            signedDownloadUrl,
+            verificationUrl: snapshot.verificationUrl,
+          })
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       await this.prisma.accountabilityReport.update({

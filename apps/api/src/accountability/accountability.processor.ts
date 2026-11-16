@@ -13,8 +13,16 @@ export class AccountabilityProcessor extends WorkerHost {
 
   async process(job: Job): Promise<void> {
     if (job.name === 'render-pdf') {
-      const { reportId } = job.data as { reportId: string }
-      await this.service.renderReportPdfJob(reportId)
+      const { reportId, notifyManagers } = job.data as {
+        reportId: string
+        notifyManagers?: boolean
+      }
+      await this.service.renderReportPdfJob(reportId, Boolean(notifyManagers))
+      return
+    }
+    if (job.name === 'monthly-entity-auto-reports') {
+      const result = await this.service.runMonthlyEntityAutoReports()
+      this.logger.log(`Relatórios mensais automáticos enfileirados: ${result.scheduled}`)
       return
     }
     if (job.name === 'purge-expired-pdfs') {

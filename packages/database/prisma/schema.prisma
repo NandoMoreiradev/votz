@@ -132,6 +132,7 @@ enum OrgType {
 
 enum OrgPermission {
   RESPOND_REPORTS
+  ASSIGN_REPORTS
   MANAGE_MEMBERS
   MANAGE_PROFILE
   VIEW_ANALYTICS
@@ -164,6 +165,18 @@ enum NotificationType {
   SURTO_DETECTED
   ALERT_RULE_MATCHED
   WEEKLY_DIGEST
+  SLA_AT_RISK
+  SLA_BREACHED
+  SLA_ESCALATED
+  REPORT_ASSIGNED
+}
+
+enum SlaState {
+  ON_TIME
+  AT_RISK
+  BREACHED
+  MET
+  MET_LATE
 }
 
 enum ApiKeyTier {
@@ -315,6 +328,15 @@ model Report {
   firstResponseAt  DateTime?      @map("first_response_at")
   resolvedAt       DateTime?      @map("resolved_at")
 
+  // SLA (Brief 4D)
+  slaStartedAt       DateTime?    @map("sla_started_at")
+  slaDueAt           DateTime?    @map("sla_due_at")
+  slaState           SlaState?    @map("sla_state")
+  slaMetAt           DateTime?    @map("sla_met_at")
+  resolutionSlaDueAt DateTime?    @map("resolution_sla_due_at")
+  resolutionSlaState SlaState?    @map("resolution_sla_state")
+  resolutionSlaMetAt DateTime?    @map("resolution_sla_met_at")
+
   // Media (Cloudflare R2 URLs)
   media            String[]
 
@@ -347,6 +369,7 @@ model Report {
   followers        ReportFollower[]
   orgTags          OrgReportTag[]
   orgNotes         OrgReportNote[]
+  assignments      OrgReportAssignment[]
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -354,6 +377,8 @@ model Report {
   @@index([state, cityKey, createdAt])
   @@index([cell7, category, createdAt])
   @@index([recipientType, recipientId, createdAt])
+  @@index([recipientType, recipientId, slaState, slaDueAt])
+  @@index([slaState, slaDueAt])
   @@index([updatedAt])
   @@map("reports")
 }
@@ -393,7 +418,10 @@ model Entity {
   plan                 EntityPlan @default(BASICO)
   stripeCustomerId     String?    @unique
   stripeSubscriptionId String?    @unique
-  slaHours             Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
+  slaHours                 Json?      // { "HEALTH": 48, "MOBILITY": 72, ... }
+  resolutionSlaHours       Json?      @map("resolution_sla_hours")
+  slaEscalationHours       Int        @default(24) @map("sla_escalation_hours")
+  autoMonthlyReportEnabled Boolean    @default(false) @map("auto_monthly_report_enabled")
   city            String?
   state           String?
   logoUrl         String?
@@ -978,6 +1006,8 @@ model AreaMetricDaily {
   pressureSum             Float    @default(0) @map("pressure_sum")
   supportCount            Int      @default(0) @map("support_count")
   commentCount            Int      @default(0) @map("comment_count")
+  slaMetCount             Int      @default(0) @map("sla_met_count")
+  slaBreachedCount        Int      @default(0) @map("sla_breached_count")
   updatedAt               DateTime @updatedAt @map("updated_at")
 
   @@index([state, cityKey, day])
@@ -1005,6 +1035,8 @@ model RecipientMetricDaily {
   pressureSum             Float         @default(0) @map("pressure_sum")
   supportCount            Int           @default(0) @map("support_count")
   commentCount            Int           @default(0) @map("comment_count")
+  slaMetCount             Int           @default(0) @map("sla_met_count")
+  slaBreachedCount        Int           @default(0) @map("sla_breached_count")
   updatedAt               DateTime      @updatedAt @map("updated_at")
 
   @@unique([day, recipientType, recipientId, category])
@@ -1064,6 +1096,9 @@ enum WebhookEventType {
   REPORT_STATUS_CHANGED
   REPORT_PRESSURE_THRESHOLD
   OUTBREAK_DETECTED
+  SLA_AT_RISK
+  SLA_BREACHED
+  REPORT_ASSIGNED
 }
 
 enum WebhookDeliveryStatus {
@@ -1255,4 +1290,36 @@ model WebhookDelivery {
   @@unique([endpointId, eventId])
   @@index([endpointId, createdAt])
   @@map("webhook_deliveries")
+}
+
+// ==================== SLA & FILA DE ENTIDADES (BRIEF 4D) ====================
+
+model OrgReportAssignment {
+  id             String    @id @default(uuid())
+  orgType        OrgType   @map("org_type")
+  orgId          String    @map("org_id")
+  reportId       String    @map("report_id")
+  report         Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  assigneeUserId String?   @map("assignee_user_id")
+  assignedById   String?   @map("assigned_by_id")
+  active         Boolean   @default(true)
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  endedAt        DateTime? @map("ended_at")
+
+  @@index([orgType, orgId, active, assigneeUserId])
+  @@index([reportId, active, createdAt])
+  @@map("org_report_assignments")
+}
+
+model SlaNotificationLog {
+  id        String   @id @default(uuid())
+  reportId  String   @map("report_id")
+  entityId  String   @map("entity_id")
+  milestone String
+  dedupKey  String   @unique @map("dedup_key")
+  sentAt    DateTime @default(now()) @map("sent_at")
+
+  @@index([entityId, sentAt])
+  @@map("sla_notification_logs")
 }

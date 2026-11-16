@@ -40,6 +40,7 @@ import { CreateProposta } from './pages/CreateProposta'
 import { Planos } from './pages/Planos'
 import { PagamentoSucesso } from './pages/PagamentoSucesso'
 import { PainelDados } from './pages/PainelDados'
+import { EntidadePrazos } from './pages/EntidadePrazos'
 import { MandatoPortal } from './pages/MandatoPortal'
 import { PrestacaoPublica } from './pages/PrestacaoPublica'
 import { MandatoPublico } from './pages/MandatoPublico'
@@ -142,6 +143,7 @@ function App() {
               <Route path="/planos" element={<Planos />} />
               <Route path="/pagamento/sucesso" element={<PagamentoSucesso />} />
               <Route path="/painel-dados" element={<PainelDados />} />
+              <Route path="/entidade/prazos" element={<EntidadePrazos />} />
               <Route path="/mandato" element={<MandatoPortal />} />
               <Route path="/mandato/alertas" element={<MandatoPortal />} />
               <Route path="/mandato/modelos" element={<MandatoPortal />} />

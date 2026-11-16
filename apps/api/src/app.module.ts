@@ -48,6 +48,7 @@ import { AnalyticsModule } from './analytics/analytics.module'
 import { AccountabilityModule } from './accountability/accountability.module'
 import { MandateModule } from './mandate/mandate.module'
 import { ShareCardsModule } from './share-cards/share-cards.module'
+import { SlaModule } from './sla/sla.module'
 import { WebhooksModule } from './webhooks/webhooks.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
@@ -146,6 +147,7 @@ import { SecurityModule } from './common/security/security.module'
     AccountabilityModule,
     ShareCardsModule,
     MandateModule,
+    SlaModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

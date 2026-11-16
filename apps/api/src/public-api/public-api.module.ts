@@ -1,6 +1,7 @@
 import { Module, OnModuleDestroy, Inject } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Redis from 'ioredis'
+import { AnalyticsModule } from '../analytics/analytics.module'
 import { PrismaModule } from '../prisma/prisma.module'
 import { REDIS_CLIENT } from './public-api.constants'
 import { ApiKeysService } from './api-keys.service'
@@ -11,7 +12,7 @@ import { PublicApiController } from './public-api.controller'
 import { ApiKeyGuard } from './guards/api-key.guard'
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AnalyticsModule],
   providers: [
     {
       provide: REDIS_CLIENT,

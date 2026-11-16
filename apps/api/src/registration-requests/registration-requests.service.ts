@@ -28,6 +28,7 @@ const DEFAULT_ROLES = {
   OWNER: Object.values(OrgPermission),
   MANAGER: [
     OrgPermission.RESPOND_REPORTS,
+    OrgPermission.ASSIGN_REPORTS,
     OrgPermission.MANAGE_MEMBERS,
     OrgPermission.MANAGE_PROFILE,
     OrgPermission.VIEW_ANALYTICS,

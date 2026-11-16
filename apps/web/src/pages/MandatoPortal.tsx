@@ -1225,6 +1225,9 @@ export function MandatoPortal() {
                         'REPORT_STATUS_CHANGED',
                         'REPORT_PRESSURE_THRESHOLD',
                         'OUTBREAK_DETECTED',
+                        'SLA_AT_RISK',
+                        'SLA_BREACHED',
+                        'REPORT_ASSIGNED',
                       ] as WebhookEventType[]
                     ).map((ev) => (
                       <label key={ev} style={{ fontSize: 12 }}>
