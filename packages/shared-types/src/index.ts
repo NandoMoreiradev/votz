@@ -1,4 +1,5 @@
 export * from './enums'
+export * from './categories'
 export * from './report'
 export * from './user'
 export * from './pagination'

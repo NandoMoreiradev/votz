@@ -29,13 +29,17 @@ type PainelTab = 'overview' | 'heatmap' | 'recurrence' | 'response-times' | 'cat
 
 const Page = styled.div`
   min-height: 100vh;
+  width: 100%;
+  overflow-x: clip;
   background: ${({ theme }) => theme.colors.neutral};
 `
 
 const Content = styled.main`
-  max-width: 1280px;
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 28px 24px 64px;
+  padding: ${({ theme }) => theme.spacing[6]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[16]};
 `
 
 const TopBar = styled.div`
@@ -161,6 +165,8 @@ const Stack = styled.div`
   display: flex;
   flex-direction: column;
   gap: ${({ theme }) => theme.spacing[5]};
+  min-width: 0;
+  width: 100%;
 `
 
 const PanelBox = styled.div`
@@ -168,6 +174,8 @@ const PanelBox = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
   padding: ${({ theme }) => theme.spacing[6]};
+  min-width: 0;
+  box-sizing: border-box;
 `
 
 const DataTable = styled.table`
@@ -233,7 +241,7 @@ export function PainelDados() {
   const [period, setPeriod] = useState<AnalyticsPeriodPreset>('30d')
   const [category, setCategory] = useState<string>('')
   const [tsMetric, setTsMetric] = useState<AnalyticsTimeseriesMetric>('volume')
-  const [tsGranularity, setTsGranularity] = useState<AnalyticsTimeseriesGranularity>('day')
+  const [tsGranularity, setTsGranularity] = useState<AnalyticsTimeseriesGranularity>('week')
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [exportLoading, setExportLoading] = useState(false)
 
@@ -360,7 +368,13 @@ export function PainelDados() {
             <Select
               aria-label="Período"
               value={period}
-              onChange={(e) => setPeriod(e.target.value as AnalyticsPeriodPreset)}
+              onChange={(e) => {
+                const next = e.target.value as AnalyticsPeriodPreset
+                setPeriod(next)
+                if (next !== '365d' && tsGranularity === 'month') {
+                  setTsGranularity('week')
+                }
+              }}
             >
               <option value="7d">Últimos 7 dias</option>
               <option value="30d">Últimos 30 dias</option>
@@ -515,7 +529,7 @@ export function PainelDados() {
                   />
                 ) : timeseriesQ.data ? (
                   <div>
-                    <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <Select
                         aria-label="Métrica da série temporal"
                         value={tsMetric}
@@ -529,7 +543,7 @@ export function PainelDados() {
                       </Select>
                       <Select
                         aria-label="Granularidade"
-                        value={tsGranularity}
+                        value={timeseriesQ.data.granularity}
                         onChange={(e) =>
                           setTsGranularity(e.target.value as AnalyticsTimeseriesGranularity)
                         }
@@ -538,6 +552,21 @@ export function PainelDados() {
                         <option value="week">Semanal</option>
                         <option value="month">Mensal</option>
                       </Select>
+                      {timeseriesQ.data.autoAdjustedGranularity && (
+                        <span
+                          style={{
+                            fontSize: '0.8125rem',
+                            color: '#1A1A2E',
+                            background: '#EAECEF',
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                          }}
+                        >
+                          Agrupamos por{' '}
+                          {timeseriesQ.data.granularity === 'week' ? 'semana' : 'mês'} para
+                          proteger a privacidade.
+                        </span>
+                      )}
                     </div>
                     <MetricChart
                       title="Evolução no período"
@@ -646,7 +675,7 @@ export function PainelDados() {
                 <DataTable>
                   <thead>
                     <tr>
-                      <th>Célula (geohash-7)</th>
+                      <th>Área (~150 m)</th>
                       <th>Categoria</th>
                       <th style={{ textAlign: 'right' }}>Relatos (90d)</th>
                       <th style={{ textAlign: 'right' }}>Intervalo médio (dias)</th>
@@ -655,10 +684,12 @@ export function PainelDados() {
                   <tbody>
                     {recurrenceQ.data.items.map((item) => (
                       <tr key={`${item.cell7}-${item.category}`}>
-                        <td className="num" style={{ textAlign: 'left' }}>
-                          {item.cell7}
+                        <td>{item.areaLabel ?? 'Área sem bairro informado'}</td>
+                        <td>
+                          {item.categoryLabel ??
+                            CATEGORY_CONFIG[item.category as Category]?.label ??
+                            item.category}
                         </td>
-                        <td>{CATEGORY_CONFIG[item.category as Category]?.label ?? item.category}</td>
                         <td className="num">{item.count90d}</td>
                         <td className="num">{item.avgGapDays ?? '—'}</td>
                       </tr>

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { Category, Prisma, RecipientType } from '@prisma/client'
-import { MIN_CELL_SIZE, normalizeLocationKey } from '@votz/shared-types'
+import { MIN_CELL_SIZE, formatRecurrenceAreaLabel, normalizeLocationKey } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 
 export interface AreaQueryFilter {
@@ -98,6 +98,7 @@ export interface ExportAggregatedRow {
   state: string
   cityDisplay: string
   category: Category
+  areaLabel?: string
   createdCount: number
   resolvedCount: number
   openCurrentCount: number
@@ -570,6 +571,122 @@ export class AnalyticsRepository {
     }
   }
 
+  async fetchHeatmapCellsCoarse6(filter: AreaQueryFilter): Promise<{
+    visibleCells: Array<{
+      cell6: string
+      cityDisplay: string
+      createdCount: number
+      openCurrentCount: number
+      resolvedCount: number
+      contestedCount: number
+      pressureSum: number
+      supportCount: number
+    }>
+    suppressedCellsCount: number
+    suppressedVolume: number
+  }> {
+    const whereSql = this.buildAreaWhereSql(filter)
+    const visible = await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+      SELECT
+        LEFT(cell7, 6) AS cell6,
+        MAX(city_display) AS city_display,
+        SUM(created_count)::int AS created_count,
+        SUM(open_current_count)::int AS open_current_count,
+        SUM(resolved_count)::int AS resolved_count,
+        SUM(contested_count)::int AS contested_count,
+        SUM(pressure_sum)::float8 AS pressure_sum,
+        SUM(support_count)::int AS support_count
+      FROM area_metrics_daily
+      WHERE ${whereSql} AND cell7 IS NOT NULL AND LENGTH(cell7) >= 6
+      GROUP BY LEFT(cell7, 6)
+      HAVING SUM(created_count) >= ${MIN_CELL_SIZE}
+      ORDER BY created_count DESC
+      LIMIT 500
+    `)
+
+    const suppressedRows = await this.prisma.$queryRaw<
+      Array<{ suppressed_cells: number; suppressed_volume: number }>
+    >(Prisma.sql`
+      SELECT
+        COUNT(*)::int AS suppressed_cells,
+        COALESCE(SUM(cell_created), 0)::int AS suppressed_volume
+      FROM (
+        SELECT LEFT(cell7, 6) AS cell6, SUM(created_count)::int AS cell_created
+        FROM area_metrics_daily
+        WHERE ${whereSql} AND cell7 IS NOT NULL AND LENGTH(cell7) >= 6
+        GROUP BY LEFT(cell7, 6)
+        HAVING SUM(created_count) < ${MIN_CELL_SIZE}
+      ) sub
+    `)
+
+    return {
+      visibleCells: visible.map((r) => ({
+        cell6: String(r.cell6),
+        cityDisplay: String(r.city_display ?? ''),
+        createdCount: Number(r.created_count ?? 0),
+        openCurrentCount: Number(r.open_current_count ?? 0),
+        resolvedCount: Number(r.resolved_count ?? 0),
+        contestedCount: Number(r.contested_count ?? 0),
+        pressureSum: Number(r.pressure_sum ?? 0),
+        supportCount: Number(r.support_count ?? 0),
+      })),
+      suppressedCellsCount: Number(suppressedRows[0]?.suppressed_cells ?? 0),
+      suppressedVolume: Number(suppressedRows[0]?.suppressed_volume ?? 0),
+    }
+  }
+
+  async fetchRecurrenceAreaLabels(
+    cells: Array<{ state: string; cityKey: string; cell7: string; category: Category }>,
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<Map<string, string>> {
+    const labels = new Map<string, string>()
+    if (cells.length === 0) return labels
+    const uniqueCells = Array.from(new Set(cells.map((c) => c.cell7).filter(Boolean)))
+    if (uniqueCells.length === 0) return labels
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        state: string
+        city_key: string
+        cell7: string
+        category: string
+        neighborhood_key: string
+        raw_neighborhood: string
+        cnt: number
+      }>
+    >(Prisma.sql`
+      SELECT
+        UPPER(state) AS state,
+        city_key,
+        cell7,
+        category::text AS category,
+        neighborhood_key,
+        MAX(NULLIF(BTRIM(neighborhood), '')) AS raw_neighborhood,
+        COUNT(*)::int AS cnt
+      FROM reports
+      WHERE cell7 IN (${Prisma.join(uniqueCells)})
+        AND status <> 'ARCHIVED'
+        AND "createdAt" >= ${windowStart}
+        AND "createdAt" <= ${windowEnd}
+        AND neighborhood_key IS NOT NULL
+        AND neighborhood_key <> ''
+      GROUP BY UPPER(state), city_key, cell7, category, neighborhood_key
+      ORDER BY cnt DESC, neighborhood_key ASC
+    `)
+
+    for (const r of rows) {
+      const mapKey = `${r.state}|${r.city_key}|${r.cell7}|${r.category}`
+      if (!labels.has(mapKey)) {
+        labels.set(
+          mapKey,
+          formatRecurrenceAreaLabel(r.raw_neighborhood || r.neighborhood_key),
+        )
+      }
+    }
+    return labels
+  }
+
   async fetchTopPressureCells(filter: AreaQueryFilter, limit = 5): Promise<TopPressureCellRow[]> {
     const whereSql = this.buildAreaWhereSql(filter)
     const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
@@ -732,47 +849,75 @@ export class AnalyticsRepository {
       mode === 'area' && areaFilter
         ? await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
             SELECT
-              TO_CHAR(day, 'YYYY-MM-DD') AS day,
-              state,
-              MAX(city_display) AS city_display,
-              category,
-              SUM(created_count)::int AS created_count,
-              SUM(resolved_count)::int AS resolved_count,
-              SUM(open_current_count)::int AS open_current_count,
-              SUM(contested_count)::int AS contested_count,
-              SUM(response_count)::int AS response_count,
-              SUM(support_count)::int AS support_count,
-              SUM(comment_count)::int AS comment_count,
-              SUM(sla_met_count)::int AS sla_met_count,
-              SUM(sla_breached_count)::int AS sla_breached_count
-            FROM area_metrics_daily
+              TO_CHAR(a.day, 'YYYY-MM-DD') AS day,
+              a.state,
+              MAX(a.city_display) AS city_display,
+              a.category,
+              COALESCE((
+                SELECT COALESCE(NULLIF(BTRIM(rp.neighborhood), ''), rp.neighborhood_key)
+                FROM reports rp
+                WHERE UPPER(rp.state) = UPPER(a.state)
+                  AND rp.city_key = a.city_key
+                  AND rp.category = a.category
+                  AND rp.status <> 'ARCHIVED'
+                  AND rp.neighborhood_key IS NOT NULL
+                  AND rp.neighborhood_key <> ''
+                  AND timezone('America/Sao_Paulo', rp."createdAt")::date = a.day
+                GROUP BY rp.neighborhood_key, rp.neighborhood
+                ORDER BY COUNT(*) DESC
+                LIMIT 1
+              ), '') AS top_neighborhood,
+              SUM(a.created_count)::int AS created_count,
+              SUM(a.resolved_count)::int AS resolved_count,
+              SUM(a.open_current_count)::int AS open_current_count,
+              SUM(a.contested_count)::int AS contested_count,
+              SUM(a.response_count)::int AS response_count,
+              SUM(a.support_count)::int AS support_count,
+              SUM(a.comment_count)::int AS comment_count,
+              SUM(a.sla_met_count)::int AS sla_met_count,
+              SUM(a.sla_breached_count)::int AS sla_breached_count
+            FROM area_metrics_daily a
             WHERE ${this.buildAreaWhereSql(areaFilter)}
-            GROUP BY day, state, city_key, category
-            HAVING SUM(created_count) >= ${MIN_CELL_SIZE}
-            ORDER BY day ASC, category ASC
+            GROUP BY a.day, a.state, a.city_key, a.category
+            HAVING SUM(a.created_count) >= ${MIN_CELL_SIZE}
+            ORDER BY a.day ASC, a.category ASC
             LIMIT 10000
           `)
         : directedFilter
           ? await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
               SELECT
-                TO_CHAR(day, 'YYYY-MM-DD') AS day,
+                TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
                 '' AS state,
                 '' AS city_display,
-                category,
-                SUM(created_count)::int AS created_count,
-                SUM(resolved_count)::int AS resolved_count,
-                SUM(open_current_count)::int AS open_current_count,
-                SUM(contested_count)::int AS contested_count,
-                SUM(response_count)::int AS response_count,
-                SUM(support_count)::int AS support_count,
-                SUM(comment_count)::int AS comment_count,
-                SUM(sla_met_count)::int AS sla_met_count,
-                SUM(sla_breached_count)::int AS sla_breached_count
-              FROM recipient_metrics_daily
+                d.category,
+                COALESCE((
+                  SELECT COALESCE(NULLIF(BTRIM(rp.neighborhood), ''), rp.neighborhood_key)
+                  FROM reports rp
+                  WHERE rp."recipientType" = ${directedFilter.recipientType}::"RecipientType"
+                    AND rp."recipientId" = ${directedFilter.recipientId}
+                    AND rp.category = d.category
+                    AND rp.status <> 'ARCHIVED'
+                    AND rp.neighborhood_key IS NOT NULL
+                    AND rp.neighborhood_key <> ''
+                    AND timezone('America/Sao_Paulo', rp."createdAt")::date = d.day
+                  GROUP BY rp.neighborhood_key, rp.neighborhood
+                  ORDER BY COUNT(*) DESC
+                  LIMIT 1
+                ), '') AS top_neighborhood,
+                SUM(d.created_count)::int AS created_count,
+                SUM(d.resolved_count)::int AS resolved_count,
+                SUM(d.open_current_count)::int AS open_current_count,
+                SUM(d.contested_count)::int AS contested_count,
+                SUM(d.response_count)::int AS response_count,
+                SUM(d.support_count)::int AS support_count,
+                SUM(d.comment_count)::int AS comment_count,
+                SUM(d.sla_met_count)::int AS sla_met_count,
+                SUM(d.sla_breached_count)::int AS sla_breached_count
+              FROM recipient_metrics_daily d
               WHERE ${this.buildDirectedWhereSql(directedFilter)}
-              GROUP BY day, category
-              HAVING SUM(created_count) >= ${MIN_CELL_SIZE}
-              ORDER BY day ASC, category ASC
+              GROUP BY d.day, d.category
+              HAVING SUM(d.created_count) >= ${MIN_CELL_SIZE}
+              ORDER BY d.day ASC, d.category ASC
               LIMIT 10000
             `)
           : []
@@ -782,6 +927,7 @@ export class AnalyticsRepository {
       state: String(r.state ?? ''),
       cityDisplay: String(r.city_display ?? ''),
       category: r.category as Category,
+      areaLabel: formatRecurrenceAreaLabel(r.top_neighborhood ? String(r.top_neighborhood) : null),
       createdCount: Number(r.created_count ?? 0),
       resolvedCount: Number(r.resolved_count ?? 0),
       openCurrentCount: Number(r.open_current_count ?? 0),

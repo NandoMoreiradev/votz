@@ -316,6 +316,25 @@ export class AccountabilityService {
           )
         : null
 
+    const topRecurrenceRows = recurrenceWindow ? recurrenceWindow.visibleRows.slice(0, 5) : []
+    const recurrenceAreaLabels =
+      recurrenceWindow &&
+      topRecurrenceRows.length > 0 &&
+      typeof this.analyticsRepo.fetchRecurrenceAreaLabels === 'function'
+        ? await this.analyticsRepo.fetchRecurrenceAreaLabels(
+            topRecurrenceRows.map((row) => ({
+              state: row.state,
+              cityKey: row.cityKey,
+              cell7: row.cell7,
+              category: row.category,
+            })),
+            new Date(
+              (recurrenceWindow.windowEnd ?? new Date()).getTime() - 89 * 86_400_000,
+            ),
+            recurrenceWindow.windowEnd ?? new Date(),
+          )
+        : new Map<string, string>()
+
     const snapshot: AccountabilitySnapshot = {
       orgType: planScopeType,
       orgId,
@@ -374,11 +393,14 @@ export class AccountabilityService {
                       ).toFixed(1),
                     )
                   : null,
-              topCells: recurrenceWindow.visibleRows.slice(0, 5).map((row) => ({
-                cell7: row.cell7,
-                category: String(row.category),
-                count90d: row.count90d,
-              })),
+              topCells: topRecurrenceRows.map((row) => {
+                const mapKey = `${row.state.toUpperCase()}|${row.cityKey}|${row.cell7}|${row.category}`
+                return {
+                  areaLabel: recurrenceAreaLabels.get(mapKey) ?? 'Área sem bairro informado',
+                  category: String(row.category),
+                  count90d: row.count90d,
+                }
+              }),
             },
           }
         : {}),

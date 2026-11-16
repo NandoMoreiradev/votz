@@ -533,6 +533,19 @@ export function EntidadePrazos() {
                     <KpiLabel>No prazo</KpiLabel>
                     <KpiValue $color="#16A34A">{queueQ.data?.summary.onTime ?? 0}</KpiValue>
                   </KpiCard>
+                  {(queueQ.data?.summary.noSla ?? 0) > 0 && (
+                    <KpiCard
+                      $active={urgency === 'NO_SLA'}
+                      $tone="#64748B"
+                      onClick={() => {
+                        setUrgency(urgency === 'NO_SLA' ? 'ALL' : 'NO_SLA')
+                        setPage(1)
+                      }}
+                    >
+                      <KpiLabel>Sem prazo definido</KpiLabel>
+                      <KpiValue $color="#64748B">{queueQ.data?.summary.noSla ?? 0}</KpiValue>
+                    </KpiCard>
+                  )}
                 </KpiGrid>
 
                 <Card>

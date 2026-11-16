@@ -113,18 +113,21 @@ export class SlaService {
       status: { in: ACTIVE_QUEUE_STATUSES },
     }
 
-    const where: Prisma.ReportWhereInput = { ...baseWhere }
-    if (query.category) where.category = query.category
+    const scopeWhere: Prisma.ReportWhereInput = { ...baseWhere }
+    if (query.category) scopeWhere.category = query.category
     if (query.neighborhood?.trim()) {
-      where.neighborhood = { contains: query.neighborhood.trim(), mode: 'insensitive' }
+      scopeWhere.neighborhood = { contains: query.neighborhood.trim(), mode: 'insensitive' }
     }
 
+    const where: Prisma.ReportWhereInput = { ...scopeWhere }
     if (query.urgency === 'BREACHED') {
       where.slaState = SlaState.BREACHED
     } else if (query.urgency === 'AT_RISK') {
       where.slaState = SlaState.AT_RISK
     } else if (query.urgency === 'ON_TIME') {
       where.slaState = SlaState.ON_TIME
+    } else if (query.urgency === 'NO_SLA') {
+      where.OR = [{ slaState: null }, { slaState: { notIn: [SlaState.BREACHED, SlaState.AT_RISK, SlaState.ON_TIME] } }]
     } else if (query.urgency === 'DUE_TODAY') {
       where.slaState = { in: [SlaState.ON_TIME, SlaState.AT_RISK] }
       where.slaDueAt = { gte: todayStartUtc, lte: todayEndUtc }
@@ -159,6 +162,7 @@ export class SlaService {
     const [
       total,
       rows,
+      totalOpenCount,
       breachedCount,
       atRiskCount,
       onTimeCount,
@@ -201,25 +205,26 @@ export class SlaService {
           },
         },
       }),
-      this.prisma.report.count({ where: { ...baseWhere, slaState: SlaState.BREACHED } }),
-      this.prisma.report.count({ where: { ...baseWhere, slaState: SlaState.AT_RISK } }),
-      this.prisma.report.count({ where: { ...baseWhere, slaState: SlaState.ON_TIME } }),
+      this.prisma.report.count({ where: scopeWhere }),
+      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.BREACHED } }),
+      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.AT_RISK } }),
+      this.prisma.report.count({ where: { ...scopeWhere, slaState: SlaState.ON_TIME } }),
       this.prisma.report.count({
         where: {
-          ...baseWhere,
+          ...scopeWhere,
           slaState: { in: [SlaState.ON_TIME, SlaState.AT_RISK] },
           slaDueAt: { gte: todayStartUtc, lte: todayEndUtc },
         },
       }),
       this.prisma.report.count({
         where: {
-          ...baseWhere,
+          ...scopeWhere,
           assignments: { none: { orgType: OrgType.ENTITY, orgId: acting.orgId, active: true } },
         },
       }),
       this.prisma.report.count({
         where: {
-          ...baseWhere,
+          ...scopeWhere,
           assignments: {
             some: {
               orgType: OrgType.ENTITY,
@@ -295,11 +300,12 @@ export class SlaService {
 
     return {
       summary: {
-        totalOpen: breachedCount + atRiskCount + onTimeCount,
+        totalOpen: totalOpenCount,
         breached: breachedCount,
         dueToday: dueTodayCount,
         atRisk: atRiskCount,
         onTime: onTimeCount,
+        noSla: Math.max(0, totalOpenCount - (breachedCount + atRiskCount + onTimeCount)),
         unassigned: unassignedCount,
         mine: mineCount,
       },

@@ -157,13 +157,15 @@ describe('ReportRendererService & AccountabilityService', () => {
           previousResolved: 1940,
           suppressed: false,
         },
-        topCategories: [{ category: 'Drenagem e alagamentos', receivedCount: 890, resolvedCount: 510 }],
+        topCategories: [{ category: 'SANITATION', receivedCount: 890, resolvedCount: 510 }],
         recurrence: {
           windowEnd: '2026-10-31',
           visibleCellsCount: 18,
           suppressedCellsCount: 6,
           recurrenceIndexPercent: 34.8,
-          topCells: [{ cell7: '89a8100c3ffffff', category: 'Drenagem', count90d: 42 }],
+          topCells: [
+            { areaLabel: 'Bairro Centro', category: 'INFRASTRUCTURE', count90d: 42 },
+          ],
         },
         topResolvedReports: [
           {
@@ -195,6 +197,12 @@ describe('ReportRendererService & AccountabilityService', () => {
       expect(entJoined).toContain('12/10/2026')
       expect(entJoined).toContain('...')
       expect(entJoined).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/)
+      // F6: sem geohash cru nem categorias em inglês
+      expect(entJoined).toContain('Saneamento')
+      expect(entJoined).toContain('Infraestrutura · Bairro Centro (área de ~150 m): 42 ocorrências em 90 dias')
+      expect(entJoined).not.toMatch(/\b[0-9b-hjkmnp-z]{7}\b/)
+      expect(entJoined).not.toContain('INFRASTRUCTURE')
+      expect(entJoined).not.toContain('SANITATION')
     } finally {
       textSpy.mockRestore()
     }

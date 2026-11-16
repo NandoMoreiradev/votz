@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { List, X } from '@phosphor-icons/react'
+import { List, X, CaretDown } from '@phosphor-icons/react'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { useAuthStore } from '../../store/auth.store'
@@ -14,6 +14,9 @@ const Nav = styled.nav`
   position: sticky;
   top: 0;
   z-index: 100;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
   background: ${({ theme }) => theme.colors.primary};
   height: 64px;
   display: flex;
@@ -24,13 +27,15 @@ const Nav = styled.nav`
 const Inner = styled.div`
   width: 100%;
   max-width: 1480px;
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 ${({ theme }) => theme.spacing[6]};
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: ${({ theme }) => theme.spacing[4]};
+  min-width: 0;
 
-  @media (max-width: ${({ theme }) => theme.breakpoints.lg}) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     padding: 0 ${({ theme }) => theme.spacing[4]};
     gap: ${({ theme }) => theme.spacing[3]};
   }
@@ -70,27 +75,23 @@ const LogoImg = styled.img`
 const NavLinks = styled.div`
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: ${({ theme }) => theme.spacing[1]};
   flex: 1;
+  min-width: 0;
 
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     display: none;
   }
 `
 
 const NavLink = styled(Link)`
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: ${({ theme }) => theme.fontSizes.sm};
   font-weight: ${({ theme }) => theme.fontWeights.medium};
-  padding: 6px 12px;
+  padding: ${({ theme }) => theme.spacing[1]} ${({ theme }) => theme.spacing[3]};
   border-radius: ${({ theme }) => theme.radii.md};
   white-space: nowrap;
   transition: all 0.15s;
-
-  @media (max-width: ${({ theme }) => theme.breakpoints.lg}) {
-    font-size: ${({ theme }) => theme.fontSizes.sm};
-    padding: 6px ${({ theme }) => theme.spacing[2]};
-  }
 
   &:hover {
     color: ${({ theme }) => theme.colors.white};
@@ -98,21 +99,43 @@ const NavLink = styled(Link)`
   }
 `
 
+const OrgMenuWrapper = styled.div`
+  position: relative;
+`
+
+const OrgMenuButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing[1]};
+  color: ${({ theme }) => theme.colors.white};
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-family: ${({ theme }) => theme.fonts.body};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  padding: ${({ theme }) => theme.spacing[1]} ${({ theme }) => theme.spacing[3]};
+  border-radius: ${({ theme }) => theme.radii.md};
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+`
+
 const Actions = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: ${({ theme }) => theme.spacing[2]};
   margin-left: auto;
-
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
-    gap: ${({ theme }) => theme.spacing[2]};
-  }
+  flex-shrink: 0;
 `
 
 const AvatarWrapper = styled.div`
   position: relative;
 
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     display: none;
   }
 `
@@ -433,7 +456,7 @@ const ContextBadge = styled.div`
     background: rgba(255, 255, 255, 0.18);
   }
 
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     display: none;
   }
 `
@@ -455,10 +478,10 @@ const ContextAvatar = styled.div<{ $src?: string | null }>`
 `
 
 const ContextName = styled.span`
-  font-size: 0.8125rem;
+  font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: ${({ theme }) => theme.fontWeights.medium};
   color: rgba(255, 255, 255, 0.9);
-  max-width: 120px;
+  max-width: 112px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -482,7 +505,7 @@ const MobileMenuBtn = styled.button`
     background: rgba(255, 255, 255, 0.18);
   }
 
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     display: inline-flex;
   }
 `
@@ -501,7 +524,7 @@ const MobileDrawer = styled.div`
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[5]};
   z-index: 190;
 
-  @media (max-width: calc(${({ theme }) => theme.breakpoints.md} - 1px)) {
+  @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
     display: flex;
     flex-direction: column;
     gap: ${({ theme }) => theme.spacing[1]};
@@ -557,9 +580,11 @@ export function Navbar() {
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [orgMenuOpen, setOrgMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const orgMenuRef = useRef<HTMLDivElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
 
@@ -576,12 +601,16 @@ export function Navbar() {
   useEffect(() => {
     setMobileOpen(false)
     setOpen(false)
+    setOrgMenuOpen(false)
   }, [location.pathname, location.search])
 
   useEffect(() => {
     function close(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setOpen(false)
+      }
+      if (orgMenuRef.current && !orgMenuRef.current.contains(e.target as Node)) {
+        setOrgMenuOpen(false)
       }
       if (
         mobileOpen &&
@@ -594,8 +623,10 @@ export function Navbar() {
       }
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && mobileOpen) {
-        closeMobileMenu(true)
+      if (e.key === 'Escape') {
+        if (mobileOpen) closeMobileMenu(true)
+        setOrgMenuOpen(false)
+        setOpen(false)
       }
     }
     document.addEventListener('mousedown', close)
@@ -650,13 +681,34 @@ export function Navbar() {
             <NavLink to="/imprensa">Imprensa</NavLink>
             <NavLink to="/planos">Planos</NavLink>
             {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
-              <NavLink to="/painel-dados">Painel</NavLink>
-            )}
-            {activeContext?.type === 'ENTITY' && (
-              <NavLink to="/entidade/prazos">Prazos &amp; Fila</NavLink>
-            )}
-            {activeContext?.type === 'POLITICIAN' && (
-              <NavLink to="/mandato">Caixa do mandato</NavLink>
+              <OrgMenuWrapper ref={orgMenuRef}>
+                <OrgMenuButton
+                  type="button"
+                  aria-expanded={orgMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setOrgMenuOpen((o) => !o)}
+                >
+                  Minha organização
+                  <CaretDown size={14} weight="bold" aria-hidden="true" />
+                </OrgMenuButton>
+                {orgMenuOpen && (
+                  <Dropdown style={{ left: 0, right: 'auto', minWidth: 196 }}>
+                    <DropdownItem to="/painel-dados" onClick={() => setOrgMenuOpen(false)}>
+                      Painel de dados
+                    </DropdownItem>
+                    {activeContext.type === 'ENTITY' && (
+                      <DropdownItem to="/entidade/prazos" onClick={() => setOrgMenuOpen(false)}>
+                        Prazos &amp; Fila
+                      </DropdownItem>
+                    )}
+                    {activeContext.type === 'POLITICIAN' && (
+                      <DropdownItem to="/mandato" onClick={() => setOrgMenuOpen(false)}>
+                        Caixa do mandato
+                      </DropdownItem>
+                    )}
+                  </Dropdown>
+                )}
+              </OrgMenuWrapper>
             )}
             {!user && <NavLink to="/solicitar-cadastro">Registrar organização</NavLink>}
             {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}

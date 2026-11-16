@@ -17,13 +17,13 @@ import {
 } from 'class-validator'
 import { SlaHoursDto } from '../../entities/dto/update-entity.dto'
 
-export type SlaQueueUrgency = 'ALL' | 'BREACHED' | 'DUE_TODAY' | 'AT_RISK' | 'ON_TIME'
+export type SlaQueueUrgency = 'ALL' | 'BREACHED' | 'DUE_TODAY' | 'AT_RISK' | 'ON_TIME' | 'NO_SLA'
 export type SlaQueueSort = 'due_asc' | 'pressure_desc' | 'newest'
 
 export class SlaQueueFilterDto {
-  @ApiPropertyOptional({ enum: ['ALL', 'BREACHED', 'DUE_TODAY', 'AT_RISK', 'ON_TIME'] })
+  @ApiPropertyOptional({ enum: ['ALL', 'BREACHED', 'DUE_TODAY', 'AT_RISK', 'ON_TIME', 'NO_SLA'] })
   @IsOptional()
-  @IsIn(['ALL', 'BREACHED', 'DUE_TODAY', 'AT_RISK', 'ON_TIME'])
+  @IsIn(['ALL', 'BREACHED', 'DUE_TODAY', 'AT_RISK', 'ON_TIME', 'NO_SLA'])
   urgency?: SlaQueueUrgency
 
   @ApiPropertyOptional({ enum: Category })

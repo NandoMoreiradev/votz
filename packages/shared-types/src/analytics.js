@@ -5,7 +5,7 @@ exports.normalizeLocationKey = normalizeLocationKey;
 exports.encodeGeohash7 = encodeGeohash7;
 exports.decodeGeohashBounds = decodeGeohashBounds;
 exports.computePercentileFromBuckets = computePercentileFromBuckets;
-exports.ANALYTICS_DEFINITION_VERSION = 'v1.1.1';
+exports.ANALYTICS_DEFINITION_VERSION = 'v1.1.2';
 exports.ANALYTICS_DEFINITION_DATE = '2026-11-16';
 exports.ANALYTICS_TIMEZONE = 'America/Sao_Paulo';
 exports.MIN_CELL_SIZE = 10;
@@ -241,7 +241,7 @@ exports.ANALYTICS_METRIC_DICTIONARY = {
     reincidence: {
         key: 'reincidence',
         name: 'Células reincidentes',
-        definition: 'Células geohash-7 + categoria com 2 ou mais relatos nos últimos 90 dias (suprimidas abaixo de 10 na exibição).',
+        definition: 'Células geohash-7 (~150 m) + categoria com 2 ou mais relatos nos últimos 90 dias (suprimidas abaixo de 10 na exibição, identificadas por rótulo legível do bairro dominante). No mapa de calor, quando a maioria das células de 150 m é suprimida, agrega-se adicionalmente em geohash-6 (~1,2 km) respeitando o mínimo de 10 relatos.',
         formula: 'COUNT(*) em recurrence_cells WHERE count_90d >= 2',
         version: exports.ANALYTICS_DEFINITION_VERSION,
     },
@@ -255,7 +255,7 @@ exports.ANALYTICS_METRIC_DICTIONARY = {
     trend: {
         key: 'trend',
         name: 'Tendência (7d / 30d / 90d)',
-        definition: 'Variação percentual frente ao período imediatamente anterior de mesma duração.',
+        definition: 'Variação percentual frente ao período imediatamente anterior de mesma duração. Quando todos os pontos da granularidade escolhida ficam abaixo de 10 relatos, a série agrega automaticamente para a próxima granularidade (dia -> semana -> mês).',
         formula: '((atual - anterior) ÷ anterior) * 100 (null se anterior = 0; aviso se base < 10)',
         version: exports.ANALYTICS_DEFINITION_VERSION,
     },

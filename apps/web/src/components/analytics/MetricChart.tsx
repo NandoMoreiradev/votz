@@ -113,6 +113,21 @@ const EmptyNotice = styled.p`
   font-size: ${({ theme }) => theme.fontSizes.sm};
 `
 
+const LegendRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: ${({ theme }) => theme.spacing[4]};
+  margin-top: ${({ theme }) => theme.spacing[2]};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const LegendItem = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+`
+
 export interface ChartDatum {
   label: string
   value: number | null
@@ -161,15 +176,37 @@ export function MetricChart({
   const barCount = Math.max(1, data.length)
   const barStep = innerW / barCount
 
-  const pointsAttr = data
-    .map((d, i) => {
-      if (d.suppressed || d.value === null) return null
-      const x = data.length === 1 ? padLeft + innerW / 2 : padLeft + (i / (data.length - 1)) * innerW
-      const y = padTop + innerH - (d.value / maxVal) * innerH
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .filter((p): p is string => p !== null)
-    .join(' ')
+  const coords = data.map((d, i) => {
+    const x = data.length === 1 ? padLeft + innerW / 2 : padLeft + (i / (data.length - 1)) * innerW
+    const y = d.suppressed || d.value === null ? null : padTop + innerH - (d.value / maxVal) * innerH
+    return { d, i, x, y }
+  })
+
+  const solidSegments: Array<Array<{ x: number; y: number }>> = []
+  let currentSeg: Array<{ x: number; y: number }> = []
+  const dashedBridges: Array<{ x1: number; y1: number; x2: number; y2: number; key: string }> = []
+  let lastVisible: { i: number; x: number; y: number } | null = null
+
+  for (const pt of coords) {
+    if (pt.y !== null) {
+      currentSeg.push({ x: pt.x, y: pt.y })
+      if (lastVisible && pt.i - lastVisible.i > 1) {
+        dashedBridges.push({
+          key: `bridge-${lastVisible.i}-${pt.i}`,
+          x1: lastVisible.x,
+          y1: lastVisible.y,
+          x2: pt.x,
+          y2: pt.y,
+        })
+      }
+      lastVisible = { i: pt.i, x: pt.x, y: pt.y }
+    } else if (currentSeg.length > 0) {
+      solidSegments.push(currentSeg)
+      currentSeg = []
+    }
+  }
+  if (currentSeg.length > 0) solidSegments.push(currentSeg)
+  const hasSuppressedPoints = data.some((d) => d.suppressed || d.value === null)
 
   return (
     <Card>
@@ -255,30 +292,56 @@ export function MetricChart({
                 })
               : null}
 
-            {variant === 'line' && pointsAttr && (
+            {variant === 'line' && (
               <>
-                <polyline
-                  fill="none"
-                  stroke={theme.colors.primary}
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  points={pointsAttr}
-                />
-                {data.map((d, i) => {
-                  if (d.suppressed || d.value === null) return null
-                  const x =
-                    data.length === 1 ? padLeft + innerW / 2 : padLeft + (i / (data.length - 1)) * innerW
-                  const y = padTop + innerH - (d.value / maxVal) * innerH
-                  return (
-                    <circle key={d.label} cx={x} cy={y} r={3.5} fill={theme.colors.action}>
+                {dashedBridges.map((b) => (
+                  <line
+                    key={b.key}
+                    x1={b.x1.toFixed(1)}
+                    y1={b.y1.toFixed(1)}
+                    x2={b.x2.toFixed(1)}
+                    y2={b.y2.toFixed(1)}
+                    stroke={theme.colors.muted}
+                    strokeWidth="1.75"
+                    strokeDasharray="5 5"
+                  />
+                ))}
+                {solidSegments.map((seg, idx) =>
+                  seg.length >= 2 ? (
+                    <polyline
+                      key={`seg-${idx}`}
+                      fill="none"
+                      stroke={theme.colors.primary}
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={seg.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
+                    />
+                  ) : null,
+                )}
+                {coords.map((pt) =>
+                  pt.y !== null ? (
+                    <circle key={pt.d.label} cx={pt.x} cy={pt.y} r={3.5} fill={theme.colors.action}>
                       <title>
-                        {d.label}: {d.value}
+                        {pt.d.label}: {pt.d.value}
                         {unit}
                       </title>
                     </circle>
-                  )
-                })}
+                  ) : (
+                    <circle
+                      key={`sup-${pt.d.label}`}
+                      cx={pt.x}
+                      cy={padTop + innerH - 4}
+                      r={3.5}
+                      fill={theme.colors.white}
+                      stroke={theme.colors.muted}
+                      strokeWidth="1.5"
+                      strokeDasharray="2 2"
+                    >
+                      <title>{pt.d.label}: Suprimido (&lt;10 relatos)</title>
+                    </circle>
+                  ),
+                )}
               </>
             )}
 
@@ -307,6 +370,33 @@ export function MetricChart({
               )
             })}
           </svg>
+          {hasSuppressedPoints && (
+            <LegendRow>
+              <LegendItem>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: theme.colors.action,
+                    display: 'inline-block',
+                  }}
+                />
+                Visível (&ge; 10 relatos)
+              </LegendItem>
+              <LegendItem>
+                <span
+                  style={{
+                    width: 14,
+                    height: 0,
+                    borderTop: `2px dashed ${theme.colors.muted}`,
+                    display: 'inline-block',
+                  }}
+                />
+                Lacuna tracejada: suprimido (&lt; 10 relatos, privacidade)
+              </LegendItem>
+            </LegendRow>
+          )}
         </ChartWrap>
       )}
 

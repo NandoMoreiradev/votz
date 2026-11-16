@@ -1,20 +1,20 @@
 import styled from 'styled-components'
-import { Category, ReportStatus, PropostaStatus } from '@votz/shared-types'
+import { Category, CATEGORY_LABELS, ReportStatus, PropostaStatus } from '@votz/shared-types'
 
 export const CATEGORY_CONFIG: Record<Category, { label: string; color: string }> = {
-  [Category.HEALTH]:        { label: 'Saúde',              color: '#F59E0B' },
-  [Category.MOBILITY]:      { label: 'Mobilidade',         color: '#3B82F6' },
-  [Category.SAFETY]:        { label: 'Segurança',          color: '#EF4444' },
-  [Category.EDUCATION]:     { label: 'Educação',           color: '#8B5CF6' },
-  [Category.SANITATION]:    { label: 'Saneamento',         color: '#10B981' },
-  [Category.HOUSING]:       { label: 'Habitação',          color: '#F97316' },
-  [Category.ENVIRONMENT]:   { label: 'Meio Ambiente',      color: '#16A34A' },
-  [Category.INFRASTRUCTURE]:{ label: 'Infraestrutura',     color: '#78716C' },
-  [Category.URBAN_SERVICES]:{ label: 'Serviços Urbanos',   color: '#0891B2' },
-  [Category.CORRUPTION]:    { label: 'Corrupção',          color: '#9F1239' },
-  [Category.ACCESSIBILITY]: { label: 'Acessibilidade',     color: '#7C3AED' },
-  [Category.SOCIAL_WELFARE]:{ label: 'Assistência Social', color: '#DB2777' },
-  [Category.OTHER]:         { label: 'Outros',             color: '#6B7280' },
+  [Category.HEALTH]:        { label: CATEGORY_LABELS[Category.HEALTH],         color: '#F59E0B' },
+  [Category.MOBILITY]:      { label: CATEGORY_LABELS[Category.MOBILITY],       color: '#3B82F6' },
+  [Category.SAFETY]:        { label: CATEGORY_LABELS[Category.SAFETY],         color: '#EF4444' },
+  [Category.EDUCATION]:     { label: CATEGORY_LABELS[Category.EDUCATION],      color: '#8B5CF6' },
+  [Category.SANITATION]:    { label: CATEGORY_LABELS[Category.SANITATION],     color: '#10B981' },
+  [Category.HOUSING]:       { label: CATEGORY_LABELS[Category.HOUSING],        color: '#F97316' },
+  [Category.ENVIRONMENT]:   { label: CATEGORY_LABELS[Category.ENVIRONMENT],    color: '#16A34A' },
+  [Category.INFRASTRUCTURE]:{ label: CATEGORY_LABELS[Category.INFRASTRUCTURE], color: '#78716C' },
+  [Category.URBAN_SERVICES]:{ label: CATEGORY_LABELS[Category.URBAN_SERVICES], color: '#0891B2' },
+  [Category.CORRUPTION]:    { label: CATEGORY_LABELS[Category.CORRUPTION],     color: '#9F1239' },
+  [Category.ACCESSIBILITY]: { label: CATEGORY_LABELS[Category.ACCESSIBILITY],  color: '#7C3AED' },
+  [Category.SOCIAL_WELFARE]:{ label: CATEGORY_LABELS[Category.SOCIAL_WELFARE], color: '#DB2777' },
+  [Category.OTHER]:         { label: CATEGORY_LABELS[Category.OTHER],          color: '#6B7280' },
 }
 
 export const STATUS_CONFIG: Record<ReportStatus, { label: string; color: string }> = {

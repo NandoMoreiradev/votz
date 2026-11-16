@@ -123,6 +123,25 @@ describe('AnalyticsService', () => {
         suppressedCellsCount: 2,
         suppressedVolume: 9,
       }),
+      fetchHeatmapCellsCoarse6: jest.fn().mockResolvedValue({
+        visibleCells: [
+          {
+            cell6: '6gyf4b',
+            cityDisplay: 'Campinas',
+            createdCount: 24,
+            openCurrentCount: 7,
+            resolvedCount: 15,
+            contestedCount: 2,
+            pressureSum: 400,
+            supportCount: 55,
+          },
+        ],
+        suppressedCellsCount: 1,
+        suppressedVolume: 4,
+      }),
+      fetchRecurrenceAreaLabels: jest.fn().mockResolvedValue(
+        new Map([['SP|campinas|6gyf4bf|HEALTH', 'Bairro Centro']]),
+      ),
       fetchLatestRecurrenceWindow: jest.fn().mockResolvedValue({
         windowEnd: new Date('2026-11-15T00:00:00.000Z'),
         visibleTotal: 1,
@@ -209,7 +228,7 @@ describe('AnalyticsService', () => {
     expect(res.suppressed).toBe(false)
     expect(res.sampleSize).toBe(25)
     expect(res.minCellSize).toBe(MIN_CELL_SIZE)
-    expect(res.definitionVersion).toBe('v1.1.1')
+    expect(res.definitionVersion).toBe('v1.1.2')
     expect(res.kpis.resolutionRate).toEqual({ value: 75, numerator: 15, denominator: 20 })
     expect(res.kpis.responseRate).toEqual({ value: 80, numerator: 20, denominator: 25 })
     expect(res.kpis.contestRate).toEqual({ value: 11.76, numerator: 2, denominator: 17 })
@@ -278,14 +297,14 @@ describe('AnalyticsService', () => {
     repo.fetchAreaSummary.mockClear()
 
     const cached = await service.getOverview(user, { period: PeriodPreset.D7 })
-    expect(cached.definitionVersion).toBe('v1.1.1')
+    expect(cached.definitionVersion).toBe('v1.1.2')
     expect(repo.fetchAreaSummary).not.toHaveBeenCalled()
   })
 
   it('exports aggregated CSV with definition header and sanitized cells', async () => {
     const csvRes = await service.exportData(user, { format: ExportFormat.CSV })
     expect(csvRes.format).toBe(ExportFormat.CSV)
-    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.1')
+    expect((csvRes as any).body).toContain('# Votz Painel de Dados - Exportacao Agregada (v1.1.2')
     expect((csvRes as any).body).toContain('2026-11-10,SP,Campinas,HEALTH,14')
   })
 
@@ -386,5 +405,55 @@ describe('AnalyticsService', () => {
     expect(
       resolvePublicSlaDisplayState({ hasOwnSla: true, suppressed: true }).showPercentage,
     ).toBe(false)
+  })
+
+  it('F3 & F6: auto-promotes fully suppressed daily timeseries to week, adds >=10 geohash-6 heatmap cells, and formats readable areaLabel/categoryLabel', async () => {
+    // Série diária toda suprimida (7 dias x 3 relatos = 21) -> promove para semanal automaticamente
+    ;(repo.fetchDailySeries as jest.Mock).mockResolvedValueOnce(
+      [1, 2, 3, 4, 5, 6, 7].map((d) => ({
+        day: `2026-11-0${d}`,
+        createdCount: 3,
+        resolvedCount: 2,
+        openCurrentCount: 1,
+        openOver7dCount: 0,
+        responseCount: 2,
+        supportCount: 5,
+        commentCount: 1,
+        slaMetCount: 2,
+        slaBreachedCount: 0,
+      })),
+    )
+    const ts = await service.getTimeseries(user, {
+      metric: TimeseriesMetric.VOLUME,
+      granularity: TimeseriesGranularity.DAY,
+    })
+    expect((ts as any).requestedGranularity).toBe(TimeseriesGranularity.DAY)
+    expect(ts.granularity).toBe(TimeseriesGranularity.WEEK)
+    expect((ts as any).autoAdjustedGranularity).toBe(true)
+    expect(ts.points.some((p) => !p.suppressed && (p.value ?? 0) >= MIN_CELL_SIZE)).toBe(true)
+
+    // Mapa com 0 células visíveis em 150m e maioria suprimida -> retorna geohash-6 >= 10 sem coordenadas individuais
+    ;(repo.fetchHeatmapCells as jest.Mock).mockResolvedValueOnce({
+      visibleCells: [],
+      suppressedCellsCount: 12,
+      suppressedVolume: 38,
+    })
+    const hm = await service.getHeatmap(user, { period: PeriodPreset.D30 })
+    expect(hm.suppressed).toBe(false)
+    expect((hm as any).coarsePrecision).toBe(6)
+    expect((hm as any).recommendedMode).toBe('coarse')
+    expect((hm as any).coarseCells).toHaveLength(1)
+    expect((hm as any).coarseCells[0].count).toBeGreaterThanOrEqual(MIN_CELL_SIZE)
+    expect(JSON.stringify(hm)).not.toContain('latitude')
+
+    // Reincidência + export incluem areaLabel legível e rótulo de categoria em PT-BR
+    const rec = await service.getRecurrence(user, { page: 1, limit: 25 })
+    expect((rec.items[0] as any).areaLabel).toBe('Bairro Centro')
+    expect((rec.items[0] as any).categoryLabel).toBe('Saúde')
+
+    const expJson = await service.exportData(user, { format: ExportFormat.JSON })
+    expect(((expJson as any).data.rows[0] as any).areaLabel).toBeDefined()
+    const expCsv = await service.exportData(user, { format: ExportFormat.CSV })
+    expect((expCsv as any).body).toContain(',area_label\n')
   })
 })

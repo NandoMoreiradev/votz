@@ -124,6 +124,8 @@ export interface AnalyticsTimeseriesResponse {
   scope: AnalyticsScopeInfo
   metric: AnalyticsTimeseriesMetric
   granularity: AnalyticsTimeseriesGranularity
+  requestedGranularity?: AnalyticsTimeseriesGranularity
+  autoAdjustedGranularity?: boolean
   points: Array<{
     bucket: string
     suppressed: boolean
@@ -141,6 +143,27 @@ export interface AnalyticsTimeseriesResponse {
   }
 }
 
+export interface AnalyticsHeatmapCell {
+  cell7?: string
+  cell6?: string
+  cityDisplay: string
+  bounds: {
+    minLat: number
+    maxLat: number
+    minLng: number
+    maxLng: number
+    centerLat: number
+    centerLng: number
+  }
+  count: number
+  openCount: number
+  resolvedCount: number
+  contestedCount: number
+  avgPressure: number
+  supportCount: number
+  intensity: number
+}
+
 export interface AnalyticsHeatmapResponse {
   computedAt: string
   sampleSize: number | null
@@ -152,25 +175,11 @@ export interface AnalyticsHeatmapResponse {
   scope: AnalyticsScopeInfo
   precision: number
   suppressedCells: number
-  cells: Array<{
-    cell7: string
-    cityDisplay: string
-    bounds: {
-      minLat: number
-      maxLat: number
-      minLng: number
-      maxLng: number
-      centerLat: number
-      centerLng: number
-    }
-    count: number
-    openCount: number
-    resolvedCount: number
-    contestedCount: number
-    avgPressure: number
-    supportCount: number
-    intensity: number
-  }>
+  cells: AnalyticsHeatmapCell[]
+  coarsePrecision?: number
+  coarseCells?: AnalyticsHeatmapCell[]
+  coarseSuppressedCells?: number
+  recommendedMode?: 'detail' | 'coarse'
 }
 
 export interface AnalyticsRecurrenceResponse {
@@ -195,7 +204,9 @@ export interface AnalyticsRecurrenceResponse {
   }
   items: Array<{
     cell7: string
+    areaLabel?: string
     category: string
+    categoryLabel?: string
     state: string
     cityKey: string
     bounds: {

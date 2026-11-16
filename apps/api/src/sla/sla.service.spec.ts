@@ -10,6 +10,7 @@ import {
 } from '@prisma/client'
 import { Category as SharedCategory, computeSla } from '@votz/shared-types'
 import { buildRatio } from '../analytics/analytics.constants'
+import { ReportsRepository } from '../reports/reports.repository'
 import { SlaService } from './sla.service'
 
 function makeActingUser(overrides?: Partial<{ id: string; ctxOrgId: string; permissions: OrgPermission[] }>) {
@@ -397,5 +398,87 @@ describe('SlaService — Watcher, Deduplication, Authorization, Privacy & Reconc
     expect(perfDefault.summary.complianceRate.value).toBe(50)
     expect(perfDefault.hasOwnSla).toBe(false)
     expect(perfDefault.byCategory[0].isDefaultPolicy).toBe(true)
+  })
+
+  it('F5: keeps listQueue summary totals consistent even with legacy reports lacking slaState/slaDueAt', async () => {
+    const prisma = {
+      orgMembership: {
+        findUnique: jest.fn(async () => ({
+          status: 'ACTIVE',
+          role: { permissions: [OrgPermission.VIEW_ANALYTICS] },
+        })),
+      },
+      report: {
+        count: jest.fn(async ({ where }: any) => {
+          if (where.slaState === SlaState.BREACHED) return 0
+          if (where.slaState === SlaState.AT_RISK) return 0
+          if (where.slaState === SlaState.ON_TIME) return 1
+          if (where.slaState?.in) return 0 // dueToday
+          if (where.assignments?.none) return 52 // unassigned
+          if (where.assignments?.some) return 0 // mine
+          return 52 // totalOpen (scopeWhere sem excluir slaState = null)
+        }),
+        findMany: jest.fn(async () => []),
+      },
+      user: { findMany: jest.fn(async () => []) },
+    }
+    const service = new SlaService(
+      prisma as any,
+      {} as any,
+      { notify: jest.fn() } as any,
+      { record: jest.fn() } as any,
+      { sendSlaAlertDigest: jest.fn() } as any,
+    )
+
+    const queue = await service.listQueue(makeActingUser(), {})
+    expect(queue.summary.totalOpen).toBe(52)
+    expect(queue.summary.unassigned).toBe(52)
+    expect(queue.summary.noSla).toBe(51)
+    expect(queue.summary.unassigned).toBeLessThanOrEqual(queue.summary.totalOpen)
+    expect(
+      queue.summary.breached +
+        queue.summary.atRisk +
+        queue.summary.onTime +
+        queue.summary.noSla,
+    ).toBe(queue.summary.totalOpen)
+  })
+
+  it('F5: ReportsRepository.create populates slaDueAt, slaStartedAt and slaState for every new report directed to an entity', async () => {
+    const capturedData: Array<Record<string, unknown>> = []
+    const prisma = {
+      entity: {
+        findUnique: jest.fn(async () => ({
+          slaHours: null,
+          resolutionSlaHours: null,
+          slaEscalationHours: 24,
+        })),
+      },
+      report: {
+        create: jest.fn(async ({ data }: any) => {
+          capturedData.push(data)
+          return { id: 'rep-new-1', ...data }
+        }),
+      },
+    }
+    const repo = new ReportsRepository(prisma as any)
+    await repo.create(
+      {
+        title: 'Buraco na rua',
+        description: 'Via danificada',
+        category: Category.INFRASTRUCTURE as any,
+        latitude: -10.9472,
+        longitude: -37.0731,
+        city: 'Aracaju',
+        state: 'SE',
+        neighborhood: 'Centro',
+        recipientType: RecipientType.ENTITY as any,
+        recipientId: 'ent-1',
+      },
+      'author-1',
+    )
+
+    expect(capturedData[0].slaStartedAt).toBeInstanceOf(Date)
+    expect(capturedData[0].slaDueAt).toBeInstanceOf(Date)
+    expect(capturedData[0].slaState).toBe(SlaState.ON_TIME)
   })
 })

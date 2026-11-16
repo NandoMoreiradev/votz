@@ -131,8 +131,18 @@ export function Login() {
 
   const { data: profiles } = useMyProfiles(!!pendingAuth)
 
-  const { register: regCreds, handleSubmit: handleCreds, formState: { errors: credErrors } } = useForm<CredentialsForm>()
-  const { register: regMfa, handleSubmit: handleMfa, formState: { errors: mfaErrors } } = useForm<MfaForm>()
+  const { register: regCreds, handleSubmit: handleCreds, formState: { errors: credErrors } } = useForm<CredentialsForm>({
+    defaultValues: { email: '', password: '' },
+  })
+  const {
+    register: regMfa,
+    handleSubmit: handleMfa,
+    reset: resetMfa,
+    setValue: setMfaValue,
+    formState: { errors: mfaErrors },
+  } = useForm<MfaForm>({
+    defaultValues: { code: '' },
+  })
 
   useEffect(() => {
     if (user && !pendingAuth) navigate(redirect, { replace: true })
@@ -157,8 +167,10 @@ export function Login() {
     login(data, {
       onSuccess: (result) => {
         if (result.requiresMfa) {
+          resetMfa({ code: '' })
           setMfaToken(result.mfaToken)
         } else if (result.requiresMfaSetup) {
+          resetMfa({ code: '' })
           setMfaSetupToken(result.mfaSetupToken)
           setMfaSetupStep('intro')
         } else {
@@ -245,7 +257,14 @@ export function Login() {
             <code style={{ display: 'block', background: '#F3F4F6', padding: '8px 12px', borderRadius: 6, fontSize: '0.875rem', textAlign: 'center', letterSpacing: 2, marginBottom: 24 }}>
               {qrData.secret}
             </code>
-            <Button variant="primary" fullWidth onClick={() => setMfaSetupStep('code')}>
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={() => {
+                resetMfa({ code: '' })
+                setMfaSetupStep('code')
+              }}
+            >
               Já escaneei — inserir código
             </Button>
           </Card>
@@ -254,21 +273,31 @@ export function Login() {
     }
 
     if (mfaSetupStep === 'code') {
+      const regCode = regMfa('code', { required: 'Obrigatório' })
       return (
         <Page>
           <Card>
             <Logo to="/"><span>◆</span> VOTZ</Logo>
             <Subtitle>Confirme o código</Subtitle>
-            <Form onSubmit={handleMfa(onConfirmMfaSetup)}>
+            <Form key="mfa-setup-form" onSubmit={handleMfa(onConfirmMfaSetup)}>
               <Field>
-                <Label>Código do autenticador (6 dígitos)</Label>
+                <Label htmlFor="mfa-setup-code">Código do autenticador (6 dígitos)</Label>
                 <Input
+                  key="mfa-setup-code"
+                  id="mfa-setup-code"
                   type="text"
                   placeholder="000000"
                   autoComplete="one-time-code"
                   inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
                   $error={!!mfaErrors.code}
-                  {...regMfa('code', { required: 'Obrigatório' })}
+                  {...regCode}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 6)
+                    e.target.value = digits
+                    setMfaValue('code', digits, { shouldValidate: false })
+                  }}
                 />
                 {mfaErrors.code && <ErrorMsg>{mfaErrors.code.message}</ErrorMsg>}
               </Field>
@@ -333,22 +362,32 @@ export function Login() {
   }
 
   if (mfaToken) {
+    const regCode = regMfa('code', { required: 'Obrigatório' })
     return (
       <Page>
         <Card>
           <Logo to="/"><span>◆</span> VOTZ</Logo>
           <Subtitle>Autenticação em dois fatores</Subtitle>
 
-          <Form onSubmit={handleMfa(onMfa)}>
+          <Form key="mfa-verify-form" onSubmit={handleMfa(onMfa)}>
             <Field>
-              <Label>Código do autenticador</Label>
+              <Label htmlFor="mfa-verify-code">Código do autenticador</Label>
               <Input
+                key="mfa-verify-code"
+                id="mfa-verify-code"
                 type="text"
                 placeholder="000000"
                 autoComplete="one-time-code"
                 inputMode="numeric"
+                maxLength={6}
+                autoFocus
                 $error={!!mfaErrors.code}
-                {...regMfa('code', { required: 'Obrigatório' })}
+                {...regCode}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 6)
+                  e.target.value = digits
+                  setMfaValue('code', digits, { shouldValidate: false })
+                }}
               />
               {mfaErrors.code && <ErrorMsg>{mfaErrors.code.message}</ErrorMsg>}
             </Field>
@@ -361,7 +400,13 @@ export function Login() {
           </Form>
 
           <Footer>
-            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMfaToken(null)}>
+            <button
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+              onClick={() => {
+                resetMfa({ code: '' })
+                setMfaToken(null)
+              }}
+            >
               ← Voltar
             </button>
           </Footer>
@@ -385,12 +430,15 @@ export function Login() {
         <Logo to="/"><span>◆</span> VOTZ</Logo>
         <Subtitle>Entre para apoiar e cobrar.</Subtitle>
 
-        <Form onSubmit={handleCreds(onCredentials)}>
+        <Form key="credentials-form" onSubmit={handleCreds(onCredentials)}>
           <Field>
-            <Label>E-mail</Label>
+            <Label htmlFor="login-email">E-mail</Label>
             <Input
+              key="cred-email"
+              id="login-email"
               type="email"
               placeholder="seu@email.com"
+              autoComplete="email"
               $error={!!credErrors.email}
               {...regCreds('email', { required: 'Obrigatório' })}
             />
@@ -398,10 +446,13 @@ export function Login() {
           </Field>
 
           <Field>
-            <Label>Senha</Label>
+            <Label htmlFor="login-password">Senha</Label>
             <Input
+              key="cred-password"
+              id="login-password"
               type="password"
               placeholder="••••••••"
+              autoComplete="current-password"
               $error={!!credErrors.password}
               {...regCreds('password', { required: 'Obrigatório' })}
             />

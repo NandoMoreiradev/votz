@@ -106,6 +106,56 @@ const CellsTable = styled.table`
   }
 `
 
+const LegendBar = styled.div`
+  margin-top: ${({ theme }) => theme.spacing[3]};
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: ${({ theme }) => theme.spacing[3]};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const LegendScale = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing[2]};
+`
+
+const ScaleGradient = styled.span`
+  display: inline-block;
+  width: 96px;
+  height: 10px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: linear-gradient(
+    90deg,
+    ${({ theme }) => theme.colors.primary}40 0%,
+    ${({ theme }) => theme.colors.action}c0 100%
+  );
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const ModeToggleRow = styled.div`
+  display: inline-flex;
+  gap: 4px;
+  background: ${({ theme }) => theme.colors.neutral};
+  padding: 3px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const ModeBtn = styled.button<{ $active: boolean }>`
+  padding: 4px 10px;
+  border-radius: ${({ theme }) => theme.radii.sm};
+  border: none;
+  background: ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+`
+
 interface AnalyticsHeatmapProps {
   data: AnalyticsHeatmapResponse
 }
@@ -117,10 +167,24 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
   const popupRef = useRef<maplibregl.Popup | null>(null)
   const [showTable, setShowTable] = useState(false)
 
-  useEffect(() => {
-    if (!MAPTILER_KEY || !containerRef.current || mapRef.current) return
+  const hasCoarse = (data.coarseCells?.length ?? 0) > 0
+  const preferredMode: 'detail' | 'coarse' =
+    data.recommendedMode ?? (data.cells.length < 5 && hasCoarse ? 'coarse' : 'detail')
+  const [viewMode, setViewMode] = useState<'detail' | 'coarse'>(preferredMode)
 
-    const firstCell = data.cells[0]
+  useEffect(() => {
+    setViewMode(preferredMode)
+  }, [data.computedAt, preferredMode])
+
+  const isCoarse = viewMode === 'coarse' && hasCoarse
+  const activeCells = isCoarse ? (data.coarseCells ?? []) : data.cells
+  const activeSuppressed = isCoarse ? (data.coarseSuppressedCells ?? 0) : data.suppressedCells
+  const hasVisibleCells = activeCells.length > 0
+
+  useEffect(() => {
+    if (!MAPTILER_KEY || !hasVisibleCells || !containerRef.current || mapRef.current) return
+
+    const firstCell = activeCells[0]
     const initialCenter: [number, number] = firstCell
       ? [firstCell.bounds.centerLng, firstCell.bounds.centerLat]
       : [-47.9292, -15.7801]
@@ -135,6 +199,41 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right')
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
+
+    map.on('click', 'analytics-cells-fill', (e: maplibregl.MapLayerMouseEvent) => {
+      const feature = e.features?.[0]
+      if (!feature?.properties) return
+      const props = feature.properties as Record<string, string | number>
+
+      const wrapper = document.createElement('div')
+      wrapper.style.fontFamily = theme.fonts.body
+      wrapper.style.fontSize = '12px'
+
+      const heading = document.createElement('strong')
+      heading.textContent = String(props.areaHeader ?? 'Célula agregada')
+      wrapper.appendChild(heading)
+
+      const lines = [
+        props.cityDisplay ? `Cidade: ${String(props.cityDisplay)}` : null,
+        `Relatos: ${String(props.count ?? 0)}`,
+        `Em aberto: ${String(props.openCount ?? 0)}`,
+        `Resolvidos: ${String(props.resolvedCount ?? 0)}`,
+        `Pressão média: ${String(props.avgPressure ?? 0)}`,
+      ].filter((l): l is string => l !== null)
+
+      for (const text of lines) {
+        const p = document.createElement('div')
+        p.textContent = text
+        wrapper.appendChild(p)
+      }
+
+      popupRef.current?.remove()
+      popupRef.current = new maplibregl.Popup({ closeButton: true })
+        .setLngLat(e.lngLat)
+        .setDOMContent(wrapper)
+        .addTo(map)
+    })
+
     mapRef.current = map
 
     return () => {
@@ -142,23 +241,25 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
       map.remove()
       mapRef.current = null
     }
-  }, [])
+  }, [hasVisibleCells, theme])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     const applyGeoJson = () => {
+      popupRef.current?.remove()
       if (map.getLayer('analytics-cells-fill')) map.removeLayer('analytics-cells-fill')
       if (map.getLayer('analytics-cells-line')) map.removeLayer('analytics-cells-line')
       if (map.getSource('analytics-cells')) map.removeSource('analytics-cells')
 
       const geojson = {
         type: 'FeatureCollection' as const,
-        features: data.cells.map((cell) => ({
+        features: activeCells.map((cell) => ({
           type: 'Feature' as const,
           properties: {
-            cell7: cell.cell7,
+            areaHeader: isCoarse ? 'Área ampla (~1,2 km)' : 'Área de detalhe (~150 m)',
+            cellCode: cell.cell6 ?? cell.cell7 ?? '',
             cityDisplay: cell.cityDisplay,
             count: cell.count,
             openCount: cell.openCount,
@@ -217,47 +318,17 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
         },
       })
 
-      map.on('click', 'analytics-cells-fill', (e: maplibregl.MapLayerMouseEvent) => {
-        const feature = e.features?.[0]
-        if (!feature?.properties) return
-        const props = feature.properties as Record<string, string | number>
-
-        const wrapper = document.createElement('div')
-        wrapper.style.fontFamily = theme.fonts.body
-        wrapper.style.fontSize = '12px'
-
-        const heading = document.createElement('strong')
-        heading.textContent = `Célula ${String(props.cell7 ?? '')}`
-        wrapper.appendChild(heading)
-
-        const lines = [
-          props.cityDisplay ? `Cidade: ${String(props.cityDisplay)}` : null,
-          `Relatos: ${String(props.count ?? 0)}`,
-          `Em aberto: ${String(props.openCount ?? 0)}`,
-          `Resolvidos: ${String(props.resolvedCount ?? 0)}`,
-          `Pressão média: ${String(props.avgPressure ?? 0)}`,
-        ].filter((l): l is string => l !== null)
-
-        for (const text of lines) {
-          const p = document.createElement('div')
-          p.textContent = text
-          wrapper.appendChild(p)
-        }
-
-        popupRef.current?.remove()
-        popupRef.current = new maplibregl.Popup({ closeButton: true })
-          .setLngLat(e.lngLat)
-          .setDOMContent(wrapper)
-          .addTo(map)
-      })
-
-      if (data.cells.length > 0) {
+      if (activeCells.length > 0) {
         const bounds = new maplibregl.LngLatBounds()
-        for (const cell of data.cells) {
+        for (const cell of activeCells) {
           bounds.extend([cell.bounds.minLng, cell.bounds.minLat])
           bounds.extend([cell.bounds.maxLng, cell.bounds.maxLat])
         }
-        map.fitBounds(bounds, { padding: 40, maxZoom: 14, duration: 300 })
+        map.fitBounds(bounds, {
+          padding: 40,
+          maxZoom: isCoarse ? 13 : 14,
+          duration: 300,
+        })
       }
     }
 
@@ -266,26 +337,50 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
     } else {
       map.once('load', applyGeoJson)
     }
-  }, [data.cells, theme])
+  }, [activeCells, isCoarse, theme])
 
   return (
     <Card>
       <Header>
         <div>
           <TitleRow>
-            <Title>Mapa de calor por células geohash-7 (~150 m)</Title>
+            <Title>
+              {isCoarse
+                ? 'Mapa de calor — visão ampla geohash-6 (~1,2 km)'
+                : 'Mapa de calor por células geohash-7 (~150 m)'}
+            </Title>
             <MetricInfoModal metricKey="reincidence" />
           </TitleRow>
           <Subtitle>
-            O que isso mostra: concentração geográfica agregada sem expor coordenadas individuais ou autores.
+            O que isso mostra: concentração geográfica agregada (mínimo {data.minCellSize} relatos por célula) sem expor coordenadas individuais ou autores.
           </Subtitle>
         </div>
-        <SuppressionNotice>
-          Suprimidas (&lt; {data.minCellSize}): {data.suppressedCells} célula(s) · Visíveis: {data.cells.length}
-        </SuppressionNotice>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {hasCoarse && (
+            <ModeToggleRow role="group" aria-label="Resolução do mapa de calor">
+              <ModeBtn
+                type="button"
+                $active={!isCoarse}
+                onClick={() => setViewMode('detail')}
+              >
+                Detalhe (150 m)
+              </ModeBtn>
+              <ModeBtn
+                type="button"
+                $active={isCoarse}
+                onClick={() => setViewMode('coarse')}
+              >
+                Visão ampla (1,2 km)
+              </ModeBtn>
+            </ModeToggleRow>
+          )}
+          <SuppressionNotice>
+            Suprimidas (&lt; {data.minCellSize}): {activeSuppressed} célula(s) · Visíveis: {activeCells.length}
+          </SuppressionNotice>
+        </div>
       </Header>
 
-      {data.cells.length === 0 ? (
+      {!hasVisibleCells ? (
         <FallbackBox>
           Poucos relatos para mostrar com segurança neste recorte (mínimo de {data.minCellSize} relatos por célula).
         </FallbackBox>
@@ -297,7 +392,18 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
         <MapContainer ref={containerRef} aria-label="Mapa de calor por células geográficas" />
       )}
 
-      {data.cells.length > 0 && (
+      {hasVisibleCells && (
+        <LegendBar>
+          <LegendScale>
+            <span>Menor concentração</span>
+            <ScaleGradient aria-hidden="true" />
+            <span>Maior concentração</span>
+          </LegendScale>
+          <span>Clique em uma célula no mapa para ver a contagem agregada.</span>
+        </LegendBar>
+      )}
+
+      {hasVisibleCells && (
         <>
           <TableToggle type="button" onClick={() => setShowTable((v) => !v)}>
             {showTable ? 'Ocultar tabela de células' : 'Ver tabela de células'}
@@ -306,7 +412,7 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
             <CellsTable>
               <thead>
                 <tr>
-                  <th>Célula (geohash-7)</th>
+                  <th>{isCoarse ? 'Célula (geohash-6 · ~1,2 km)' : 'Célula (geohash-7 · ~150 m)'}</th>
                   <th>Município</th>
                   <th style={{ textAlign: 'right' }}>Relatos</th>
                   <th style={{ textAlign: 'right' }}>Em aberto</th>
@@ -314,15 +420,18 @@ export function AnalyticsHeatmap({ data }: AnalyticsHeatmapProps) {
                 </tr>
               </thead>
               <tbody>
-                {data.cells.slice(0, 50).map((cell) => (
-                  <tr key={cell.cell7}>
-                    <td style={{ fontFamily: theme.fonts.mono }}>{cell.cell7}</td>
-                    <td>{cell.cityDisplay || '-'}</td>
-                    <td className="num">{cell.count}</td>
-                    <td className="num">{cell.openCount}</td>
-                    <td className="num">{cell.avgPressure}</td>
-                  </tr>
-                ))}
+                {activeCells.slice(0, 50).map((cell) => {
+                  const code = cell.cell6 ?? cell.cell7 ?? ''
+                  return (
+                    <tr key={code}>
+                      <td style={{ fontFamily: theme.fonts.mono }}>{code}</td>
+                      <td>{cell.cityDisplay || '-'}</td>
+                      <td className="num">{cell.count}</td>
+                      <td className="num">{cell.openCount}</td>
+                      <td className="num">{cell.avgPressure}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </CellsTable>
           )}

@@ -3,7 +3,7 @@ import { Category } from '@votz/shared-types'
 import { extractPlanRequired } from './useAnalytics'
 import { api } from '../lib/api'
 
-export type SlaUrgencyFilter = 'ALL' | 'BREACHED' | 'DUE_TODAY' | 'AT_RISK' | 'ON_TIME'
+export type SlaUrgencyFilter = 'ALL' | 'BREACHED' | 'DUE_TODAY' | 'AT_RISK' | 'ON_TIME' | 'NO_SLA'
 export type SlaQueueSortBy = 'due_asc' | 'pressure_desc' | 'newest'
 export type SlaStateValue = 'ON_TIME' | 'AT_RISK' | 'BREACHED' | 'MET' | 'MET_LATE'
 
@@ -54,6 +54,7 @@ export interface SlaQueueResponse {
     dueToday: number
     atRisk: number
     onTime: number
+    noSla?: number
     unassigned: number
     mine: number
   }

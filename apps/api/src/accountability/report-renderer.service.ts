@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { getCategoryLabel } from '@votz/shared-types'
 import PDFDocument from 'pdfkit'
 import * as QRCode from 'qrcode'
 import {
@@ -52,7 +53,8 @@ export interface AccountabilitySnapshot {
     suppressedCellsCount: number
     recurrenceIndexPercent: number | null
     topCells: Array<{
-      cell7: string
+      cell7?: string
+      areaLabel?: string
       category: string
       count90d: number
     }>
@@ -287,7 +289,10 @@ export class ReportRendererService {
           .font('BodyBold')
           .fontSize(9)
           .fillColor(VOTZ_BRAND_COLORS.primary)
-          .text(truncateWithEllipsis(cat.category, 32), 48, y, { width: 215, continued: false })
+          .text(truncateWithEllipsis(getCategoryLabel(cat.category), 32), 48, y, {
+            width: 215,
+            continued: false,
+          })
         doc
           .font('Mono')
           .fontSize(9)
@@ -322,18 +327,20 @@ export class ReportRendererService {
       y += 16
       for (const cell of rec.topCells.slice(0, 4)) {
         if (y > doc.page.height - 200) break
+        const catLabel = getCategoryLabel(cell.category)
+        const areaText = cell.areaLabel?.trim() || 'Área sem bairro informado'
         doc
-          .font('Mono')
-          .fontSize(8.5)
+          .font('Body')
+          .fontSize(8.8)
           .fillColor(VOTZ_BRAND_COLORS.muted)
           .text(
             truncateWithEllipsis(
-              `${cell.category} · região ${cell.cell7}: ${formatCountPtBr(cell.count90d)} ocorrências em 90d`,
-              88,
+              `• ${catLabel} · ${areaText} (área de ~150 m): ${formatCountPtBr(cell.count90d)} ocorrências em 90 dias`,
+              92,
             ),
-            56,
+            52,
             y,
-            { width: pageWidth - 16 },
+            { width: pageWidth - 8 },
           )
         y += 14
       }
@@ -348,8 +355,8 @@ export class ReportRendererService {
       .text('Relatos resolvidos de maior apoio (sem dados pessoais)', 48, y)
     y += 17
 
-    const footerY = doc.page.height - 104
-    const maxListY = footerY - 22
+    const defaultFooterY = doc.page.height - 104
+    const maxListY = defaultFooterY - 22
 
     if (snapshot.topResolvedReports.length === 0) {
       doc
@@ -357,6 +364,7 @@ export class ReportRendererService {
         .fontSize(9)
         .fillColor(VOTZ_BRAND_COLORS.mutedLight)
         .text('Nenhum relato resolvido registrado no recorte deste período.', 48, y)
+      y += 18
     } else {
       for (const item of snapshot.topResolvedReports.slice(0, 8)) {
         if (y > maxListY) break
@@ -386,6 +394,15 @@ export class ReportRendererService {
         y += 15
       }
     }
+
+    // F7: em relatórios esparsos (< 3 categorias e < 3 relatos resolvidos), ancora o rodapé após o último bloco evitando o terço inferior vazio
+    const isCompactFooter =
+      !snapshot.recurrence &&
+      snapshot.topCategories.length < 3 &&
+      snapshot.topResolvedReports.length < 3
+    const footerY = isCompactFooter
+      ? Math.min(defaultFooterY, Math.max(460, y + 32))
+      : defaultFooterY
 
     // Rodapé fixo de metodologia e autenticidade
     doc

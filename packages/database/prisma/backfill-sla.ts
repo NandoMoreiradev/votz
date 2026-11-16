@@ -37,7 +37,7 @@ async function main() {
         where: {
           recipientType: RecipientType.ENTITY,
           recipientId: { not: null },
-          slaDueAt: null,
+          OR: [{ slaDueAt: null }, { slaState: null }],
         },
         select: {
           id: true,

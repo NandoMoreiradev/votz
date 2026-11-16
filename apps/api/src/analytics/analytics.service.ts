@@ -13,6 +13,8 @@ import {
   RESPONSE_TIME_BUCKET_LABELS,
   computePercentileFromBuckets,
   decodeGeohashBounds,
+  formatRecurrenceAreaLabel,
+  getCategoryLabel,
   hasConfiguredOwnSla,
   normalizeLocationKey,
 } from '@votz/shared-types'
@@ -533,11 +535,11 @@ export class AnalyticsService {
   async getTimeseries(user: ActingUser, query: TimeseriesQueryDto) {
     const scope = await this.scopeService.resolveOrgScope(user, query)
     const metric = query.metric ?? TimeseriesMetric.VOLUME
-    const granularity = query.granularity ?? TimeseriesGranularity.DAY
+    const requestedGranularity = query.granularity ?? TimeseriesGranularity.DAY
 
     return this.withCache(
       'timeseries',
-      { scope, category: query.category ?? null, metric, granularity },
+      { scope, category: query.category ?? null, metric, granularity: requestedGranularity },
       async () => {
         const todayStr = toSaoPauloDateString(new Date())
         const matureCutoff = addDaysDateString(todayStr, -7)
@@ -546,7 +548,6 @@ export class AnalyticsService {
         const prevStart = addDaysDateString(prevEnd, -(spanDays - 1))
 
         const curFilters = this.buildFiltersForScope(scope, scope.from, scope.to, query.category)
-        const prevFilters = this.buildFiltersForScope(scope, prevStart, prevEnd, query.category)
 
         const [curRows, prevSummary] = await Promise.all([
           this.repository.fetchDailySeries(
@@ -559,7 +560,28 @@ export class AnalyticsService {
         ])
 
         const totalVolume = curRows.reduce((sum, r) => sum + r.createdCount, 0)
-        const points = this.aggregateSeries(curRows, metric, granularity)
+        const ladder: TimeseriesGranularity[] = [
+          TimeseriesGranularity.DAY,
+          TimeseriesGranularity.WEEK,
+          TimeseriesGranularity.MONTH,
+        ]
+        let ladderIdx = Math.max(0, ladder.indexOf(requestedGranularity))
+        let effectiveGranularity = requestedGranularity
+        let points = this.aggregateSeries(curRows, metric, effectiveGranularity)
+
+        // Se todos os pontos da granularidade pedida ficarem suprimidos (< 10), promove automaticamente até haver pontos visíveis (ou mês)
+        while (
+          ladderIdx < ladder.length - 1 &&
+          totalVolume >= MIN_CELL_SIZE &&
+          points.length > 0 &&
+          points.every((p) => p.suppressed)
+        ) {
+          ladderIdx++
+          effectiveGranularity = ladder[ladderIdx]
+          points = this.aggregateSeries(curRows, metric, effectiveGranularity)
+        }
+
+        const autoAdjustedGranularity = effectiveGranularity !== requestedGranularity
 
         const currentTotalValue =
           metric === TimeseriesMetric.RESOLVED
@@ -587,7 +609,9 @@ export class AnalyticsService {
         return {
           ...meta,
           metric,
-          granularity,
+          granularity: effectiveGranularity,
+          requestedGranularity,
+          autoAdjustedGranularity,
           points,
           comparison: comparisonSuppressed
             ? {
@@ -626,7 +650,6 @@ export class AnalyticsService {
       const maxCount = visibleCells.reduce((m, c) => Math.max(m, c.createdCount), 0)
       const totalVisible = visibleCells.reduce((s, c) => s + c.createdCount, 0)
       const totalSample = totalVisible + suppressedVolume
-      const meta = this.buildMeta(scope, totalSample, visibleCells.length === 0)
 
       const cells = visibleCells
         .map((c) => {
@@ -654,11 +677,79 @@ export class AnalyticsService {
         })
         .filter((item): item is NonNullable<typeof item> => item !== null)
 
+      const majoritySuppressed =
+        suppressedCellsCount > cells.length || (cells.length < 5 && suppressedCellsCount > 0)
+      let coarseCells: Array<{
+        cell6: string
+        cityDisplay: string
+        bounds: {
+          minLat: number
+          maxLat: number
+          minLng: number
+          maxLng: number
+          centerLat: number
+          centerLng: number
+        }
+        count: number
+        openCount: number
+        resolvedCount: number
+        contestedCount: number
+        avgPressure: number
+        supportCount: number
+        intensity: number
+      }> = []
+      let coarseSuppressedCells = 0
+
+      if (
+        majoritySuppressed &&
+        typeof this.repository.fetchHeatmapCellsCoarse6 === 'function'
+      ) {
+        const coarseRes = await this.repository.fetchHeatmapCellsCoarse6(areaFilter)
+        coarseSuppressedCells = coarseRes.suppressedCellsCount
+        const maxCoarse = coarseRes.visibleCells.reduce((m, c) => Math.max(m, c.createdCount), 0)
+        coarseCells = coarseRes.visibleCells
+          .map((c) => {
+            const bounds = decodeGeohashBounds(c.cell6)
+            if (!bounds) return null
+            return {
+              cell6: c.cell6,
+              cityDisplay: c.cityDisplay,
+              bounds: {
+                minLat: Number(bounds.minLat.toFixed(6)),
+                maxLat: Number(bounds.maxLat.toFixed(6)),
+                minLng: Number(bounds.minLng.toFixed(6)),
+                maxLng: Number(bounds.maxLng.toFixed(6)),
+                centerLat: Number(bounds.centerLat.toFixed(6)),
+                centerLng: Number(bounds.centerLng.toFixed(6)),
+              },
+              count: c.createdCount,
+              openCount: c.openCurrentCount,
+              resolvedCount: c.resolvedCount,
+              contestedCount: c.contestedCount,
+              avgPressure: Number((c.pressureSum / Math.max(1, c.createdCount)).toFixed(2)),
+              supportCount: c.supportCount,
+              intensity: maxCoarse > 0 ? Number((c.createdCount / maxCoarse).toFixed(3)) : 0,
+            }
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null)
+      }
+
+      const meta = this.buildMeta(
+        scope,
+        totalSample,
+        cells.length === 0 && coarseCells.length === 0,
+      )
+
       return {
         ...meta,
         precision: 7,
         cells,
         suppressedCells: suppressedCellsCount,
+        coarsePrecision: 6 as const,
+        coarseCells,
+        coarseSuppressedCells,
+        recommendedMode:
+          cells.length < 5 && coarseCells.length > 0 ? ('coarse' as const) : ('detail' as const),
       }
     })
   }
@@ -683,17 +774,42 @@ export class AnalyticsService {
         const meta = this.buildMeta(scope, totalAll, suppressedAll)
 
         const offset = (page - 1) * limit
-        const sliced = windowData.visibleRows.slice(offset, offset + limit).map((row) => ({
-          cell7: row.cell7,
-          category: row.category,
-          state: row.state,
-          cityKey: row.cityKey,
-          bounds: decodeGeohashBounds(row.cell7),
-          count90d: row.count90d,
-          firstSeen: row.firstSeen.toISOString(),
-          lastSeen: row.lastSeen.toISOString(),
-          avgGapDays: row.avgGapDays,
-        }))
+        const pageRows = windowData.visibleRows.slice(offset, offset + limit)
+
+        const windowEndDate = windowData.windowEnd ?? new Date()
+        const windowStartDate = new Date(
+          windowEndDate.getTime() - (RECURRENCE_WINDOW_DAYS - 1) * 86_400_000,
+        )
+        const areaLabels =
+          typeof this.repository.fetchRecurrenceAreaLabels === 'function'
+            ? await this.repository.fetchRecurrenceAreaLabels(
+                pageRows.map((r) => ({
+                  state: r.state,
+                  cityKey: r.cityKey,
+                  cell7: r.cell7,
+                  category: r.category,
+                })),
+                windowStartDate,
+                windowEndDate,
+              )
+            : new Map<string, string>()
+
+        const sliced = pageRows.map((row) => {
+          const areaKey = `${row.state.toUpperCase()}|${row.cityKey}|${row.cell7}|${row.category}`
+          return {
+            cell7: row.cell7,
+            areaLabel: areaLabels.get(areaKey) ?? formatRecurrenceAreaLabel(null),
+            category: row.category,
+            categoryLabel: getCategoryLabel(row.category),
+            state: row.state,
+            cityKey: row.cityKey,
+            bounds: decodeGeohashBounds(row.cell7),
+            count90d: row.count90d,
+            firstSeen: row.firstSeen.toISOString(),
+            lastSeen: row.lastSeen.toISOString(),
+            avgGapDays: row.avgGapDays,
+          }
+        })
 
         const recurrenceIndex = suppressedAll
           ? { value: null, numerator: 0, denominator: 0 }
@@ -907,15 +1023,20 @@ export class AnalyticsService {
     const totalVisible = rows.reduce((s, r) => s + r.createdCount, 0)
     const meta = this.buildMeta(scope, totalVisible, rows.length === 0)
 
+    const enrichedRows = rows.map((r) => ({
+      ...r,
+      areaLabel: r.areaLabel ?? formatRecurrenceAreaLabel(null),
+    }))
+
     if (format === ExportFormat.CSV) {
       const headerLines = [
         `# Votz Painel de Dados - Exportacao Agregada (${ANALYTICS_DEFINITION_VERSION} / ${ANALYTICS_DEFINITION_DATE})`,
         `# Gerado em: ${meta.computedAt} | Fuso: ${ANALYTICS_TIMEZONE} | Periodo: ${scope.from}..${scope.to}`,
         `# Escopo: ${scope.scopeMode} (${scope.state}${scope.cityKey ? '/' + scope.cityKey : ''}) | K-anonimato minimo: ${MIN_CELL_SIZE} relatos por linha`,
-        '# Definicoes: created_count=volume; resolved_count=resolvidos; open_current_count=backlog; contested_count=contestados; response_count=com resposta oficial; support_count=apoios; comment_count=comentarios',
-        'day,state,city,category,created_count,resolved_count,open_current_count,contested_count,response_count,support_count,comment_count',
+        '# Definicoes: created_count=volume; resolved_count=resolvidos; open_current_count=backlog; contested_count=contestados; response_count=com resposta oficial; support_count=apoios; comment_count=comentarios; area_label=bairro dominante',
+        'day,state,city,category,created_count,resolved_count,open_current_count,contested_count,response_count,support_count,comment_count,area_label',
       ]
-      const dataLines = rows.map((r) =>
+      const dataLines = enrichedRows.map((r) =>
         [
           r.day,
           r.state,
@@ -928,6 +1049,7 @@ export class AnalyticsService {
           r.responseCount,
           r.supportCount,
           r.commentCount,
+          this.escapeCsvCell(r.areaLabel),
         ].join(','),
       )
       return {
@@ -950,7 +1072,7 @@ export class AnalyticsService {
           responseRate: 'respondidos / volume',
           contestRate: 'contestados / (resolvidos + contestados)',
         },
-        rows,
+        rows: enrichedRows,
       },
     }
   }
