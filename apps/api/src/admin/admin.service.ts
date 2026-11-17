@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
-import { ApiKeyTier, UserType } from '@prisma/client'
+import { ApiKeyTier, ModerationActionType, UserType } from '@prisma/client'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
 import { SocketSessionRegistry } from '../common/security/socket-session.registry'
 import { MailService } from '../mail/mail.service'
@@ -185,5 +185,37 @@ export class AdminService {
     const auditReason = `${existing.tier} → ${tier}: ${trimmedReason}`
     const { apiKey } = await this.repo.setApiKeyTier(id, tier, actorId, auditReason)
     return apiKey
+  }
+
+  superadminOverview() {
+    return this.repo.superadminOverview()
+  }
+
+  listCompanies(search?: string, page = 1, limit = 20) {
+    return this.repo.listCompanies({ search, page, limit: Math.min(limit, 50) })
+  }
+
+  listApiKeys(search?: string, page = 1, limit = 20) {
+    return this.repo.listApiKeys({ search, page, limit: Math.min(limit, 50) })
+  }
+
+  listAuditLogs(action?: ModerationActionType, page = 1, limit = 20) {
+    return this.repo.listAuditLogs({ action, page, limit: Math.min(limit, 50) })
+  }
+
+  listPosts(search?: string, page = 1, limit = 20) {
+    return this.repo.listPosts({ search, page, limit: Math.min(limit, 50) })
+  }
+
+  async deletePost(id: string, actorId: string, reason: string) {
+    const trimmedReason = reason?.trim()
+    if (!trimmedReason || trimmedReason.length < 10) {
+      throw new BadRequestException('Informe um motivo com pelo menos 10 caracteres.')
+    }
+    const deleted = await this.repo.deletePost(id, actorId, trimmedReason)
+    if (!deleted) {
+      throw new NotFoundException('Publicação não encontrada.')
+    }
+    return { deleted: true }
   }
 }

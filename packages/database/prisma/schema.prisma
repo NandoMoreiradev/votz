@@ -330,6 +330,8 @@ model User {
   moderationActions    ModerationAction[] @relation("ModerationActor")
   contentFlags         ContentFlag[]      @relation("FlagReporter")
   refreshTokens        RefreshToken[]
+  platformSuggestions      PlatformSuggestion[]     @relation("SuggestionAuthor")
+  platformSuggestionVotes  PlatformSuggestionVote[]
 
   @@map("users")
 }
@@ -1597,4 +1599,55 @@ model UserTopicFollower {
 
   @@unique([userId, topicId])
   @@map("user_topic_followers")
+}
+
+enum SuggestionCategory {
+  FEATURE
+  IMPROVEMENT
+  BUG
+  UX
+  OTHER
+}
+
+enum SuggestionStatus {
+  OPEN
+  UNDER_REVIEW
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+model PlatformSuggestion {
+  id           String             @id @default(uuid())
+  authorId     String             @map("author_id")
+  author       User               @relation("SuggestionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  title        String             @db.VarChar(150)
+  description  String             @db.VarChar(2000)
+  category     SuggestionCategory @default(IMPROVEMENT)
+  status       SuggestionStatus   @default(OPEN)
+  adminNote    String?            @map("admin_note") @db.VarChar(1000)
+  reviewedById String?            @map("reviewed_by_id")
+  reviewedAt   DateTime?          @map("reviewed_at")
+  votesCount   Int                @default(0) @map("votes_count")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  votes        PlatformSuggestionVote[]
+
+  @@index([status, votesCount])
+  @@index([createdAt])
+  @@map("platform_suggestions")
+}
+
+model PlatformSuggestionVote {
+  id           String             @id @default(uuid())
+  suggestionId String             @map("suggestion_id")
+  userId       String             @map("user_id")
+  suggestion   PlatformSuggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  @@unique([suggestionId, userId])
+  @@map("platform_suggestion_votes")
 }

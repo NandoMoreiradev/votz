@@ -165,6 +165,7 @@ export function Register() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirect = searchParams.get('redirect') ?? '/'
+  const convite = searchParams.get('convite')
   const user = useAuthStore((s) => s.user)
   const { mutate: register_, isPending, error } = useRegister()
 
@@ -252,6 +253,23 @@ export function Register() {
       <Card>
         <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
         <Subtitle>Grátis para sempre. Sua voz importa.</Subtitle>
+
+        {convite && (
+          <div
+            style={{
+              background: 'rgba(45, 198, 83, 0.1)',
+              border: '1px solid rgba(45, 198, 83, 0.35)',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 20,
+              fontSize: '0.875rem',
+              color: '#166534',
+              textAlign: 'center',
+            }}
+          >
+            Você recebeu um convite para entrar no Votz! Crie sua conta gratuita abaixo.
+          </div>
+        )}
 
         <Form onSubmit={handleSubmit(onSubmit)}>
           {/* ── Dados pessoais ── */}

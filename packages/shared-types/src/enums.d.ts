@@ -122,6 +122,21 @@ export declare enum FlagReason {
     COPYRIGHT = "COPYRIGHT",
     OTHER = "OTHER"
 }
+export declare enum SuggestionCategory {
+    FEATURE = "FEATURE",
+    IMPROVEMENT = "IMPROVEMENT",
+    BUG = "BUG",
+    UX = "UX",
+    OTHER = "OTHER"
+}
+export declare enum SuggestionStatus {
+    OPEN = "OPEN",
+    UNDER_REVIEW = "UNDER_REVIEW",
+    PLANNED = "PLANNED",
+    IN_PROGRESS = "IN_PROGRESS",
+    COMPLETED = "COMPLETED",
+    DECLINED = "DECLINED"
+}
 export declare enum FlagStatus {
     OPEN = "OPEN",
     ACTIONED = "ACTIONED",

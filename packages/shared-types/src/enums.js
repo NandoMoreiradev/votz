@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FlagStatus = exports.FlagReason = exports.PostCommentMediaType = exports.PostKind = exports.FlagTargetType = exports.ModerationActionType = exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
+exports.FlagStatus = exports.SuggestionStatus = exports.SuggestionCategory = exports.FlagReason = exports.PostCommentMediaType = exports.PostKind = exports.FlagTargetType = exports.ModerationActionType = exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
 var UserType;
 (function (UserType) {
     UserType["CITIZEN"] = "CITIZEN";
@@ -140,6 +140,23 @@ var FlagReason;
     FlagReason["COPYRIGHT"] = "COPYRIGHT";
     FlagReason["OTHER"] = "OTHER";
 })(FlagReason || (exports.FlagReason = FlagReason = {}));
+var SuggestionCategory;
+(function (SuggestionCategory) {
+    SuggestionCategory["FEATURE"] = "FEATURE";
+    SuggestionCategory["IMPROVEMENT"] = "IMPROVEMENT";
+    SuggestionCategory["BUG"] = "BUG";
+    SuggestionCategory["UX"] = "UX";
+    SuggestionCategory["OTHER"] = "OTHER";
+})(SuggestionCategory || (exports.SuggestionCategory = SuggestionCategory = {}));
+var SuggestionStatus;
+(function (SuggestionStatus) {
+    SuggestionStatus["OPEN"] = "OPEN";
+    SuggestionStatus["UNDER_REVIEW"] = "UNDER_REVIEW";
+    SuggestionStatus["PLANNED"] = "PLANNED";
+    SuggestionStatus["IN_PROGRESS"] = "IN_PROGRESS";
+    SuggestionStatus["COMPLETED"] = "COMPLETED";
+    SuggestionStatus["DECLINED"] = "DECLINED";
+})(SuggestionStatus || (exports.SuggestionStatus = SuggestionStatus = {}));
 var FlagStatus;
 (function (FlagStatus) {
     FlagStatus["OPEN"] = "OPEN";

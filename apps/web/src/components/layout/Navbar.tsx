@@ -5,6 +5,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { List, X, CaretDown } from '@phosphor-icons/react'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
+import { InviteVotzModal } from '../ui/InviteVotzModal'
 import { useAuthStore } from '../../store/auth.store'
 import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
 import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
@@ -583,6 +584,7 @@ export function Navbar() {
   const [orgMenuOpen, setOrgMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showInviteModal, setShowInviteModal] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const orgMenuRef = useRef<HTMLDivElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -663,6 +665,14 @@ export function Navbar() {
   }
 
   const isStaff = user?.type === 'MODERATOR' || user?.type === 'ADMIN'
+  const isSuperAdmin = user?.type === 'ADMIN'
+  const isPressOrResearch =
+    user?.type === 'PRESS' || user?.type === 'RESEARCHER' || user?.type === 'NGO'
+  const hasOrgContext =
+    activeContext &&
+    (activeContext.type === 'ENTITY' ||
+      activeContext.type === 'POLITICIAN' ||
+      activeContext.type === 'COMPANY')
   const hasMultipleProfiles = profiles && profiles.orgs.length > 0
 
   return (
@@ -675,12 +685,13 @@ export function Navbar() {
 
           <NavLinks>
             <NavLink to="/">Explorar</NavLink>
+            <NavLink to="/mapa">Mapa</NavLink>
             <NavLink to="/entidades">Entidades</NavLink>
             <NavLink to="/politicos">Políticos</NavLink>
-            <NavLink to="/mapa">Mapa</NavLink>
-            <NavLink to="/imprensa">Imprensa</NavLink>
-            <NavLink to="/planos">Planos</NavLink>
-            {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
+            <NavLink to="/debates">Debates</NavLink>
+            <NavLink to="/propostas">Propostas</NavLink>
+            {(isPressOrResearch || isStaff) && <NavLink to="/imprensa">Imprensa</NavLink>}
+            {hasOrgContext && (
               <OrgMenuWrapper ref={orgMenuRef}>
                 <OrgMenuButton
                   type="button"
@@ -692,10 +703,12 @@ export function Navbar() {
                   <CaretDown size={14} weight="bold" aria-hidden="true" />
                 </OrgMenuButton>
                 {orgMenuOpen && (
-                  <Dropdown style={{ left: 0, right: 'auto', minWidth: 196 }}>
-                    <DropdownItem to="/painel-dados" onClick={() => setOrgMenuOpen(false)}>
-                      Painel de dados
-                    </DropdownItem>
+                  <Dropdown style={{ left: 0, right: 'auto', minWidth: 204 }}>
+                    {(activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
+                      <DropdownItem to="/painel-dados" onClick={() => setOrgMenuOpen(false)}>
+                        Painel de dados
+                      </DropdownItem>
+                    )}
                     {activeContext.type === 'ENTITY' && (
                       <DropdownItem to="/entidade/prazos" onClick={() => setOrgMenuOpen(false)}>
                         Prazos &amp; Fila
@@ -706,12 +719,21 @@ export function Navbar() {
                         Caixa do mandato
                       </DropdownItem>
                     )}
+                    {activeContext.type === 'COMPANY' && (
+                      <DropdownItem to={`/empresa/${activeContext.id}`} onClick={() => setOrgMenuOpen(false)}>
+                        Perfil da empresa
+                      </DropdownItem>
+                    )}
+                    <DropdownItem to="/planos" onClick={() => setOrgMenuOpen(false)}>
+                      Planos e assinatura
+                    </DropdownItem>
                   </Dropdown>
                 )}
               </OrgMenuWrapper>
             )}
-            {!user && <NavLink to="/solicitar-cadastro">Registrar organização</NavLink>}
-            {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Admin</NavLink>}
+            {!user && <NavLink to="/planos">Para organizações</NavLink>}
+            {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Moderação</NavLink>}
+            {isSuperAdmin && <NavLink to="/superadmin" style={{ color: '#E63946' }}>Superadmin</NavLink>}
           </NavLinks>
 
           <Actions>
@@ -765,6 +787,12 @@ export function Navbar() {
                       <DropdownItem to="/solicitar-cadastro" onClick={() => setOpen(false)}>
                         Registrar organização
                       </DropdownItem>
+                      <DropdownItem to="/sugestoes" onClick={() => setOpen(false)}>
+                        Sugestões e melhorias
+                      </DropdownItem>
+                      <DropdownAction onClick={() => { setShowInviteModal(true); setOpen(false) }}>
+                        Convidar pessoas
+                      </DropdownAction>
                       {hasMultipleProfiles && (
                         <DropdownAction onClick={() => { setShowProfileModal(true); setOpen(false) }}>
                           Trocar perfil
@@ -809,12 +837,15 @@ export function Navbar() {
       {mobileOpen && (
         <MobileDrawer id="mobile-nav-drawer" ref={drawerRef} role="navigation" aria-label="Menu mobile">
           <MobileNavLink to="/" onClick={() => setMobileOpen(false)}>Explorar</MobileNavLink>
+          <MobileNavLink to="/mapa" onClick={() => setMobileOpen(false)}>Mapa</MobileNavLink>
           <MobileNavLink to="/entidades" onClick={() => setMobileOpen(false)}>Entidades</MobileNavLink>
           <MobileNavLink to="/politicos" onClick={() => setMobileOpen(false)}>Políticos</MobileNavLink>
-          <MobileNavLink to="/mapa" onClick={() => setMobileOpen(false)}>Mapa</MobileNavLink>
-          <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
-          <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>Planos</MobileNavLink>
-          {activeContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
+          <MobileNavLink to="/debates" onClick={() => setMobileOpen(false)}>Debates</MobileNavLink>
+          <MobileNavLink to="/propostas" onClick={() => setMobileOpen(false)}>Propostas</MobileNavLink>
+          {(isPressOrResearch || isStaff) && (
+            <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
+          )}
+          {hasOrgContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
             <MobileNavLink to="/painel-dados" onClick={() => setMobileOpen(false)}>
               Painel de dados
             </MobileNavLink>
@@ -829,9 +860,19 @@ export function Navbar() {
               Caixa do mandato
             </MobileNavLink>
           )}
+          {activeContext?.type === 'COMPANY' && (
+            <MobileNavLink to={`/empresa/${activeContext.id}`} onClick={() => setMobileOpen(false)}>
+              Perfil da empresa
+            </MobileNavLink>
+          )}
+          {hasOrgContext && (
+            <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>
+              Planos e assinatura
+            </MobileNavLink>
+          )}
           {!user && (
-            <MobileNavLink to="/solicitar-cadastro" onClick={() => setMobileOpen(false)}>
-              Registrar organização
+            <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>
+              Para organizações
             </MobileNavLink>
           )}
           {!user && (
@@ -841,7 +882,12 @@ export function Navbar() {
           )}
           {isStaff && (
             <MobileNavLink to="/admin" $highlight onClick={() => setMobileOpen(false)}>
-              Admin
+              Moderação
+            </MobileNavLink>
+          )}
+          {isSuperAdmin && (
+            <MobileNavLink to="/superadmin" $highlight onClick={() => setMobileOpen(false)}>
+              Superadmin
             </MobileNavLink>
           )}
 
@@ -872,6 +918,18 @@ export function Navbar() {
               <MobileNavLink to="/solicitar-cadastro" onClick={() => setMobileOpen(false)}>
                 Registrar organização
               </MobileNavLink>
+              <MobileNavLink to="/sugestoes" onClick={() => setMobileOpen(false)}>
+                Sugestões e melhorias
+              </MobileNavLink>
+              <MobileDrawerAction
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false)
+                  setShowInviteModal(true)
+                }}
+              >
+                Convidar pessoas
+              </MobileDrawerAction>
               {hasMultipleProfiles && (
                 <MobileDrawerAction
                   type="button"
@@ -901,6 +959,7 @@ export function Navbar() {
           onClose={() => setShowProfileModal(false)}
         />
       )}
+      <InviteVotzModal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} />
     </>
   )
 }

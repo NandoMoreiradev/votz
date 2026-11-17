@@ -157,7 +157,7 @@ export class AdminRepository {
     const [data, total] = await Promise.all([
       this.prisma.entity.findMany({
         where,
-        select: { id: true, legalName: true, cnpj: true, type: true, verified: true, city: true, state: true, createdAt: true },
+        select: { id: true, legalName: true, cnpj: true, type: true, plan: true, verified: true, city: true, state: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: params.limit,
@@ -183,7 +183,7 @@ export class AdminRepository {
     const [data, total] = await Promise.all([
       this.prisma.politician.findMany({
         where,
-        select: { id: true, name: true, party: true, office: true, state: true, verified: true, createdAt: true },
+        select: { id: true, name: true, party: true, office: true, state: true, plan: true, verified: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: params.limit,
@@ -205,7 +205,76 @@ export class AdminRepository {
     return this.prisma.company.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
   }
 
+  // ── Companies ─────────────────────────────────────────────────────────────
+
+  async listCompanies(params: { search?: string; page: number; limit: number }) {
+    const where = params.search
+      ? {
+          OR: [
+            { legalName: { contains: params.search, mode: 'insensitive' as const } },
+            { tradeName: { contains: params.search, mode: 'insensitive' as const } },
+            { cnpj: { contains: params.search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}
+    const skip = (params.page - 1) * params.limit
+    const [data, total] = await Promise.all([
+      this.prisma.company.findMany({
+        where,
+        select: {
+          id: true,
+          legalName: true,
+          tradeName: true,
+          cnpj: true,
+          sector: true,
+          size: true,
+          plan: true,
+          verified: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: params.limit,
+      }),
+      this.prisma.company.count({ where }),
+    ])
+    return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
+  }
+
   // ── API Keys ──────────────────────────────────────────────────────────────
+
+  async listApiKeys(params: { search?: string; page: number; limit: number }) {
+    const where = params.search
+      ? {
+          OR: [
+            { name: { contains: params.search, mode: 'insensitive' as const } },
+            { prefix: { contains: params.search, mode: 'insensitive' as const } },
+            { user: { email: { contains: params.search, mode: 'insensitive' as const } } },
+          ],
+        }
+      : {}
+    const skip = (params.page - 1) * params.limit
+    const [data, total] = await Promise.all([
+      this.prisma.apiKey.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          prefix: true,
+          tier: true,
+          revokedAt: true,
+          lastUsedAt: true,
+          createdAt: true,
+          user: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: params.limit,
+      }),
+      this.prisma.apiKey.count({ where }),
+    ])
+    return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
+  }
 
   async findApiKeyForTier(id: string) {
     return this.prisma.apiKey.findUnique({
@@ -234,6 +303,76 @@ export class AdminRepository {
     })
   }
 
+  // ── Posts & Audit Logs ───────────────────────────────────────────────────
+
+  async listPosts(params: { search?: string; page: number; limit: number }) {
+    const where = params.search
+      ? { content: { contains: params.search, mode: 'insensitive' as const } }
+      : {}
+    const skip = (params.page - 1) * params.limit
+    const [data, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        select: {
+          id: true,
+          kind: true,
+          content: true,
+          createdAt: true,
+          authorUser: { select: { id: true, name: true } },
+          _count: { select: { likes: true, comments: true, reposts: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: params.limit,
+      }),
+      this.prisma.post.count({ where }),
+    ])
+    return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
+  }
+
+  async deletePost(id: string, actorId: string, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const post = await tx.post.findUnique({ where: { id }, select: { id: true } })
+      if (!post) return null
+      await tx.post.delete({ where: { id } })
+      const action = await tx.moderationAction.create({
+        data: {
+          action: ModerationActionType.POST_REMOVED,
+          targetType: 'POST',
+          targetId: id,
+          reason,
+          actorId,
+        },
+      })
+      return { actionId: action.id }
+    })
+  }
+
+  async listAuditLogs(params: { action?: ModerationActionType; page: number; limit: number }) {
+    const where = params.action ? { action: params.action } : {}
+    const skip = (params.page - 1) * params.limit
+    const [data, total] = await Promise.all([
+      this.prisma.moderationAction.findMany({
+        where,
+        select: {
+          id: true,
+          action: true,
+          targetType: true,
+          targetId: true,
+          reason: true,
+          notifiedAt: true,
+          createdAt: true,
+          actor: { select: { id: true, name: true, type: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: params.limit,
+      }),
+      this.prisma.moderationAction.count({ where }),
+    ])
+    return { data, meta: { total, page: params.page, limit: params.limit, totalPages: Math.ceil(total / params.limit) } }
+  }
+
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   async stats() {
@@ -244,5 +383,63 @@ export class AdminRepository {
       this.prisma.politician.count({ where: { verified: false } }),
     ])
     return { users, reports, pendingEntities: entities, pendingPoliticians: politicians }
+  }
+
+  async superadminOverview() {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const [
+      users,
+      reports,
+      posts,
+      propostas,
+      debates,
+      entities,
+      politicians,
+      companies,
+      flagsOpen,
+      pendingRequests,
+      suggestionsOpen,
+      activeApiKeys,
+      usersLast7d,
+      reportsLast7d,
+      postsLast7d,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.report.count(),
+      this.prisma.post.count(),
+      this.prisma.proposta.count(),
+      this.prisma.debate.count(),
+      this.prisma.entity.count(),
+      this.prisma.politician.count(),
+      this.prisma.company.count(),
+      this.prisma.contentFlag.count({ where: { status: 'OPEN' } }),
+      this.prisma.registrationRequest.count({ where: { status: 'PENDING' } }),
+      this.prisma.platformSuggestion.count({ where: { status: 'OPEN' } }),
+      this.prisma.apiKey.count({ where: { revokedAt: null } }),
+      this.prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+      this.prisma.report.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+      this.prisma.post.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+    ])
+    return {
+      totals: {
+        users,
+        reports,
+        posts,
+        propostas,
+        debates,
+        entities,
+        politicians,
+        companies,
+        flagsOpen,
+        pendingRequests,
+        suggestionsOpen,
+        activeApiKeys,
+      },
+      growth7d: {
+        users: usersLast7d,
+        reports: reportsLast7d,
+        posts: postsLast7d,
+      },
+    }
   }
 }

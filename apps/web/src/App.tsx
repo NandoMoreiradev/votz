@@ -24,6 +24,7 @@ import { EntitiesList } from './pages/EntitiesList'
 import { PoliticiansList } from './pages/PoliticiansList'
 import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
+import { Superadmin } from './pages/Superadmin'
 import { RequestRegistration } from './pages/RequestRegistration'
 import { PoliticianEdit } from './pages/PoliticianEdit'
 import { ClaimProfile } from './pages/ClaimProfile'
@@ -52,6 +53,7 @@ import { Cookies } from './pages/Cookies'
 import { Diretrizes } from './pages/Diretrizes'
 import { PostDetail } from './pages/PostDetail'
 import { PautaDetail } from './pages/PautaDetail'
+import { Sugestoes } from './pages/Sugestoes'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
 import { OrgReauthGate } from './components/ui/OrgReauthGate'
@@ -118,6 +120,7 @@ function App() {
               <Route path="/politicos" element={<PoliticiansList />} />
               <Route path="/auth/google/callback" element={<GoogleCallback />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/superadmin" element={<Superadmin />} />
               <Route path="/solicitar-cadastro" element={<RequestRegistration />} />
               <Route path="/minhas-solicitacoes" element={<MyRequests />} />
               <Route path="/convite/:token" element={<AcceptInvite />} />
@@ -147,6 +150,7 @@ function App() {
               <Route path="/privacidade" element={<Privacidade />} />
               <Route path="/cookies" element={<Cookies />} />
               <Route path="/diretrizes" element={<Diretrizes />} />
+              <Route path="/sugestoes" element={<Sugestoes />} />
             </Routes>
             <ConsentGate />
             <Footer />

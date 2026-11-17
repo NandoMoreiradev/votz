@@ -4,7 +4,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { IsEnum } from 'class-validator'
-import { EntityPlan, PoliticianPlan, CompanyPlan } from '@prisma/client'
+import { EntityPlan, PoliticianPlan, CompanyPlan, ModerationActionType } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -46,6 +46,13 @@ export class AdminController {
   @Get('stats')
   @ApiOperation({ summary: 'Platform overview stats' })
   stats() { return this.service.stats() }
+
+  @Get('superadmin/overview')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Extended superadmin operational overview (admin only)' })
+  superadminOverview() {
+    return this.service.superadminOverview()
+  }
 
   // ── Users ────────────────────────────────────────────────────────────────
 
@@ -157,6 +164,17 @@ export class AdminController {
 
   // ── Companies ─────────────────────────────────────────────────────────────
 
+  @Get('companies')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'List companies (admin only)' })
+  listCompanies(
+    @Query('search') search?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
+    return this.service.listCompanies(search, page, limit)
+  }
+
   @Patch('companies/:id/plan')
   @Roles(UserType.ADMIN)
   @ApiOperation({ summary: 'Set plan for a company (admin only)' })
@@ -165,6 +183,17 @@ export class AdminController {
   }
 
   // ── API Keys ──────────────────────────────────────────────────────────────
+
+  @Get('api-keys')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'List API keys (admin only)' })
+  listApiKeys(
+    @Query('search') search?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
+    return this.service.listApiKeys(search, page, limit)
+  }
 
   @Patch('api-keys/:id/tier')
   @Roles(UserType.ADMIN)
@@ -175,5 +204,38 @@ export class AdminController {
     @CurrentUser() actor: { id: string },
   ) {
     return this.service.setApiKeyTier(id, dto.tier, actor.id, dto.reason)
+  }
+
+  // ── Posts & Audit Logs ────────────────────────────────────────────────────
+
+  @Get('posts')
+  @ApiOperation({ summary: 'List posts for moderation' })
+  listPosts(
+    @Query('search') search?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
+    return this.service.listPosts(search, page, limit)
+  }
+
+  @Delete('posts/:id')
+  @ApiOperation({ summary: 'Delete a post (moderator or admin)' })
+  deletePost(
+    @Param('id') id: string,
+    @Body() dto: DeleteReportDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.deletePost(id, actor.id, dto.reason)
+  }
+
+  @Get('audit-logs')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'List moderation & admin audit logs (admin only)' })
+  listAuditLogs(
+    @Query('action') action?: ModerationActionType,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
+  ) {
+    return this.service.listAuditLogs(action, page, limit)
   }
 }

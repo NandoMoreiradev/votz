@@ -2,6 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
+import { InviteVotzModal } from '../components/ui/InviteVotzModal'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { PostCard } from '../components/posts/PostCard'
@@ -388,6 +389,7 @@ export function UserProfile() {
   const { user: authUser } = useAuthStore()
   const [tab, setTab] = useState<'publicacoes' | 'relatos'>('publicacoes')
   const [page, setPage] = useState(1)
+  const [showInviteModal, setShowInviteModal] = useState(false)
 
   const { data: user, isLoading: loadingUser } = useUser(id!)
   const { data: reports, isLoading: loadingReports } = useUserReports(id!, page)
@@ -434,7 +436,16 @@ export function UserProfile() {
                   </ProfileMeta>
                 </div>
                 {isOwnProfile ? (
-                  <EditProfileLink to="/meu-perfil">Editar perfil</EditProfileLink>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <EditProfileLink to="/meu-perfil">Editar perfil</EditProfileLink>
+                    <FollowBtn
+                      type="button"
+                      $following={false}
+                      onClick={() => setShowInviteModal(true)}
+                    >
+                      Convidar pessoas
+                    </FollowBtn>
+                  </div>
                 ) : authUser ? (
                   <FollowBtn
                     type="button"
@@ -561,6 +572,7 @@ export function UserProfile() {
           <Empty>Este usuário ainda não tem relatos públicos.</Empty>
         )}
       </Content>
+      <InviteVotzModal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} />
     </Page>
   )
 }

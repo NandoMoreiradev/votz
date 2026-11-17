@@ -2,7 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FlagStatus, FlagTargetType } from '@votz/shared-types'
+import { FlagStatus, FlagTargetType, SuggestionStatus } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
@@ -13,6 +13,12 @@ import {
   useResolveFlag,
 } from '../hooks/useModeration'
 import { ModerationReasonModal } from '../components/moderation/ModerationReasonModal'
+import {
+  PlatformSuggestionItem,
+  useSuggestions,
+  useUpdateSuggestionStatus,
+} from '../hooks/useSuggestions'
+import { SUGGESTION_CATEGORY_LABEL, SUGGESTION_STATUS_META } from './Sugestoes'
 
 function extractApiError(err: unknown, fallback: string): string {
   const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
@@ -573,7 +579,15 @@ function FlagsTab() {
               <Tr key={flag.id}>
                 <Td>
                   <div>
-                    <Badge>{flag.targetType === FlagTargetType.REPORT ? 'Relato' : 'Comentário'}</Badge>
+                    <Badge>
+                      {flag.targetType === FlagTargetType.REPORT
+                        ? 'Relato'
+                        : flag.targetType === FlagTargetType.POST
+                        ? 'Publicação'
+                        : flag.targetType === FlagTargetType.POST_COMMENT
+                        ? 'Comentário de publicação'
+                        : 'Comentário'}
+                    </Badge>
                     {flag.targetPreview.link && (
                       <span style={{ marginLeft: 8 }}>
                         <PreviewLink to={flag.targetPreview.link}>Ver conteúdo</PreviewLink>
@@ -999,7 +1013,141 @@ function RequestsTab() {
   )
 }
 
-type TabId = 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests'
+function SuggestionsTab() {
+  const [statusFilter, setStatusFilter] = useState<SuggestionStatus | ''>('')
+  const [editing, setEditing] = useState<PlatformSuggestionItem | null>(null)
+  const [nextStatus, setNextStatus] = useState<SuggestionStatus>(SuggestionStatus.UNDER_REVIEW)
+  const [adminNote, setAdminNote] = useState('')
+  const { data, isLoading } = useSuggestions({ status: statusFilter || undefined, sort: 'top' })
+  const updateStatus = useUpdateSuggestionStatus()
+
+  function openEdit(item: PlatformSuggestionItem) {
+    setEditing(item)
+    setNextStatus(item.status)
+    setAdminNote(item.adminNote ?? '')
+  }
+
+  return (
+    <div>
+      <FilterRow>
+        <FilterBtn $active={statusFilter === ''} onClick={() => setStatusFilter('')}>Todas</FilterBtn>
+        {(Object.keys(SUGGESTION_STATUS_META) as SuggestionStatus[]).map((st) => (
+          <FilterBtn key={st} $active={statusFilter === st} onClick={() => setStatusFilter(st)}>
+            {SUGGESTION_STATUS_META[st].label}
+          </FilterBtn>
+        ))}
+      </FilterRow>
+
+      {isLoading ? (
+        <Empty>Carregando...</Empty>
+      ) : !data?.data?.length ? (
+        <Empty>Nenhuma sugestão encontrada.</Empty>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Sugestão</Th>
+              <Th>Categoria</Th>
+              <Th>Status</Th>
+              <Th>Apoios</Th>
+              <Th>Autor</Th>
+              <Th>Ações</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.data.map((item) => {
+              const stMeta = SUGGESTION_STATUS_META[item.status]
+              return (
+                <Tr key={item.id}>
+                  <Td>
+                    <div style={{ fontWeight: 600 }}>{item.title}</div>
+                    <PreviewExcerpt>{item.description}</PreviewExcerpt>
+                    {item.adminNote && (
+                      <PreviewExcerpt style={{ color: '#1A1A2E', marginTop: 4 }}>
+                        Resposta: {item.adminNote}
+                      </PreviewExcerpt>
+                    )}
+                  </Td>
+                  <Td><Badge>{SUGGESTION_CATEGORY_LABEL[item.category]}</Badge></Td>
+                  <Td><Badge $color={stMeta.color}>{stMeta.label}</Badge></Td>
+                  <Td style={{ fontFamily: 'monospace' }}>{item.votesCount}</Td>
+                  <Td>{item.author.name}</Td>
+                  <Td>
+                    <ActionBtn onClick={() => openEdit(item)}>Responder / Status</ActionBtn>
+                  </Td>
+                </Tr>
+              )
+            })}
+          </tbody>
+        </Table>
+      )}
+
+      {editing && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15,15,26,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 20,
+          }}
+          onClick={() => setEditing(null)}
+        >
+          <div
+            style={{
+              width: '100%', maxWidth: 480, background: '#fff', borderRadius: 12,
+              padding: 24, border: '1px solid #E5E7EB',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontWeight: 700, marginBottom: 6 }}>Atualizar sugestão</h3>
+            <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: 14 }}>{editing.title}</p>
+
+            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>
+              Status
+            </label>
+            <select
+              value={nextStatus}
+              onChange={(e) => setNextStatus(e.target.value as SuggestionStatus)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', marginBottom: 12 }}
+            >
+              {(Object.keys(SUGGESTION_STATUS_META) as SuggestionStatus[]).map((st) => (
+                <option key={st} value={st}>{SUGGESTION_STATUS_META[st].label}</option>
+              ))}
+            </select>
+
+            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>
+              Resposta pública da equipe (opcional)
+            </label>
+            <textarea
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              rows={4}
+              maxLength={1000}
+              placeholder="Ex.: Entrou no planejamento do próximo mês..."
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', marginBottom: 14 }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <ActionBtn onClick={() => setEditing(null)}>Cancelar</ActionBtn>
+              <ActionBtn
+                $variant="success"
+                disabled={updateStatus.isPending}
+                onClick={() => {
+                  updateStatus.mutate(
+                    { id: editing.id, status: nextStatus, adminNote },
+                    { onSuccess: () => setEditing(null) },
+                  )
+                }}
+              >
+                {updateStatus.isPending ? 'Salvando...' : 'Salvar'}
+              </ActionBtn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type TabId = 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
@@ -1053,15 +1201,17 @@ export function Admin() {
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
+          <Tab $active={tab === 'suggestions'} onClick={() => setTab('suggestions')}>Sugestões</Tab>
           {isAdmin && <Tab $active={tab === 'users'} onClick={() => setTab('users')}>Usuários</Tab>}
         </Tabs>
 
-        {tab === 'requests'   && <RequestsTab />}
-        {tab === 'flags'      && <FlagsTab />}
-        {tab === 'entities'   && <EntitiesTab />}
+        {tab === 'requests'    && <RequestsTab />}
+        {tab === 'flags'       && <FlagsTab />}
+        {tab === 'entities'    && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
-        {tab === 'reports'    && <ReportsTab />}
-        {tab === 'users'      && isAdmin && <UsersTab />}
+        {tab === 'reports'     && <ReportsTab />}
+        {tab === 'suggestions' && <SuggestionsTab />}
+        {tab === 'users'       && isAdmin && <UsersTab />}
       </Content>
     </Page>
   )
