@@ -52,7 +52,7 @@ export class CreatePostDto {
   @ApiPropertyOptional({ type: [String], description: 'URLs de mídia enviadas via /storage/upload/post-media (máx. 4)' })
   @IsOptional()
   @IsArray()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { each: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false }, { each: true })
   @ArrayMaxSize(4)
   media?: string[]
 

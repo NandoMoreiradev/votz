@@ -68,8 +68,16 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: (payload: CreatePostPayload) =>
       api.post<PostDto>('/posts', payload).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['posts'] })
+    onSuccess: (created) => {
+      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) => {
+        if (!old) return old
+        if (old.data.some((p) => p.id === created.id)) return old
+        return {
+          ...old,
+          data: [created, ...old.data],
+          meta: { ...old.meta, total: old.meta.total + 1 },
+        }
+      })
       qc.invalidateQueries({ queryKey: ['topics'] })
     },
   })

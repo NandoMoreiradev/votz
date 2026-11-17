@@ -19,6 +19,7 @@ interface PostComposerProps {
   initialTopic?: string
   quotePost?: PostDto | null
   onClearQuote?: () => void
+  onCreated?: (post: PostDto) => void
 }
 
 const Box = styled.div`
@@ -246,7 +247,7 @@ const PublishBtn = styled.button`
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
 
-export function PostComposer({ initialTopic, quotePost, onClearQuote }: PostComposerProps) {
+export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated }: PostComposerProps) {
   const { user, activeContext } = useAuthStore()
   const [content, setContent] = useState(initialTopic ? `#${initialTopic} ` : '')
   const [media, setMedia] = useState<Array<{ url: string; isVideo: boolean }>>([])
@@ -337,7 +338,7 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote }: PostComp
           : undefined,
       },
       {
-        onSuccess: () => {
+        onSuccess: (created) => {
           setContent(initialTopic ? `#${initialTopic} ` : '')
           setMedia([])
           setPollOpen(false)
@@ -345,6 +346,7 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote }: PostComp
           setPollOptions(['', ''])
           setMention(null)
           onClearQuote?.()
+          onCreated?.(created)
         },
         onError: () => {
           setErrorMsg('Não foi possível publicar. Verifique os campos e tente novamente.')

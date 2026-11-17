@@ -3,6 +3,7 @@ export type FeedSortMode = 'for_you' | 'trending' | 'following' | 'recent';
 export interface PostAuthorInfo {
     userId: string;
     name: string;
+    username?: string | null;
     avatarUrl: string | null;
     verified: boolean;
     userType: UserType;

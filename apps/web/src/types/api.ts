@@ -144,6 +144,7 @@ export interface AuthResponse {
 export interface UserProfile {
   id: string
   name: string
+  username?: string | null
   type: UserType
   verified: boolean
   reputation: number

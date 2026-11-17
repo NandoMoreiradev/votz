@@ -75,7 +75,7 @@ export class CreateReportDto {
 
   @ApiPropertyOptional({ type: [String], description: 'URLs de mídia já enviadas via /storage/upload/report-media (máx. 5)' })
   @IsArray()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { each: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false }, { each: true })
   @ArrayMaxSize(5)
   @IsOptional()
   media?: string[]

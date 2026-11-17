@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import styled, { css } from 'styled-components'
+import styled, { css, keyframes } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowsClockwise,
@@ -34,10 +34,29 @@ import { PostCommentsSection } from './PostCommentsSection'
 interface PostCardProps {
   post: PostDto
   showCommentsInline?: boolean
+  isNew?: boolean
   onQuote?: (post: PostDto) => void
 }
 
-const Card = styled.article<{ $advocacy?: boolean }>`
+const postSlideIn = keyframes`
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+    box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.28);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+    box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.14);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    box-shadow: none;
+  }
+`
+
+const Card = styled.article<{ $advocacy?: boolean; $isNew?: boolean }>`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ $advocacy, theme }) => ($advocacy ? theme.colors.primary : theme.colors.border)};
   border-radius: ${({ theme }) => theme.radii.lg};
@@ -47,6 +66,11 @@ const Card = styled.article<{ $advocacy?: boolean }>`
     $advocacy &&
     css`
       border-left: 4px solid ${theme.colors.primary};
+    `}
+  ${({ $isNew }) =>
+    $isNew &&
+    css`
+      animation: ${postSlideIn} 1.4s ease-out;
     `}
 
   &:hover {
@@ -402,7 +426,7 @@ function timeAgo(iso: string): string {
   return `há ${Math.floor(h / 24)}d`
 }
 
-export function PostCard({ post, showCommentsInline = false, onQuote }: PostCardProps) {
+export function PostCard({ post, showCommentsInline = false, isNew = false, onQuote }: PostCardProps) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { open: openMedia } = useMediaViewer()
@@ -442,7 +466,7 @@ export function PostCard({ post, showCommentsInline = false, onQuote }: PostCard
   }
 
   return (
-    <Card $advocacy={post.kind === PostKind.ADVOCACY}>
+    <Card $advocacy={post.kind === PostKind.ADVOCACY} $isNew={isNew}>
       {post.kind === PostKind.ADVOCACY && (
         <AdvocacyTag>
           <ShieldCheck size={14} weight="duotone" />
@@ -458,6 +482,9 @@ export function PostCard({ post, showCommentsInline = false, onQuote }: PostCard
         <AuthorCol>
           <AuthorTop>
             <AuthorName to={author.href}>{author.name}</AuthorName>
+            {!post.author.orgName && post.author.username && (
+              <span style={{ fontSize: '0.8rem', color: '#6B7280' }}>@{post.author.username}</span>
+            )}
             {author.verified && <CheckCircle size={15} weight="fill" color="#2DC653" />}
             {author.badge && <RolePill>{author.badge}</RolePill>}
           </AuthorTop>

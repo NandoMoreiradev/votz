@@ -45,12 +45,28 @@ const InstitutionalBanner = styled.div`
   }
 `
 
+const TitleRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+`
+
 const PageTitle = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 32px;
+  margin: 0;
+`
+
+const ViewPublicLink = styled(Link)`
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.primary};
+  &:hover { text-decoration: underline; }
 `
 
 const Card = styled.div`
@@ -198,6 +214,7 @@ export function MyProfile() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [name, setName] = useState(user?.name ?? '')
+  const [username, setUsername] = useState(user?.username ?? '')
   const [bio, setBio] = useState(user?.bio ?? '')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatarUrl ?? null)
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null)
@@ -310,6 +327,10 @@ export function MyProfile() {
     const data: Record<string, unknown> = {}
 
     if (name.trim() && name.trim() !== currentUser.name) data.name = name.trim()
+    const cleanUsername = username.trim().replace(/^@+/, '').toLowerCase()
+    if (cleanUsername && cleanUsername !== (currentUser.username ?? '')) {
+      data.username = cleanUsername
+    }
     if (bio.trim() !== (currentUser.bio ?? '')) data.bio = bio.trim()
     if (pendingAvatarUrl) data.avatarUrl = pendingAvatarUrl
 
@@ -341,7 +362,10 @@ export function MyProfile() {
     <Page>
       <Navbar />
       <Content>
-        <PageTitle>Editar perfil</PageTitle>
+        <TitleRow>
+          <PageTitle>Editar perfil</PageTitle>
+          <ViewPublicLink to={`/perfil/${user.id}`}>Ver meu perfil público →</ViewPublicLink>
+        </TitleRow>
 
         {profiles?.orgs.filter(o => o.type === 'ENTITY').map(org => (
           <InstitutionalBanner key={org.id}>
@@ -398,6 +422,23 @@ export function MyProfile() {
                 minLength={2}
                 required
               />
+            </Field>
+
+            <Field>
+              <Label htmlFor="username">Nome de usuário (@)</Label>
+              <Input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace(/^@+/, '').toLowerCase())}
+                placeholder="ex: joao_silva"
+                maxLength={30}
+                pattern="[a-z0-9_]{3,30}"
+                title="3 a 30 caracteres: letras minúsculas, números e _"
+              />
+              <small style={{ color: '#6B7280', fontSize: '0.75rem' }}>
+                Apenas letras minúsculas, números e _ (3 a 30 caracteres).
+              </small>
             </Field>
 
             <Field>

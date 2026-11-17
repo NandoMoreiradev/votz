@@ -47,8 +47,18 @@ export class UsersService {
     if (dto.avatarUrl !== undefined) {
       this.storage.assertOwnStorageUrl(dto.avatarUrl, 'avatars')
     }
+    if (dto.username !== undefined) {
+      const existing = await this.prisma.user.findFirst({
+        where: { username: dto.username, NOT: { id } },
+        select: { id: true },
+      })
+      if (existing) {
+        throw new ConflictException('Este nome de usuário já está em uso')
+      }
+    }
     return this.repo.updateProfile(id, {
       name: dto.name,
+      username: dto.username,
       bio: dto.bio,
       avatarUrl: dto.avatarUrl,
       phone: dto.phone,

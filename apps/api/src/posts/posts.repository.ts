@@ -12,7 +12,7 @@ import { ViewerRankingContext } from './feed-ranking.service'
 
 const POST_INCLUDE = {
   authorUser: {
-    select: { id: true, name: true, avatarUrl: true, verified: true, type: true },
+    select: { id: true, name: true, username: true, avatarUrl: true, verified: true, type: true },
   },
   poll: {
     include: {
@@ -73,7 +73,7 @@ const POST_INCLUDE = {
       authorOrgType: true,
       authorOrgId: true,
       authorUser: {
-        select: { id: true, name: true, avatarUrl: true, verified: true, type: true },
+        select: { id: true, name: true, username: true, avatarUrl: true, verified: true, type: true },
       },
     },
   },
@@ -543,7 +543,7 @@ export class PostsRepository {
   }
 
   buildAuthorInfo(
-    user: { id: string; name: string; avatarUrl: string | null; verified: boolean; type: string },
+    user: { id: string; name: string; username?: string | null; avatarUrl: string | null; verified: boolean; type: string },
     orgType: OrgType | null,
     orgId: string | null,
     orgMap: Map<string, OrgMeta>,
@@ -552,6 +552,7 @@ export class PostsRepository {
     return {
       userId: user.id,
       name: user.name,
+      username: user.username ?? null,
       avatarUrl: user.avatarUrl,
       verified: user.verified,
       userType: user.type as UserType,

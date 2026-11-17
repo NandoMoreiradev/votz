@@ -23,7 +23,7 @@ export class CreatePostCommentDto {
 
   @ApiPropertyOptional({ description: 'URL da imagem, GIF (R2 ou KLIPY/GIPHY) ou áudio' })
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(500)
   mediaUrl?: string
 

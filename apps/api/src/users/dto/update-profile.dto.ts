@@ -27,6 +27,19 @@ export class UpdateProfileDto {
   @MaxLength(80)
   name?: string
 
+  @ApiPropertyOptional({ example: 'joao_silva' })
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value
+    const clean = value.trim().replace(/^@+/, '').toLowerCase()
+    return clean === '' ? undefined : clean
+  })
+  @Matches(/^[a-z0-9_]{3,30}$/, {
+    message: 'Nome de usuário deve ter 3 a 30 caracteres (apenas letras minúsculas, números e _)',
+  })
+  username?: string
+
   @ApiPropertyOptional({ example: 'Ativista cívico de São Paulo.' })
   @IsOptional()
   @IsString()
@@ -35,7 +48,7 @@ export class UpdateProfileDto {
 
   @ApiPropertyOptional({ example: 'https://cdn.votz.app/avatars/avatar.jpg' })
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   avatarUrl?: string
 
   @ApiPropertyOptional({ example: '+5511999999999' })

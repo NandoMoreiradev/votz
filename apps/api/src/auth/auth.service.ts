@@ -63,6 +63,7 @@ function parseDurationMs(raw: string | undefined, fallbackMs = 7 * 24 * 60 * 60 
 const USER_PUBLIC_SELECT = {
   id: true,
   name: true,
+  username: true,
   email: true,
   type: true,
   verified: true,
@@ -81,6 +82,7 @@ const USER_PUBLIC_SELECT = {
 function toPublicUser<T extends {
   id: string
   name: string
+  username?: string | null
   email: string
   type: unknown
   verified: boolean
@@ -98,6 +100,7 @@ function toPublicUser<T extends {
   return {
     id: user.id,
     name: user.name,
+    username: user.username ?? null,
     email: user.email,
     type: user.type,
     verified: user.verified,

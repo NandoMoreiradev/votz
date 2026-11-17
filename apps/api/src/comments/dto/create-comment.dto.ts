@@ -27,7 +27,7 @@ export class CreateCommentDto {
 
   @ApiPropertyOptional({ description: 'URL pública do áudio/vídeo no R2' })
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   @MaxLength(500)
   mediaUrl?: string
 

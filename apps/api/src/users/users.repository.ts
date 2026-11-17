@@ -5,6 +5,7 @@ import { VoteType } from '@votz/shared-types'
 const PUBLIC_USER_SELECT = {
   id: true,
   name: true,
+  username: true,
   type: true,
   verified: true,
   reputation: true,
@@ -129,6 +130,7 @@ export class UsersRepository {
 
   updateProfile(id: string, data: {
     name?: string
+    username?: string
     bio?: string
     avatarUrl?: string
     phone?: string

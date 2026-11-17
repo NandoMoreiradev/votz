@@ -130,35 +130,28 @@ const Subheader = styled.div`
 const SubInner = styled.div`
   max-width: 1480px;
   margin: 0 auto;
-  padding: 14px 32px;
+  padding: 8px 32px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  @media (max-width: 820px) { flex-wrap: wrap; padding: 12px 16px; }
+  gap: 14px;
+  @media (max-width: 820px) { flex-wrap: wrap; padding: 8px 16px; gap: 10px; }
 `
-const SubCrumb = styled.div`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
-  color: ${({ theme }) => theme.colors.muted};
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+const SubTitleRow = styled.div`
   display: flex;
-  align-items: center;
-  gap: 6px;
-  b { color: ${({ theme }) => theme.colors.text}; }
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
 `
 const SubTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
   color: ${({ theme }) => theme.colors.text};
-  margin-top: 4px;
 `
 const SubMeta = styled.span`
   font-size: 13px;
   color: ${({ theme }) => theme.colors.muted};
-  margin-left: 14px;
   b { color: ${({ theme }) => theme.colors.text}; }
 `
 const SubSpacer = styled.div`flex: 1;`
@@ -220,7 +213,7 @@ const Main = styled.main`
 // ─── Styled: Sidebar ──────────────────────────────────────────────────────────
 const Sidebar = styled.aside`
   position: sticky;
-  top: 134px;
+  top: 120px;
   @media (max-width: 820px) { display: none; }
 `
 const FilterBlock = styled.div`margin-bottom: 28px;`
@@ -1112,22 +1105,22 @@ const FeedModeWrap = styled.div`
   align-items: center;
   background: ${({ theme }) => theme.colors.neutral};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 10px;
-  padding: 4px;
-  gap: 4px;
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
 `
 
 const FeedModeBtn = styled.button<{ $active: boolean }>`
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  border-radius: 7px;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
   border: none;
   background: ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
   color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.muted)};
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
@@ -1191,6 +1184,7 @@ export function Home() {
   const [postAuthorType, setPostAuthorType] = useState<'CITIZEN' | 'POLITICIAN' | 'ENTITY' | undefined>()
   const [postFilterKind, setPostFilterKind] = useState<'all' | 'advocacy' | 'polls'>('all')
   const [quoteTarget, setQuoteTarget] = useState<PostDto | null>(null)
+  const [recentPostId, setRecentPostId] = useState<string | null>(null)
   const [advocateTarget, setAdvocateTarget] = useState<{
     report: Report
     actorType: 'POLITICIAN' | 'ENTITY'
@@ -1311,26 +1305,20 @@ export function Home() {
             </FeedModeBtn>
           </FeedModeWrap>
 
-          <div>
-            <SubCrumb>
-              Feed <span>/</span>{' '}
-              <b>{feedTab === 'publicacoes' ? 'Publicações da comunidade' : 'Todos os relatos'}</b>
-            </SubCrumb>
-            <div style={{ display: 'flex', alignItems: 'baseline' }}>
-              <SubTitle>
-                {feedTab === 'publicacoes'
-                  ? postsData
-                    ? `${postsData.meta.total.toLocaleString('pt-BR')} ${postsData.meta.total === 1 ? 'publicação' : 'publicações'}`
-                    : 'Carregando…'
-                  : data
-                    ? `${data.meta.total.toLocaleString('pt-BR')} ${data.meta.total === 1 ? 'relato' : 'relatos'}`
-                    : 'Carregando…'}
-              </SubTitle>
-              {feedTab === 'relatos' && (
-                <SubMeta>últimos <b>{period === 'all' ? 'todos os tempos' : period}</b></SubMeta>
-              )}
-            </div>
-          </div>
+          <SubTitleRow>
+            <SubTitle>
+              {feedTab === 'publicacoes' ? 'Publicações da comunidade' : 'Todos os relatos'}
+            </SubTitle>
+            <SubMeta>
+              {feedTab === 'publicacoes'
+                ? postsData
+                  ? `${postsData.meta.total.toLocaleString('pt-BR')} ${postsData.meta.total === 1 ? 'publicação' : 'publicações'}`
+                  : 'Carregando…'
+                : data
+                  ? `${data.meta.total.toLocaleString('pt-BR')} ${data.meta.total === 1 ? 'relato' : 'relatos'} · últimos ${period === 'all' ? 'todos os tempos' : period}`
+                  : 'Carregando…'}
+            </SubMeta>
+          </SubTitleRow>
           <SubSpacer />
           {feedTab === 'relatos' && (
             <SubTools>
@@ -1521,6 +1509,12 @@ export function Home() {
             <PostComposer
               quotePost={quoteTarget}
               onClearQuote={() => setQuoteTarget(null)}
+              onCreated={(created) => {
+                setRecentPostId(created.id)
+                setTimeout(() => {
+                  setRecentPostId((curr) => (curr === created.id ? null : curr))
+                }, 3000)
+              }}
             />
 
             <Feed>
@@ -1548,6 +1542,7 @@ export function Home() {
                 <PostCard
                   key={post.id}
                   post={post}
+                  isNew={post.id === recentPostId}
                   onQuote={(p) => {
                     setQuoteTarget(p)
                     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1635,81 +1630,117 @@ export function Home() {
               </div>
             </RailCard>
           )}
-          <RailCard>
-            <MiniMapBox to="/mapa">
-              <MiniMapGrid />
-              <MapPin $x={30} $y={38} />
-              <MapPin $x={58} $y={55} />
-              <MapPin $x={68} $y={28} />
-              <MapPin $x={24} $y={70} $green />
-              <MapPin $x={48} $y={18} />
-            </MiniMapBox>
-            <MiniMapFoot>
-              <span>Relatos no mapa</span>
-              <Link to="/mapa">Ver mapa completo</Link>
-            </MiniMapFoot>
-          </RailCard>
 
-          {topByPressure.length > 0 && (
+          {feedTab === 'publicacoes' ? (
             <RailCard>
               <RailHead>
-                <h3>Em alta</h3>
-                <RailViewAll to="/">Ver tudo</RailViewAll>
+                <h3>Acompanhe também</h3>
               </RailHead>
-              <AltaList>
-                {topByPressure.map((r, i) => (
-                  <AltaItem key={r.id} to={`/relatos/${r.id}`}>
-                    <AltaRank>{i + 1}</AltaRank>
-                    <AltaContent>
-                      <AltaTitle>{r.title}</AltaTitle>
-                      <AltaMeta>
-                        <span>{CAT_CFG[r.category].label}</span>
-                        <span className="pr">Pressão <b>{r.pressureScore.toFixed(1)}</b></span>
-                      </AltaMeta>
-                    </AltaContent>
-                  </AltaItem>
-                ))}
-              </AltaList>
+              <div>
+                <TopicRow to="/?tab=relatos" onClick={(e) => { e.preventDefault(); switchFeedTab('relatos') }}>
+                  <div>
+                    <TopicTag style={{ color: '#1A1A2E' }}>Relatos da comunidade</TopicTag>
+                    <TopicMeta>
+                      {data ? `${data.meta.total.toLocaleString('pt-BR')} relatos ativos` : 'Problemas e cobranças'}
+                    </TopicMeta>
+                  </div>
+                  <TopicMeta>→</TopicMeta>
+                </TopicRow>
+                <TopicRow to="/mapa">
+                  <div>
+                    <TopicTag style={{ color: '#1A1A2E' }}>Mapa de relatos</TopicTag>
+                    <TopicMeta>Visualizar ocorrências por região</TopicMeta>
+                  </div>
+                  <TopicMeta>→</TopicMeta>
+                </TopicRow>
+                <TopicRow to="/politicos">
+                  <div>
+                    <TopicTag style={{ color: '#1A1A2E' }}>Mandatômetro</TopicTag>
+                    <TopicMeta>Desempenho de políticos</TopicMeta>
+                  </div>
+                  <TopicMeta>→</TopicMeta>
+                </TopicRow>
+              </div>
             </RailCard>
-          )}
+          ) : (
+            <>
+              <RailCard>
+                <MiniMapBox to="/mapa">
+                  <MiniMapGrid />
+                  <MapPin $x={30} $y={38} />
+                  <MapPin $x={58} $y={55} />
+                  <MapPin $x={68} $y={28} />
+                  <MapPin $x={24} $y={70} $green />
+                  <MapPin $x={48} $y={18} />
+                </MiniMapBox>
+                <MiniMapFoot>
+                  <span>Relatos no mapa</span>
+                  <Link to="/mapa">Ver mapa completo</Link>
+                </MiniMapFoot>
+              </RailCard>
 
-          {politicians.length > 0 && (
-            <RailCard>
-              <RailHead>
-                <h3>Mandatômetro</h3>
-                <RailViewAll to="/politicos">Ver todos</RailViewAll>
-              </RailHead>
-              <MandList>
-                {politicians.map(pol => {
-                  const score = polScore(pol)
-                  return (
-                    <MandItem key={pol.id} to={`/politicos/${pol.id}`}>
-                      <MandAvatar $bg={avatarColor(pol.name)}>
-                        {initials(pol.name)}
-                      </MandAvatar>
-                      <MandContent>
-                        <MandName>{pol.name}</MandName>
-                        <MandRole>{pol.party.abbreviation} · {pol.office}</MandRole>
-                      </MandContent>
-                      <div>
-                        <MandPct $score={score}>{score}%</MandPct>
-                        <MandPctLabel>resolução</MandPctLabel>
-                      </div>
-                    </MandItem>
-                  )
-                })}
-              </MandList>
-            </RailCard>
-          )}
+              {topByPressure.length > 0 && (
+                <RailCard>
+                  <RailHead>
+                    <h3>Em alta</h3>
+                    <RailViewAll to="/">Ver tudo</RailViewAll>
+                  </RailHead>
+                  <AltaList>
+                    {topByPressure.map((r, i) => (
+                      <AltaItem key={r.id} to={`/relatos/${r.id}`}>
+                        <AltaRank>{i + 1}</AltaRank>
+                        <AltaContent>
+                          <AltaTitle>{r.title}</AltaTitle>
+                          <AltaMeta>
+                            <span>{CAT_CFG[r.category].label}</span>
+                            <span className="pr">Pressão <b>{r.pressureScore.toFixed(1)}</b></span>
+                          </AltaMeta>
+                        </AltaContent>
+                      </AltaItem>
+                    ))}
+                  </AltaList>
+                </RailCard>
+              )}
 
-          <ImprensaCTA>
-            <ImprensaKicker>Para a imprensa</ImprensaKicker>
-            <ImprensaH3>Dados abertos sobre problemas urbanos</ImprensaH3>
-            <ImprensaP>
-              Acesse relatórios, tendências e alertas em tempo real para reportagens baseadas em dados.
-            </ImprensaP>
-            <ImprensaBtn to="/entidades">Acessar dados →</ImprensaBtn>
-          </ImprensaCTA>
+              {politicians.length > 0 && (
+                <RailCard>
+                  <RailHead>
+                    <h3>Mandatômetro</h3>
+                    <RailViewAll to="/politicos">Ver todos</RailViewAll>
+                  </RailHead>
+                  <MandList>
+                    {politicians.map(pol => {
+                      const score = polScore(pol)
+                      return (
+                        <MandItem key={pol.id} to={`/politicos/${pol.id}`}>
+                          <MandAvatar $bg={avatarColor(pol.name)}>
+                            {initials(pol.name)}
+                          </MandAvatar>
+                          <MandContent>
+                            <MandName>{pol.name}</MandName>
+                            <MandRole>{pol.party.abbreviation} · {pol.office}</MandRole>
+                          </MandContent>
+                          <div>
+                            <MandPct $score={score}>{score}%</MandPct>
+                            <MandPctLabel>resolução</MandPctLabel>
+                          </div>
+                        </MandItem>
+                      )
+                    })}
+                  </MandList>
+                </RailCard>
+              )}
+
+              <ImprensaCTA>
+                <ImprensaKicker>Para a imprensa</ImprensaKicker>
+                <ImprensaH3>Dados abertos sobre problemas urbanos</ImprensaH3>
+                <ImprensaP>
+                  Acesse relatórios, tendências e alertas em tempo real para reportagens baseadas em dados.
+                </ImprensaP>
+                <ImprensaBtn to="/entidades">Acessar dados →</ImprensaBtn>
+              </ImprensaCTA>
+            </>
+          )}
         </Rail>
       </Main>
 

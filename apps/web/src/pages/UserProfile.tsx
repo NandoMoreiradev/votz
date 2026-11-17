@@ -4,7 +4,11 @@ import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
+import { PostCard } from '../components/posts/PostCard'
 import { useUser, useUserReports } from '../hooks/useUser'
+import { usePostsFeed } from '../hooks/usePosts'
+import { useIsFollowingTarget, useToggleFollowTarget } from '../hooks/useFollow'
+import { useAuthStore } from '../store/auth.store'
 import { UserType } from '@votz/shared-types'
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -71,12 +75,74 @@ const ProfileInfo = styled.div`
   flex: 1;
 `
 
+const ProfileTopRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+`
+
+const FollowBtn = styled.button<{ $following?: boolean }>`
+  padding: 7px 16px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $following, theme }) => ($following ? theme.colors.border : theme.colors.primary)};
+  background: ${({ $following, theme }) => ($following ? theme.colors.white : theme.colors.primary)};
+  color: ${({ $following, theme }) => ($following ? theme.colors.text : theme.colors.white)};
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  cursor: pointer;
+  transition: opacity 0.15s;
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+`
+
+const EditProfileLink = styled(Link)`
+  padding: 7px 14px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const TabsBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  margin-bottom: 18px;
+`
+
+const TabBtn = styled.button<{ $active: boolean }>`
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 2px solid ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
+  background: transparent;
+  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  cursor: pointer;
+  transition: color 0.15s;
+  &:hover { color: ${({ theme }) => theme.colors.text}; }
+`
+
 const ProfileName = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
   margin-bottom: 4px;
+`
+
+const ProfileHandle = styled.div`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 8px;
 `
 
 const ProfileMeta = styled.div`
@@ -319,10 +385,23 @@ const USER_TYPE_LABELS: Record<UserType, string> = {
 
 export function UserProfile() {
   const { id } = useParams<{ id: string }>()
+  const { user: authUser } = useAuthStore()
+  const [tab, setTab] = useState<'publicacoes' | 'relatos'>('publicacoes')
   const [page, setPage] = useState(1)
 
   const { data: user, isLoading: loadingUser } = useUser(id!)
   const { data: reports, isLoading: loadingReports } = useUserReports(id!, page)
+  const { data: postsData, isLoading: loadingPosts } = usePostsFeed({
+    authorUserId: id,
+    sort: 'recent',
+    limit: 20,
+    enabled: !!id && tab === 'publicacoes',
+  })
+  const { data: followState } = useIsFollowingTarget('USER', id)
+  const toggleFollow = useToggleFollowTarget('USER', id)
+
+  const isOwnProfile = !!authUser && authUser.id === id
+  const isFollowing = followState?.following ?? false
 
   return (
     <Page>
@@ -345,11 +424,28 @@ export function UserProfile() {
               {!user.avatarUrl && user.name.charAt(0).toUpperCase()}
             </Avatar>
             <ProfileInfo>
-              <ProfileName>{user.name}</ProfileName>
-              <ProfileMeta>
-                <TypeBadge>{USER_TYPE_LABELS[user.type] ?? user.type}</TypeBadge>
-                {user.verified && <VerifiedBadge>✓ Verificado</VerifiedBadge>}
-              </ProfileMeta>
+              <ProfileTopRow>
+                <div>
+                  <ProfileName>{user.name}</ProfileName>
+                  {user.username && <ProfileHandle>@{user.username}</ProfileHandle>}
+                  <ProfileMeta>
+                    <TypeBadge>{USER_TYPE_LABELS[user.type] ?? user.type}</TypeBadge>
+                    {user.verified && <VerifiedBadge>✓ Verificado</VerifiedBadge>}
+                  </ProfileMeta>
+                </div>
+                {isOwnProfile ? (
+                  <EditProfileLink to="/meu-perfil">Editar perfil</EditProfileLink>
+                ) : authUser ? (
+                  <FollowBtn
+                    type="button"
+                    $following={isFollowing}
+                    disabled={toggleFollow.isPending}
+                    onClick={() => toggleFollow.mutate()}
+                  >
+                    {isFollowing ? 'Seguindo' : '+ Seguir'}
+                  </FollowBtn>
+                ) : null}
+              </ProfileTopRow>
               {user.bio && <Bio>{user.bio}</Bio>}
               <StatsRow>
                 <Stat>
@@ -372,9 +468,44 @@ export function UserProfile() {
           <Empty>Usuário não encontrado.</Empty>
         )}
 
-        <SectionTitle>Relatos públicos</SectionTitle>
+        <TabsBar role="tablist" aria-label="Conteúdo do perfil">
+          <TabBtn
+            type="button"
+            role="tab"
+            aria-selected={tab === 'publicacoes'}
+            $active={tab === 'publicacoes'}
+            onClick={() => setTab('publicacoes')}
+          >
+            Publicações{postsData ? ` (${postsData.meta.total})` : ''}
+          </TabBtn>
+          <TabBtn
+            type="button"
+            role="tab"
+            aria-selected={tab === 'relatos'}
+            $active={tab === 'relatos'}
+            onClick={() => setTab('relatos')}
+          >
+            Relatos públicos{reports ? ` (${reports.meta.total})` : ''}
+          </TabBtn>
+        </TabsBar>
 
-        {loadingReports ? (
+        {tab === 'publicacoes' ? (
+          loadingPosts ? (
+            <ReportList>
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} style={{ height: 130 }} />
+              ))}
+            </ReportList>
+          ) : postsData && postsData.data.length > 0 ? (
+            <ReportList>
+              {postsData.data.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))}
+            </ReportList>
+          ) : (
+            <Empty>Este usuário ainda não tem publicações.</Empty>
+          )
+        ) : loadingReports ? (
           <ReportList>
             {[1, 2, 3].map((i) => (
               <Skeleton key={i} style={{ height: 130 }} />

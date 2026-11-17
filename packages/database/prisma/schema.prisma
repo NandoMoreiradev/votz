@@ -262,6 +262,7 @@ model User {
   emailVerified   Boolean   @default(false)
   password        String?
   name            String
+  username        String?   @unique
   type            UserType  @default(CITIZEN)
   verified        Boolean   @default(false)
   banned          Boolean   @default(false)

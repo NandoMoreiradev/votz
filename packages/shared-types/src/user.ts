@@ -13,6 +13,7 @@ export interface ActiveContext {
 export interface PublicUser {
   id: string
   name: string
+  username?: string | null
   type: UserType
   verified: boolean
   reputation: number
