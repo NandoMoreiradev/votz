@@ -179,14 +179,22 @@ export class ReportsRepository {
     status?: ReportStatus
     city?: string
     state?: string
+    search?: string
     page: number
     limit: number
   }) {
+    const search = filters.search?.trim()
     const where = {
       ...(filters.category && { category: filters.category }),
       ...(filters.status && { status: filters.status }),
       ...(filters.city && { city: { contains: filters.city, mode: 'insensitive' as const } }),
       ...(filters.state && { state: filters.state }),
+      ...(search && {
+        OR: [
+          { title: { contains: search, mode: 'insensitive' as const } },
+          { description: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
     }
 
     const [raw, total] = await Promise.all([

@@ -45,6 +45,7 @@ export class ReportsController {
       status: query.status,
       city: query.city,
       state: query.state,
+      search: query.search,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     })

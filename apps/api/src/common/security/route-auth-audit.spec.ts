@@ -82,6 +82,9 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /share-cards/public/:slugOrId/meta',
   'GET /share-cards/public/:slugOrId/og',
   'POST /subscricoes/webhook',
+  'GET /topics/trending',
+  'GET /topics/search',
+  'GET /topics/:slug',
   'GET /users/:id',
   'GET /users/:id/reports',
 ])

@@ -8,6 +8,7 @@ import { NotificationsModule } from '../notifications/notifications.module'
 import { AlertsModule } from '../alerts/alerts.module'
 import { EmbeddingModule } from '../embedding/embedding.module'
 import { WebhooksModule } from '../webhooks/webhooks.module'
+import { TopicsModule } from '../topics/topics.module'
 import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 
 @Module({
@@ -17,6 +18,7 @@ import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embed
     AlertsModule,
     EmbeddingModule,
     WebhooksModule,
+    TopicsModule,
     BullModule.registerQueue({ name: REPORTS_QUEUE }),
   ],
   controllers: [ReportsController],

@@ -12,6 +12,7 @@ import { RequiresFeature } from '../auth/decorators/requires-feature.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
 import { ActingUser } from '../auth/acting-org'
+import { AdvocateReportDto } from '../posts/dto/advocate-report.dto'
 
 @ApiTags('politicians')
 @Controller('politicians')
@@ -91,8 +92,9 @@ export class PoliticiansController {
     @Param('id') id: string,
     @Param('reportId') reportId: string,
     @CurrentUser() user: ActingUser,
+    @Body() dto?: AdvocateReportDto,
   ) {
-    return this.service.advocate(id, reportId, user)
+    return this.service.advocate(id, reportId, user, dto)
   }
 
   @Get(':id/export')

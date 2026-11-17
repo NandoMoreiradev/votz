@@ -11,6 +11,7 @@ import { AlertRulesService } from '../alerts/alert-rules.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { StorageService } from '../storage/storage.service'
 import { WebhooksService } from '../webhooks/webhooks.service'
+import { TopicsService } from '../topics/topics.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { UpdateRecipientDto } from './dto/update-recipient.dto'
@@ -36,6 +37,7 @@ export class ReportsService {
     @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
     @Optional() private readonly alertRules?: AlertRulesService,
     @Optional() private readonly webhooks?: WebhooksService,
+    @Optional() private readonly topics?: TopicsService,
   ) {}
 
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
@@ -106,6 +108,8 @@ export class ReportsService {
       { removeOnComplete: 10, removeOnFail: 5, attempts: 3, backoff: { type: 'exponential', delay: 2_000 } },
     ).catch(() => null)
 
+    this.topics?.syncReportTopics(report.id, `${cleanTitle} ${sanitizedDescription}`).catch(() => null)
+
     return report
   }
 
@@ -157,6 +161,7 @@ export class ReportsService {
     status?: ReportStatus
     city?: string
     state?: string
+    search?: string
     page: number
     limit: number
   }) {

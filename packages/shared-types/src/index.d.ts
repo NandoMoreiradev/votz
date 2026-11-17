@@ -11,4 +11,5 @@ export * from './plans';
 export * from './analytics';
 export * from './formatters';
 export * from './sla';
+export * from './post';
 //# sourceMappingURL=index.d.ts.map

@@ -36,8 +36,28 @@ export const COMMENT_MEDIA_KEY_REGEX = new RegExp(
   'i',
 )
 
+const ALLOWED_POST_COMMENT_MEDIA_EXTENSIONS = Array.from(
+  new Set(
+    Array.from(ALLOWED_MIME_TYPES)
+      .filter((mime) => mime.startsWith('image/') || mime.startsWith('audio/'))
+      .map((mime) => mime.split('/')[1].replace('quicktime', 'mov')),
+  ),
+)
+
+export const POST_MEDIA_KEY_REGEX =
+  /^posts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpeg|png|webp|gif|mp4|mov)$/i
+
+export const POST_COMMENT_MEDIA_KEY_REGEX = new RegExp(
+  `^post-comments\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(${ALLOWED_POST_COMMENT_MEDIA_EXTENSIONS.join('|')})$`,
+  'i',
+)
+
 export function isCommentMediaKey(key: unknown): key is string {
   return typeof key === 'string' && COMMENT_MEDIA_KEY_REGEX.test(key)
+}
+
+export function isPostCommentMediaKey(key: unknown): key is string {
+  return typeof key === 'string' && POST_COMMENT_MEDIA_KEY_REGEX.test(key)
 }
 
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024   // 10 MB
@@ -188,7 +208,7 @@ export class StorageService {
   async upload(
     buffer: Buffer,
     _claimedMimeType: string,
-    folder: 'reports' | 'avatars' | 'entities' | 'verification' | 'comments',
+    folder: 'reports' | 'avatars' | 'entities' | 'verification' | 'comments' | 'posts' | 'post-comments',
   ): Promise<UploadedFile> {
     const mimeType = detectMimeFromBuffer(buffer)
 
@@ -232,6 +252,10 @@ export class StorageService {
 
   isCommentMediaKey(key: unknown): key is string {
     return isCommentMediaKey(key)
+  }
+
+  isPostCommentMediaKey(key: unknown): key is string {
+    return isPostCommentMediaKey(key)
   }
 
   getPublicUrl(key: string): string {

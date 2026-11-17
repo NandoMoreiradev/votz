@@ -110,7 +110,14 @@ export function FlagContentModal({
   return (
     <ModalOverlay onClick={onClose} role="dialog" aria-modal="true" aria-label="Sinalizar conteúdo">
       <ModalCard onClick={(e) => e.stopPropagation()}>
-        <ModalTitle>Sinalizar {targetType === FlagTargetType.REPORT ? 'relato' : 'comentário'}</ModalTitle>
+        <ModalTitle>
+          Sinalizar{' '}
+          {targetType === FlagTargetType.REPORT
+            ? 'relato'
+            : targetType === FlagTargetType.POST
+              ? 'publicação'
+              : 'comentário'}
+        </ModalTitle>
         <ModalDesc>
           Conte para a moderação o motivo. Sua sinalização é confidencial.
         </ModalDesc>

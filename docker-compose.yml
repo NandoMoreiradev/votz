@@ -70,6 +70,8 @@ services:
         mc anonymous set download local/"$$MINIO_BUCKET"/reports &&
         mc anonymous set download local/"$$MINIO_BUCKET"/entities &&
         mc anonymous set download local/"$$MINIO_BUCKET"/comments &&
+        mc anonymous set download local/"$$MINIO_BUCKET"/posts &&
+        mc anonymous set download local/"$$MINIO_BUCKET"/post-comments &&
         mc anonymous set none local/"$$MINIO_BUCKET"/verification
         exit 0
 

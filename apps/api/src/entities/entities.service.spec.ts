@@ -9,6 +9,11 @@ import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { OrgPermission } from '@prisma/client'
 import { EventType, ReportStatus } from '@votz/shared-types'
+
+jest.mock('isomorphic-dompurify', () => ({
+  sanitize: (s: string) => s,
+}))
+
 import { EntitiesService } from './entities.service'
 import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'

@@ -9,6 +9,11 @@ import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { OrgPermission, PoliticianStatus } from '@prisma/client'
 import { EventType, ReportStatus } from '@votz/shared-types'
+
+jest.mock('isomorphic-dompurify', () => ({
+  sanitize: (s: string) => s,
+}))
+
 import { PoliticiansService } from './politicians.service'
 import { PoliticiansRepository } from './politicians.repository'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'

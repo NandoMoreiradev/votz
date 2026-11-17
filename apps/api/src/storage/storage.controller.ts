@@ -109,6 +109,51 @@ export class StorageController {
     return { key, mimeType, size }
   }
 
+  @Post('upload/post-media')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 15, ttl: 60_000 }, long: { limit: 60, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload de mídia para publicação no feed (imagem, gif ou vídeo)' })
+  async uploadPostMedia(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado')
+    const allowed = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'video/mp4',
+      'video/quicktime',
+    ])
+    if (!allowed.has(file.mimetype)) {
+      throw new BadRequestException('Arquivo deve ser imagem (JPEG, PNG, WebP, GIF) ou vídeo (MP4, MOV)')
+    }
+    return this.storageService.upload(file.buffer, file.mimetype, 'posts')
+  }
+
+  @Post('upload/post-comment-media')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 15, ttl: 60_000 }, long: { limit: 50, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload de imagem, GIF ou áudio para comentário de publicação' })
+  async uploadPostCommentMedia(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado')
+    return this.storageService.upload(file.buffer, file.mimetype, 'post-comments')
+  }
+
   @Post('upload/comment-audio')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtAuthGuard)

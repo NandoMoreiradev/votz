@@ -50,6 +50,9 @@ import { MandateModule } from './mandate/mandate.module'
 import { ShareCardsModule } from './share-cards/share-cards.module'
 import { SlaModule } from './sla/sla.module'
 import { WebhooksModule } from './webhooks/webhooks.module'
+import { GifsModule } from './gifs/gifs.module'
+import { TopicsModule } from './topics/topics.module'
+import { PostsModule } from './posts/posts.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
 import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
@@ -148,6 +151,9 @@ import { SecurityModule } from './common/security/security.module'
     ShareCardsModule,
     MandateModule,
     SlaModule,
+    GifsModule,
+    TopicsModule,
+    PostsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -169,6 +169,10 @@ enum NotificationType {
   SLA_BREACHED
   SLA_ESCALATED
   REPORT_ASSIGNED
+  POST_LIKE
+  POST_COMMENT
+  POST_REPOST
+  POST_MENTION
 }
 
 enum SlaState {
@@ -208,6 +212,20 @@ enum CommentMediaType {
   TEXT
   AUDIO
   VIDEO
+}
+
+enum PostKind {
+  STANDARD
+  ADVOCACY
+  POLL
+  QUOTE
+}
+
+enum PostCommentMediaType {
+  TEXT
+  IMAGE
+  GIF
+  AUDIO
 }
 
 enum DebateStatus {
@@ -296,6 +314,15 @@ model User {
   propostaVotos        PropostaVoto[]
 
   politicianFollows    UserPoliticianFollower[]
+  entityFollows        UserEntityFollower[]
+  topicFollows         UserTopicFollower[]
+  followingUsers       UserFollow[]             @relation("UserFollowing")
+  followerUsers        UserFollow[]             @relation("UserFollowers")
+  posts                Post[]                   @relation("PostAuthorUser")
+  postLikes            PostLike[]
+  postReposts          PostRepost[]
+  postComments         PostComment[]
+  postPollVotes        PostPollVote[]
   debateQuestions      DebateQuestion[]
   debateMessages       DebateMessage[]
   debatePollVotes      DebatePollVote[]
@@ -370,6 +397,8 @@ model Report {
   orgTags          OrgReportTag[]
   orgNotes         OrgReportNote[]
   assignments      OrgReportAssignment[]
+  mentionedInPosts Post[]
+  topics           ReportTopic[]
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -426,6 +455,7 @@ model Entity {
   state           String?
   logoUrl         String?
   website         String?
+  followers       UserEntityFollower[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -699,8 +729,9 @@ model Proposta {
   politicoId  String
   politico    Politician     @relation(fields: [politicoId], references: [id])
 
-  timeline    PropostaTimeline[]
-  votos       PropostaVoto[]
+  timeline         PropostaTimeline[]
+  votos            PropostaVoto[]
+  mentionedInPosts Post[]
 
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -758,6 +789,8 @@ model Debate {
   reactions        DebateReaction[]
   messages         DebateMessage[]
   polls            DebatePoll[]
+  mentionedInPosts Post[]
+  topics           DebateTopic[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -827,8 +860,9 @@ model DebatePoll {
   createdAt DateTime           @default(now())
 
   debate    Debate             @relation(fields: [debateId], references: [id], onDelete: Cascade)
-  options   DebatePollOption[]
-  votes     DebatePollVote[]
+  options          DebatePollOption[]
+  votes            DebatePollVote[]
+  mentionedInPosts Post[]
 
   @@map("debate_polls")
 }
@@ -895,6 +929,8 @@ model AccessLog {
 enum ModerationActionType {
   REPORT_REMOVED
   COMMENT_REMOVED
+  POST_REMOVED
+  POST_COMMENT_REMOVED
   USER_BANNED
   USER_UNBANNED
   USER_TYPE_CHANGED
@@ -921,6 +957,8 @@ model ModerationAction {
 enum FlagTargetType {
   REPORT
   COMMENT
+  POST
+  POST_COMMENT
 }
 
 enum FlagReason {
@@ -1322,4 +1360,240 @@ model SlaNotificationLog {
 
   @@index([entityId, sentAt])
   @@map("sla_notification_logs")
+}
+
+// ==================== FEED SOCIAL DE PUBLICAÇÕES & PAUTAS CÍVICAS ====================
+
+model Post {
+  id                   String      @id @default(uuid())
+  content              String      @db.VarChar(2000)
+  kind                 PostKind    @default(STANDARD)
+  media                String[]
+  mediaKeys            String[]    @map("media_keys")
+
+  authorUserId         String      @map("author_user_id")
+  authorUser           User        @relation("PostAuthorUser", fields: [authorUserId], references: [id])
+  authorOrgType        OrgType?    @map("author_org_type")
+  authorOrgId          String?     @map("author_org_id")
+
+  city                 String?
+  cityKey              String?     @map("city_key")
+  state                String?
+
+  mentionedReportId    String?     @map("mentioned_report_id")
+  mentionedReport      Report?     @relation(fields: [mentionedReportId], references: [id], onDelete: SetNull)
+  mentionedDebateId    String?     @map("mentioned_debate_id")
+  mentionedDebate      Debate?     @relation(fields: [mentionedDebateId], references: [id], onDelete: SetNull)
+  mentionedPropostaId  String?     @map("mentioned_proposta_id")
+  mentionedProposta    Proposta?   @relation(fields: [mentionedPropostaId], references: [id], onDelete: SetNull)
+  mentionedDebatePollId String?    @map("mentioned_debate_poll_id")
+  mentionedDebatePoll  DebatePoll? @relation(fields: [mentionedDebatePollId], references: [id], onDelete: SetNull)
+  quotePostId          String?     @map("quote_post_id")
+  quotePost            Post?       @relation("PostQuotes", fields: [quotePostId], references: [id], onDelete: SetNull)
+  quotedBy             Post[]      @relation("PostQuotes")
+
+  likesCount           Int         @default(0) @map("likes_count")
+  commentsCount        Int         @default(0) @map("comments_count")
+  repostsCount         Int         @default(0) @map("reposts_count")
+  engagementScore      Float       @default(0) @map("engagement_score")
+  hotScore             Float       @default(0) @map("hot_score")
+  lastEngagedAt        DateTime    @default(now()) @map("last_engaged_at")
+
+  poll                 PostPoll?
+  likes                PostLike[]
+  reposts              PostRepost[]
+  comments             PostComment[]
+  topics               PostTopic[]
+
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  @@index([hotScore(sort: Desc), createdAt(sort: Desc)])
+  @@index([state, cityKey, hotScore(sort: Desc)])
+  @@index([authorUserId, createdAt(sort: Desc)])
+  @@index([authorOrgType, authorOrgId, createdAt(sort: Desc)])
+  @@index([mentionedReportId])
+  @@map("posts")
+}
+
+model PostPoll {
+  id         String           @id @default(uuid())
+  postId     String           @unique @map("post_id")
+  post       Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  question   String?          @db.VarChar(280)
+  expiresAt  DateTime         @map("expires_at")
+  totalVotes Int              @default(0) @map("total_votes")
+  options    PostPollOption[]
+  votes      PostPollVote[]
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  @@map("post_polls")
+}
+
+model PostPollOption {
+  id         String         @id @default(uuid())
+  pollId     String         @map("poll_id")
+  poll       PostPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text       String         @db.VarChar(100)
+  position   Int
+  votesCount Int            @default(0) @map("votes_count")
+  votes      PostPollVote[]
+
+  @@index([pollId, position])
+  @@map("post_poll_options")
+}
+
+model PostPollVote {
+  id        String         @id @default(uuid())
+  pollId    String         @map("poll_id")
+  poll      PostPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String         @map("option_id")
+  option    PostPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String         @map("user_id")
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@unique([pollId, userId])
+  @@map("post_poll_votes")
+}
+
+model PostLike {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+  @@map("post_likes")
+}
+
+model PostRepost {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+  @@map("post_reposts")
+}
+
+model PostComment {
+  id            String               @id @default(uuid())
+  postId        String               @map("post_id")
+  post          Post                 @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId      String               @map("author_id")
+  author        User                 @relation(fields: [authorId], references: [id])
+  authorOrgType OrgType?             @map("author_org_type")
+  authorOrgId   String?              @map("author_org_id")
+  parentId      String?              @map("parent_id")
+  parent        PostComment?         @relation("PostCommentReply", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       PostComment[]        @relation("PostCommentReply")
+
+  content       String               @db.VarChar(1000)
+  mediaType     PostCommentMediaType @default(TEXT) @map("media_type")
+  mediaUrl      String?              @map("media_url")
+  mediaKey      String?              @map("media_key")
+  mediaDuration Int?                 @map("media_duration")
+  transcript    String?
+
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  @@index([postId, createdAt])
+  @@map("post_comments")
+}
+
+model CivicTopic {
+  id             String              @id @default(uuid())
+  slug           String              @unique
+  displayTag     String              @map("display_tag")
+  postsCount     Int                 @default(0) @map("posts_count")
+  reportsCount   Int                 @default(0) @map("reports_count")
+  debatesCount   Int                 @default(0) @map("debates_count")
+  tractionScore  Float               @default(0) @map("traction_score")
+  lastActivityAt DateTime            @default(now()) @map("last_activity_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  posts          PostTopic[]
+  reports        ReportTopic[]
+  debates        DebateTopic[]
+  followers      UserTopicFollower[]
+
+  @@index([tractionScore(sort: Desc)])
+  @@map("civic_topics")
+}
+
+model PostTopic {
+  postId  String     @map("post_id")
+  topicId String     @map("topic_id")
+  post    Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  topic   CivicTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([postId, topicId])
+  @@index([topicId])
+  @@map("post_topics")
+}
+
+model ReportTopic {
+  reportId String     @map("report_id")
+  topicId  String     @map("topic_id")
+  report   Report     @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  topic    CivicTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([reportId, topicId])
+  @@index([topicId])
+  @@map("report_topics")
+}
+
+model DebateTopic {
+  debateId String     @map("debate_id")
+  topicId  String     @map("topic_id")
+  debate   Debate     @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  topic    CivicTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([debateId, topicId])
+  @@index([topicId])
+  @@map("debate_topics")
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String   @map("follower_id")
+  followingId String   @map("following_id")
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([followerId, followingId])
+  @@map("user_follows")
+}
+
+model UserEntityFollower {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  entityId  String   @map("entity_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, entityId])
+  @@map("user_entity_followers")
+}
+
+model UserTopicFollower {
+  id        String     @id @default(uuid())
+  userId    String     @map("user_id")
+  topicId   String     @map("topic_id")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic     CivicTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@unique([userId, topicId])
+  @@map("user_topic_followers")
 }

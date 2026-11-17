@@ -85,6 +85,8 @@ export declare enum VoteType {
 export declare enum ModerationActionType {
     REPORT_REMOVED = "REPORT_REMOVED",
     COMMENT_REMOVED = "COMMENT_REMOVED",
+    POST_REMOVED = "POST_REMOVED",
+    POST_COMMENT_REMOVED = "POST_COMMENT_REMOVED",
     USER_BANNED = "USER_BANNED",
     USER_UNBANNED = "USER_UNBANNED",
     USER_TYPE_CHANGED = "USER_TYPE_CHANGED",
@@ -94,7 +96,21 @@ export declare enum ModerationActionType {
 }
 export declare enum FlagTargetType {
     REPORT = "REPORT",
-    COMMENT = "COMMENT"
+    COMMENT = "COMMENT",
+    POST = "POST",
+    POST_COMMENT = "POST_COMMENT"
+}
+export declare enum PostKind {
+    STANDARD = "STANDARD",
+    ADVOCACY = "ADVOCACY",
+    POLL = "POLL",
+    QUOTE = "QUOTE"
+}
+export declare enum PostCommentMediaType {
+    TEXT = "TEXT",
+    IMAGE = "IMAGE",
+    GIF = "GIF",
+    AUDIO = "AUDIO"
 }
 export declare enum FlagReason {
     FALSE_INFO = "FALSE_INFO",

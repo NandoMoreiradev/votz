@@ -198,6 +198,17 @@ describe('UsersService', () => {
         propostaVoto: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         apiKey: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         userPoliticianFollower: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        post: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+        postComment: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+        userFollow: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        userEntityFollower: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        userTopicFollower: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
         vote: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         notification: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
         orgMembership: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },

@@ -439,3 +439,72 @@ export interface DebatesResponse {
   data: Debate[]
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
+
+// ==================== PUBLICAÇÕES & PAUTAS CÍVICAS ====================
+
+export type {
+  CivicTopicSummaryDto,
+  EmbeddedDebateDto,
+  EmbeddedDebatePollDto,
+  EmbeddedPropostaDto,
+  EmbeddedReportDto,
+  FeedSortMode,
+  GifSearchItem,
+  PostAuthorInfo,
+  PostCommentDto,
+  PostDto,
+  PostPollDto,
+  PostPollOptionDto,
+  PostQuoteDto,
+} from '@votz/shared-types'
+
+import type {
+  CivicTopicSummaryDto,
+  GifSearchItem,
+  PostDto,
+} from '@votz/shared-types'
+
+export interface PostsResponse {
+  data: PostDto[]
+  meta: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+export interface GifSearchResponse {
+  enabled: boolean
+  provider: 'klipy' | 'giphy' | null
+  items: GifSearchItem[]
+  next: string | null
+}
+
+export interface TopicDetailResponse {
+  topic: CivicTopicSummaryDto
+  reports: Array<{
+    id: string
+    title: string
+    description: string
+    category: Category
+    status: ReportStatus
+    city: string | null
+    state: string | null
+    pressureScore: number
+    media: string[]
+    createdAt: string
+    _count: { votes: number; comments: number }
+  }>
+  debates: Array<{
+    id: string
+    title: string
+    description: string | null
+    status: string
+    scheduledFor: string
+    viewerCount: number
+    creator: { id: string; name: string; avatarUrl: string | null }
+  }>
+  topCities: Array<{ name: string; count: number }>
+  following: boolean
+}

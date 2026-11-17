@@ -222,7 +222,28 @@ export class UsersService {
         await tx.debatePollVote.deleteMany({ where: { userId } })
       }
 
+      // Collect post and postComment R2 mediaKeys before deleting user's social records
+      const userPosts = await tx.post.findMany({
+        where: { authorUserId: userId },
+        select: { mediaKeys: true },
+      })
+      for (const up of userPosts) {
+        r2Keys.push(...up.mediaKeys)
+      }
+      const userPostComments = await tx.postComment.findMany({
+        where: { authorId: userId },
+        select: { mediaKey: true },
+      })
+      for (const upc of userPostComments) {
+        if (upc.mediaKey) r2Keys.push(upc.mediaKey)
+      }
+
       // Hard-delete user-owned records (all required FK relations to User)
+      await tx.postComment.deleteMany({ where: { authorId: userId } })
+      await tx.post.deleteMany({ where: { authorUserId: userId } })
+      await tx.userFollow.deleteMany({ where: { OR: [{ followerId: userId }, { followingId: userId }] } })
+      await tx.userEntityFollower.deleteMany({ where: { userId } })
+      await tx.userTopicFollower.deleteMany({ where: { userId } })
       await tx.debateQuestion.deleteMany({ where: { authorId: userId } })
       await tx.debateMessage.deleteMany({ where: { authorId: userId } })
       await tx.propostaVoto.deleteMany({ where: { usuarioId: userId } })
@@ -243,5 +264,29 @@ export class UsersService {
     for (const key of new Set(r2Keys)) {
       this.storage.delete(key).catch(() => {})
     }
+  }
+
+  async followToggle(targetUserId: string, followerId: string) {
+    if (targetUserId === followerId) {
+      throw new BadRequestException('Você não pode seguir a si mesmo.')
+    }
+    const existing = await this.prisma.userFollow.findUnique({
+      where: { followerId_followingId: { followerId, followingId: targetUserId } },
+    })
+    if (existing) {
+      await this.prisma.userFollow.delete({ where: { id: existing.id } })
+      return { following: false }
+    }
+    await this.prisma.userFollow.create({
+      data: { followerId, followingId: targetUserId },
+    })
+    return { following: true }
+  }
+
+  async isFollowing(targetUserId: string, followerId: string) {
+    const existing = await this.prisma.userFollow.findUnique({
+      where: { followerId_followingId: { followerId, followingId: targetUserId } },
+    })
+    return { following: !!existing }
   }
 }

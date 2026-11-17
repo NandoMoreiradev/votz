@@ -88,4 +88,20 @@ export class UsersController {
   ) {
     return this.usersService.updateProfile(id, user.id, dto)
   }
+
+  @Post(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Seguir ou deixar de seguir um usuário (toggle)' })
+  followToggle(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.usersService.followToggle(id, user.id)
+  }
+
+  @Get(':id/is-following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar se o usuário atual segue este perfil' })
+  isFollowing(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.usersService.isFollowing(id, user.id)
+  }
 }

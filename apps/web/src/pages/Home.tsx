@@ -1,21 +1,26 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { HandsClapping, UsersThree } from '@phosphor-icons/react'
-import { Category, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
+import { Fire, HandsClapping, Megaphone, Newspaper, UsersThree } from '@phosphor-icons/react'
+import { Category, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
+import { PostComposer } from '../components/posts/PostComposer'
+import { PostCard } from '../components/posts/PostCard'
+import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useReports } from '../hooks/useReports'
+import { usePostsFeed } from '../hooks/usePosts'
+import { useTrendingTopics } from '../hooks/useTopics'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
 import { useMyVotes } from '../hooks/useVote'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
-import type { Report, Politician } from '../types/api'
+import type { FeedSortMode, PostDto, Report, Politician } from '../types/api'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 type Sort = 'pressure' | 'recent' | 'votes'
@@ -875,10 +880,19 @@ const ImprensaBtn = styled(Link)`
 `
 
 // ─── FeedCard ─────────────────────────────────────────────────────────────────
-function FeedCard({ report, politicianId }: { report: Report; politicianId?: string }) {
+function FeedCard({
+  report,
+  politicianId,
+  entityId,
+  onAdvocateClick,
+}: {
+  report: Report
+  politicianId?: string
+  entityId?: string
+  onAdvocateClick?: (report: Report, actorType: 'POLITICIAN' | 'ENTITY', actorId: string) => void
+}) {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const user = useAuthStore(s => s.user)
   const { data: myVotes } = useMyVotes(report.id)
   const { open: openMedia } = useMediaViewer()
 
@@ -929,24 +943,30 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
     },
   })
 
-  const canAdvocate =
+  const canAdvocateAsPol =
     !!politicianId &&
-    user?.type === UserType.POLITICIAN &&
     !report.advocacy &&
-    report.recipientType === RecipientType.POLITICIAN &&
-    report.recipientId === politicianId &&
+    (report.recipientType === RecipientType.POLITICIAN ? report.recipientId === politicianId : true) &&
     (report.status === ReportStatus.OPEN || report.status === ReportStatus.UNDER_REVIEW)
 
-  const advocate = useMutation({
-    mutationFn: () =>
-      api.post(`/politicians/${politicianId}/advocate/${report.id}`).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
-  })
+  const canAdvocateAsEnt =
+    !!entityId &&
+    !report.advocacy &&
+    (report.status === ReportStatus.OPEN || report.status === ReportStatus.UNDER_REVIEW)
+
+  const canAdvocate = canAdvocateAsPol || canAdvocateAsEnt
 
   const handleCard    = () => navigate(`/relatos/${report.id}`)
   const handleVote    = (e: MouseEvent, type: VoteType) => { e.stopPropagation(); vote.mutate(type) }
   const handleComment = (e: MouseEvent) => { e.stopPropagation(); navigate(`/relatos/${report.id}`) }
-  const handleAdvocate = (e: MouseEvent) => { e.stopPropagation(); advocate.mutate() }
+  const handleAdvocate = (e: MouseEvent) => {
+    e.stopPropagation()
+    if (canAdvocateAsPol && politicianId) {
+      onAdvocateClick?.(report, 'POLITICIAN', politicianId)
+    } else if (canAdvocateAsEnt && entityId) {
+      onAdvocateClick?.(report, 'ENTITY', entityId)
+    }
+  }
   const handleShare   = (e: MouseEvent) => {
     e.stopPropagation()
     const url = `${window.location.origin}/relatos/${report.id}`
@@ -1046,7 +1066,7 @@ function FeedCard({ report, politicianId }: { report: Report; politicianId?: str
           <ActSpacer />
 
           {canAdvocate && (
-            <AvocBtn onClick={handleAdvocate} disabled={advocate.isPending} title="Avocar este relato">
+            <AvocBtn onClick={handleAdvocate} title="Avocar este relato">
               <ShieldCheckIcon size={13} style={{ marginRight: 4 }} />Avocar
             </AvocBtn>
           )}
@@ -1072,26 +1092,162 @@ const ALL_ACTIVE = new Set([
   ReportStatus.DISPUTED,
 ])
 
+const HOME_TAB_STORAGE_KEY = 'votz:home_feed_tab'
+
+function resolveInitialTab(params: URLSearchParams): 'publicacoes' | 'relatos' {
+  const urlTab = params.get('tab')
+  if (urlTab === 'publicacoes' || urlTab === 'relatos') return urlTab
+  if (params.get('categoria') || params.get('cidade')) return 'relatos'
+  try {
+    const saved = localStorage.getItem(HOME_TAB_STORAGE_KEY)
+    if (saved === 'publicacoes' || saved === 'relatos') return saved
+  } catch {
+    // ignore storage errors
+  }
+  return 'relatos'
+}
+
+const FeedModeWrap = styled.div`
+  display: inline-flex;
+  align-items: center;
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+`
+
+const FeedModeBtn = styled.button<{ $active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: none;
+  background: ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.muted)};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
+  }
+`
+
+const AlgoTabs = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+`
+
+const AlgoTabBtn = styled.button<{ $active: boolean }>`
+  padding: 6px 12px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.border)};
+  background: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.white)};
+  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+`
+
+const TopicRow = styled(Link)`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  transition: background 0.15s;
+  &:hover { background: ${({ theme }) => theme.colors.neutral}; }
+`
+
+const TopicTag = styled.div`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 13.5px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const TopicMeta = styled.div`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 10.5px;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
 export function Home() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, activeContext } = useAuthStore()
 
-  const [category, setCategory]             = useState<Category | undefined>()
+  const [feedTab, setFeedTab] = useState<'publicacoes' | 'relatos'>(() =>
+    resolveInitialTab(searchParams),
+  )
+  const [postSort, setPostSort] = useState<FeedSortMode>('for_you')
+  const [postAuthorType, setPostAuthorType] = useState<'CITIZEN' | 'POLITICIAN' | 'ENTITY' | undefined>()
+  const [postFilterKind, setPostFilterKind] = useState<'all' | 'advocacy' | 'polls'>('all')
+  const [quoteTarget, setQuoteTarget] = useState<PostDto | null>(null)
+  const [advocateTarget, setAdvocateTarget] = useState<{
+    report: Report
+    actorType: 'POLITICIAN' | 'ENTITY'
+    actorId: string
+  } | null>(null)
+
+  const [category, setCategory]             = useState<Category | undefined>(() => {
+    const c = searchParams.get('categoria')
+    return c && Object.values(Category).includes(c as Category) ? (c as Category) : undefined
+  })
   const [statuses, setStatuses]             = useState<Set<ReportStatus>>(new Set(ALL_ACTIVE))
   const [sort, setSort]                     = useState<Sort>('pressure')
   const [period, setPeriod]                 = useState<Period>('30d')
   const [avoc, setAvoc]                     = useState<'all' | 'avocated' | 'none'>('all')
   const [view, setView]                     = useState<'list' | 'map'>('list')
-  const [city, setCity]                     = useState('')
+  const [city, setCity]                     = useState(() => searchParams.get('cidade') ?? '')
   const [uf, setUf]                         = useState('')
 
   const politicianId = activeContext?.type === 'POLITICIAN' ? activeContext.id : undefined
+  const entityId = activeContext?.type === 'ENTITY' ? activeContext.id : undefined
+
+  function switchFeedTab(next: 'publicacoes' | 'relatos') {
+    setFeedTab(next)
+    try {
+      localStorage.setItem(HOME_TAB_STORAGE_KEY, next)
+    } catch {
+      // ignore storage errors
+    }
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', next)
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const { data, isLoading, isError } = useReports({
     category,
     city:  city  || undefined,
     state: uf    || undefined,
     limit: 50,
+  })
+  const {
+    data: postsData,
+    isLoading: loadingPosts,
+    isError: errorPosts,
+  } = usePostsFeed({
+    sort: postSort,
+    city: city || undefined,
+    state: uf || undefined,
+    authorType: postAuthorType,
+    kind: postFilterKind === 'advocacy' ? PostKind.ADVOCACY : undefined,
+    hasPoll: postFilterKind === 'polls' ? true : undefined,
+    limit: 25,
+    enabled: feedTab === 'publicacoes',
+  })
+  const { data: trendingTopics } = useTrendingTopics({
+    state: uf || undefined,
+    city: city || undefined,
+    limit: 6,
   })
   const { data: polData }            = usePoliticians()
   const { data: alerts }             = useAlerts()
@@ -1132,174 +1288,353 @@ export function Home() {
       {/* ── Subheader ── */}
       <Subheader>
         <SubInner>
+          <FeedModeWrap role="tablist" aria-label="Alternar tipo de feed">
+            <FeedModeBtn
+              type="button"
+              role="tab"
+              aria-selected={feedTab === 'publicacoes'}
+              $active={feedTab === 'publicacoes'}
+              onClick={() => switchFeedTab('publicacoes')}
+            >
+              <Newspaper size={16} weight="duotone" />
+              Publicações
+            </FeedModeBtn>
+            <FeedModeBtn
+              type="button"
+              role="tab"
+              aria-selected={feedTab === 'relatos'}
+              $active={feedTab === 'relatos'}
+              onClick={() => switchFeedTab('relatos')}
+            >
+              <Megaphone size={16} weight="duotone" />
+              Relatos
+            </FeedModeBtn>
+          </FeedModeWrap>
+
           <div>
-            <SubCrumb>Feed <span>/</span> <b>Todos os relatos</b></SubCrumb>
+            <SubCrumb>
+              Feed <span>/</span>{' '}
+              <b>{feedTab === 'publicacoes' ? 'Publicações da comunidade' : 'Todos os relatos'}</b>
+            </SubCrumb>
             <div style={{ display: 'flex', alignItems: 'baseline' }}>
               <SubTitle>
-                {data ? `${data.meta.total.toLocaleString('pt-BR')} relatos` : 'Carregando…'}
+                {feedTab === 'publicacoes'
+                  ? postsData
+                    ? `${postsData.meta.total.toLocaleString('pt-BR')} ${postsData.meta.total === 1 ? 'publicação' : 'publicações'}`
+                    : 'Carregando…'
+                  : data
+                    ? `${data.meta.total.toLocaleString('pt-BR')} ${data.meta.total === 1 ? 'relato' : 'relatos'}`
+                    : 'Carregando…'}
               </SubTitle>
-              <SubMeta>últimos <b>{period === 'all' ? 'todos os tempos' : period}</b></SubMeta>
+              {feedTab === 'relatos' && (
+                <SubMeta>últimos <b>{period === 'all' ? 'todos os tempos' : period}</b></SubMeta>
+              )}
             </div>
           </div>
           <SubSpacer />
-          <SubTools>
-            <ToolBtn onClick={() => setSort(nextSort)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 6h18M6 12h12M10 18h4" />
-              </svg>
-              Ordenar:{' '}
-              <span style={{ color: '#9494A0' }}>{sortLabel}</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </ToolBtn>
-            <SegControl>
-              <SegBtn $active={view === 'list'} onClick={() => setView('list')}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M3 12h18M3 18h18" />
+          {feedTab === 'relatos' && (
+            <SubTools>
+              <ToolBtn onClick={() => setSort(nextSort)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M6 12h12M10 18h4" />
                 </svg>
-                Lista
-              </SegBtn>
-              <SegBtn $active={view === 'map'} onClick={() => { setView('map'); navigate('/mapa') }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 4l-6 3v13l6-3M9 4v13M9 4l6 3m0 0l6-3v13l-6 3m0-13v13m-6-3l6 3" />
+                Ordenar:{' '}
+                <span style={{ color: '#9494A0' }}>{sortLabel}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 9l6 6 6-6" />
                 </svg>
-                Mapa
-              </SegBtn>
-            </SegControl>
-          </SubTools>
+              </ToolBtn>
+              <SegControl>
+                <SegBtn $active={view === 'list'} onClick={() => setView('list')}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M3 12h18M3 18h18" />
+                  </svg>
+                  Lista
+                </SegBtn>
+                <SegBtn $active={view === 'map'} onClick={() => { setView('map'); navigate('/mapa') }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 4l-6 3v13l6-3M9 4v13M9 4l6 3m0 0l6-3v13l-6 3m0-13v13m-6-3l6 3" />
+                  </svg>
+                  Mapa
+                </SegBtn>
+              </SegControl>
+            </SubTools>
+          )}
         </SubInner>
       </Subheader>
 
       <Main>
         {/* ── Sidebar ── */}
         <Sidebar>
-          <FilterBlock>
-            <FilterLabel>
-              <span>Categoria</span>
-              {category && <ClearBtn onClick={() => setCategory(undefined)}>Limpar</ClearBtn>}
-            </FilterLabel>
-            <ChipsWrap>
-              <Chip $active={!category} onClick={() => setCategory(undefined)}>Todas</Chip>
-              {Object.values(Category).map(cat => (
-                <Chip key={cat} $active={category === cat} onClick={() => setCategory(cat === category ? undefined : cat)}>
-                  {CAT_CFG[cat].label}
-                </Chip>
-              ))}
-            </ChipsWrap>
-          </FilterBlock>
+          {feedTab === 'publicacoes' ? (
+            <>
+              <FilterBlock>
+                <FilterLabel><span>Autor</span></FilterLabel>
+                <ChipsWrap>
+                  <Chip $active={!postAuthorType} onClick={() => setPostAuthorType(undefined)}>Todos</Chip>
+                  <Chip $active={postAuthorType === 'CITIZEN'} onClick={() => setPostAuthorType('CITIZEN')}>Cidadãos</Chip>
+                  <Chip $active={postAuthorType === 'POLITICIAN'} onClick={() => setPostAuthorType('POLITICIAN')}>Políticos</Chip>
+                  <Chip $active={postAuthorType === 'ENTITY'} onClick={() => setPostAuthorType('ENTITY')}>Entidades</Chip>
+                </ChipsWrap>
+              </FilterBlock>
 
-          <FilterBlock>
-            <FilterLabel><span>Status</span></FilterLabel>
-            <StatusList>
-              {STATUS_LIST.map(({ value, label, dot }) => (
-                <StatusOpt key={value}>
-                  <input type="checkbox" checked={statuses.has(value)} onChange={() => toggleStatus(value)} />
-                  <SDot $color={dot} />
-                  <span className="lbl">{label}</span>
-                </StatusOpt>
-              ))}
-            </StatusList>
-          </FilterBlock>
+              <FilterBlock>
+                <FilterLabel><span>Conteúdo</span></FilterLabel>
+                <RadioList>
+                  <RadioOpt>
+                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'all'} onChange={() => setPostFilterKind('all')} />
+                    <span className="lbl">Tudo</span>
+                  </RadioOpt>
+                  <RadioOpt>
+                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'advocacy'} onChange={() => setPostFilterKind('advocacy')} />
+                    <span className="lbl">Avocações oficiais</span>
+                  </RadioOpt>
+                  <RadioOpt>
+                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'polls'} onChange={() => setPostFilterKind('polls')} />
+                    <span className="lbl">Com enquetes</span>
+                  </RadioOpt>
+                </RadioList>
+              </FilterBlock>
 
-          <FilterBlock>
-            <FilterLabel><span>Período</span></FilterLabel>
-            <PeriodSeg>
-              {(['24h', '7d', '30d', 'all'] as Period[]).map(p => (
-                <PeriodBtn key={p} $active={period === p} onClick={() => setPeriod(p)}>
-                  {p === 'all' ? 'Tudo' : p}
-                </PeriodBtn>
-              ))}
-            </PeriodSeg>
-          </FilterBlock>
+              <FilterBlock>
+                <FilterLabel>
+                  <span>Localização</span>
+                  {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
+                </FilterLabel>
+                <LocationRow>
+                  <FilterStateSelect
+                    value={uf}
+                    onChange={(v) => { setUf(v); setCity('') }}
+                    placeholder="Todos os estados"
+                  />
+                  <FilterCitySelect
+                    uf={uf}
+                    value={city}
+                    onChange={setCity}
+                    placeholder="Todas as cidades"
+                  />
+                </LocationRow>
+              </FilterBlock>
+            </>
+          ) : (
+            <>
+              <FilterBlock>
+                <FilterLabel>
+                  <span>Categoria</span>
+                  {category && <ClearBtn onClick={() => setCategory(undefined)}>Limpar</ClearBtn>}
+                </FilterLabel>
+                <ChipsWrap>
+                  <Chip $active={!category} onClick={() => setCategory(undefined)}>Todas</Chip>
+                  {Object.values(Category).map(cat => (
+                    <Chip key={cat} $active={category === cat} onClick={() => setCategory(cat === category ? undefined : cat)}>
+                      {CAT_CFG[cat].label}
+                    </Chip>
+                  ))}
+                </ChipsWrap>
+              </FilterBlock>
 
-          <FilterBlock>
-            <FilterLabel>
-              <span>Localização</span>
-              {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
-            </FilterLabel>
-            <LocationRow>
-              <FilterStateSelect
-                value={uf}
-                onChange={(v) => { setUf(v); setCity('') }}
-                placeholder="Todos os estados"
-              />
-              <FilterCitySelect
-                uf={uf}
-                value={city}
-                onChange={setCity}
-                placeholder="Todas as cidades"
-              />
-            </LocationRow>
-          </FilterBlock>
+              <FilterBlock>
+                <FilterLabel><span>Status</span></FilterLabel>
+                <StatusList>
+                  {STATUS_LIST.map(({ value, label, dot }) => (
+                    <StatusOpt key={value}>
+                      <input type="checkbox" checked={statuses.has(value)} onChange={() => toggleStatus(value)} />
+                      <SDot $color={dot} />
+                      <span className="lbl">{label}</span>
+                    </StatusOpt>
+                  ))}
+                </StatusList>
+              </FilterBlock>
 
-          <FilterBlock>
-            <FilterLabel><span>Avocação política</span></FilterLabel>
-            <RadioList>
-              <RadioOpt>
-                <input type="radio" name="avoc" checked={avoc === 'all'} onChange={() => setAvoc('all')} />
-                <span className="lbl">Tudo</span>
-              </RadioOpt>
-              <RadioOpt>
-                <input type="radio" name="avoc" checked={avoc === 'avocated'} onChange={() => setAvoc('avocated')} />
-                <span className="lbl">Avocados</span>
-              </RadioOpt>
-              <RadioOpt>
-                <input type="radio" name="avoc" checked={avoc === 'none'} onChange={() => setAvoc('none')} />
-                <span className="lbl">Sem avocação</span>
-              </RadioOpt>
-            </RadioList>
-          </FilterBlock>
+              <FilterBlock>
+                <FilterLabel><span>Período</span></FilterLabel>
+                <PeriodSeg>
+                  {(['24h', '7d', '30d', 'all'] as Period[]).map(p => (
+                    <PeriodBtn key={p} $active={period === p} onClick={() => setPeriod(p)}>
+                      {p === 'all' ? 'Tudo' : p}
+                    </PeriodBtn>
+                  ))}
+                </PeriodSeg>
+              </FilterBlock>
+
+              <FilterBlock>
+                <FilterLabel>
+                  <span>Localização</span>
+                  {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
+                </FilterLabel>
+                <LocationRow>
+                  <FilterStateSelect
+                    value={uf}
+                    onChange={(v) => { setUf(v); setCity('') }}
+                    placeholder="Todos os estados"
+                  />
+                  <FilterCitySelect
+                    uf={uf}
+                    value={city}
+                    onChange={setCity}
+                    placeholder="Todas as cidades"
+                  />
+                </LocationRow>
+              </FilterBlock>
+
+              <FilterBlock>
+                <FilterLabel><span>Avocação política</span></FilterLabel>
+                <RadioList>
+                  <RadioOpt>
+                    <input type="radio" name="avoc" checked={avoc === 'all'} onChange={() => setAvoc('all')} />
+                    <span className="lbl">Tudo</span>
+                  </RadioOpt>
+                  <RadioOpt>
+                    <input type="radio" name="avoc" checked={avoc === 'avocated'} onChange={() => setAvoc('avocated')} />
+                    <span className="lbl">Avocados</span>
+                  </RadioOpt>
+                  <RadioOpt>
+                    <input type="radio" name="avoc" checked={avoc === 'none'} onChange={() => setAvoc('none')} />
+                    <span className="lbl">Sem avocação</span>
+                  </RadioOpt>
+                </RadioList>
+              </FilterBlock>
+            </>
+          )}
         </Sidebar>
 
         {/* ── Feed ── */}
-        <FeedSection>
-          <FeedHead>
-            <FeedCount><b>{filtered.length}</b> resultados</FeedCount>
-            <LiveIndicator><LiveDot /> Atualizando</LiveIndicator>
-          </FeedHead>
+        {feedTab === 'publicacoes' ? (
+          <FeedSection>
+            <AlgoTabs>
+              <AlgoTabBtn type="button" $active={postSort === 'for_you'} onClick={() => setPostSort('for_you')}>
+                Para você
+              </AlgoTabBtn>
+              <AlgoTabBtn type="button" $active={postSort === 'trending'} onClick={() => setPostSort('trending')}>
+                Em alta
+              </AlgoTabBtn>
+              {user && (
+                <AlgoTabBtn type="button" $active={postSort === 'following'} onClick={() => setPostSort('following')}>
+                  Seguindo
+                </AlgoTabBtn>
+              )}
+              <AlgoTabBtn type="button" $active={postSort === 'recent'} onClick={() => setPostSort('recent')}>
+                Recentes
+              </AlgoTabBtn>
+            </AlgoTabs>
 
-          {activeSurto && (
-            <SurtoBannerWrap>
-              <SurtoTag>⚡ Surto</SurtoTag>
-              <SurtoText>
-                <b>{activeSurto.city}{activeSurto.state ? ` · ${activeSurto.state}` : ''}</b>
-                {' '}— <b>{activeSurto.count} relatos</b> de{' '}
-                {CAT_CFG[activeSurto.category as keyof typeof CAT_CFG]?.label ?? activeSurto.category}{' '}
-                nas últimas 24h.
-                <small>Detectado {timeAgo(activeSurto.detectedAt)} · Entidades notificadas</small>
-              </SurtoText>
-              <SurtoAnchor onClick={() => navigate(`/?categoria=${activeSurto.category}&cidade=${encodeURIComponent(activeSurto.city)}`)}>
-                Ver relatos →
-              </SurtoAnchor>
-            </SurtoBannerWrap>
-          )}
+            <PostComposer
+              quotePost={quoteTarget}
+              onClearQuote={() => setQuoteTarget(null)}
+            />
 
-          <Feed>
-            {isLoading && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+            <Feed>
+              {loadingPosts && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
 
-            {isError && (
-              <EmptyState>
-                <h3>Não foi possível carregar</h3>
-                <p>Verifique sua conexão e tente novamente.</p>
-              </EmptyState>
+              {errorPosts && (
+                <EmptyState>
+                  <h3>Não foi possível carregar as publicações</h3>
+                  <p>Verifique sua conexão e tente novamente.</p>
+                </EmptyState>
+              )}
+
+              {!loadingPosts && !errorPosts && (postsData?.data ?? []).length === 0 && (
+                <EmptyState>
+                  <h3>Nenhuma publicação encontrada</h3>
+                  <p>
+                    {postSort === 'following'
+                      ? 'Siga cidadãos, políticos, entidades ou #pautas para ver suas publicações aqui.'
+                      : 'Seja o primeiro a publicar uma atualização, foto, vídeo ou enquete!'}
+                  </p>
+                </EmptyState>
+              )}
+
+              {(postsData?.data ?? []).map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  onQuote={(p) => {
+                    setQuoteTarget(p)
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                />
+              ))}
+            </Feed>
+          </FeedSection>
+        ) : (
+          <FeedSection>
+            <FeedHead>
+              <FeedCount><b>{filtered.length}</b> resultados</FeedCount>
+              <LiveIndicator><LiveDot /> Atualizando</LiveIndicator>
+            </FeedHead>
+
+            {activeSurto && (
+              <SurtoBannerWrap>
+                <SurtoTag>⚡ Surto</SurtoTag>
+                <SurtoText>
+                  <b>{activeSurto.city}{activeSurto.state ? ` · ${activeSurto.state}` : ''}</b>
+                  {' '}— <b>{activeSurto.count} relatos</b> de{' '}
+                  {CAT_CFG[activeSurto.category as keyof typeof CAT_CFG]?.label ?? activeSurto.category}{' '}
+                  nas últimas 24h.
+                  <small>Detectado {timeAgo(activeSurto.detectedAt)} · Entidades notificadas</small>
+                </SurtoText>
+                <SurtoAnchor onClick={() => navigate(`/?tab=relatos&categoria=${activeSurto.category}&cidade=${encodeURIComponent(activeSurto.city)}`)}>
+                  Ver relatos →
+                </SurtoAnchor>
+              </SurtoBannerWrap>
             )}
 
-            {!isLoading && !isError && filtered.length === 0 && (
-              <EmptyState>
-                <h3>Nenhum relato encontrado</h3>
-                <p>Tente ajustar os filtros ou seja o primeiro a registrar um problema.</p>
-              </EmptyState>
-            )}
+            <Feed>
+              {isLoading && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
 
-            {filtered.map(report => (
-              <FeedCard key={report.id} report={report} politicianId={politicianId} />
-            ))}
-          </Feed>
-        </FeedSection>
+              {isError && (
+                <EmptyState>
+                  <h3>Não foi possível carregar</h3>
+                  <p>Verifique sua conexão e tente novamente.</p>
+                </EmptyState>
+              )}
+
+              {!isLoading && !isError && filtered.length === 0 && (
+                <EmptyState>
+                  <h3>Nenhum relato encontrado</h3>
+                  <p>Tente ajustar os filtros ou seja o primeiro a registrar um problema.</p>
+                </EmptyState>
+              )}
+
+              {filtered.map(report => (
+                <FeedCard
+                  key={report.id}
+                  report={report}
+                  politicianId={politicianId}
+                  entityId={entityId}
+                  onAdvocateClick={(rep, actorType, actorId) =>
+                    setAdvocateTarget({ report: rep, actorType, actorId })
+                  }
+                />
+              ))}
+            </Feed>
+          </FeedSection>
+        )}
 
         {/* ── Rail ── */}
         <Rail>
+          {trendingTopics && trendingTopics.length > 0 && (
+            <RailCard>
+              <RailHead>
+                <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Fire size={15} weight="fill" color="#E63946" /> Pautas em Alta
+                </h3>
+              </RailHead>
+              <div>
+                {trendingTopics.map((t) => (
+                  <TopicRow key={t.id} to={`/pautas/${t.slug}`}>
+                    <div>
+                      <TopicTag>{t.displayTag}</TopicTag>
+                      <TopicMeta>
+                        {t.postsCount} posts · {t.reportsCount} relatos · {t.debatesCount} debates
+                      </TopicMeta>
+                    </div>
+                    <TopicMeta>→</TopicMeta>
+                  </TopicRow>
+                ))}
+              </div>
+            </RailCard>
+          )}
           <RailCard>
             <MiniMapBox to="/mapa">
               <MiniMapGrid />
@@ -1377,6 +1712,22 @@ export function Home() {
           </ImprensaCTA>
         </Rail>
       </Main>
+
+      {advocateTarget && (
+        <AdvocateConfirmModal
+          isOpen={!!advocateTarget}
+          reportId={advocateTarget.report.id}
+          reportTitle={advocateTarget.report.title}
+          actorType={advocateTarget.actorType}
+          actorId={advocateTarget.actorId}
+          onClose={() => setAdvocateTarget(null)}
+          onSuccess={(res) => {
+            if (res.postId) {
+              switchFeedTab('publicacoes')
+            }
+          }}
+        />
+      )}
     </Page>
   )
 }

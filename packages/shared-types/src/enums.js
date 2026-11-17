@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FlagStatus = exports.FlagReason = exports.FlagTargetType = exports.ModerationActionType = exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
+exports.FlagStatus = exports.FlagReason = exports.PostCommentMediaType = exports.PostKind = exports.FlagTargetType = exports.ModerationActionType = exports.VoteType = exports.CompanyPlan = exports.CompanySize = exports.CompanySector = exports.RecipientType = exports.EntityType = exports.Category = exports.EventType = exports.ReportStatus = exports.UserType = void 0;
 var UserType;
 (function (UserType) {
     UserType["CITIZEN"] = "CITIZEN";
@@ -99,6 +99,8 @@ var ModerationActionType;
 (function (ModerationActionType) {
     ModerationActionType["REPORT_REMOVED"] = "REPORT_REMOVED";
     ModerationActionType["COMMENT_REMOVED"] = "COMMENT_REMOVED";
+    ModerationActionType["POST_REMOVED"] = "POST_REMOVED";
+    ModerationActionType["POST_COMMENT_REMOVED"] = "POST_COMMENT_REMOVED";
     ModerationActionType["USER_BANNED"] = "USER_BANNED";
     ModerationActionType["USER_UNBANNED"] = "USER_UNBANNED";
     ModerationActionType["USER_TYPE_CHANGED"] = "USER_TYPE_CHANGED";
@@ -110,7 +112,23 @@ var FlagTargetType;
 (function (FlagTargetType) {
     FlagTargetType["REPORT"] = "REPORT";
     FlagTargetType["COMMENT"] = "COMMENT";
+    FlagTargetType["POST"] = "POST";
+    FlagTargetType["POST_COMMENT"] = "POST_COMMENT";
 })(FlagTargetType || (exports.FlagTargetType = FlagTargetType = {}));
+var PostKind;
+(function (PostKind) {
+    PostKind["STANDARD"] = "STANDARD";
+    PostKind["ADVOCACY"] = "ADVOCACY";
+    PostKind["POLL"] = "POLL";
+    PostKind["QUOTE"] = "QUOTE";
+})(PostKind || (exports.PostKind = PostKind = {}));
+var PostCommentMediaType;
+(function (PostCommentMediaType) {
+    PostCommentMediaType["TEXT"] = "TEXT";
+    PostCommentMediaType["IMAGE"] = "IMAGE";
+    PostCommentMediaType["GIF"] = "GIF";
+    PostCommentMediaType["AUDIO"] = "AUDIO";
+})(PostCommentMediaType || (exports.PostCommentMediaType = PostCommentMediaType = {}));
 var FlagReason;
 (function (FlagReason) {
     FlagReason["FALSE_INFO"] = "FALSE_INFO";

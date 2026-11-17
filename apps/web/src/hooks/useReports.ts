@@ -14,6 +14,7 @@ interface UseReportsParams {
   status?: ReportStatus
   city?: string
   state?: string
+  search?: string
   page?: number
   limit?: number
 }

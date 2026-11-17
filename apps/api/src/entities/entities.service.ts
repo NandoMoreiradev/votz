@@ -4,10 +4,13 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common'
 import { OrgPermission } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
+import { PostsService } from '../posts/posts.service'
+import { AdvocateReportDto } from '../posts/dto/advocate-report.dto'
 import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { UpdateEntityDto } from './dto/update-entity.dto'
@@ -22,6 +25,7 @@ export class EntitiesService {
     private readonly repo: EntitiesRepository,
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    @Optional() private readonly posts?: PostsService,
   ) {}
 
   async register(userId: string, dto: CreateEntityDto) {
@@ -105,7 +109,7 @@ export class EntitiesService {
     return this.repo.update(id, dto as object)
   }
 
-  async advocate(entityId: string, reportId: string, user: ActingUser) {
+  async advocate(entityId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
     await requireActingOrg(
       this.prisma,
       user,
@@ -166,6 +170,38 @@ export class EntitiesService {
       },
     })
 
-    return { advocated: true }
+    let postId: string | undefined
+    if (dto?.publishToFeed && this.posts) {
+      const createdPost = await this.posts.createAdvocacyPost({
+        reportId,
+        userId,
+        orgType: 'ENTITY',
+        orgId: entityId,
+        content: dto.postContent,
+        media: dto.media,
+      })
+      postId = createdPost.id
+    }
+
+    return postId ? { advocated: true, postId } : { advocated: true }
+  }
+
+  async followToggle(entityId: string, userId: string) {
+    const existing = await this.prisma.userEntityFollower.findUnique({
+      where: { userId_entityId: { userId, entityId } },
+    })
+    if (existing) {
+      await this.prisma.userEntityFollower.delete({ where: { id: existing.id } })
+      return { following: false }
+    }
+    await this.prisma.userEntityFollower.create({ data: { userId, entityId } })
+    return { following: true }
+  }
+
+  async isFollowing(entityId: string, userId: string) {
+    const existing = await this.prisma.userEntityFollower.findUnique({
+      where: { userId_entityId: { userId, entityId } },
+    })
+    return { following: !!existing }
   }
 }

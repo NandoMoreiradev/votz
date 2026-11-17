@@ -4,11 +4,14 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common'
 import { OrgPermission, PoliticianStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { StorageService } from '../storage/storage.service'
+import { PostsService } from '../posts/posts.service'
+import { AdvocateReportDto } from '../posts/dto/advocate-report.dto'
 import { PoliticiansRepository } from './politicians.repository'
 import { CreatePoliticianDto } from './dto/create-politician.dto'
 import { UpdatePoliticianDto } from './dto/update-politician.dto'
@@ -23,6 +26,7 @@ export class PoliticiansService {
     private readonly prisma: PrismaService,
     private readonly timeline: TimelineService,
     private readonly storage: StorageService,
+    @Optional() private readonly posts?: PostsService,
   ) {}
 
   async register(userId: string, dto: CreatePoliticianDto) {
@@ -132,7 +136,7 @@ export class PoliticiansService {
     }
   }
 
-  async advocate(politicianId: string, reportId: string, user: ActingUser) {
+  async advocate(politicianId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
     await requireActingOrg(
       this.prisma,
       user,
@@ -197,6 +201,19 @@ export class PoliticiansService {
     const stats = await this.repo.mandatometerStats(politicianId)
     await this.repo.updateMandatometer(politicianId, stats)
 
-    return { advocated: true }
+    let postId: string | undefined
+    if (dto?.publishToFeed && this.posts) {
+      const createdPost = await this.posts.createAdvocacyPost({
+        reportId,
+        userId,
+        orgType: 'POLITICIAN',
+        orgId: politicianId,
+        content: dto.postContent,
+        media: dto.media,
+      })
+      postId = createdPost.id
+    }
+
+    return postId ? { advocated: true, postId } : { advocated: true }
   }
 }

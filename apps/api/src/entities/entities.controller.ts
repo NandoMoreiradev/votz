@@ -22,6 +22,7 @@ import { RequiresFeature } from '../auth/decorators/requires-feature.decorator'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
 import { ActingUser } from '../auth/acting-org'
+import { AdvocateReportDto } from '../posts/dto/advocate-report.dto'
 
 @ApiTags('entities')
 @Controller('entities')
@@ -101,8 +102,25 @@ export class EntitiesController {
     @Param('id') id: string,
     @Param('reportId') reportId: string,
     @CurrentUser() user: ActingUser,
+    @Body() dto?: AdvocateReportDto,
   ) {
-    return this.entitiesService.advocate(id, reportId, user)
+    return this.entitiesService.advocate(id, reportId, user, dto)
+  }
+
+  @Post(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Seguir ou deixar de seguir uma entidade (toggle)' })
+  follow(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.entitiesService.followToggle(id, user.id)
+  }
+
+  @Get(':id/is-following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar se o usuário atual segue esta entidade' })
+  isFollowing(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.entitiesService.isFollowing(id, user.id)
   }
 
   @Get(':id/export')

@@ -24,6 +24,11 @@ export class ListReportsQueryDto {
   @IsString()
   state?: string
 
+  @ApiPropertyOptional({ description: 'Busca por título ou descrição' })
+  @IsOptional()
+  @IsString()
+  search?: string
+
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
   @IsInt()

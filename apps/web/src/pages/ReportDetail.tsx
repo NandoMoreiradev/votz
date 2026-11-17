@@ -9,6 +9,7 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
+import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
@@ -735,13 +736,8 @@ export function ReportDetail() {
   const [mediaItems, setMediaItems] = useState<UploadMediaItem[]>([])
   const updateStatusMut = useUpdateReportStatus(id!)
 
-  const advocateMutation = useMutation({
-    mutationFn: ({ actorType, actorId, reportId }: { actorType: 'POLITICIAN' | 'ENTITY'; actorId: string; reportId: string }) => {
-      const base = actorType === 'POLITICIAN' ? 'politicians' : 'entities'
-      return api.post(`/${base}/${actorId}/advocate/${reportId}`).then((r) => r.data)
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['report', id] }),
-  })
+  const [advocateModalOpen, setAdvocateModalOpen] = useState(false)
+  const [advocateActor, setAdvocateActor] = useState<{ actorType: 'POLITICIAN' | 'ENTITY'; actorId: string } | null>(null)
 
   const [showReatribuir, setShowReatribuir] = useState(false)
   const [reatribuirSearch, setReatribuirSearch] = useState('')
@@ -1121,23 +1117,25 @@ export function ReportDetail() {
                 <SideCard>
                   <SideTitle>{sectionTitle}</SideTitle>
                   <AvocBtn
-                    disabled={advocateMutation.isPending}
-                    onClick={() =>
-                      advocateMutation.mutate({ actorType, actorId: actorId!, reportId: report.id })
-                    }
+                    onClick={() => {
+                      setAdvocateActor({ actorType, actorId: actorId! })
+                      setAdvocateModalOpen(true)
+                    }}
                   >
-                    {advocateMutation.isPending
-                      ? 'Avocando…'
-                      : <><ShieldCheckIcon size={14} style={{ marginRight: 6 }} />Avocar este relato</>
-                    }
+                    <ShieldCheckIcon size={14} style={{ marginRight: 6 }} />Avocar este relato
                   </AvocBtn>
                   <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: 8, lineHeight: 1.5 }}>
-                    Ao avocar, você assume publicamente o compromisso de acompanhar e pressionar pela resolução deste problema.
+                    Ao avocar, você assume publicamente o compromisso de acompanhar e pressionar pela resolução deste problema — e pode publicar no feed.
                   </p>
-                  {advocateMutation.isError && (
-                    <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
-                      Não foi possível avocar. Tente novamente.
-                    </p>
+                  {advocateActor && (
+                    <AdvocateConfirmModal
+                      isOpen={advocateModalOpen}
+                      reportId={report.id}
+                      reportTitle={report.title}
+                      actorType={advocateActor.actorType}
+                      actorId={advocateActor.actorId}
+                      onClose={() => setAdvocateModalOpen(false)}
+                    />
                   )}
                 </SideCard>
               )

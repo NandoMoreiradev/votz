@@ -50,6 +50,8 @@ import { Termos } from './pages/Termos'
 import { Privacidade } from './pages/Privacidade'
 import { Cookies } from './pages/Cookies'
 import { Diretrizes } from './pages/Diretrizes'
+import { PostDetail } from './pages/PostDetail'
+import { PautaDetail } from './pages/PautaDetail'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
 import { OrgReauthGate } from './components/ui/OrgReauthGate'
@@ -97,6 +99,8 @@ function App() {
             <OrgReauthGate />
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/publicacoes/:id" element={<PostDetail />} />
+              <Route path="/pautas/:slug" element={<PautaDetail />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />
               <Route path="/novo" element={<CreateReport />} />
               <Route path="/entrar" element={<Login />} />

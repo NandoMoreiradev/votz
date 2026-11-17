@@ -27,6 +27,20 @@ export class ModerationRepository {
     })
   }
 
+  findPostTarget(id: string) {
+    return this.prisma.post.findUnique({
+      where: { id },
+      select: { id: true, authorUserId: true },
+    })
+  }
+
+  findPostCommentTarget(id: string) {
+    return this.prisma.postComment.findUnique({
+      where: { id },
+      select: { id: true, authorId: true },
+    })
+  }
+
   findDuplicate(reporterId: string, targetType: FlagTargetType, targetId: string) {
     return this.prisma.contentFlag.findUnique({
       where: {
@@ -86,8 +100,10 @@ export class ModerationRepository {
 
     const reportIds = flags.filter((f) => f.targetType === FlagTargetType.REPORT).map((f) => f.targetId)
     const commentIds = flags.filter((f) => f.targetType === FlagTargetType.COMMENT).map((f) => f.targetId)
+    const postIds = flags.filter((f) => f.targetType === FlagTargetType.POST).map((f) => f.targetId)
+    const postCommentIds = flags.filter((f) => f.targetType === FlagTargetType.POST_COMMENT).map((f) => f.targetId)
 
-    const [reports, comments] = await Promise.all([
+    const [reports, comments, posts, postComments] = await Promise.all([
       reportIds.length > 0
         ? this.prisma.report.findMany({
             where: { id: { in: reportIds } },
@@ -105,10 +121,24 @@ export class ModerationRepository {
             },
           })
         : Promise.resolve([]),
+      postIds.length > 0
+        ? this.prisma.post.findMany({
+            where: { id: { in: postIds } },
+            select: { id: true, content: true },
+          })
+        : Promise.resolve([]),
+      postCommentIds.length > 0
+        ? this.prisma.postComment.findMany({
+            where: { id: { in: postCommentIds } },
+            select: { id: true, content: true, postId: true },
+          })
+        : Promise.resolve([]),
     ])
 
     const reportMap = new Map(reports.map((r) => [r.id, r]))
     const commentMap = new Map(comments.map((c) => [c.id, c]))
+    const postMap = new Map(posts.map((p) => [p.id, p]))
+    const postCommentMap = new Map(postComments.map((c) => [c.id, c]))
 
     const data = flags.map((flag) => {
       let targetPreview: FlagTargetPreview
@@ -127,13 +157,43 @@ export class ModerationRepository {
               link: null,
               exists: false,
             }
-      } else {
+      } else if (flag.targetType === FlagTargetType.COMMENT) {
         const com = commentMap.get(flag.targetId)
         targetPreview = com
           ? {
               title: com.report?.title ?? null,
               excerpt: com.content.slice(0, 200),
               link: `/relatos/${com.reportId}`,
+              exists: true,
+            }
+          : {
+              title: null,
+              excerpt: '[Comentário já removido]',
+              link: null,
+              exists: false,
+            }
+      } else if (flag.targetType === FlagTargetType.POST) {
+        const post = postMap.get(flag.targetId)
+        targetPreview = post
+          ? {
+              title: 'Publicação no Feed',
+              excerpt: post.content.slice(0, 200),
+              link: `/publicacoes/${post.id}`,
+              exists: true,
+            }
+          : {
+              title: null,
+              excerpt: '[Publicação já removida]',
+              link: null,
+              exists: false,
+            }
+      } else {
+        const com = postCommentMap.get(flag.targetId)
+        targetPreview = com
+          ? {
+              title: 'Comentário em publicação',
+              excerpt: com.content.slice(0, 200),
+              link: `/publicacoes/${com.postId}`,
               exists: true,
             }
           : {

@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common'
 import { FlagStatus, FlagTargetType } from '@prisma/client'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { AdminService } from '../admin/admin.service'
 import { CommentsService } from '../comments/comments.service'
+import { PostsService } from '../posts/posts.service'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { ResolveFlagDto } from './dto/resolve-flag.dto'
 import { ModerationRepository } from './moderation.repository'
@@ -19,6 +21,7 @@ export class ModerationService {
     private readonly repo: ModerationRepository,
     private readonly adminService: AdminService,
     private readonly commentsService: CommentsService,
+    @Optional() private readonly postsService?: PostsService,
   ) {}
 
   async createFlag(reporter: { id: string; emailVerified: boolean }, dto: CreateFlagDto) {
@@ -34,12 +37,28 @@ export class ModerationService {
       if (!report.anonymous && report.authorId && report.authorId === reporter.id) {
         throw new ForbiddenException('Você não pode sinalizar seu próprio relato.')
       }
-    } else {
+    } else if (dto.targetType === FlagTargetType.COMMENT) {
       const comment = await this.repo.findCommentTarget(dto.targetId)
       if (!comment) {
         throw new NotFoundException('Comentário não encontrado.')
       }
       if (comment.authorId === reporter.id) {
+        throw new ForbiddenException('Você não pode sinalizar seu próprio comentário.')
+      }
+    } else if (dto.targetType === FlagTargetType.POST) {
+      const post = await this.repo.findPostTarget(dto.targetId)
+      if (!post) {
+        throw new NotFoundException('Publicação não encontrada.')
+      }
+      if (post.authorUserId === reporter.id) {
+        throw new ForbiddenException('Você não pode sinalizar sua própria publicação.')
+      }
+    } else {
+      const postComment = await this.repo.findPostCommentTarget(dto.targetId)
+      if (!postComment) {
+        throw new NotFoundException('Comentário não encontrado.')
+      }
+      if (postComment.authorId === reporter.id) {
         throw new ForbiddenException('Você não pode sinalizar seu próprio comentário.')
       }
     }
@@ -90,8 +109,12 @@ export class ModerationService {
 
     if (flag.targetType === FlagTargetType.REPORT) {
       await this.adminService.deleteReport(flag.targetId, actor.id, note)
-    } else {
+    } else if (flag.targetType === FlagTargetType.COMMENT) {
       await this.commentsService.delete(flag.targetId, actor.id, actor.type, note)
+    } else if (flag.targetType === FlagTargetType.POST) {
+      await this.postsService?.deletePost(flag.targetId, actor.id, actor.type, note)
+    } else {
+      await this.postsService?.deleteComment(flag.targetId, actor.id, actor.type, note)
     }
 
     return this.repo.markTargetFlagsActioned(flag.targetType, flag.targetId, actor.id, note)
