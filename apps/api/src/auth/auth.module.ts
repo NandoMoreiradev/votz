@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport'
 import { BullModule } from '@nestjs/bullmq'
 import { ConfigService } from '@nestjs/config'
 import { AuthController } from './auth.controller'
+import { MobileAuthController } from './mobile-auth.controller'
 import { AuthService } from './auth.service'
 import { JwtStrategy } from './strategies/jwt.strategy'
 import { GoogleStrategy } from './strategies/google.strategy'
@@ -31,7 +32,7 @@ import { RefreshCleanupCron } from './refresh-cleanup.cron'
     MailModule,
     AccessLogModule,
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, MobileAuthController],
   providers: [
     AuthService,
     JwtStrategy,

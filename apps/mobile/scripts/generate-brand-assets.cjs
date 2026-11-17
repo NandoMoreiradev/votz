@@ -1,0 +1,10 @@
+const { readFileSync, writeFileSync } = require('node:fs')
+const { resolve } = require('node:path')
+const { Resvg } = require('@resvg/resvg-js')
+
+const root = resolve(__dirname, '..')
+const symbol = readFileSync(resolve(root, '../web/src/assets/brand/votz-symbol.svg'), 'utf8')
+writeFileSync(resolve(root, 'assets/votz-icon.png'), new Resvg(symbol, { fitTo: { mode: 'width', value: 1024 } }).render().asPng())
+const foreground = symbol.replace(/<rect[^>]+\/>/, '').replace('viewBox="0 0 120 120"', 'viewBox="-30 -30 180 180"')
+writeFileSync(resolve(root, 'assets/votz-foreground.png'), new Resvg(foreground, { fitTo: { mode: 'width', value: 1024 } }).render().asPng())
+console.log('Ícones mobile gerados a partir do símbolo oficial do Votz.')

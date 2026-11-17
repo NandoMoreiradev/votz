@@ -1,0 +1,26 @@
+import type { Category, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
+
+export type { PostDto }
+export type User = AuthenticatedUser
+export interface Page<T> {
+  data: T[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}
+export interface Report {
+  id: string; title: string; description: string; category: Category; status: ReportStatus
+  city: string | null; state: string | null; anonymous: boolean; media: string[]
+  pressureScore: number; createdAt: string
+  author: { id: string; name: string; avatarUrl: string | null } | null
+  _count: { votes: number; comments: number }
+  timeline?: { id: string; content: string; createdAt: string; type: string }[]
+}
+export type ReportSummary = Pick<Report, 'id' | 'title' | 'status' | 'city' | 'createdAt' | '_count'>
+export type ProfileKind = 'users' | 'politicians' | 'entities'
+export interface PublicProfile {
+  id: string; name?: string; legalName?: string; avatarUrl?: string | null
+  logoUrl?: string | null; bio?: string | null; description?: string | null
+  office?: string; city?: string | null; state?: string | null; verified?: boolean
+  votzScore?: number; reputation?: number
+}
+export interface Session { user: User; accessToken: string; refreshToken: string }
+export type LoginResult = Session | { requiresMfa: true; mfaToken: string } | { requiresMfaSetup: true; mfaSetupToken: string }
