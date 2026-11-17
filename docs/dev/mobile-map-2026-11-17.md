@@ -43,4 +43,28 @@ Na última verificação desta etapa, o EAS ainda mostrava `IN_QUEUE`. O APK ant
 
 Após a build finalizar, baixar o APK, instalar com `adb install -r`, manter os encaminhamentos USB 3000/8081 e abrir a development build no Metro local. Reiniciar Metro se necessário após instalar dependências nativas. A build é do cliente de desenvolvimento; durante os testes, ele carrega o código atualizado servido pelo Metro.
 
+Atualização posterior: a build passou para `FINISHED` e o APK foi baixado em `apps/mobile/.expo/map-development.apk`. A instalação não ocorreu porque o ADB retornou `no devices/emulators found`. Foi solicitada a reconexão do aparelho; a validação física continua pendente. A distribuição de reposts citada como ausente acima foi implementada em uma etapa posterior: [reposts-distribution-2026-11-17.md](./reposts-distribution-2026-11-17.md).
+
+## Validação física após reconexão USB
+
+O usuário reconectou o RMX3840. `adb install -r` retornou `Success`; as portas 3000 e 8081 foram encaminhadas novamente e a nova development build abriu o código do Metro.
+
+| Fluxo no Android real | Resultado |
+| --- | --- |
+| Renderização do mapa, tiles, nomes e grupos | Passou, 187 relatos carregados |
+| Enquadramento inicial | Ajustado para reservar espaço aos controles e ao cartão inferior; conferido após reiniciar |
+| Categoria Saúde | 18 relatos, igual à API |
+| Saúde + Resolvido | 2 relatos, igual à API |
+| Toque em agrupamento | Ampliou e separou os dois marcadores |
+| Seleção de marcador | Cartão com categoria/status, título e contadores; anel de seleção visível |
+| Ver relato | Abriu `[Demo] Falta de remédio na farmácia do posto - Jardins`, do marcador selecionado |
+| Voltar do relato | Retornou ao mapa com filtros preservados |
+| Arrastar e Buscar nesta área | Consulta executada; recorte sem pontos mostrou 0 relatos e orientação para mudar de área |
+| Limpar filtros | Restaurou os 187 relatos |
+| Minha localização | Centralizou e mostrou o indicador azul; coordenadas pessoais não foram registradas neste documento |
+| Logs do processo do Votz durante os testes | Sem erro React Native ou falha fatal no trecho inspecionado |
+| Lint e TypeScript após os ajustes | Passaram |
+
+O ajuste de enquadramento e a correção de singular/plural dos contadores são mudanças JS, servidas pelo Metro; não exigem outro APK. A instalação e a validação básica do mapa no Android estão concluídas. Permanecem fora desta rodada: teste físico em iPhone, rede offline e medições de desempenho em build release.
+
 Referências: [MapLibre — Expo Setup](https://maplibre.org/maplibre-react-native/docs/setup/expo/), [MapLibre — requisitos](https://maplibre.org/maplibre-react-native/docs/setup/getting-started/), [Expo SDK 58 Location](https://docs.expo.dev/versions/v58.0.0/sdk/location/), [OpenFreeMap — integração mobile](https://openfreemap.org/quick_start/).

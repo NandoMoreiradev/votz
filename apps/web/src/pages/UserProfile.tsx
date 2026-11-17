@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -367,17 +367,23 @@ export function UserProfile() {
   const { user: authUser } = useAuthStore()
   const [tab, setTab] = useState<'publicacoes' | 'relatos'>('publicacoes')
   const [page, setPage] = useState(1)
+  const [postPage, setPostPage] = useState(1)
   const [showInviteModal, setShowInviteModal] = useState(false)
 
   const { data: user, isLoading: loadingUser } = useUser(id!)
   const { data: reports, isLoading: loadingReports } = useUserReports(id!, page)
   const { data: postsData, isLoading: loadingPosts } = usePostsFeed({
-    authorUserId: id,
+    profileUserId: id,
+    page: postPage,
     sort: 'recent',
     limit: 20,
     enabled: !!id && tab === 'publicacoes',
   })
   const { data: followState } = useIsFollowingTarget('USER', id)
+  useEffect(() => { setPostPage(1); setPage(1) }, [id])
+  useEffect(() => {
+    if (postsData && postPage > postsData.meta.totalPages) setPostPage(Math.max(1, postsData.meta.totalPages))
+  }, [postsData, postPage])
   const toggleFollow = useToggleFollowTarget('USER', id)
 
   const isOwnProfile = !!authUser && authUser.id === id
@@ -486,13 +492,20 @@ export function UserProfile() {
               ))}
             </ReportList>
           ) : postsData && postsData.data.length > 0 ? (
+            <>
             <ReportList>
               {postsData.data.map((post) => (
                 <PostCard key={post.id} post={post} />
               ))}
             </ReportList>
+            {postsData.meta.totalPages > 1 && <Pagination>
+              <PageButton aria-label="Publicações anteriores" disabled={postPage <= 1} onClick={() => setPostPage((p) => p - 1)}>←</PageButton>
+              <span>{postPage} de {postsData.meta.totalPages}</span>
+              <PageButton aria-label="Próximas publicações" disabled={postPage >= postsData.meta.totalPages} onClick={() => setPostPage((p) => p + 1)}>→</PageButton>
+            </Pagination>}
+            </>
           ) : (
-            <Empty>Este usuário ainda não tem publicações.</Empty>
+            <Empty>Este usuário ainda não tem publicações ou reposts.</Empty>
           )
         ) : loadingReports ? (
           <ReportList>

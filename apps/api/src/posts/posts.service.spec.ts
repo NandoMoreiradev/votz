@@ -206,4 +206,26 @@ describe('PostsService', () => {
       service.create({ content: '   ' }, { id: 'u1', type: 'CITIZEN', ctx: null }),
     ).rejects.toThrow(BadRequestException)
   })
+
+  it('returns repost distribution context while preserving the original author', async () => {
+    const findFeedCandidates = jest.fn().mockResolvedValue({
+      posts: [{ id: 'original' }], total: 1,
+      reposts: { original: { id: 'repost', createdAt: '2026-11-17T12:00:00.000Z', user: { id: 'reposter', name: 'Bruno' } } },
+    })
+    const { service } = makeService({ repo: {
+      findFeedCandidates,
+      hydratePosts: jest.fn().mockResolvedValue([{ id: 'original', author: { userId: 'author', name: 'Ana' } }]),
+    } })
+    const result = await service.listFeed({ profileUserId: 'reposter', sort: 'for_you', page: 2, limit: 5 })
+    expect(findFeedCandidates).toHaveBeenCalledWith(expect.objectContaining({ profileUserId: 'reposter', sort: 'recent', page: 2, limit: 5 }))
+    expect(result.data[0]).toMatchObject({ id: 'original', author: { userId: 'author' }, repost: { user: { id: 'reposter' } } })
+    expect(result.meta.total).toBe(1)
+  })
+
+  it('does not fabricate a reposter for ordinary authored posts', async () => {
+    const { service } = makeService({ repo: {
+      findFeedCandidates: jest.fn().mockResolvedValue({ posts: [{ id: 'p1' }], total: 1 }),
+    } })
+    expect((await service.listFeed({ sort: 'recent' })).data[0].repost).toBeNull()
+  })
 })

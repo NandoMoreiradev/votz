@@ -19,6 +19,7 @@ export interface UsePostsParams {
   kind?: PostKind
   authorType?: 'CITIZEN' | 'POLITICIAN' | 'ENTITY'
   authorUserId?: string
+  profileUserId?: string
   authorOrgId?: string
   hasPoll?: boolean
   page?: number
@@ -72,15 +73,8 @@ export function useCreatePost() {
     mutationFn: (payload: CreatePostPayload) =>
       api.post<PostDto>('/posts', payload).then((r) => r.data),
     onSuccess: (created) => {
-      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) => {
-        if (!old) return old
-        if (old.data.some((p) => p.id === created.id)) return old
-        return {
-          ...old,
-          data: [created, ...old.data],
-          meta: { ...old.meta, total: old.meta.total + 1 },
-        }
-      })
+      qc.setQueryData<PostDto>(['post', created.id], created)
+      void qc.invalidateQueries({ queryKey: ['posts'] })
       qc.invalidateQueries({ queryKey: ['topics'] })
     },
   })
@@ -139,6 +133,7 @@ export function useTogglePostRepost() {
       qc.setQueryData<PostDto>(['post', postId], (old) =>
         old ? { ...old, repostedByMe: res.reposted, repostsCount: res.repostsCount } : old,
       )
+      void qc.invalidateQueries({ queryKey: ['posts'] })
     },
   })
 }

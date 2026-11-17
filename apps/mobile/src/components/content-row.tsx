@@ -79,6 +79,7 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
     <Action label="Compartilhar publicação" icon={<Share2 size={18} color={theme.colors.muted} />} onPress={() => { void Share.share({ message: `${name} no Votz\n\n${post.content}` }).catch(() => {}) }} />
   </View>
   return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
+    {!detail && post.repost && <Pressable accessibilityRole="button" accessibilityLabel={`${post.repost.user.name} repostou. Ver perfil`} onPress={() => router.push({ pathname: '/profile/[kind]/[id]', params: { kind: 'users', id: post.repost!.user.id } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 50, marginBottom: 10 }}><Repeat2 size={14} color={theme.colors.muted} /><Text style={{ color: theme.colors.muted, fontSize: 12, flexShrink: 1 }}>{post.repost.user.name} repostou</Text></Pressable>}
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Ver perfil de ${name}`} onPress={openProfile}><Avatar name={name} uri={post.author.orgAvatarUrl || post.author.avatarUrl} size={40} /></Pressable>
       <View style={{ flex: 1 }}><Author name={name} username={post.author.orgId ? null : post.author.username} verified={post.author.orgVerified || post.author.verified} time={post.createdAt} onPress={openProfile} />

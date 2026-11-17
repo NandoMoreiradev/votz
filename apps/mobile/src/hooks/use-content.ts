@@ -62,7 +62,7 @@ export function useCreateContent() {
 export function useProfilePosts(kind: ProfileKind, id: string) {
   return useInfiniteQuery({
     queryKey: ['posts', 'profile', kind, id], initialPageParam: 1,
-    queryFn: ({ pageParam, signal }) => api<Page<PostDto>>(`/posts?${kind === 'users' ? 'authorUserId' : 'authorOrgId'}=${encodeURIComponent(id)}&sort=recent&page=${pageParam}&limit=15`, { signal }),
+    queryFn: ({ pageParam, signal }) => api<Page<PostDto>>(`/posts?${kind === 'users' ? 'profileUserId' : 'authorOrgId'}=${encodeURIComponent(id)}&sort=recent&page=${pageParam}&limit=15`, { signal }),
     getNextPageParam: (last) => last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined,
   })
 }

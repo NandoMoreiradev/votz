@@ -92,16 +92,29 @@ const AdvocacyTag = styled.div`
 `
 
 const Header = styled.div<{ $detail?: boolean }>`
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 12px;
   margin-bottom: ${({ $detail }) => $detail ? '20px' : '10px'};
 `
+const RepostContext = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 12px;
+  max-width: 100%;
+  span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  svg { flex-shrink: 0; }
+  &:hover { text-decoration: underline; }
+`
 
 const Avatar = styled(Link)<{ $src: string | null; $detail?: boolean }>`
   position: ${({ $detail }) => $detail ? 'static' : 'absolute'};
-  top: 16px;
-  left: 16px;
+  top: 0;
+  left: -52px;
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -114,7 +127,7 @@ const Avatar = styled(Link)<{ $src: string | null; $detail?: boolean }>`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  @media (max-width: 480px) { left: 12px; width: 36px; height: 36px; }
+  @media (max-width: 480px) { left: -48px; width: 36px; height: 36px; }
 `
 
 const AuthorCol = styled.div`
@@ -480,6 +493,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
 
   return (
     <Card $advocacy={post.kind === PostKind.ADVOCACY} $isNew={isNew} $detail={detail} aria-label={detail ? 'Publicação' : undefined}>
+      {!detail && post.repost && <RepostContext to={`/perfil/${post.repost.user.id}`}><ArrowsClockwise size={14} /><span>{post.repost.user.name} repostou</span></RepostContext>}
       {post.kind === PostKind.ADVOCACY && (
         <AdvocacyTag>
           <ShieldCheck size={14} weight="duotone" />
@@ -690,6 +704,8 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
         <ActBtn
           type="button"
           $active={post.repostedByMe}
+          aria-pressed={post.repostedByMe}
+          disabled={toggleRepost.isPending}
           onClick={() => (user ? toggleRepost.mutate(post.id) : navigate('/entrar'))}
           title="Repostar"
         >

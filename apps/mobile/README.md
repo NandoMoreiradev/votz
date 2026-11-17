@@ -90,6 +90,8 @@ Revisão visual e testes no aparelho: [mobile-social-review-2026-11-17.md](../..
 
 Mapa nativo, build e verificação de repost: [mobile-map-2026-11-17.md](../../docs/dev/mobile-map-2026-11-17.md).
 
+Distribuição de reposts no perfil e no feed Seguindo: [reposts-distribution-2026-11-17.md](../../docs/dev/reposts-distribution-2026-11-17.md).
+
 ## Sessão e segurança
 
 O app mantém access token em memória e refresh token no SecureStore. O transporte `/auth/mobile` ignora cookies, devolve tokens explicitamente e reutiliza validação de senha, MFA, rotação, detecção de reutilização e revogação do AuthService. Os endpoints web continuam com suas proteções de cookie/CSRF.

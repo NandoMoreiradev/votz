@@ -12,6 +12,7 @@ import { ChoiceSheet } from './choice-sheet'
 import { Button, IconButton, State } from './ui'
 import { statusLabels } from './content-row'
 import { api, errorMessage } from '../lib/api'
+import { formatCount } from '../lib/format'
 import { mapCategories, mapReportsPath, reportsBounds, validMapReports, type MapBounds, type MapReports } from '../lib/map-data'
 import { theme } from '../theme'
 
@@ -46,7 +47,7 @@ export default function NativeReportMap() {
   useEffect(() => {
     if (!ready || !query.data || fitted.current) return
     const initial = reportsBounds(query.data.features)
-    if (initial) camera.current?.fitBounds(initial, { padding: { top: 60, right: 40, bottom: 80, left: 40 }, duration: 500 })
+    if (initial) camera.current?.fitBounds(initial, { padding: { top: 80, right: 80, bottom: 150, left: 50 }, duration: 500 })
     fitted.current = true
   }, [ready, query.data])
 
@@ -134,10 +135,10 @@ export default function NativeReportMap() {
           : selected ? <View style={s.summary}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={[s.kicker, { color: mapCategories[selected.properties.category]?.color ?? theme.colors.action }]}>{mapCategories[selected.properties.category]?.label} · {statusLabels[selected.properties.status]}</Text><IconButton label="Fechar relato no mapa" onPress={() => setSelectedId(null)}><X size={18} color={theme.colors.muted} /></IconButton></View>
             <Text numberOfLines={2} style={s.title}>{selected.properties.title}</Text>
-            <Text style={s.meta}>{[selected.properties.city, `${selected.properties.votes} apoios`, `${selected.properties.comments} comentários`].filter(Boolean).join(' · ')}</Text>
+            <Text style={s.meta}>{[selected.properties.city, formatCount(selected.properties.votes, 'apoio', 'apoios'), formatCount(selected.properties.comments, 'comentário', 'comentários')].filter(Boolean).join(' · ')}</Text>
             <Button title="Ver relato" onPress={() => router.push({ pathname: '/report/[id]', params: { id: selected.properties.id } })} />
           </View> : <View style={s.summary}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>{query.isFetching && <ActivityIndicator size="small" color={theme.colors.action} />}<Text style={s.title}>{query.isPending ? 'Buscando relatos…' : `${data.features.length} relatos no mapa`}</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>{query.isFetching && <ActivityIndicator size="small" color={theme.colors.action} />}<Text style={s.title}>{query.isPending ? 'Buscando relatos…' : `${formatCount(data.features.length, 'relato', 'relatos')} no mapa`}</Text></View>
             <Text style={s.meta}>{data.features.length >= 500 ? 'Exibindo até 500 relatos. Aproxime o mapa e busque na área.' : data.features.length ? 'Toque em um marcador para ver o relato.' : 'Nenhum relato com localização neste recorte. Explore outra área ou limpe os filtros.'}</Text>
           </View>}
       </View>}
