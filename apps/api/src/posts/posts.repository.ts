@@ -6,9 +6,10 @@ import {
   PostKind,
   Prisma,
 } from '@prisma/client'
-import { PostAuthorInfo, PostCommentDto, PostDto, UserType } from '@votz/shared-types'
+import { PostAuthorInfo, PostCommentDto, PostDto, PostRepostInfo, UserType } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { ViewerRankingContext } from './feed-ranking.service'
+import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
 
 const POST_INCLUDE = {
   authorUser: {
@@ -85,6 +86,7 @@ const POST_INCLUDE = {
 } satisfies Prisma.PostInclude
 
 type RawPost = Prisma.PostGetPayload<{ include: typeof POST_INCLUDE }>
+interface FeedCandidates { posts: RawPost[]; total: number; reposts?: Record<string, PostRepostInfo> }
 
 const COMMENT_AUTHOR_SELECT = {
   id: true,
@@ -186,12 +188,14 @@ export class PostsRepository {
     kind?: PostKind
     authorType?: 'CITIZEN' | 'POLITICIAN' | 'ENTITY'
     authorUserId?: string
+    profileUserId?: string
     authorOrgId?: string
     hasPoll?: boolean
     viewerContext?: ViewerRankingContext
     page: number
     limit: number
-  }) {
+  }): Promise<FeedCandidates> {
+    if (params.profileUserId || params.sort === 'following') return this.findDistributedFeed(params)
     const where: Prisma.PostWhereInput = {}
 
     if (params.topicSlug) {
@@ -210,34 +214,6 @@ export class PostsRepository {
       where.authorOrgType = OrgType.POLITICIAN
     } else if (params.authorType === 'ENTITY') {
       where.authorOrgType = OrgType.ENTITY
-    }
-
-    if (params.sort === 'following' && params.viewerContext) {
-      const orClauses: Prisma.PostWhereInput[] = []
-      if (params.viewerContext.followedUserIds.size > 0) {
-        orClauses.push({ authorUserId: { in: Array.from(params.viewerContext.followedUserIds) } })
-      }
-      if (params.viewerContext.followedPoliticianIds.size > 0) {
-        orClauses.push({
-          authorOrgType: OrgType.POLITICIAN,
-          authorOrgId: { in: Array.from(params.viewerContext.followedPoliticianIds) },
-        })
-      }
-      if (params.viewerContext.followedEntityIds.size > 0) {
-        orClauses.push({
-          authorOrgType: OrgType.ENTITY,
-          authorOrgId: { in: Array.from(params.viewerContext.followedEntityIds) },
-        })
-      }
-      if (params.viewerContext.followedTopicIds.size > 0) {
-        orClauses.push({
-          topics: { some: { topicId: { in: Array.from(params.viewerContext.followedTopicIds) } } },
-        })
-      }
-      if (orClauses.length === 0) {
-        return { posts: [], total: 0 }
-      }
-      where.OR = orClauses
     }
 
     if (params.sort === 'for_you') {
@@ -271,6 +247,27 @@ export class PostsRepository {
     ])
 
     return { posts, total }
+  }
+
+  private async findDistributedFeed(params: FeedTimelineParams): Promise<FeedCandidates> {
+    const sql = buildFeedTimeline(params)
+    const [rows, counts] = await this.prisma.$transaction([
+      this.prisma.$queryRaw<{ id: string; repostId: string | null }[]>(sql.page),
+      this.prisma.$queryRaw<{ total: number }[]>(sql.count),
+    ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead })
+    const [posts, reposts] = await Promise.all([
+      this.prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, include: POST_INCLUDE }),
+      this.prisma.postRepost.findMany({
+        where: { id: { in: rows.flatMap((row) => row.repostId ? [row.repostId] : []) } },
+        select: { id: true, postId: true, createdAt: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } },
+      }),
+    ])
+    const byId = new Map(posts.map((post) => [post.id, post]))
+    return {
+      posts: rows.flatMap((row) => byId.has(row.id) ? [byId.get(row.id)!] : []),
+      total: counts[0]?.total ?? 0,
+      reposts: Object.fromEntries(reposts.map(({ postId, createdAt, ...repost }) => [postId, { ...repost, createdAt: createdAt.toISOString() }])),
+    }
   }
 
   async getViewerContext(userId?: string): Promise<ViewerRankingContext> {

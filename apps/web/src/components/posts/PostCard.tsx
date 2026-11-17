@@ -29,11 +29,11 @@ import { useIsFollowingTarget, useToggleFollowTarget } from '../../hooks/useFoll
 import { useAuthStore } from '../../store/auth.store'
 import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
-import { PostCommentsSection } from './PostCommentsSection'
+import { socialRow } from '../ui/social'
 
 interface PostCardProps {
   post: PostDto
-  showCommentsInline?: boolean
+  detail?: boolean
   isNew?: boolean
   onQuote?: (post: PostDto) => void
 }
@@ -56,12 +56,10 @@ const postSlideIn = keyframes`
   }
 `
 
-const Card = styled.article<{ $advocacy?: boolean; $isNew?: boolean }>`
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ $advocacy, theme }) => ($advocacy ? theme.colors.primary : theme.colors.border)};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 18px 20px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+const Card = styled.article<{ $advocacy?: boolean; $isNew?: boolean; $detail?: boolean }>`
+  ${socialRow}
+  padding: ${({ $detail }) => $detail ? '20px' : '16px 16px 16px 68px'};
+  position: relative;
   ${({ $advocacy, theme }) =>
     $advocacy &&
     css`
@@ -73,9 +71,8 @@ const Card = styled.article<{ $advocacy?: boolean; $isNew?: boolean }>`
       animation: ${postSlideIn} 1.4s ease-out;
     `}
 
-  &:hover {
-    box-shadow: ${({ theme }) => theme.shadows.sm};
-  }
+  @media (max-width: 480px) { padding: ${({ $detail }) => $detail ? '16px' : '16px 12px 16px 60px'}; }
+  ${({ $detail, theme }) => $detail && css`&:hover { background: ${theme.colors.white}; }`}
 `
 
 const AdvocacyTag = styled.div`
@@ -94,26 +91,30 @@ const AdvocacyTag = styled.div`
   margin-bottom: 10px;
 `
 
-const Header = styled.div`
+const Header = styled.div<{ $detail?: boolean }>`
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: ${({ $detail }) => $detail ? '20px' : '10px'};
 `
 
-const Avatar = styled(Link)<{ $src: string | null }>`
+const Avatar = styled(Link)<{ $src: string | null; $detail?: boolean }>`
+  position: ${({ $detail }) => $detail ? 'static' : 'absolute'};
+  top: 16px;
+  left: 16px;
   width: 42px;
   height: 42px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.primary)};
-  color: ${({ theme }) => theme.colors.white};
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : `${theme.colors.action}10`)};
+  color: ${({ theme }) => theme.colors.action};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
   font-size: 1rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  @media (max-width: 480px) { left: 12px; width: 36px; height: 36px; }
 `
 
 const AuthorCol = styled.div`
@@ -172,13 +173,14 @@ const FollowMiniBtn = styled.button<{ $following?: boolean }>`
   flex-shrink: 0;
 `
 
-const BodyText = styled.div`
-  font-size: ${({ theme }) => theme.fontSizes.md};
+const BodyText = styled.div<{ $detail?: boolean }>`
+  font-size: ${({ $detail, theme }) => $detail ? '21px' : theme.fontSizes.md};
   line-height: 1.55;
   color: ${({ theme }) => theme.colors.text};
   white-space: pre-wrap;
   word-break: break-word;
   margin-bottom: 10px;
+  @media (max-width: 480px) { font-size: ${({ $detail, theme }) => $detail ? '19px' : theme.fontSizes.md}; }
 `
 
 const TopicLink = styled(Link)`
@@ -319,21 +321,27 @@ const EmbedSub = styled.div`
   color: ${({ theme }) => theme.colors.muted};
 `
 
-const ActionsBar = styled.div`
+const ActionsBar = styled.div<{ $detail?: boolean }>`
   display: flex;
   align-items: center;
   gap: 6px;
   padding-top: 10px;
-  border-top: 1px dashed ${({ theme }) => theme.colors.border};
   flex-wrap: wrap;
+  ${({ $detail, theme }) => $detail && css`
+    justify-content: space-between;
+    padding-top: 12px;
+    margin-top: 16px;
+    border-top: 1px solid ${theme.colors.border};
+  `}
 `
 
 const ActBtn = styled.button<{ $active?: boolean; $danger?: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 10px;
-  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 8px;
+  min-height: 36px;
+  border-radius: ${({ theme }) => theme.radii.full};
   border: none;
   background: ${({ $active, theme }) => ($active ? `${theme.colors.action}12` : 'transparent')};
   color: ${({ $active, $danger, theme }) =>
@@ -350,16 +358,22 @@ const ActBtn = styled.button<{ $active?: boolean; $danger?: boolean }>`
   span.ct {
     font-family: ${({ theme }) => theme.fonts.mono};
   }
+  @media (max-width: 480px) {
+    padding: 6px;
+    gap: 3px;
+    &[title='Citar publicação'] { font-size: 0; gap: 0; }
+  }
 `
 
 const Spacer = styled.div`
   flex: 1;
 `
 
-const InlineCommentsWrap = styled.div`
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
+const PublishedAt = styled.time`
+  display: block;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 13px;
+  margin-top: 20px;
 `
 
 function resolveAuthor(a: PostAuthorInfo) {
@@ -426,12 +440,11 @@ function timeAgo(iso: string): string {
   return `há ${Math.floor(h / 24)}d`
 }
 
-export function PostCard({ post, showCommentsInline = false, isNew = false, onQuote }: PostCardProps) {
+export function PostCard({ post, detail = false, isNew = false, onQuote }: PostCardProps) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { open: openMedia } = useMediaViewer()
 
-  const [commentsExpanded, setCommentsExpanded] = useState(showCommentsInline)
   const [flagOpen, setFlagOpen] = useState(false)
 
   const toggleLike = useTogglePostLike()
@@ -466,7 +479,7 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
   }
 
   return (
-    <Card $advocacy={post.kind === PostKind.ADVOCACY} $isNew={isNew}>
+    <Card $advocacy={post.kind === PostKind.ADVOCACY} $isNew={isNew} $detail={detail} aria-label={detail ? 'Publicação' : undefined}>
       {post.kind === PostKind.ADVOCACY && (
         <AdvocacyTag>
           <ShieldCheck size={14} weight="duotone" />
@@ -474,8 +487,8 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
         </AdvocacyTag>
       )}
 
-      <Header>
-        <Avatar to={author.href} $src={author.avatar}>
+      <Header $detail={detail}>
+        <Avatar to={author.href} $src={author.avatar} $detail={detail}>
           {!author.avatar && author.name.charAt(0).toUpperCase()}
         </Avatar>
 
@@ -493,7 +506,8 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
             {(post.city || post.state) && (
               <span>{[post.city, post.state].filter(Boolean).join(' · ')} ·</span>
             )}
-            <Link to={`/publicacoes/${post.id}`}>{timeAgo(post.createdAt)}</Link>
+            {!detail && <Link to={`/publicacoes/${post.id}`}>{timeAgo(post.createdAt)}</Link>}
+            {detail && <span>Publicação pública</span>}
           </SubLine>
         </AuthorCol>
 
@@ -517,7 +531,7 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
         )}
       </Header>
 
-      {post.content && <BodyText>{renderContentWithTopics(post.content)}</BodyText>}
+      {post.content && <BodyText $detail={detail}>{renderContentWithTopics(post.content)}</BodyText>}
 
       {post.media.length > 0 && (
         <MediaGrid $count={post.media.length}>
@@ -650,10 +664,14 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
         </EmbedCard>
       )}
 
-      <ActionsBar>
+      {detail && <PublishedAt dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</PublishedAt>}
+
+      <ActionsBar $detail={detail}>
         <ActBtn
           type="button"
           $active={post.likedByMe}
+          aria-label={post.likedByMe ? 'Descurtir publicação' : 'Curtir publicação'}
+          aria-pressed={post.likedByMe}
           onClick={() => (user ? toggleLike.mutate(post.id) : navigate('/entrar'))}
         >
           <Heart size={16} weight={post.likedByMe ? 'fill' : 'regular'} />
@@ -661,14 +679,9 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
         </ActBtn>
 
         <ActBtn
-          type="button"
-          onClick={() => {
-            if (showCommentsInline) {
-              setCommentsExpanded((v) => !v)
-            } else {
-              setCommentsExpanded((v) => !v)
-            }
-          }}
+          as={Link}
+          to={`/publicacoes/${post.id}#responder`}
+          aria-label="Responder à publicação"
         >
           <ChatCircle size={16} />
           <span className="ct">{post.commentsCount}</span>
@@ -685,12 +698,12 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
         </ActBtn>
 
         {onQuote && user && (
-          <ActBtn type="button" onClick={() => onQuote(post)} title="Citar publicação">
+          <ActBtn type="button" onClick={() => onQuote(post)} title="Citar publicação" aria-label="Citar publicação">
             <Quotes size={15} /> Citar
           </ActBtn>
         )}
 
-        <Spacer />
+        {!detail && <Spacer />}
 
         {user && !isOwner && (
           <ActBtn type="button" onClick={() => setFlagOpen(true)} title="Sinalizar">
@@ -714,15 +727,6 @@ export function PostCard({ post, showCommentsInline = false, isNew = false, onQu
           <ShareNetwork size={15} />
         </ActBtn>
       </ActionsBar>
-
-      {commentsExpanded && (
-        <InlineCommentsWrap>
-          <PostCommentsSection
-            postId={post.id}
-            canCommentWithAudio={post.canCommentWithAudio}
-          />
-        </InlineCommentsWrap>
-      )}
 
       <FlagContentModal
         isOpen={flagOpen}

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
 import { router } from 'expo-router'
 import { useMutation } from '@tanstack/react-query'
-import { Button, Card, ErrorText, Field, Heading, Label, styles } from '../components/ui'
+import { Button, Card, ErrorText, Field, Heading, Label } from '../components/ui'
 import { api, errorMessage, json } from '../lib/api'
 import { useSession } from '../lib/session'
 import type { LoginResult, Session } from '../lib/types'
+import { FormScroll, Screen, Toolbar } from '../components/screen'
 
 type Challenge = { type: 'verify' | 'setup'; token: string; secret?: string }
 export default function Login() {
@@ -41,7 +41,7 @@ export default function Login() {
     if (completedSession) await useSession.getState().accept(completedSession)
     router.back()
   } })
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+  return <Screen><Toolbar title="Entrar no Votz" back /><FormScroll>
     <Heading>{backupCodes.length ? 'Guarde seus códigos' : challenge ? 'Proteja sua voz' : 'Sua cidade. Sua voz.'}</Heading>
     <Label muted>{challenge ? 'Conclua a autenticação em duas etapas para continuar.' : 'Entre com sua conta Votz para publicar, apoiar e acompanhar.'}</Label>
     {backupCodes.length ? <Card><Label>Guarde estes códigos em um lugar seguro. Cada código só pode ser usado uma vez.</Label>{backupCodes.map((value) => <Label key={value}>{value}</Label>)}<ErrorText message={finish.isError ? errorMessage(finish.error) : undefined} /><Button title="Guardei os códigos. Continuar" loading={finish.isPending} onPress={() => finish.mutate()} /></Card> : <>
@@ -52,5 +52,5 @@ export default function Login() {
       <Button title={challenge ? 'Confirmar e entrar' : 'Entrar no Votz'} loading={login.isPending} disabled={challenge ? !code.trim() || (challenge.type === 'setup' && !challenge.secret) : !email.trim() || !password} onPress={() => login.mutate()} />
       {challenge && <Button secondary title="Usar outra conta" disabled={login.isPending} onPress={() => { setChallenge(null); setCode(''); login.reset(); setup.reset() }} />}
     </>}
-  </ScrollView></KeyboardAvoidingView>
+  </FormScroll></Screen>
 }

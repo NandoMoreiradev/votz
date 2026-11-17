@@ -30,7 +30,7 @@ export default function RootLayout() {
   if ((!loaded && !fontError) || !ready) return null
   return <SafeAreaProvider><QueryClientProvider client={queryClient}>
     <StatusBar style="dark" />
-    <Stack screenOptions={{ headerTintColor: theme.colors.primary, headerTitleStyle: { fontFamily: theme.fonts.heading }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ title: 'Sua conta Votz', presentation: 'modal' }} />
       <Stack.Screen name="compose" options={{ title: 'Sua voz importa', presentation: 'modal' }} />

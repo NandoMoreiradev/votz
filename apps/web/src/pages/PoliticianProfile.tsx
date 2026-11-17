@@ -2,6 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
+import { socialCover } from '../components/ui/social'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
@@ -67,9 +68,9 @@ const SideCol = styled.div`
 const HeaderCard = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
   padding: 28px;
   margin-bottom: 20px;
+  ${socialCover}
 `
 
 const HeaderTop = styled.div`
@@ -78,16 +79,18 @@ const HeaderTop = styled.div`
   align-items: flex-start;
   margin-bottom: 20px;
 
-  @media (max-width: 480px) { flex-direction: column; align-items: center; text-align: center; }
+  @media (max-width: 480px) { flex-direction: column; gap: 12px; }
 `
 
 const AvatarLink = styled(Link)<{ $src: string | null }>`
+  margin-top: -54px;
+  box-shadow: 0 0 0 4px ${({ theme }) => theme.colors.white};
   width: 80px;
   height: 80px;
   border-radius: 50%;
   flex-shrink: 0;
   background: ${({ $src, theme }) =>
-    $src ? `url(${$src}) center/cover` : theme.colors.primary + '14'};
+    $src ? `url(${$src}) center/cover` : theme.colors.neutral};
   display: flex;
   align-items: center;
   justify-content: center;

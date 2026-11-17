@@ -26,6 +26,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     'expo-secure-store',
     'expo-image',
     'expo-font',
+    '@maplibre/maplibre-react-native',
     ['expo-splash-screen', { image: './assets/votz-icon.png', imageWidth: 120, backgroundColor: '#1A1A2E' }],
     ['expo-image-picker', {
       photosPermission: 'O Votz precisa acessar as fotos que você escolher para sua publicação ou relato.',

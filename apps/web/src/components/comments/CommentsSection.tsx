@@ -49,10 +49,10 @@ const Form = styled.form`
 const Textarea = styled.textarea<{ $compact?: boolean }>`
   padding: ${({ $compact }) => ($compact ? '10px 12px' : '12px 14px')};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
+  border-radius: 16px;
   font-size: ${({ $compact }) => ($compact ? '0.875rem' : '0.9375rem')};
   color: ${({ theme }) => theme.colors.text};
-  background: ${({ theme }) => theme.colors.white};
+  background: ${({ theme }) => theme.colors.surfaceHover};
   resize: vertical;
   min-height: ${({ $compact }) => ($compact ? '72px' : '88px')};
   font-family: ${({ theme }) => theme.fonts.body};
@@ -77,8 +77,8 @@ const FormRow = styled.div`
 
 const SubmitBtn = styled.button`
   padding: 8px 18px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  background: ${({ theme }) => theme.colors.primary};
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.action};
   color: #fff;
   font-size: 0.875rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};

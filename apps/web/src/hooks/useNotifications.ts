@@ -4,11 +4,13 @@ import { useAuthStore } from '../store/auth.store'
 
 export interface AppNotification {
   id: string
-  type: 'NEW_COMMENT' | 'STATUS_CHANGED'
+  type: 'NEW_COMMENT' | 'STATUS_CHANGED' | 'SURTO_DETECTED' | 'ALERT_RULE_MATCHED'
+    | 'WEEKLY_DIGEST' | 'SLA_AT_RISK' | 'SLA_BREACHED' | 'SLA_ESCALATED'
+    | 'REPORT_ASSIGNED' | 'POST_LIKE' | 'POST_COMMENT' | 'POST_REPOST' | 'POST_MENTION'
   read: boolean
   createdAt: string
   metadata: Record<string, unknown> | null
-  report: { id: string; title: string }
+  report: { id: string; title: string } | null
 }
 
 interface NotificationsResponse {

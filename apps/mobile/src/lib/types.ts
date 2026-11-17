@@ -21,6 +21,14 @@ export interface PublicProfile {
   logoUrl?: string | null; bio?: string | null; description?: string | null
   office?: string; city?: string | null; state?: string | null; verified?: boolean
   votzScore?: number; reputation?: number
+  username?: string | null; createdAt?: string
+  _count?: { reports?: number; votes?: number; comments?: number }
+}
+export interface ReportComment {
+  id: string; content: string; parentId: string | null; createdAt: string
+  mediaType: 'TEXT' | 'AUDIO' | 'VIDEO'; mediaUrl: string | null
+  author: { id: string; name: string; avatarUrl: string | null }
+  _count: { replies: number }; replies?: ReportComment[]
 }
 export interface Session { user: User; accessToken: string; refreshToken: string }
 export type LoginResult = Session | { requiresMfa: true; mfaToken: string } | { requiresMfaSetup: true; mfaSetupToken: string }

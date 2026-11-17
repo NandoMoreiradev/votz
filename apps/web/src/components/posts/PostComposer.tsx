@@ -24,10 +24,8 @@ interface PostComposerProps {
 
 const Box = styled.div`
   background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 16px 18px;
-  margin-bottom: 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  padding: 16px;
 `
 
 const Row = styled.div`
@@ -71,7 +69,8 @@ const Textarea = styled.textarea`
   background: transparent;
   resize: vertical;
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: ${({ theme }) => theme.fontSizes.md};
+  font-size: 18px;
+  line-height: 1.5;
   color: ${({ theme }) => theme.colors.text};
   outline: none;
   box-sizing: border-box;
@@ -203,6 +202,7 @@ const Actions = styled.div`
   padding-top: 10px;
   border-top: 1px solid ${({ theme }) => theme.colors.border};
   flex-wrap: wrap;
+  @media (max-width: 480px) { gap: 4px; }
 `
 
 const ToolBtn = styled.button<{ $active?: boolean }>`
@@ -210,15 +210,17 @@ const ToolBtn = styled.button<{ $active?: boolean }>`
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.border)};
+  border-radius: ${({ theme }) => theme.radii.full};
+  min-height: 36px;
+  border: none;
   background: ${({ $active, theme }) => ($active ? `${theme.colors.primary}10` : theme.colors.white)};
-  color: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.text)};
+  color: ${({ theme }) => theme.colors.action};
   font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: 600;
   cursor: pointer;
 
   &:disabled { opacity: 0.55; cursor: not-allowed; }
+  @media (max-width: 480px) { font-size: 0; gap: 0; padding: 8px; }
 `
 
 const Spacer = styled.div`
@@ -236,7 +238,7 @@ const PublishBtn = styled.button`
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border-radius: ${({ theme }) => theme.radii.md};
+  border-radius: ${({ theme }) => theme.radii.full};
   border: none;
   background: ${({ theme }) => theme.colors.action};
   color: ${({ theme }) => theme.colors.white};
@@ -374,6 +376,7 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
           </IdentityTag>
 
           <Textarea
+            aria-label="Texto da publicação"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             maxLength={2000}
@@ -489,6 +492,8 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
           <Actions>
             <ToolBtn
               type="button"
+              aria-label="Adicionar foto ou vídeo"
+              title="Adicionar foto ou vídeo"
               disabled={uploadMedia.isPending || media.length >= 4}
               onClick={() => fileRef.current?.click()}
             >
@@ -504,11 +509,11 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
               onChange={(e) => handleFiles(e.target.files)}
             />
 
-            <ToolBtn type="button" $active={pollOpen} onClick={() => setPollOpen((v) => !v)}>
+            <ToolBtn type="button" aria-label="Adicionar ou remover enquete" title="Enquete" aria-pressed={pollOpen} $active={pollOpen} onClick={() => setPollOpen((v) => !v)}>
               <ChartBar size={15} /> Enquete
             </ToolBtn>
 
-            <ToolBtn type="button" onClick={() => setMentionModalOpen(true)}>
+            <ToolBtn type="button" aria-label="Mencionar conteúdo" title="Mencionar conteúdo" onClick={() => setMentionModalOpen(true)}>
               <At size={15} /> Mencionar
             </ToolBtn>
 

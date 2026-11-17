@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
+  ChatCircle,
   FilmStrip,
   Flag,
   Image as ImageIcon,
@@ -24,20 +25,67 @@ import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
 import { GifPickerPopover } from './GifPickerPopover'
 
-const Wrap = styled.div`
+const Wrap = styled.section`
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
+`
+
+const ConversationHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 20px 0;
+  h2 { margin: 0; font-family: ${({ theme }) => theme.fonts.heading}; font-size: 17px; }
+  span { color: ${({ theme }) => theme.colors.muted}; font-size: 13px; }
+  @media (max-width: 480px) { padding-inline: 16px; }
+`
+
+const ComposerLayout = styled.div<{ $reply?: boolean }>`
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: ${({ $reply }) => $reply ? '0' : '20px'};
+  border-bottom: ${({ $reply, theme }) => $reply ? 'none' : `1px solid ${theme.colors.border}`};
+  @media (max-width: 480px) { padding: ${({ $reply }) => $reply ? '0' : '16px'}; gap: 10px; }
+`
+
+const ComposerAvatar = styled.div<{ $src?: string | null }>`
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.action};
+  background: ${({ $src, theme }) => $src ? `url(${$src}) center/cover` : `${theme.colors.action}10`};
+`
+
+const ComposerMain = styled.div`
+  flex: 1;
+  min-width: 0;
+`
+
+const CommentList = styled.div`
+  padding: 0 20px;
+  @media (max-width: 480px) { padding-inline: 16px; }
+`
+
+const ConversationState = styled.div`
+  padding: 24px 20px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 14px;
+  line-height: 1.6;
+  a { color: ${({ theme }) => theme.colors.action}; font-weight: 600; }
 `
 
 const FormBox = styled.form`
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: ${({ theme }) => theme.colors.surfaceHover};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  padding: 12px;
+  background: ${({ theme }) => theme.colors.white};
+  padding: 0;
 `
 
 const Textarea = styled.textarea`
@@ -47,9 +95,12 @@ const Textarea = styled.textarea`
   background: transparent;
   resize: vertical;
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-size: 16px;
+  line-height: 1.5;
   color: ${({ theme }) => theme.colors.text};
-  outline: none;
+  border-radius: 6px;
+  padding: 6px 0;
+  &:focus-visible { outline: 2px solid ${({ theme }) => `${theme.colors.action}55`}; outline-offset: 3px; }
   box-sizing: border-box;
 
   &::placeholder {
@@ -93,7 +144,7 @@ const RemoveMediaBtn = styled.button`
 const ToolBar = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
 `
 
@@ -102,10 +153,11 @@ const ToolIconBtn = styled.button<{ $active?: boolean }>`
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.border)};
+  border-radius: ${({ theme }) => theme.radii.full};
+  min-height: 36px;
+  border: none;
   background: ${({ $active, theme }) => ($active ? `${theme.colors.primary}12` : theme.colors.white)};
-  color: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.text)};
+  color: ${({ theme }) => theme.colors.action};
   font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   cursor: pointer;
@@ -117,6 +169,7 @@ const ToolIconBtn = styled.button<{ $active?: boolean }>`
     opacity: 0.55;
     cursor: not-allowed;
   }
+  @media (max-width: 480px) { padding: 8px; font-size: 0; gap: 0; &[data-cancel] { font-size: 12px; } }
 `
 
 const Spacer = styled.div`
@@ -124,10 +177,10 @@ const Spacer = styled.div`
 `
 
 const SubmitBtn = styled.button`
-  padding: 7px 14px;
-  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 9px 18px;
+  border-radius: ${({ theme }) => theme.radii.full};
   border: none;
-  background: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.action};
   color: ${({ theme }) => theme.colors.white};
   font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
@@ -151,8 +204,8 @@ const Avatar = styled(Link)<{ $src: string | null; $small?: boolean }>`
   height: ${({ $small }) => ($small ? '28px' : '34px')};
   border-radius: 50%;
   flex-shrink: 0;
-  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.primary)};
-  color: ${({ theme }) => theme.colors.white};
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : `${theme.colors.action}10`)};
+  color: ${({ theme }) => theme.colors.action};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ $small }) => ($small ? '0.7rem' : '0.8rem')};
   font-weight: 700;
@@ -227,7 +280,8 @@ const MiniActBtn = styled.button<{ $danger?: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0;
+  padding: 6px 0;
+  min-height: 28px;
   border: none;
   background: transparent;
   font-size: ${({ theme }) => theme.fontSizes.xs};
@@ -288,6 +342,16 @@ function CommentComposer({
   onDone,
   placeholder,
 }: CommentComposerProps) {
+  const user = useAuthStore((s) => s.user)
+  const context = useAuthStore((s) => s.activeContext)
+  const location = useLocation()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!parentId && location.hash === '#responder') {
+      textareaRef.current?.focus({ preventScroll: true })
+      textareaRef.current?.scrollIntoView({ block: 'center' })
+    }
+  }, [location.hash, location.key, parentId])
   const [content, setContent] = useState('')
   const [attachedMedia, setAttachedMedia] = useState<{
     type: PostCommentMediaType
@@ -384,13 +448,17 @@ function CommentComposer({
   }
 
   return (
-    <div>
+    <ComposerLayout $reply={!!parentId}>
+      {!parentId && <ComposerAvatar $src={context?.logoUrl ?? user?.avatarUrl} aria-hidden="true">{!(context?.logoUrl ?? user?.avatarUrl) && (context?.name ?? user?.name ?? 'V').charAt(0).toUpperCase()}</ComposerAvatar>}
+      <ComposerMain>
       <FormBox onSubmit={handleSubmit}>
         <Textarea
+          ref={textareaRef}
+          aria-label={parentId ? 'Sua resposta ao comentário' : 'Sua resposta à publicação'}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           maxLength={1000}
-          placeholder={placeholder ?? 'Escreva um comentário, anexe imagem ou GIF...'}
+          placeholder={placeholder ?? 'Publique sua resposta…'}
         />
 
         {attachedMedia && (
@@ -405,6 +473,8 @@ function CommentComposer({
         <ToolBar>
           <ToolIconBtn
             type="button"
+            aria-label="Anexar imagem à resposta"
+            title="Anexar imagem"
             onClick={() => fileRef.current?.click()}
             disabled={uploadMedia.isPending}
           >
@@ -420,6 +490,8 @@ function CommentComposer({
 
           <ToolIconBtn
             type="button"
+            aria-label="Escolher GIF"
+            title="Escolher GIF"
             $active={showGifPicker}
             onClick={() => setShowGifPicker((v) => !v)}
           >
@@ -429,6 +501,7 @@ function CommentComposer({
           {canCommentWithAudio && (
             <ToolIconBtn
               type="button"
+              aria-label="Gravar resposta em áudio"
               onClick={() => setVoiceMode(true)}
               title="Exclusivo do autor da publicação"
             >
@@ -439,7 +512,7 @@ function CommentComposer({
           <Spacer />
 
           {onDone && (
-            <ToolIconBtn type="button" onClick={onDone}>
+            <ToolIconBtn type="button" data-cancel onClick={onDone}>
               Cancelar
             </ToolIconBtn>
           )}
@@ -468,7 +541,8 @@ function CommentComposer({
       )}
 
       {errorMsg && <ErrorMsg style={{ marginTop: 6 }}>{errorMsg}</ErrorMsg>}
-    </div>
+      </ComposerMain>
+    </ComposerLayout>
   )
 }
 
@@ -530,23 +604,26 @@ function CommentRow({
 
         <RowActions>
           {user && !reply && (
-            <MiniActBtn type="button" onClick={() => setReplyOpen((v) => !v)}>
+            <MiniActBtn type="button" aria-expanded={replyOpen} onClick={() => setReplyOpen((v) => !v)}>
+              <ChatCircle size={15} />
               {replyOpen ? 'Cancelar' : 'Responder'}
             </MiniActBtn>
           )}
           {user && !isOwner && (
-            <MiniActBtn type="button" onClick={() => setFlagOpen(true)}>
-              <Flag size={12} /> Sinalizar
+            <MiniActBtn type="button" title="Sinalizar comentário" aria-label="Sinalizar comentário" onClick={() => setFlagOpen(true)}>
+              <Flag size={14} />
             </MiniActBtn>
           )}
           {(isOwner || canModerate) && (
             <MiniActBtn
               $danger
               type="button"
+              title="Excluir comentário"
+              aria-label="Excluir comentário"
               disabled={deleteComment.isPending}
               onClick={() => deleteComment.mutate(comment.id)}
             >
-              <Trash size={12} /> Excluir
+              <Trash size={14} />
             </MiniActBtn>
           )}
         </RowActions>
@@ -591,26 +668,30 @@ function CommentRow({
 interface PostCommentsSectionProps {
   postId: string
   canCommentWithAudio: boolean
+  commentsCount: number
 }
 
-export function PostCommentsSection({ postId, canCommentWithAudio }: PostCommentsSectionProps) {
+export function PostCommentsSection({ postId, canCommentWithAudio, commentsCount }: PostCommentsSectionProps) {
   const user = useAuthStore((s) => s.user)
-  const { data: comments, isLoading } = usePostComments(postId)
+  const { data: comments, isLoading, isError, refetch } = usePostComments(postId)
 
   return (
-    <Wrap>
+    <Wrap id="responder" aria-label="Respostas à publicação" style={{ scrollMarginTop: 124 }}>
+      <ConversationHeader><h2>Respostas</h2><span>{commentsCount}</span></ConversationHeader>
       {user ? (
         <CommentComposer postId={postId} canCommentWithAudio={canCommentWithAudio} />
       ) : (
-        <p style={{ margin: 0, fontSize: '0.875rem', color: '#6B7280' }}>
+        <ConversationState>
           <Link to="/entrar" style={{ fontWeight: 600 }}>Entre</Link> para comentar com texto, imagem ou GIF.
-        </p>
+        </ConversationState>
       )}
 
       {isLoading ? (
-        <p style={{ margin: 0, fontSize: '0.875rem', color: '#6B7280' }}>Carregando comentários...</p>
+        <ConversationState>Carregando respostas…</ConversationState>
+      ) : isError ? (
+        <ConversationState>Não foi possível carregar as respostas. <MiniActBtn onClick={() => refetch()}>Tentar novamente</MiniActBtn></ConversationState>
       ) : comments && comments.length > 0 ? (
-        <div>
+        <CommentList>
           {comments.map((c) => (
             <CommentRow
               key={c.id}
@@ -619,11 +700,9 @@ export function PostCommentsSection({ postId, canCommentWithAudio }: PostComment
               canCommentWithAudio={canCommentWithAudio}
             />
           ))}
-        </div>
+        </CommentList>
       ) : (
-        <p style={{ margin: 0, fontSize: '0.875rem', color: '#6B7280' }}>
-          Nenhum comentário ainda. Seja o primeiro!
-        </p>
+        <ConversationState>Nenhuma resposta ainda. Comece a conversa.</ConversationState>
       )}
     </Wrap>
   )

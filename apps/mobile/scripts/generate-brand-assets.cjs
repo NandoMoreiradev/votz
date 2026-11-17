@@ -1,8 +1,9 @@
-const { readFileSync, writeFileSync } = require('node:fs')
+const { readFileSync, writeFileSync, copyFileSync } = require('node:fs')
 const { resolve } = require('node:path')
 const { Resvg } = require('@resvg/resvg-js')
 
 const root = resolve(__dirname, '..')
+copyFileSync(resolve(root, '../web/src/assets/brand/votz-logo.svg'), resolve(root, 'assets/votz-logo.svg'))
 const symbol = readFileSync(resolve(root, '../web/src/assets/brand/votz-symbol.svg'), 'utf8')
 writeFileSync(resolve(root, 'assets/votz-icon.png'), new Resvg(symbol, { fitTo: { mode: 'width', value: 1024 } }).render().asPng())
 const foreground = symbol.replace(/<rect[^>]+\/>/, '').replace('viewBox="0 0 120 120"', 'viewBox="-30 -30 180 180"')

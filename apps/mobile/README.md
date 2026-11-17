@@ -72,12 +72,23 @@ Como alternativa, uma development build pode ser gerada com EAS e instalada no a
 ## Implementado nesta primeira entrega
 
 - Feed de publicações (recentes, para você, seguindo) e feed de relatos; paginação, atualização ao puxar e tratamento de falhas.
-- Detalhes de publicações e relatos, memória pública, curtidas, comentários de texto, apoio e votação em enquetes existentes.
+- Detalhes de publicações e relatos, memória pública, curtidas, reposts, comentários de texto com respostas encadeadas, apoio e votação em enquetes existentes.
 - Login e MFA, incluindo configuração obrigatória do autenticador e códigos de recuperação.
-- Criação de publicações e relatos com fotos, câmera e localização opcional; cidade/UF e anonimato de relatos.
+- Criação de publicações, enquetes e relatos com fotos, câmera e localização opcional; cidade/UF e anonimato de relatos.
 - Explorar políticos/entidades, abrir perfis de cidadãos/políticos/entidades e seguir/deixar de seguir.
+- Perfis com abas paginadas de publicações/relatos e edição de nome, nome de usuário e bio da própria conta.
+- Cabeçalho compacto com logo oficial, composição em tela cheia, visualização de fotos e tratamento do teclado em comentários/formulários.
+- Aba Mapa com MapLibre Native, agrupamento de marcadores, filtros por categoria/status, busca na área visível e abertura do relato. Localização do aparelho opcional, somente ao tocar no controle.
 
-Não considerar esta base um lançamento pronto. Cadastro nativo, troca de contexto institucional, notificações push, denúncias/bloqueio, exclusão de conta, consentimento atualizado, vídeo/áudio, rascunhos persistentes, edição, envio em segundo plano e paridade das publicações especiais ainda precisam ser concluídos. Resultados de perfis mostram os dez primeiros itens; os feeds principais têm paginação completa.
+O mapa usa `/map/reports`, o mesmo GeoJSON público do web, com até 500 pontos por consulta. Relatos sem coordenadas não ganham posição aproximada inventada. O fundo padrão usa OpenFreeMap Positron, com atribuições acessíveis no mapa. Para outro provedor, configure `EXPO_PUBLIC_MAP_STYLE_URL` com um estilo MapLibre servido por HTTPS e credenciais públicas adequadas ao app. A chave MapTiler do web possui restrição de uso e não é reutilizada no mobile.
+
+MapLibre contém código nativo. APKs anteriores à inclusão desse módulo mostram uma mensagem de atualização na aba Mapa e continuam permitindo o uso das outras abas. É necessário instalar a nova development build; Fast Refresh sozinho não adiciona o módulo. O plugin `@maplibre/maplibre-react-native` configura Android/iOS pelo fluxo de geração nativa do Expo, sem manter pastas `android/` ou `ios/` no repositório.
+
+Não considerar esta base um lançamento pronto. Cadastro nativo, troca de contexto institucional, notificações push, denúncias/bloqueio, exclusão de conta, consentimento atualizado, vídeo/áudio, rascunhos persistentes, edição de publicações, envio em segundo plano e paridade das publicações especiais ainda precisam ser concluídos. Feeds principais e abas dos perfis têm paginação. Web e mobile usam os mesmos registros na API; alterações feitas em outro cliente exigem atualizar a consulta, sem sincronização em tempo real garantida.
+
+Revisão visual e testes no aparelho: [mobile-social-review-2026-11-17.md](../../docs/dev/mobile-social-review-2026-11-17.md).
+
+Mapa nativo, build e verificação de repost: [mobile-map-2026-11-17.md](../../docs/dev/mobile-map-2026-11-17.md).
 
 ## Sessão e segurança
 
@@ -93,6 +104,7 @@ npm --prefix apps/mobile run lint
 npm --prefix apps/mobile run check
 npm --prefix apps/mobile run export:android
 npm --prefix apps/mobile run export:ios
+node --test apps/mobile/tests/map-data.test.mjs
 npm test --workspace=apps/api -- --runInBand --runTestsByPath src/auth/mobile-auth.controller.spec.ts
 ```
 

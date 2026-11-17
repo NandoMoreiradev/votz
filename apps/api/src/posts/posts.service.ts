@@ -220,7 +220,7 @@ export class PostsService {
   }
 
   async listFeed(query: ListPostsQueryDto, user?: ActingUser | null) {
-    const sort = query.sort ?? 'for_you'
+    const sort = query.profileUserId ? 'recent' : query.sort ?? 'for_you'
     const page = query.page ?? 1
     const limit = query.limit ?? 20
     const topicSlug = query.topic ? normalizeTopicSlug(query.topic) : undefined
@@ -231,7 +231,7 @@ export class PostsService {
         ? await this.repo.getViewerContext(user?.id)
         : undefined
 
-    const { posts, total } = await this.repo.findFeedCandidates({
+    const { posts, total, reposts } = await this.repo.findFeedCandidates({
       sort,
       topicSlug,
       cityKey,
@@ -239,6 +239,7 @@ export class PostsService {
       kind: query.kind,
       authorType: query.authorType,
       authorUserId: query.authorUserId,
+      profileUserId: query.profileUserId,
       authorOrgId: query.authorOrgId,
       hasPoll: query.hasPoll,
       viewerContext,
@@ -260,7 +261,7 @@ export class PostsService {
     const hydrated = await this.repo.hydratePosts(ordered, this.buildViewerIdentity(user))
 
     return {
-      data: hydrated,
+      data: hydrated.map((post) => ({ ...post, repost: reposts?.[post.id] ?? null })),
       meta: {
         page,
         limit,

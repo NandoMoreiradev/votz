@@ -2,12 +2,13 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { List, X, CaretDown } from '@phosphor-icons/react'
+import { Bell, List, X, CaretDown } from '@phosphor-icons/react'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { InviteVotzModal } from '../ui/InviteVotzModal'
 import { useAuthStore } from '../../store/auth.store'
-import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead, AppNotification } from '../../hooks/useNotifications'
+import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead } from '../../hooks/useNotifications'
+import { notificationContent } from '../../lib/notification-content'
 import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
 
@@ -19,7 +20,7 @@ const Nav = styled.nav`
   max-width: 100%;
   overflow-x: clip;
   background: ${({ theme }) => theme.colors.primary};
-  height: 64px;
+  height: 56px;
   display: flex;
   align-items: center;
   border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -64,7 +65,7 @@ const Logo = styled(Link)`
 `
 
 const LogoImg = styled.img`
-  height: 36px;
+  height: 30px;
   width: auto;
   display: block;
 
@@ -227,8 +228,8 @@ const BellWrapper = styled.div`
 `
 
 const BellBtn = styled.button`
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: rgba(255,255,255,0.1);
   color: rgba(255,255,255,0.8);
@@ -242,6 +243,7 @@ const BellBtn = styled.button`
   flex-shrink: 0;
 
   &:hover { background: rgba(255,255,255,0.18); color: #fff; }
+  &:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 `
 
 const UnreadBadge = styled.span`
@@ -314,15 +316,24 @@ const NotifList = styled.div`
   overflow-y: auto;
 `
 
-const NotifItem = styled(Link)<{ $unread: boolean }>`
+const NotifItem = styled.div<{ $unread: boolean }>`
   display: block;
-  padding: 12px 16px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ $unread, theme }) => $unread ? theme.colors.primary + '06' : 'transparent'};
   transition: background 0.1s;
 
   &:last-child { border-bottom: none; }
   &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+  > a, > button {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    text-align: left;
+    border: none;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
 `
 
 const NotifText = styled.p`
@@ -356,19 +367,6 @@ const NotifEmpty = styled.p`
   margin: 0;
 `
 
-function notifLabel(n: AppNotification): string {
-  if (n.type === 'NEW_COMMENT') return `Novo comentário em "${n.report.title}"`
-  if (n.type === 'STATUS_CHANGED') {
-    const s = (n.metadata?.newStatus as string) ?? ''
-    const labels: Record<string, string> = {
-      OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento',
-      RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado',
-    }
-    return `Relato "${n.report.title}" → ${labels[s] ?? s}`
-  }
-  return n.report.title
-}
-
 function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
   if (diff < 60) return 'agora'
@@ -381,7 +379,7 @@ function NotificationsPanel() {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { data: count = 0 } = useUnreadCount()
-  const { data } = useNotifications()
+  const { data, isLoading, isError, refetch } = useNotifications()
   const { mutate: markRead } = useMarkRead()
   const { mutate: markAll } = useMarkAllRead()
 
@@ -390,38 +388,41 @@ function NotificationsPanel() {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    function escape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', escape)
+    }
   }, [])
 
   return (
     <BellWrapper ref={wrapperRef}>
-      <BellBtn onClick={() => setOpen((o) => !o)} title="Notificações">🔔</BellBtn>
+      <BellBtn type="button" onClick={() => setOpen((o) => !o)} title="Notificações" aria-label="Notificações" aria-expanded={open} aria-controls="notifications-panel"><Bell size={22} weight="regular" aria-hidden="true" /></BellBtn>
       {count > 0 && <UnreadBadge>{count > 99 ? '99+' : count}</UnreadBadge>}
 
       {open && (
-        <NotifDropdown>
+        <NotifDropdown id="notifications-panel" role="region" aria-label="Notificações">
           <NotifHeader>
             <NotifTitle>Notificações</NotifTitle>
             {count > 0 && <MarkAllBtn onClick={() => markAll()}>Marcar todas como lidas</MarkAllBtn>}
           </NotifHeader>
           <NotifList>
-            {!data || data.data.length === 0 ? (
+            {isLoading ? <NotifEmpty>Carregando notificações…</NotifEmpty> : isError ? (
+              <NotifEmpty>Não foi possível carregar as notificações. <MarkAllBtn onClick={() => refetch()}>Tentar novamente</MarkAllBtn></NotifEmpty>
+            ) : !data || data.data.length === 0 ? (
               <NotifEmpty>Nenhuma notificação ainda.</NotifEmpty>
             ) : (
-              data.data.map((n) => (
-                <NotifItem
-                  key={n.id}
-                  to={`/relatos/${n.report.id}`}
-                  $unread={!n.read}
-                  onClick={() => { if (!n.read) markRead(n.id); setOpen(false) }}
-                >
-                  <NotifText>
-                    {!n.read && <NotifDot />}
-                    {notifLabel(n)}
-                  </NotifText>
-                  <NotifSub>{timeAgo(n.createdAt)}</NotifSub>
+              data.data.map((n) => {
+                const { label, href } = notificationContent(n)
+                const content = <><NotifText>{!n.read && <NotifDot />}{label}</NotifText><NotifSub>{timeAgo(n.createdAt)}</NotifSub></>
+                const onClick = () => { if (!n.read) markRead(n.id); setOpen(false) }
+                return <NotifItem key={n.id} $unread={!n.read}>
+                  {href ? <Link to={href} onClick={onClick}>{content}</Link> : <button type="button" onClick={onClick}>{content}</button>}
                 </NotifItem>
-              ))
+              })
             )}
           </NotifList>
         </NotifDropdown>
@@ -514,7 +515,7 @@ const MobileMenuBtn = styled.button`
 const MobileDrawer = styled.div`
   display: none;
   position: fixed;
-  top: 64px;
+  top: 56px;
   left: 0;
   right: 0;
   max-height: calc(100vh - 64px);

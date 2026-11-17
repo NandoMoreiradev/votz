@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
+import { socialCover } from '../components/ui/social'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useEntity, useEntityReports } from '../hooks/useEntities'
@@ -67,9 +68,9 @@ const SideCol = styled.div`
 const HeaderCard = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
   padding: 28px;
   margin-bottom: 20px;
+  ${socialCover}
 `
 
 const HeaderTop = styled.div`
@@ -77,6 +78,7 @@ const HeaderTop = styled.div`
   gap: 18px;
   align-items: flex-start;
   margin-bottom: 20px;
+  @media (max-width: 480px) { flex-direction: column; gap: 12px; }
 `
 
 const Logo = styled.div<{ $src: string | null }>`
@@ -84,7 +86,7 @@ const Logo = styled.div<{ $src: string | null }>`
   height: 72px;
   border-radius: ${({ theme }) => theme.radii.md};
   background: ${({ $src, theme }) =>
-    $src ? `url(${$src}) center/cover` : theme.colors.primary + '14'};
+    $src ? `url(${$src}) center/cover` : theme.colors.neutral};
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -96,6 +98,9 @@ const Logo = styled.div<{ $src: string | null }>`
 `
 
 const LogoWrapper = styled.div`
+  margin-top: -48px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px ${({ theme }) => theme.colors.white};
   position: relative;
   width: 72px;
   height: 72px;

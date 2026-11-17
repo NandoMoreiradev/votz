@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PostCommentMediaType, PostKind } from '@votz/shared-types'
 import { api } from '../lib/api'
+import { useAuthStore } from '../store/auth.store'
 import {
   FeedSortMode,
   GifSearchResponse,
@@ -26,6 +27,7 @@ export interface UsePostsParams {
 }
 
 export function usePostsFeed(params: UsePostsParams = {}) {
+  const sessionReady = useAuthStore((s) => s.sessionReady)
   const { enabled = true, ...query } = params
   return useQuery({
     queryKey: ['posts', query],
@@ -33,16 +35,17 @@ export function usePostsFeed(params: UsePostsParams = {}) {
       api
         .get<PostsResponse>('/posts', { params: { ...query, limit: query.limit ?? 20 } })
         .then((r) => r.data),
-    enabled,
+    enabled: enabled && sessionReady,
     staleTime: 20_000,
   })
 }
 
 export function usePost(id: string) {
+  const sessionReady = useAuthStore((s) => s.sessionReady)
   return useQuery({
     queryKey: ['post', id],
     queryFn: () => api.get<PostDto>(`/posts/${id}`).then((r) => r.data),
-    enabled: !!id,
+    enabled: !!id && sessionReady,
   })
 }
 

@@ -6,6 +6,7 @@ import { InviteVotzModal } from '../components/ui/InviteVotzModal'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { PostCard } from '../components/posts/PostCard'
+import { socialCover, socialRow, socialTab } from '../components/ui/social'
 import { useUser, useUserReports } from '../hooks/useUser'
 import { usePostsFeed } from '../hooks/usePosts'
 import { useIsFollowingTarget, useToggleFollowTarget } from '../hooks/useFollow'
@@ -20,9 +21,9 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 1120px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 24px 32px 64px;
+  padding: 16px 16px 64px;
 
   @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
@@ -44,21 +45,18 @@ const BackLink = styled(Link)`
 const ProfileCard = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 32px;
-  margin-bottom: 24px;
+  padding: 20px;
+  margin-bottom: 0;
   display: flex;
-  gap: 24px;
-  align-items: flex-start;
-
-  @media (max-width: ${({ theme }) => theme.breakpoints.sm}) {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
+  flex-direction: column;
+  gap: 12px;
+  ${socialCover}
 `
 
 const Avatar = styled.div<{ $src: string | null }>`
+  margin-top: -62px;
+  border: 4px solid ${({ theme }) => theme.colors.white};
+  box-sizing: content-box;
   width: 88px;
   height: 88px;
   border-radius: ${({ theme }) => theme.radii.full};
@@ -74,6 +72,8 @@ const Avatar = styled.div<{ $src: string | null }>`
 
 const ProfileInfo = styled.div`
   flex: 1;
+  width: 100%;
+  min-width: 0;
 `
 
 const ProfileTopRow = styled.div`
@@ -100,7 +100,7 @@ const FollowBtn = styled.button<{ $following?: boolean }>`
 
 const EditProfileLink = styled(Link)`
   padding: 7px 14px;
-  border-radius: ${({ theme }) => theme.radii.md};
+  border-radius: ${({ theme }) => theme.radii.full};
   border: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ theme }) => theme.colors.white};
   color: ${({ theme }) => theme.colors.text};
@@ -112,23 +112,12 @@ const EditProfileLink = styled(Link)`
 const TabsBar = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  background: ${({ theme }) => theme.colors.white};
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  margin-bottom: 18px;
 `
 
 const TabBtn = styled.button<{ $active: boolean }>`
-  padding: 10px 16px;
-  border: none;
-  border-bottom: 2px solid ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
-  background: transparent;
-  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.9375rem;
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  cursor: pointer;
-  transition: color 0.15s;
-  &:hover { color: ${({ theme }) => theme.colors.text}; }
+  ${socialTab}
 `
 
 const ProfileName = styled.h1`
@@ -217,22 +206,11 @@ const SectionTitle = styled.h2`
 const ReportList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
 `
 
 const ReportCard = styled(Link)`
+  ${socialRow}
   display: block;
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 20px 24px;
-  transition: all 0.15s ease;
-
-  &:hover {
-    border-color: #c4c4c4;
-    box-shadow: ${({ theme }) => theme.shadows.md};
-    transform: translateY(-1px);
-  }
 `
 
 const ReportHeader = styled.div`

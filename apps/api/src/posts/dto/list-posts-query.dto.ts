@@ -43,6 +43,11 @@ export class ListPostsQueryDto {
   @IsUUID()
   authorUserId?: string
 
+  @ApiPropertyOptional({ description: 'Perfil cidadão: publicações próprias e reposts, em ordem de atividade' })
+  @IsOptional()
+  @IsUUID()
+  profileUserId?: string
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()

@@ -11,6 +11,7 @@ import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
+import { socialRow, socialTab } from '../components/ui/social'
 import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useReports } from '../hooks/useReports'
 import { usePostsFeed } from '../hooks/usePosts'
@@ -124,7 +125,7 @@ const Subheader = styled.div`
   background: #fff;
   border-bottom: 1px solid #E5E5E0;
   position: sticky;
-  top: 64px;
+  top: 56px;
   z-index: 40;
 `
 const SubInner = styled.div`
@@ -141,6 +142,7 @@ const SubTitleRow = styled.div`
   align-items: baseline;
   gap: 10px;
   flex-wrap: wrap;
+  @media (max-width: 820px) { display: none; }
 `
 const SubTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
@@ -316,8 +318,13 @@ const RadioOpt = styled.label`
 `
 
 // ─── Styled: Feed ─────────────────────────────────────────────────────────────
-const FeedSection = styled.section``
+const FeedSection = styled.section`
+  min-width: 0;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
 const FeedHead = styled.div`
+  padding: 12px 16px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -412,25 +419,20 @@ const SurtoAnchor = styled.button`
   white-space: nowrap;
 `
 
-const Feed = styled.div`display: flex; flex-direction: column; gap: 12px;`
+const Feed = styled.div`display: flex; flex-direction: column;`
 
 // ─── Styled: Horizontal card ──────────────────────────────────────────────────
 const CardWrap = styled.article<{ $highPressure?: boolean }>`
-  background: #fff;
-  border: 1px solid #E5E5E0;
-  border-radius: 12px;
+  ${socialRow}
   overflow: hidden;
-  display: flex;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
   ${({ $highPressure }) => $highPressure && css`border-left: 3px solid #E63946;`}
-  &:hover {
-    border-color: #0D0D0D;
-    box-shadow: 0 4px 14px rgba(0,0,0,.04);
-  }
 `
 const CardImg = styled.div<{ $category: Category; $coverUrl?: string }>`
-  width: 168px;
+  width: 100%;
+  height: 200px;
+  border-radius: 14px;
+  margin-bottom: 12px;
   flex-shrink: 0;
   position: relative;
   background: ${({ $category, $coverUrl }) =>
@@ -457,7 +459,6 @@ const CardImg = styled.div<{ $category: Category; $coverUrl?: string }>`
     background-size: 14px 14px;
     pointer-events: none;
   }
-  @media (max-width: 620px) { display: none; }
 `
 const CatTag = styled.span`
   position: absolute;
@@ -496,7 +497,6 @@ const PhotoCount = styled.button`
 `
 const CardBody = styled.div`
   flex: 1;
-  padding: 14px 18px 12px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -510,6 +510,28 @@ const CardMeta = styled.div`
   color: ${({ theme }) => theme.colors.muted};
   margin-bottom: 8px;
   flex-wrap: wrap;
+`
+const ReportAuthor = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  flex-wrap: wrap;
+  a { font-weight: 600; color: ${({ theme }) => theme.colors.text}; }
+  a:hover { text-decoration: underline; }
+  span { color: ${({ theme }) => theme.colors.muted}; }
+`
+const ReportAvatar = styled.div<{ $src?: string | null }>`
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: ${({ $src, theme }) => $src ? `url(${$src}) center/cover` : `${theme.colors.action}10`};
+  color: ${({ theme }) => theme.colors.action};
+  display: grid;
+  place-items: center;
+  font-weight: 600;
 `
 const MetaDot = styled.span`
   width: 3px;
@@ -528,7 +550,7 @@ const CardTitle = styled.h3`
   margin-bottom: 6px;
 `
 const CardDesc = styled.p`
-  font-size: 13.5px;
+  font-size: 15px;
   line-height: 1.5;
   color: ${({ theme }) => theme.colors.muted};
   margin-bottom: 12px;
@@ -981,7 +1003,7 @@ function FeedCard({
 
   return (
     <CardWrap onClick={handleCard} $highPressure={report.pressureScore >= 8}>
-      <CardImg $category={report.category} $coverUrl={coverUrl}>
+      {coverUrl && <CardImg $category={report.category} $coverUrl={coverUrl}>
         <CatTag>{CAT_CFG[report.category].label}</CatTag>
         {report.media.length > 0 && (
           <PhotoCount
@@ -997,9 +1019,16 @@ function FeedCard({
             {report.media.length} {report.media.length === 1 ? 'foto' : 'fotos'}
           </PhotoCount>
         )}
-      </CardImg>
+      </CardImg>}
 
       <CardBody>
+        <ReportAuthor>
+          <ReportAvatar $src={report.anonymous ? null : report.author?.avatarUrl}>
+            {(report.anonymous ? 'Anônimo' : report.author?.name || 'Cidadão').charAt(0)}
+          </ReportAvatar>
+          {!report.anonymous && report.author ? <Link onClick={(e) => e.stopPropagation()} to={`/perfil/${report.author.id}`}>{report.author.name}</Link> : <span>{report.anonymous ? 'Relato anônimo' : 'Cidadão'}</span>}
+          <span>· {timeAgo(report.createdAt)}</span>
+        </ReportAuthor>
         <CardMeta>
           {location.map((loc, i) => (
             <span key={i}>
@@ -1007,11 +1036,10 @@ function FeedCard({
               {i < location.length - 1 && <MetaDot />}
             </span>
           ))}
-          {location.length > 0 && <MetaDot />}
-          <span>{timeAgo(report.createdAt)}</span>
+          <span>{CAT_CFG[report.category].label}</span>
         </CardMeta>
 
-        <CardTitle>{report.title}</CardTitle>
+        <CardTitle><Link to={`/relatos/${report.id}`} onClick={(e) => e.stopPropagation()}>{report.title}</Link></CardTitle>
         <CardDesc>{report.description}</CardDesc>
 
         <StatusRow>
@@ -1103,50 +1131,25 @@ function resolveInitialTab(params: URLSearchParams): 'publicacoes' | 'relatos' {
 const FeedModeWrap = styled.div`
   display: inline-flex;
   align-items: center;
-  background: ${({ theme }) => theme.colors.neutral};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 9px;
-  padding: 3px;
-  gap: 3px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const FeedModeBtn = styled.button<{ $active: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: none;
-  background: ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
-  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.muted)};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
-  }
+  ${socialTab}
 `
 
 const AlgoTabs = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const AlgoTabBtn = styled.button<{ $active: boolean }>`
-  padding: 6px 12px;
-  border-radius: ${({ theme }) => theme.radii.full};
-  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.border)};
-  background: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.white)};
-  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
+  ${socialTab}
+  @media (max-width: 480px) { padding: 10px 6px; font-size: 12px; }
 `
 
 const TopicRow = styled(Link)`

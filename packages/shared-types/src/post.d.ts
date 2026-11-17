@@ -98,6 +98,16 @@ export interface PostQuoteDto {
     createdAt: string;
     author: PostAuthorInfo;
 }
+export interface PostRepostInfo {
+    id: string;
+    createdAt: string;
+    user: {
+        id: string;
+        name: string;
+        username: string | null;
+        avatarUrl: string | null;
+    };
+}
 export interface PostDto {
     id: string;
     content: string;
@@ -110,6 +120,8 @@ export interface PostDto {
     repostsCount: number;
     likedByMe: boolean;
     repostedByMe: boolean;
+    /** Distribution context; the post's author and ID always remain the original. */
+    repost?: PostRepostInfo | null;
     canCommentWithAudio: boolean;
     hotScore: number;
     createdAt: string;
