@@ -91,6 +91,7 @@ export function createPinoHttpConfig(
     redact: {
       paths: [
         'req.headers.authorization',
+        'req.headers["x-votz-chat-secret"]',
         'req.headers.cookie',
         'res.headers["set-cookie"]',
       ],

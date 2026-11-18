@@ -19,3 +19,4 @@ apps/mobile/expo-env.d.ts
 docs/dev/demo-state.json
 docs/security/qa-scripts/state.json
 docs/security/qa-scripts/results.json
+/.local/chat/

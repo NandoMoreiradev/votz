@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { ThemeProvider } from 'styled-components'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { theme } from './theme'
 import { GlobalStyle } from './theme/GlobalStyle'
 import { queryClient } from './lib/query-client'
@@ -60,6 +60,14 @@ import { OrgReauthGate } from './components/ui/OrgReauthGate'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
 
+const Conversations = lazy(() => import('./pages/Conversations').then(module => ({ default: module.Conversations })))
+function ConversationsRoute() {
+  return <Suspense fallback={<div role="status" style={{ padding: 24 }}>Carregando conversas…</div>}><Conversations /></Suspense>
+}
+function RouteFooter() {
+  return useLocation().pathname.startsWith('/conversas') ? null : <Footer />
+}
+
 function AuthInit() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -102,6 +110,10 @@ function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/publicacoes/:id" element={<PostDetail />} />
+              <Route path="/conversas" element={<ConversationsRoute />} />
+              <Route path="/conversas/nova" element={<ConversationsRoute />} />
+              <Route path="/conversas/bloqueios" element={<ConversationsRoute />} />
+              <Route path="/conversas/:id" element={<ConversationsRoute />} />
               <Route path="/pautas/:slug" element={<PautaDetail />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />
               <Route path="/novo" element={<CreateReport />} />
@@ -153,11 +165,11 @@ function App() {
               <Route path="/sugestoes" element={<Sugestoes />} />
             </Routes>
             <ConsentGate />
-            <Footer />
+            <RouteFooter />
           </BrowserRouter>
         </MediaViewerProvider>
       </ThemeProvider>
-      <ReactQueryDevtools initialIsOpen={false} />
+      {import.meta.env.DEV && import.meta.env.VITE_QUERY_DEVTOOLS === 'true' && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   )
 }

@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown } from '@phosphor-icons/react'
+import { Bell, List, X, CaretDown, ChatCircle } from '@phosphor-icons/react'
+import { useConversationCapabilities } from '../../hooks/useConversations'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { InviteVotzModal } from '../ui/InviteVotzModal'
@@ -578,6 +579,7 @@ const MobileDrawerAction = styled.button<{ $danger?: boolean }>`
 `
 
 export function Navbar() {
+  const conversations = useConversationCapabilities()
   const { user, activeContext, logout, sessionReady } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
@@ -756,6 +758,7 @@ export function Navbar() {
                   + Relatar
                 </ReportButton>
                 <NotificationsPanel />
+                {conversations.data?.enabled && <BellBtn as={Link} to="/conversas" aria-label="Conversas" title="Conversas"><ChatCircle size={23} aria-hidden="true" /></BellBtn>}
                 <AvatarWrapper ref={wrapperRef}>
                   <Avatar
                     $src={user.avatarUrl}

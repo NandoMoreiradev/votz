@@ -12,4 +12,5 @@ export * from './analytics';
 export * from './formatters';
 export * from './sla';
 export * from './post';
+export * from './conversation';
 //# sourceMappingURL=index.d.ts.map

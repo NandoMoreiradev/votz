@@ -1,0 +1,9 @@
+{
+  "name": "@votz/chat-crypto-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated Matrix crypto evaluation. Never imported by production applications.",
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "devDependencies": { "@matrix-org/matrix-sdk-crypto-wasm": "19.0.1" }
+}

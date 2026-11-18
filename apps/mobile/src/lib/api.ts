@@ -17,6 +17,11 @@ export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
 }
 export function setSessionExpiredHandler(handler: () => void) { onExpired = handler }
+export async function conversationSocketToken(): Promise<string> {
+  if (!accessToken || tokenExpiresAt <= Date.now() + 5_000) await refreshSession()
+  if (!accessToken) throw new ApiError('Entre para continuar.', 401)
+  return accessToken
+}
 export async function saveTokens(tokens: { accessToken: string; refreshToken: string }, expectedGeneration = ++generation) {
   const write = storageQueue.then(async () => {
     if (generation !== expectedGeneration) throw new ApiError('Sessão alterada.', 401)

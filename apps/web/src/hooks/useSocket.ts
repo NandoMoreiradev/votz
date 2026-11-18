@@ -36,6 +36,12 @@ export function useSocket() {
       // Invalida contagem e lista — o bell e o painel atualizam automaticamente
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
     })
+    socket.on('conversation:changed', () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    })
+    socket.on('connect', () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    })
 
     socket.on('debate:live', (data: { debateId: string; title: string }) => {
       queryClient.invalidateQueries({ queryKey: ['debates'] })
@@ -48,6 +54,8 @@ export function useSocket() {
     })
 
     return () => {
+      void queryClient.cancelQueries({ queryKey: ['conversations', userId] })
+      queryClient.removeQueries({ queryKey: ['conversations', userId] })
       socket?.disconnect()
       socket = null
     }

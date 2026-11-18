@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { queryClient } from '../lib/query-client'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
+import { ConversationsLive } from '../hooks/use-conversations'
 
 void SplashScreen.preventAutoHideAsync()
 export { ErrorBoundary } from 'expo-router'
@@ -29,6 +30,7 @@ export default function RootLayout() {
   useEffect(() => { if ((loaded || fontError) && ready) void SplashScreen.hideAsync() }, [loaded, fontError, ready])
   if ((!loaded && !fontError) || !ready) return null
   return <SafeAreaProvider><QueryClientProvider client={queryClient}>
+    <ConversationsLive />
     <StatusBar style="dark" />
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

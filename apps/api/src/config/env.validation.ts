@@ -15,6 +15,15 @@ function readString(config: Record<string, unknown>, key: string): string {
  */
 export function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
   const issues: string[] = []
+  if (readString(config, 'CHAT_TEXT_ENABLED') === 'true') {
+    if (!HEX_64_REGEX.test(readString(config, 'CHAT_TOKEN_ENCRYPTION_KEY'))) issues.push('CHAT_TOKEN_ENCRYPTION_KEY must be a distinct 64-character hex key')
+    if ([readString(config, 'CPF_ENCRYPTION_KEY'), readString(config, 'JWT_SECRET')].includes(readString(config, 'CHAT_TOKEN_ENCRYPTION_KEY'))) issues.push('CHAT_TOKEN_ENCRYPTION_KEY must be independent of other application secrets')
+    if (readString(config, 'CHAT_MATRIX_JWT_SECRET').length < MIN_SECRET_LENGTH) issues.push('CHAT_MATRIX_JWT_SECRET must be at least 32 characters')
+    if (readString(config, 'CHAT_MATRIX_REGISTRATION_SECRET').length < MIN_SECRET_LENGTH) issues.push('CHAT_MATRIX_REGISTRATION_SECRET must be at least 32 characters')
+    if (readString(config, 'CHAT_MATRIX_JWT_SECRET') === readString(config, 'JWT_SECRET')) issues.push('Matrix login secret must be independent of the Votz access token secret')
+    if (!readString(config, 'CHAT_MATRIX_SERVER_NAME')) issues.push('CHAT_MATRIX_SERVER_NAME is required')
+    if (readString(config, 'NODE_ENV') === 'production' && !readString(config, 'CHAT_MATRIX_URL').startsWith('https://')) issues.push('CHAT_MATRIX_URL must use HTTPS in production')
+  }
 
   const jwtSecret = readString(config, 'JWT_SECRET')
   if (jwtSecret.length < MIN_SECRET_LENGTH) {

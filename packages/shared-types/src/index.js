@@ -28,4 +28,5 @@ __exportStar(require("./analytics"), exports);
 __exportStar(require("./formatters"), exports);
 __exportStar(require("./sla"), exports);
 __exportStar(require("./post"), exports);
+__exportStar(require("./conversation"), exports);
 //# sourceMappingURL=index.js.map

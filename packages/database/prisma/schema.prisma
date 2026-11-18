@@ -332,8 +332,144 @@ model User {
   refreshTokens        RefreshToken[]
   platformSuggestions      PlatformSuggestion[]     @relation("SuggestionAuthor")
   platformSuggestionVotes  PlatformSuggestionVote[]
+  createdConversations     Conversation[] @relation("ConversationCreator")
+  ownedConversations       Conversation[] @relation("ConversationOwner")
+  conversationMembers      ConversationMember[] @relation("ConversationParticipant")
+  conversationInvitations  ConversationMember[] @relation("ConversationInviter")
+  conversationBlocksSent   ConversationBlock[] @relation("ConversationBlocker")
+  conversationBlocksReceived ConversationBlock[] @relation("ConversationBlocked")
+  conversationDeliveries   ConversationOutbox[]
+  chatDevices              ChatDevice[]
+  chatPrivacy              ChatPrivacy?
+  chatReceipts             ChatReceipt[]
 
   @@map("users")
+}
+
+enum ConversationKind {
+  DIRECT
+  GROUP
+}
+
+enum ConversationMemberRole {
+  ADMIN
+  MEMBER
+}
+
+enum ConversationMemberState {
+  INVITED
+  ACTIVE
+  DECLINED
+  LEFT
+  REMOVED
+}
+
+model Conversation {
+  id              String @id @default(uuid())
+  kind            ConversationKind
+  matrixRoomId    String? @unique @map("matrix_room_id")
+  title           String? @db.VarChar(100)
+  directKey       String? @unique @map("direct_key")
+  clientRequestId String? @map("client_request_id")
+  requestHash     String? @map("request_hash")
+  createdById     String? @map("created_by_id")
+  createdBy       User? @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  ownerId         String? @map("owner_id")
+  owner           User? @relation("ConversationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  revision        Int @default(1)
+  archivedAt      DateTime? @map("archived_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  members         ConversationMember[]
+  outbox          ConversationOutbox[]
+  chatReceipts    ChatReceipt[]
+
+  @@unique([createdById, clientRequestId])
+  @@index([updatedAt, id])
+  @@map("conversations")
+}
+
+model ChatDevice {
+  id String @id
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform String @db.VarChar(20)
+  secretHash String @map("secret_hash")
+  matrixToken String @map("matrix_token")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+  @@index([userId, revokedAt])
+  @@map("chat_devices")
+}
+
+model ChatPrivacy {
+  userId String @id @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readReceiptsEnabled Boolean @default(false) @map("read_receipts_enabled")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("chat_privacy")
+}
+
+model ChatReceipt {
+  conversationId String @map("conversation_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  eventId String @map("event_id")
+  recipientUserId String @map("recipient_user_id")
+  recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  deliveredAt DateTime @default(now()) @map("delivered_at")
+  readAt DateTime? @map("read_at")
+  @@id([conversationId, eventId, recipientUserId])
+  @@index([conversationId, recipientUserId])
+  @@map("chat_receipts")
+}
+
+model ConversationMember {
+  id             String @id @default(uuid())
+  conversationId String @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String @map("user_id")
+  user           User @relation("ConversationParticipant", fields: [userId], references: [id], onDelete: Cascade)
+  invitedById    String? @map("invited_by_id")
+  invitedBy      User? @relation("ConversationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  role           ConversationMemberRole @default(MEMBER)
+  state          ConversationMemberState @default(INVITED)
+  joinedAt       DateTime? @map("joined_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([conversationId, userId])
+  @@index([userId, state, conversationId])
+  @@map("conversation_members")
+}
+
+model ConversationBlock {
+  id        String @id @default(uuid())
+  blockerId String @map("blocker_id")
+  blocker   User @relation("ConversationBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String @map("blocked_id")
+  blocked   User @relation("ConversationBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("conversation_blocks")
+}
+
+model ConversationOutbox {
+  id              String @id @default(uuid())
+  conversationId  String @map("conversation_id")
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  recipientUserId String @map("recipient_user_id")
+  recipient       User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  revision        Int
+  attempts        Int @default(0)
+  nextAttemptAt   DateTime @default(now()) @map("next_attempt_at")
+  sentAt          DateTime? @map("sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([conversationId, recipientUserId, revision])
+  @@index([sentAt, nextAttemptAt])
+  @@map("conversation_outbox")
 }
 
 model Report {

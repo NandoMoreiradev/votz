@@ -21,6 +21,7 @@ import { OrgMembershipsModule } from './org-memberships/org-memberships.module'
 import { VotesModule } from './votes/votes.module'
 import { CommentsModule } from './comments/comments.module'
 import { NotificationsModule } from './notifications/notifications.module'
+import { ConversationsModule } from './conversations/conversations.module'
 import { AlertsModule } from './alerts/alerts.module'
 import { MapModule } from './map/map.module'
 import { PressModule } from './press/press.module'
@@ -124,6 +125,7 @@ import { SecurityModule } from './common/security/security.module'
     VotesModule,
     CommentsModule,
     NotificationsModule,
+    ConversationsModule,
     AlertsModule,
     MapModule,
     PressModule,

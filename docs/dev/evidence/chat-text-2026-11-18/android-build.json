@@ -1,0 +1,17 @@
+﻿{
+    "buildId":  "b4e799f3-c92d-4243-8103-b49a5120a43a",
+    "platform":  "Android development",
+    "bytes":  391523338,
+    "sha256":  "b6754fec6b9bf66061621257ecaaf04ef76eaab929de4562a30c3ee0f2d4f33e",
+    "matrixLibraries":  [
+                            "lib/arm64-v8a/libmatrix_crypto_ffi.so",
+                            "lib/arm64-v8a/libreact-native-matrix-crypto.so",
+                            "lib/armeabi-v7a/libmatrix_crypto_ffi.so",
+                            "lib/armeabi-v7a/libreact-native-matrix-crypto.so",
+                            "lib/x86/libmatrix_crypto_ffi.so",
+                            "lib/x86/libreact-native-matrix-crypto.so",
+                            "lib/x86_64/libmatrix_crypto_ffi.so",
+                            "lib/x86_64/libreact-native-matrix-crypto.so"
+                        ],
+    "deviceRuntimeValidated":  false
+}
