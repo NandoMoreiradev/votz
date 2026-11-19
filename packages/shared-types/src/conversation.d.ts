@@ -18,6 +18,14 @@ export interface ConversationSummary {
     myRole: ConversationRole;
     invitedBy: ConversationPerson | null;
     memberCount: number;
+    /** Só horário e autoria: o servidor não conhece o texto das mensagens. */
+    lastMessage: {
+        eventId: string;
+        at: string;
+        fromMe: boolean;
+    } | null;
+    /** Mensagens recebidas desde a última vez que você abriu a conversa. */
+    unreadCount: number;
     members: {
         user: ConversationPerson;
         state: 'ACTIVE' | 'INVITED';
@@ -50,6 +58,10 @@ export interface ConversationBlocksPage {
     page: number;
     limit: number;
 }
+/** Horário na lista: hora se for hoje, "Ontem", ou a data. Igual no web e no mobile. */
+export declare function conversationTime(iso: string, now?: Date): string;
+/** "3", "99+" — o contador de não lidas como aparece no selo. */
+export declare function conversationUnreadLabel(count: number): string;
 export declare function conversationMemberLabel(count: number): string;
 export declare function conversationTitle(conversation: ConversationSummary, userId: string): string;
 //# sourceMappingURL=conversation.d.ts.map

@@ -18,6 +18,10 @@ export interface ConversationSummary {
   myRole: ConversationRole
   invitedBy: ConversationPerson | null
   memberCount: number
+  /** Só horário e autoria: o servidor não conhece o texto das mensagens. */
+  lastMessage: { eventId: string; at: string; fromMe: boolean } | null
+  /** Mensagens recebidas desde a última vez que você abriu a conversa. */
+  unreadCount: number
   members: { user: ConversationPerson; state: 'ACTIVE' | 'INVITED'; role: ConversationRole }[]
 }
 export interface ConversationsPage {
@@ -41,6 +45,22 @@ export interface ConversationBlocksPage {
   total: number
   page: number
   limit: number
+}
+/** Horário na lista: hora se for hoje, "Ontem", ou a data. Igual no web e no mobile. */
+export function conversationTime(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  const day = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const days = Math.round((day(now) - day(at)) / 86_400_000)
+  if (days <= 0)
+    return at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  if (days === 1) return 'Ontem'
+  return at.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+}
+/** "3", "99+" — o contador de não lidas como aparece no selo. */
+export function conversationUnreadLabel(count: number): string {
+  return count > 99 ? '99+' : String(Math.max(0, Math.floor(count)))
 }
 export function conversationMemberLabel(count: number): string {
   return `${count} ${count === 1 ? 'participante' : 'participantes'}`

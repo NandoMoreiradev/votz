@@ -2,13 +2,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   HttpException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { compare } from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
 import {
   decryptWithKey,
@@ -17,6 +19,7 @@ import {
 } from '../crypto/crypto.service'
 import { ConversationActor } from './conversations.service'
 import { ChatMatrixService } from './chat-matrix.service'
+import { NotificationsGateway } from '../notifications/notifications.gateway'
 import {
   ChatReceiptDto,
   EnrollChatDeviceDto,
@@ -26,12 +29,18 @@ import { Prisma } from '@prisma/client'
 
 type Json = Record<string, any>
 type DeviceHeaders = { id?: string; secret?: string }
+export const MAX_CHAT_DEVICES = 5
+export const MAX_PENDING_CHAT_LINKS = 3
+export const CHAT_LINK_TTL_MS = 10 * 60 * 1000
+/** HTTP 423: o aparelho existe, mas foi desconectado. Não confundir com 401 (sessão) nem 410 (pedido expirado). */
+export const CHAT_DEVICE_DISCONNECTED = 423
 @Injectable()
 export class ChatService {
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService,
     private readonly matrix: ChatMatrixService,
+    private readonly events: NotificationsGateway,
   ) {}
   private guard(actor: ConversationActor) {
     if (!this.matrix.enabled()) throw new NotFoundException()
@@ -74,6 +83,54 @@ export class ChatService {
       )
     return { ...device, token: decryptWithKey(device.matrixToken, this.key()) }
   }
+  private ready(actor: ConversationActor, deviceId: string) {
+    return {
+      status: 'ready' as const,
+      deviceId,
+      matrixUserId: this.matrix.userId(actor.id),
+      protocol: 'matrix-olm-megolm-v1',
+      singleDevicePilot: false,
+      maxDevices: MAX_CHAT_DEVICES,
+    }
+  }
+  private waiting(link: { code: string; expiresAt: Date }) {
+    return {
+      status: 'pending_approval' as const,
+      code: link.code,
+      expiresAt: link.expiresAt.toISOString(),
+    }
+  }
+  private async activate(
+    tx: Prisma.TransactionClient,
+    actor: ConversationActor,
+    input: EnrollChatDeviceDto,
+  ) {
+    const session = await this.matrix.login(
+      this.matrix.userId(actor.id).split(':')[0].slice(1),
+      input.id,
+    )
+    if (
+      session.user_id !== this.matrix.userId(actor.id) ||
+      session.device_id !== input.id ||
+      typeof session.access_token !== 'string'
+    )
+      throw new ForbiddenException()
+    await tx.chatDevice.create({
+      data: {
+        id: input.id,
+        userId: actor.id,
+        platform: input.platform,
+        label: input.label?.trim() || null,
+        secretHash: this.hash(input.secret),
+        matrixToken: encryptWithKey(session.access_token, this.key()),
+      },
+    })
+  }
+  /**
+   * O primeiro aparelho da conta ativa direto. Qualquer aparelho adicional vira
+   * um pedido de vínculo que só um aparelho já ativo pode aprovar; chaves nunca
+   * são entregues a um aparelho novo apenas porque o login da conta funcionou.
+   */
   async enroll(actor: ConversationActor, input: EnrollChatDeviceDto) {
     this.guard(actor)
     await this.matrix.admin()
@@ -81,51 +138,212 @@ export class ChatService {
     return this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
-        const current = await tx.chatDevice.findFirst({
-          where: { userId: actor.id, revokedAt: null },
+        const secretHash = this.hash(input.secret)
+        const known = await tx.chatDevice.findUnique({
+          where: { id: input.id },
         })
-        if (current) {
+        if (known) {
           if (
-            current.id !== input.id ||
-            !this.same(current.secretHash, this.hash(input.secret))
+            known.userId !== actor.id ||
+            !this.same(known.secretHash, secretHash)
           )
-            throw new ConflictException(
-              'Esta conta já tem um dispositivo de conversas ativado. Use o dispositivo já cadastrado; nenhuma chave será substituída automaticamente.',
-            )
-        } else {
-          if (await tx.chatDevice.findUnique({ where: { id: input.id } }))
             throw new ConflictException(
               'Identificador de dispositivo indisponível.',
             )
-          const session = await this.matrix.login(
-            this.matrix.userId(actor.id).split(':')[0].slice(1),
-            input.id,
+          // Este aparelho foi desconectado: o app apaga as credenciais locais e
+          // começa de novo, sem a pessoa precisar entender o que houve.
+          if (known.revokedAt)
+            throw new HttpException(
+              'Este aparelho foi desconectado.',
+              CHAT_DEVICE_DISCONNECTED,
+            )
+          return this.ready(actor, known.id)
+        }
+        const active = await tx.chatDevice.count({
+          where: { userId: actor.id, revokedAt: null },
+        })
+        if (active === 0) {
+          await tx.chatDeviceLink.deleteMany({ where: { userId: actor.id } })
+          await this.activate(tx, actor, input)
+          return this.ready(actor, input.id)
+        }
+        if (active >= MAX_CHAT_DEVICES)
+          throw new ConflictException(
+            `Sua conta já tem ${MAX_CHAT_DEVICES} aparelhos conectados. Desconecte um deles para adicionar outro.`,
           )
-          if (
-            session.user_id !== this.matrix.userId(actor.id) ||
-            session.device_id !== input.id ||
-            typeof session.access_token !== 'string'
-          )
-            throw new ForbiddenException()
-          await tx.chatDevice.create({
-            data: {
-              id: input.id,
-              userId: actor.id,
-              platform: input.platform,
-              secretHash: this.hash(input.secret),
-              matrixToken: encryptWithKey(session.access_token, this.key()),
-            },
+        const now = new Date()
+        const link = await tx.chatDeviceLink.findUnique({
+          where: { id: input.id },
+        })
+        if (!link) {
+          await tx.chatDeviceLink.deleteMany({
+            where: { userId: actor.id, expiresAt: { lte: now } },
           })
+          const pending = await tx.chatDeviceLink.count({
+            where: { userId: actor.id, decidedAt: null },
+          })
+          if (pending >= MAX_PENDING_CHAT_LINKS)
+            throw new HttpException(
+              'Há pedidos de conexão demais aguardando resposta. Responda ou aguarde expirar.',
+              429,
+            )
+          return this.waiting(
+            await tx.chatDeviceLink.create({
+              data: {
+                id: input.id,
+                userId: actor.id,
+                platform: input.platform,
+                label: input.label?.trim() || null,
+                secretHash,
+                code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+                expiresAt: new Date(now.getTime() + CHAT_LINK_TTL_MS),
+              },
+            }),
+          )
         }
-        return {
-          deviceId: input.id,
-          matrixUserId: this.matrix.userId(actor.id),
-          protocol: 'matrix-olm-megolm-v1',
-          singleDevicePilot: true,
-        }
+        if (link.userId !== actor.id || !this.same(link.secretHash, secretHash))
+          throw new ConflictException(
+            'Identificador de dispositivo indisponível.',
+          )
+        if (link.expiresAt <= now)
+          throw new GoneException('O pedido expirou. Peça a conexão novamente.')
+        if (link.approved === false)
+          throw new ForbiddenException(
+            'A conexão deste aparelho foi recusada.',
+          )
+        if (link.approved !== true) return this.waiting(link)
+        await tx.chatDeviceLink.delete({ where: { id: link.id } })
+        await this.activate(tx, actor, input)
+        return this.ready(actor, input.id)
       },
       { timeout: 15000 },
     )
+  }
+  /**
+   * Quem perdeu o acesso a todos os aparelhos antigos recomeça do zero:
+   * confirma a senha da conta, todos os aparelhos são desconectados e o
+   * próximo vira o primeiro. Mensagens antigas não podem ser lidas de novo
+   * (as chaves estavam só nos aparelhos antigos).
+   */
+  async reset(actor: ConversationActor, password: string) {
+    this.guard(actor)
+    const user = await this.db.user.findUnique({
+      where: { id: actor.id },
+      select: { password: true, mfaEnabled: true },
+    })
+    if (!user?.password)
+      throw new ForbiddenException(
+        'Para redefinir, sua conta precisa ter uma senha do Votz.',
+      )
+    if (user.mfaEnabled)
+      throw new ForbiddenException(
+        'Sua conta usa verificação em duas etapas. Por segurança, a redefinição por aqui ainda não está disponível para ela.',
+      )
+    if (!(await compare(password, user.password)))
+      throw new ForbiddenException('Senha incorreta.')
+    const revoked = await this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
+      const active = await tx.chatDevice.findMany({
+        where: { userId: actor.id, revokedAt: null },
+        select: { id: true },
+      })
+      await tx.chatDevice.updateMany({
+        where: { userId: actor.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      })
+      await tx.chatDeviceLink.deleteMany({ where: { userId: actor.id } })
+      return active
+    })
+    for (const { id } of revoked)
+      try {
+        await this.matrix.request(
+          `/_synapse/admin/v2/users/${encodeURIComponent(this.matrix.userId(actor.id))}/devices/${encodeURIComponent(id)}`,
+          'DELETE',
+          undefined,
+          await this.matrix.admin(),
+        )
+      } catch {
+        /* O banco é a autoridade; o transporte só perde o aparelho depois. */
+      }
+    return { reset: true, disconnected: revoked.length }
+  }
+  async devices(actor: ConversationActor, headers: DeviceHeaders) {
+    const current = await this.device(actor, headers)
+    const [devices, links] = await Promise.all([
+      this.db.chatDevice.findMany({
+        where: { userId: actor.id, revokedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, platform: true, label: true, createdAt: true },
+      }),
+      this.db.chatDeviceLink.findMany({
+        where: {
+          userId: actor.id,
+          decidedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          platform: true,
+          label: true,
+          code: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      }),
+    ])
+    return {
+      devices: devices.map((row) => ({ ...row, current: row.id === current.id })),
+      links,
+    }
+  }
+  async decideLink(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    linkId: string,
+    approve: boolean,
+  ) {
+    const device = await this.device(actor, headers)
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
+      const link = await tx.chatDeviceLink.findUnique({ where: { id: linkId } })
+      if (!link || link.userId !== actor.id) throw new NotFoundException()
+      if (link.decidedAt || link.expiresAt <= new Date())
+        throw new ConflictException('Este pedido já foi respondido ou expirou.')
+      await tx.chatDeviceLink.update({
+        where: { id: linkId },
+        data: {
+          approved: approve,
+          decidedAt: new Date(),
+          decidedByDeviceId: device.id,
+        },
+      })
+      return { approved: approve }
+    })
+  }
+  async revokeDevice(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    deviceId: string,
+  ) {
+    const current = await this.device(actor, headers)
+    const result = await this.db.chatDevice.updateMany({
+      where: { id: deviceId, userId: actor.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+    if (!result.count) throw new NotFoundException()
+    try {
+      // Remove o aparelho do transporte para que ninguém mais cifre para ele.
+      await this.matrix.request(
+        `/_synapse/admin/v2/users/${encodeURIComponent(this.matrix.userId(actor.id))}/devices/${encodeURIComponent(deviceId)}`,
+        'DELETE',
+        undefined,
+        await this.matrix.admin(),
+      )
+    } catch {
+      /* O banco é a autoridade: toda rota passa por device() e as consultas de chaves são filtradas. */
+    }
+    return { revoked: true, self: deviceId === current.id }
   }
   private async conversation(
     actor: ConversationActor,
@@ -198,18 +416,25 @@ export class ChatService {
             where: { id },
             data: { matrixRoomId: roomId },
           })
-        const peer = await tx.chatDevice.findFirst({
-          where: { userId: otherId, revokedAt: null },
-          select: { id: true },
+        const rows = await tx.chatDevice.findMany({
+          where: { userId: { in: [actor.id, otherId] }, revokedAt: null },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, userId: true },
         })
+        const peerDevices = rows.filter((row) => row.userId === otherId)
         return {
           roomId,
           revision: c.revision,
           canSend,
+          selfDevices: rows
+            .filter((row) => row.userId === actor.id)
+            .map((row) => row.id),
           peer: {
             userId: otherId,
             matrixUserId: this.matrix.userId(otherId),
-            deviceId: peer?.id ?? null,
+            // `deviceId` fica por compatibilidade com clientes de um aparelho só.
+            deviceId: peerDevices[0]?.id ?? null,
+            devices: peerDevices.map((row) => row.id),
           },
         }
       },
@@ -286,8 +511,53 @@ export class ChatService {
         Object.keys(targets).length > 20
       )
         throw new BadRequestException()
-      for (const userId of Object.keys(targets))
-        await this.authorizePeer(actor, userId, operation === 'claim')
+      const owners = new Map<string, string>()
+      for (const matrixId of Object.keys(targets))
+        owners.set(
+          matrixId,
+          await this.authorizePeer(actor, matrixId, operation === 'claim'),
+        )
+      // Só aparelhos ativos do Votz participam do protocolo: aparelhos revogados
+      // ou desconhecidos nunca aparecem em consultas nem recebem chaves.
+      const active = await this.db.chatDevice.findMany({
+        where: { userId: { in: [...owners.values()] }, revokedAt: null },
+        select: { id: true, userId: true },
+      })
+      const allowed = (matrixId: string, deviceId: string) =>
+        active.some(
+          (row) => row.userId === owners.get(matrixId) && row.id === deviceId,
+        )
+      if (operation === 'claim') {
+        const filtered: Json = {}
+        for (const [matrixId, devices] of Object.entries(targets) as [
+          string,
+          Json,
+        ][]) {
+          if (!devices || typeof devices !== 'object' || Array.isArray(devices))
+            throw new BadRequestException()
+          const kept = Object.fromEntries(
+            Object.entries(devices).filter(([id]) => allowed(matrixId, id)),
+          )
+          if (Object.keys(kept).length) filtered[matrixId] = kept
+        }
+        if (!Object.keys(filtered).length)
+          return { one_time_keys: {}, failures: {} }
+        body = { ...body, one_time_keys: filtered }
+      }
+      const result = await this.matrix.request(
+        `/_matrix/client/v3/keys/${operation}`,
+        'POST',
+        body,
+        device.token,
+      )
+      if (operation === 'query' && result.device_keys)
+        for (const [matrixId, devices] of Object.entries(
+          result.device_keys,
+        ) as [string, Json][])
+          result.device_keys[matrixId] = Object.fromEntries(
+            Object.entries(devices).filter(([id]) => allowed(matrixId, id)),
+          )
+      return result
     }
     return this.matrix.request(
       `/_matrix/client/v3/keys/${operation}`,
@@ -332,18 +602,26 @@ export class ChatService {
       Json,
     ][]) {
       const peerId = await this.authorizePeer(actor, matrixUserId, true)
-      const active = await this.db.chatDevice.findFirst({
+      const rows = await this.db.chatDevice.findMany({
         where: { userId: peerId, revokedAt: null },
         select: { id: true },
       })
+      const activeIds = new Set(rows.map((row) => row.id))
       if (
-        !active ||
         !messages ||
         typeof messages !== 'object' ||
-        Object.keys(messages).some((id) => id !== active.id)
+        Array.isArray(messages) ||
+        !Object.keys(messages).length ||
+        Object.keys(messages).length > MAX_CHAT_DEVICES ||
+        // Nunca curingas ("*"), aparelhos revogados ou o próprio remetente.
+        Object.keys(messages).some(
+          (id) =>
+            !activeIds.has(id) ||
+            (peerId === actor.id && id === device.id),
+        )
       )
         throw new ForbiddenException()
-      const content = messages[active.id]
+      for (const content of Object.values(messages) as Json[]) {
       if (!content || typeof content !== 'object' || Array.isArray(content))
         throw new BadRequestException()
       if (eventType === 'm.room.encrypted') {
@@ -434,6 +712,7 @@ export class ChatService {
           content.transaction_id.length > 150
         )
           throw new BadRequestException()
+      }
       }
     }
     return this.matrix.request(
@@ -575,22 +854,76 @@ export class ChatService {
       throw new BadRequestException(
         'Apenas envelopes cifrados do protocolo são aceitos.',
       )
-    return this.db.$transaction(
+    let notify: string[] = []
+    const sent = await this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${id} FOR UPDATE`
-        const { c } = await this.conversation(actor, id, true, tx)
+        const { c, otherId } = await this.conversation(actor, id, true, tx)
         if (!c.matrixRoomId || c.revision !== input.revision)
           throw new ConflictException('Atualize a conversa antes de enviar.')
-        return this.matrix.request(
+        const result = await this.matrix.request(
           `/_matrix/client/v3/rooms/${encodeURIComponent(c.matrixRoomId)}/send/m.room.encrypted/${encodeURIComponent(txn)}`,
           'PUT',
           content,
           device.token,
           8000,
         )
+        // Metadados para a lista de conversas: o servidor não conhece o texto,
+        // só quando foi enviado, por quem, e quantas mensagens a outra pessoa
+        // ainda não abriu. Repetir a mesma transação não conta duas vezes.
+        if (
+          typeof result.event_id === 'string' &&
+          c.lastEventId !== result.event_id
+        ) {
+          await tx.conversation.update({
+            where: { id },
+            data: {
+              lastEventId: result.event_id,
+              lastEventAt: new Date(),
+              lastSenderId: actor.id,
+            },
+          })
+          await tx.conversationMember.updateMany({
+            where: { conversationId: id, userId: otherId, state: 'ACTIVE' },
+            data: { unreadCount: { increment: 1 } },
+          })
+          notify = [actor.id, otherId]
+        }
+        return result
       },
       { timeout: 11000, maxWait: 3000 },
     )
+    this.invalidate(notify, id)
+    return sent
+  }
+  /** Avisa as listas abertas (só id e revisão, nunca conteúdo); falha não afeta o envio. */
+  private invalidate(userIds: string[], conversationId: string, revision = 0) {
+    for (const userId of userIds)
+      try {
+        this.events.emitToUser(userId, 'conversation:changed', {
+          conversationId,
+          revision,
+        })
+      } catch {
+        /* A lista também atualiza sozinha em poucos segundos. */
+      }
+  }
+  /** A pessoa abriu a conversa: zera o contador de não lidas dela. */
+  async seen(actor: ConversationActor, headers: DeviceHeaders, id: string) {
+    await this.device(actor, headers)
+    await this.conversation(actor, id)
+    const result = await this.db.conversationMember.updateMany({
+      where: {
+        conversationId: id,
+        userId: actor.id,
+        state: 'ACTIVE',
+        unreadCount: { gt: 0 },
+      },
+      data: { unreadCount: 0 },
+    })
+    // Outros aparelhos da própria conta limpam o contador na hora.
+    if (result.count) this.invalidate([actor.id], id)
+    return { unreadCount: 0 }
   }
   async privacy(actor: ConversationActor, headers: DeviceHeaders) {
     await this.device(actor, headers)

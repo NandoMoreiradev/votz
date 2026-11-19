@@ -1,9 +1,16 @@
-import { useState } from 'react'
+import { useState, type PropsWithChildren } from 'react'
 import { FlatList, View } from 'react-native'
 import { router } from 'expo-router'
 import Plus from 'lucide-react-native/icons/plus'
 import Ban from 'lucide-react-native/icons/ban'
-import { conversationMemberLabel, conversationTitle } from '@votz/shared-types'
+import Smartphone from 'lucide-react-native/icons/smartphone'
+import {
+  conversationMemberLabel,
+  conversationTime,
+  conversationTitle,
+  type ConversationSummary,
+} from '@votz/shared-types'
+import { useChatPreview } from '../../hooks/use-chat-preview'
 import {
   ConversationGate,
   ConversationLoadingMore,
@@ -19,6 +26,53 @@ import {
 import { errorMessage } from '../../lib/api'
 import { theme } from '../../theme'
 
+/** Linha da lista: nome, última mensagem (prévia só se este aparelho a abriu), horário e não lidas. */
+function InboxRow({
+  item,
+  folder,
+  userId,
+  children,
+}: PropsWithChildren<{
+  item: ConversationSummary
+  folder: 'active' | 'requests'
+  userId: string
+}>) {
+  const preview = useChatPreview(item.id)
+  const last = item.lastMessage
+  const direct = item.kind === 'DIRECT'
+  const unread = folder === 'active' ? item.unreadCount : 0
+  const subtitle =
+    folder === 'requests'
+      ? `${item.invitedBy?.name || 'Uma pessoa'} ${item.kind === 'GROUP' ? 'convidou você para um grupo' : 'quer conversar com você'}.`
+      : item.archivedAt
+        ? 'Grupo encerrado'
+        : item.kind === 'GROUP'
+          ? conversationMemberLabel(item.memberCount)
+          : item.members.some((m) => m.state === 'INVITED')
+            ? 'Aguardando aceite'
+            : direct && last
+              ? `${last.fromMe ? 'Você: ' : ''}${
+                  preview?.eventId === last.eventId ? preview.text : 'Mensagem protegida'
+                }`
+              : 'Conversa aceita'
+  return (
+    <ConversationPersonRow
+      group={item.kind === 'GROUP'}
+      person={item.members.find((m) => m.user.id !== userId)?.user}
+      title={conversationTitle(item, userId)}
+      subtitle={subtitle}
+      meta={folder === 'active' && last ? conversationTime(last.at) : undefined}
+      unread={unread}
+      onPress={
+        folder === 'active'
+          ? () => router.push({ pathname: '/conversation/[id]', params: { id: item.id } })
+          : undefined
+      }
+    >
+      {children}
+    </ConversationPersonRow>
+  )
+}
 function Inbox() {
   const [folder, setFolder] = useState<'active' | 'requests'>('active')
   const list = useConversationList(folder)
@@ -60,27 +114,7 @@ function Inbox() {
           void list.refetch()
         }}
         renderItem={({ item }) => (
-          <ConversationPersonRow
-            group={item.kind === 'GROUP'}
-            person={item.members.find((m) => m.user.id !== user!.id)?.user}
-            title={conversationTitle(item, user!.id)}
-            subtitle={
-              folder === 'requests'
-                ? `${item.invitedBy?.name || 'Uma pessoa'} ${item.kind === 'GROUP' ? 'convidou você para um grupo' : 'quer conversar com você'}.`
-                : item.archivedAt
-                  ? 'Grupo encerrado'
-                  : item.kind === 'GROUP'
-                    ? conversationMemberLabel(item.memberCount)
-                    : item.members.some((m) => m.state === 'INVITED')
-                      ? 'Aguardando aceite'
-                      : 'Conversa aceita'
-            }
-            onPress={
-              folder === 'active'
-                ? () => router.push({ pathname: '/conversation/[id]', params: { id: item.id } })
-                : undefined
-            }
-          >
+          <InboxRow item={item} folder={folder} userId={user!.id}>
             {folder === 'requests' && (
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <Button
@@ -100,7 +134,7 @@ function Inbox() {
                 />
               </View>
             )}
-          </ConversationPersonRow>
+          </InboxRow>
         )}
         ListEmptyComponent={
           <State
@@ -150,6 +184,12 @@ export default function ConversationsScreen() {
         title="Conversas"
         right={
           <View style={{ flexDirection: 'row' }}>
+            <IconButton
+              label="Aparelhos conectados"
+              onPress={() => router.push('/conversation/devices')}
+            >
+              <Smartphone size={21} color={theme.colors.primary} />
+            </IconButton>
             <IconButton
               label="Pessoas bloqueadas"
               onPress={() => router.push('/conversation/blocked')}

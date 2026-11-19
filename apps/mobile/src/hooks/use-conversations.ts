@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AppState } from 'react-native'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { io } from 'socket.io-client'
+import { chatPreviews } from '@votz/chat-core'
 import type {
   ConversationBlocksPage,
   ConversationCapabilities,
@@ -132,7 +133,11 @@ export function ConversationsLive() {
     socket.on('conversation:changed', invalidate)
     const update = (state: string) => {
       if (state === 'active') socket.connect()
-      else socket.disconnect()
+      else {
+        socket.disconnect()
+        // Texto aberto não fica na memória com o aplicativo em segundo plano.
+        chatPreviews.clear()
+      }
     }
     update(AppState.currentState || 'active')
     const listener = AppState.addEventListener('change', update)
@@ -140,6 +145,7 @@ export function ConversationsLive() {
       listener.remove()
       socket.removeAllListeners()
       socket.disconnect()
+      chatPreviews.clear()
     }
   }, [client, userId, enabled])
   return null

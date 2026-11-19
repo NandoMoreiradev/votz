@@ -197,6 +197,50 @@ O foco inicial são políticos e entidades. Empresas ficam para depois; quando v
 | 7 | **Meta dos primeiros 12 meses**: sugestão de partida é "cobrir o custo fixo e 10 organizações pagantes" | Você |
 | 8 | Qual é o **custo real** do LiveKit (gravação e transmissão) em 1 debate típico? | Teste prático |
 
+### Pergunta registrada em 18/11/2026: quanto custam chamadas de voz e vídeo nas Conversas?
+
+Resposta curta: **hoje, nada** (as chamadas só entram na Etapa 4 do [plano de Conversas](comunicacao-e-pulso.md)); **depois, o custo é por minuto de participante no LiveKit Cloud, que o Votz já usa nos debates**, e as chamadas dividem a mesma cota com eles.
+
+- **Como se conta:** minutos-participante. Uma chamada de 1 para 1 com 10 minutos gasta **20 minutos-participante** (2 pessoas × 10 min). O plano Ship (US$ 50/mês) inclui 150 mil minutos-participante, ou seja, algo como **7.500 chamadas de 10 minutos por mês** dentro do que já se paga. Exemplos (conta feita com os números deste documento, não com medição): 1.000 chamadas de 5 min = 10 mil min-participante (cerca de 7% da cota); 10.000 chamadas de 8 min = 160 mil min-participante (já passa um pouco da cota).
+- **Voz custa menos que vídeo:** vídeo consome mais banda, e a banda é cobrada à parte. **Preços confirmados em 18/11/2026 na [página oficial](https://livekit.com/pricing.md):** Ship (US$ 50/mês) inclui 150 mil minutos e 250 GB de saída, e cobra excedente de US$ 0,0005 por minuto e US$ 0,12 por GB, com **limite de 1.000 conexões simultâneas**. Scale (US$ 500/mês) inclui 1,5 milhão de minutos e 3 TB, cobra US$ 0,0004 por minuto e US$ 0,10 por GB, com limite de 5.000 conexões simultâneas. Acima disso, Enterprise sob consulta. (Uma resposta anterior deste documento dizia que o excedente e a banda não estavam confirmados; agora estão, e **a banda pesa tanto quanto os minutos**.)
+- **Não gera custo extra de gravação:** o plano de produto veda gravar chamadas privadas, então não há custo de armazenamento nem de processamento de gravação (esse custo continua só nos debates).
+- **Provavelmente sem custo novo:** aviso de chamada (push) usa os serviços gratuitos do Android e do iPhone; a conta de desenvolvedor da Apple já é necessária para o aplicativo.
+- **O que pode aumentar a conta:** chamadas longas, vídeo em grupo, muitas chamadas simultâneas num dia de pico e **debates ao vivo no mesmo período** (disputam a mesma cota). O plano de produto já começa por chamadas individuais e deixa grupos para depois, o que mantém o custo previsível.
+- **Controles que o produto deve ter desde o início:** só entre pessoas que já aceitaram a conversa; voz como padrão e vídeo opcional; duração máxima por chamada; limite de chamadas simultâneas e por pessoa por dia; alerta quando a cota mensal passar de um percentual definido.
+- **Alternativa para reduzir custo no futuro:** operar o LiveKit em servidor próprio (troca a conta por minuto por custo de servidor e de tráfego, e traz trabalho de operação). Só vale a pena com volume alto e equipe para operar.
+- **Falta medir:** o custo real de uma chamada típica (a pergunta 8 da lista abaixo, hoje só para debates) deve incluir uma chamada de voz e uma de vídeo de 10 minutos em aparelhos reais, quando a Etapa 4 for testada.
+
+### Pergunta registrada em 18/11/2026: e se hospedarmos o LiveKit em servidor próprio? Onde, e quanto custa em escala?
+
+**Onde NÃO dá: no Render.** O Render só expõe tráfego público por HTTP(S), em uma porta ([documentação de WebSocket](https://render.com/docs/websocket); respostas da equipe e pedido de recurso aberto na [comunidade](https://community.render.com/t/opening-up-a-udp-port-for-incoming-traffic/821); confirmar com o suporte do Render, porque as fontes são antigas). O LiveKit precisa de **UDP** público (faixa 50000–60000/UDP, ou uma porta única, e TURN em 3478/UDP), TCP 7881, domínio com certificado válido e, no Kubernetes, rede direta no nó (clusters "serverless" não são suportados), segundo o [guia oficial de implantação](https://docs.livekit.io/transport/self-hosting/deployment/). Por isso o Render **continua hospedando a API** e o LiveKit vai para **máquinas virtuais com IP público**, de preferência em São Paulo (latência de chamada). Cada sala precisa caber em um único servidor. Para vários servidores, é preciso Redis. Gravação e transmissão dos debates exigem o serviço de egress do LiveKit, que consome bastante CPU e entra na conta de servidores (não dimensionado aqui). **A migração é só configuração**: a API lê `LIVEKIT_URL`, `LIVEKIT_API_KEY` e `LIVEKIT_API_SECRET`, então dá para começar na nuvem do LiveKit e trocar depois sem reescrever código.
+
+**O que decide o custo é a banda, não o servidor.** Capacidade de referência do [benchmark oficial](https://docs.livekit.io/transport/self-hosting/benchmark/) (16 núcleos): reunião de vídeo com 150 pessoas a 85% de CPU, cerca de 93 MB/s de saída; transmissão com 1 apresentador e 3.000 espectadores a 92% de CPU, cerca de 531 MB/s. Um servidor de 16 vCPU custa algo como US$ 480/mês (Vultr em São Paulo, estimativa de terceiros) a US$ 765/mês (AWS São Paulo, c6i.4xlarge a US$ 1,048/h, de terceiros), mas a **saída de dados** tem preços muito diferentes:
+
+| Provedor | Saída de dados | Observação |
+| --- | --- | --- |
+| LiveKit Cloud (Scale) | US$ 0,10/GB | sem operar nada |
+| AWS São Paulo | cerca de US$ 0,15/GB nos primeiros 10 TB, menos em volume | número de 2020; confirmar |
+| Vultr | US$ 0,01/GB acima da cota | uma tabela de terceiros cita US$ 0,08/GB para São Paulo; **confirmar antes de decidir** |
+| Oracle Cloud (Vinhedo) | 10 TB grátis e cerca de US$ 0,0085/GB depois | valor de outras regiões; Brasil e a gratuidade **não confirmados** |
+
+**Estimativas** (suposições a medir: voz ≈ 50 kbps por pessoa; vídeo ≈ 1 Mbps por pessoa; espectador de debate ≈ 1,5 Mbps, ou 0,7 GB por hora; câmbio R$ 5,56; sem desconto de volume e sem contar a cota incluída nos planos):
+
+| Item na nuvem do LiveKit (taxa Scale) | Custo aproximado |
+| --- | --- |
+| Chamada de voz de 8 min (1 para 1) | US$ 0,007 (R$ 0,04) |
+| Chamada de vídeo de 8 min (1 para 1) | US$ 0,018 (R$ 0,10) |
+| 1 hora de um espectador de debate | US$ 0,09 (R$ 0,52) |
+| Debate com 500 espectadores por 1h30 | cerca de US$ 70 (R$ 390) |
+
+| Cenário por mês | Nuvem do LiveKit | Servidor próprio |
+| --- | --- | --- |
+| **Bem usado:** 100 mil chamadas (70% voz, 30% vídeo, 8 min) e 100 debates de 300 espectadores por 1h | cerca de US$ 3,5 mil (R$ 19 mil), uns 25 TB | cerca de US$ 1 a 1,5 mil de infraestrutura, **mas** com plantão e manutenção; a economia some se isso consumir parte do tempo de uma pessoa |
+| **Brasil inteiro:** 1 milhão de chamadas e 1.000 debates de 500 espectadores por 1h30 | cerca de US$ 80 mil (R$ 445 mil), uns 565 TB; em volume assim dá para negociar desconto Enterprise | **com banda barata** (US$ 0,01/GB): cerca de US$ 10 mil (R$ 55 mil), com 5 a 6 servidores de 16 vCPU. **Em AWS/Google/Azure em São Paulo** (banda a US$ 0,12 a 0,15/GB): cerca de US$ 70 mil, **sem economia** |
+
+**Conclusões:** (1) os **debates ao vivo dominam a conta**, muito mais que as chamadas (nos dois exemplos, de 84% a 93% da banda); (2) hospedar por conta própria **só compensa com provedor de banda barata** e com gente para operar 24 horas por dia (plantão, atualização, monitoramento, TURN, certificados), que é o custo mais fácil de esquecer; (3) em nuvem pública grande, a banda em São Paulo custa o mesmo ou mais que a do próprio LiveKit; (4) para volumes muito altos, o caminho mais barato costuma ser servidor dedicado com tráfego contratado por Mbps, o que exige cotação (não verificado aqui); (5) **regra prática:** manter a nuvem do LiveKit até a fatura passar de uns US$ 8 a 10 mil por mês e existir equipe de infraestrutura; antes disso, o tempo de engenharia custa mais que a economia.
+
+**Limites do Ship e do Scale que importam mesmo sem hospedar:** 1.000 e 5.000 conexões simultâneas. Debates grandes mais chamadas no mesmo horário passam do Ship rápido.
+
 ## 11. Fontes (consultadas em 15/11/2026; confirmar nos sites oficiais)
 
 - Render: [render.com/pricing](https://render.com/pricing.md) · [planos de computação](https://render.com/docs/compute-plans) · [Key Value](https://render.com/blog/lower-prices-for-key-value-services)

@@ -16,15 +16,16 @@ export class NativeChatCrypto implements ChatCrypto {
     { id: string; incoming: boolean; material?: Native.SasMaterial }
   >()
   private unsubscribe: (() => void) | null = null
-  private sharing: { roomId: string; userId: string } | null = null
+  private sharing: { roomId: string; userIds: string[] } | null = null
   private tracked = new Set<string>()
+  /** Aparelhos em que confiamos para cifrar, por usuário (política do chat-core). */
+  private trusted = new Map<string, Set<string>>()
   private constructor(private readonly module: CryptoModule) {}
-  private async trace(value: Record<string, unknown>) {
-    if (!__DEV__) return
-    try {
-      const { File, Paths } = await import('expo-file-system')
-      new File(Paths.cache, 'votz-chat-diagnostic.json').write(JSON.stringify(value))
-    } catch {}
+  trust(userId: string, deviceIds: string[]) {
+    this.trusted.set(userId, new Set(deviceIds))
+  }
+  async rotate(roomId: string) {
+    await this.module.discardScopeKey(this.module.asCryptoScopeId(roomId))
   }
   static async open(config: Native.CryptoMachineConfig, existing = false) {
     let module: CryptoModule
@@ -82,10 +83,11 @@ export class NativeChatCrypto implements ChatCrypto {
       const requests = await this.module.takeOutgoingRequests()
       if (!requests.length) {
         if (this.sharing) {
-          const { roomId, userId } = this.sharing
-          await this.module.shareScopeKey(this.module.asCryptoScopeId(roomId), [
-            userId,
-          ])
+          const { roomId, userIds } = this.sharing
+          await this.module.shareScopeKey(
+            this.module.asCryptoScopeId(roomId),
+            userIds,
+          )
           this.sharing = null
           continue
         }
@@ -94,8 +96,6 @@ export class NativeChatCrypto implements ChatCrypto {
       let progressed = false
       for (const request of requests) {
         const body = JSON.parse(request.body)
-        await this.trace({ stage: 'outgoing', kind: request.kind, fields: Object.keys(body) })
-        if (__DEV__) console.debug('[chat.crypto] outgoing', request.kind, Object.keys(body))
         let response: Json
         try {
           if (request.kind === 'keys_upload')
@@ -113,20 +113,27 @@ export class NativeChatCrypto implements ChatCrypto {
               !body.messages
             )
               throw new Error('Envelope inválido do motor de criptografia.')
+            let messages: Json = body.messages
             if (eventType === 'm.room.encrypted' || eventType === 'm.room_key.withheld') {
-              let trusted = true
+              // Só sai para aparelhos dentro da política de confiança. Os demais
+              // são descartados aqui; aceitar uma chave nova depois gira a sessão.
+              messages = {}
               for (const [userId, devices] of Object.entries(body.messages) as [string, Json][]) {
-                for (const deviceId of Object.keys(devices)) {
-                  if (!this.tracked.has(userId) || !await this.verified(userId, deviceId)) trusted = false
-                }
+                const allowed = Object.fromEntries(
+                  Object.entries(devices).filter(([deviceId]) =>
+                    this.trusted.get(userId)?.has(deviceId),
+                  ),
+                )
+                if (Object.keys(allowed).length) messages[userId] = allowed
               }
-              if (!trusted) continue
             }
-            response = await http(
-              `/chat/to-device/${encodeURIComponent(eventType)}/${encodeURIComponent(txn)}`,
-              'PUT',
-              { messages: body.messages },
-            )
+            response = Object.keys(messages).length
+              ? await http(
+                  `/chat/to-device/${encodeURIComponent(eventType)}/${encodeURIComponent(txn)}`,
+                  'PUT',
+                  { messages },
+                )
+              : {}
           } else
             throw new Error(
               `Operação de criptografia ainda não suportada: ${request.kind}`,
@@ -135,10 +142,9 @@ export class NativeChatCrypto implements ChatCrypto {
             request.id,
             JSON.stringify(response),
           )
+          if (request.kind === 'keys_query') this.remember(response)
           progressed = true
         } catch (error) {
-          await this.trace({ stage: 'outgoing-failed', kind: request.kind, eventType: body.event_type ?? body.eventType, fields: Object.keys(body), payloads: Object.values(body.messages || {}).flatMap(value => Object.values(value as Json).map(content => ({ fields: Object.keys(content as Json), algorithm: (content as Json).algorithm, code: (content as Json).code }))), errorKind: (error as { kind?: string }).kind, name: (error as Error).name })
-          if (__DEV__) console.warn('[chat.crypto] outgoing failure', request.kind, (error as { kind?: string }).kind || (error as Error).name)
           const status = (error as { status?: number })?.status || 0
           await this.module
             .markRequestFailed(request.id, status)
@@ -155,16 +161,40 @@ export class NativeChatCrypto implements ChatCrypto {
       (device) => device.deviceId === deviceId && device.trust === 'verified',
     )
   }
-  identity(userId: string, deviceId: string) {
+  /**
+   * A ponte só informa as chaves de identidade da PRÓPRIA máquina; para
+   * aparelhos de outras pessoas ela expõe apenas ID e confiança. As chaves
+   * públicas deles vêm do mesmo JSON de consulta de chaves entregue ao motor.
+   */
+  private identities = new Map<string, { curve25519: string; ed25519: string }>()
+  private remember(response: Json) {
+    for (const [userId, devices] of Object.entries(
+      (response.device_keys ?? {}) as Record<string, Record<string, Json>>,
+    ))
+      for (const [deviceId, info] of Object.entries(devices ?? {})) {
+        const curve25519 = info?.keys?.[`curve25519:${deviceId}`]
+        const ed25519 = info?.keys?.[`ed25519:${deviceId}`]
+        if (typeof curve25519 === 'string' && typeof ed25519 === 'string')
+          this.identities.set(`${userId}|${deviceId}`, { curve25519, ed25519 })
+      }
+  }
+  async identity(userId: string, deviceId: string) {
+    const cached = this.identities.get(`${userId}|${deviceId}`)
+    // Só vale se o motor aceitou esse aparelho (assinatura válida, ainda ativo).
+    if (
+      cached &&
+      (await this.module.getDeviceStatuses(userId)).some(
+        (device) => device.deviceId === deviceId,
+      )
+    )
+      return cached
     return this.module.getDeviceIdentityKeys(userId, deviceId)
   }
-  async share(roomId: string, userId: string) {
-    await this.module.shareScopeKey(this.module.asCryptoScopeId(roomId), [
-      userId,
-    ])
+  async share(roomId: string, userIds: string[]) {
+    await this.module.shareScopeKey(this.module.asCryptoScopeId(roomId), userIds)
     // A new peer needs claim -> second share -> encrypted key delivery.
     // The native bridge explicitly requires both calls, separated by the pump.
-    this.sharing = { roomId, userId }
+    this.sharing = { roomId, userIds }
   }
   async encrypt(roomId: string, text: string) {
     const event = await this.module.encryptEvent(
@@ -175,11 +205,10 @@ export class NativeChatCrypto implements ChatCrypto {
     return JSON.parse(new TextDecoder().decode(event.ciphertext)) as Json
   }
   async decrypt(roomId: string, event: Json) {
-    let decrypted: Native.EventEnvelope
-    try { decrypted = await this.module.decryptEvent(
+    const decrypted = await this.module.decryptEvent(
       this.module.asCryptoScopeId(roomId),
       event,
-    ) } catch (error) { await this.trace({ stage: 'decrypt-failed', kind: (error as { kind?: string }).kind, name: (error as Error).name }); throw error }
+    )
     const verification = decrypted.senderVerification
     if (
       !verification ||
@@ -188,7 +217,7 @@ export class NativeChatCrypto implements ChatCrypto {
           verification.reason,
         ))
     )
-      { await this.trace({ stage: 'sender-rejected', state: verification?.state, reason: verification?.state === 'unverified' ? verification.reason : undefined }); throw new Error('Não foi possível autenticar o remetente.') }
+      throw new Error('Não foi possível autenticar o remetente.')
     const value = JSON.parse(new TextDecoder().decode(decrypted.ciphertext))
     const content = value.content ?? value
     if (
@@ -235,15 +264,12 @@ export class NativeChatCrypto implements ChatCrypto {
   }
   async verify(peer: ChatPeer, action: VerificationAction) {
     if (!peer.deviceId)
-      throw new Error('A outra pessoa ainda não ativou as conversas.')
+      throw new Error('A outra pessoa ainda não abriu as conversas.')
     if (action === 'request') {
-      await this.trace({ stage: 'verification-request-start' })
-      let id: string
-      try { id = await this.module.requestVerification(
+      const id = await this.module.requestVerification(
         peer.matrixUserId,
         peer.deviceId,
-      ) } catch (error) { await this.trace({ stage: 'verification-request-failed', errorKind: (error as { kind?: string }).kind, name: (error as Error).name }); throw error }
-      await this.trace({ stage: 'verification-request-created' })
+      )
       this.flows.set(`${peer.matrixUserId}:${peer.deviceId}`, {
         id,
         incoming: false,

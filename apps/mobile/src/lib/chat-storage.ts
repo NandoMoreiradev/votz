@@ -83,3 +83,19 @@ export async function nativeChatStorage(userId: string) {
     storePath: keys.uri.replace(/^file:\/\//, ''),
   }
 }
+
+/**
+ * Apaga as credenciais e a pasta de chaves deste aparelho. Usado quando o
+ * aparelho foi desconectado ou na redefinição: a próxima abertura cria
+ * credenciais novas, como se fosse a primeira vez.
+ */
+export async function forgetNativeChat(userId: string) {
+  await SecureStore.deleteItemAsync(`votz.chat.${userId}`)
+  try {
+    const { Directory, Paths } = await import('expo-file-system')
+    const directory = new Directory(Paths.document, 'chat', userId)
+    if (directory.exists) directory.delete()
+  } catch {
+    /* Limpeza de espaço: as credenciais novas já valem sem isso. */
+  }
+}

@@ -7,7 +7,9 @@ import {
   IsIn,
   IsInt,
   IsObject,
+  IsOptional,
   IsString,
+  Matches,
   IsUUID,
   MaxLength,
   Min,
@@ -18,6 +20,17 @@ export class EnrollChatDeviceDto {
   @IsUUID() id!: string
   @IsString() @MinLength(48) @MaxLength(128) secret!: string
   @IsIn(['android', 'ios', 'web', 'test']) platform!: string
+  // Nome mostrado na lista de aparelhos conectados. Texto simples, sem controles.
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  @Matches(/^[^\u0000-\u001f\u007f<>]*$/)
+  label?: string
+}
+export class DecideChatDeviceLinkDto {
+  @Transform(({ obj }) => obj.approve)
+  @IsBoolean()
+  approve!: boolean
 }
 export class SendChatMessageDto {
   @IsInt() @Min(1) revision!: number
@@ -42,4 +55,7 @@ export class ChatReceiptDto extends ChatReceiptQueryDto {
   @Transform(({ obj }) => obj.read)
   @IsBoolean()
   read!: boolean
+}
+export class ResetChatDevicesDto {
+  @IsString() @MinLength(1) @MaxLength(200) password!: string
 }

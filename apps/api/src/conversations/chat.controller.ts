@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -17,6 +18,8 @@ import { ConversationsPrivacyInterceptor } from './conversations-privacy.interce
 import { ConversationActor } from './conversations.service'
 import { ChatService } from './chat.service'
 import {
+  DecideChatDeviceLinkDto,
+  ResetChatDevicesDto,
   ChatPrivacyDto,
   ChatReceiptDto,
   ChatReceiptQueryDto,
@@ -45,9 +48,33 @@ export class ChatController {
     }
   }
   @Post('chat/devices')
-  @Throttle({ long: { limit: 10, ttl: 60000 } })
+  // Um aparelho aguardando aprovação repete este pedido a cada ~4 s por até 10
+  // minutos; o limite precisa comportar isso sem deixar de conter abuso (no
+  // máximo 3 pedidos pendentes e 5 aparelhos por conta, no serviço).
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
   enroll(@Req() req: Request, @Body() body: EnrollChatDeviceDto) {
     return this.service.enroll(req.user, body)
+  }
+  @Post('chat/devices/reset')
+  // Exige a senha da conta; limite baixo para não virar tentativa de adivinhar senha.
+  @Throttle({ long: { limit: 10, ttl: 3600000 } })
+  reset(@Req() req: Request, @Body() body: ResetChatDevicesDto) {
+    return this.service.reset(req.user, body.password)
+  }
+  @Get('chat/devices') devices(@Req() req: Request) {
+    return this.service.devices(req.user, this.device(req))
+  }
+  @Post('chat/device-links/:id') @Throttle({ long: { limit: 20, ttl: 60000 } })
+  decideLink(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: DecideChatDeviceLinkDto,
+  ) {
+    return this.service.decideLink(req.user, this.device(req), id, body.approve)
+  }
+  @Delete('chat/devices/:id') @Throttle({ long: { limit: 20, ttl: 60000 } })
+  revoke(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.revokeDevice(req.user, this.device(req), id)
   }
   @Post('chat/keys/upload') upload(
     @Req() req: Request,
@@ -111,6 +138,11 @@ export class ChatController {
     @Body() body: SendChatMessageDto,
   ) {
     return this.service.send(req.user, this.device(req), id, txn, body)
+  }
+  @Post(':id/chat/seen')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  seen(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.seen(req.user, this.device(req), id)
   }
   @Post(':id/chat/receipts/query') receipts(
     @Req() req: Request,

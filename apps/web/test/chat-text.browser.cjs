@@ -38,31 +38,24 @@ async function account(user) {
   await page.goto(base + `/conversas/${conversationId}`)
   return page
 }
-async function unlock(page, initial = true, key = passphrase) {
-  await page.getByLabel('Senha das conversas', { exact: true }).fill(key)
-  if (initial)
-    await page
-      .getByLabel('Repita a senha das conversas', { exact: true })
-      .fill(key)
+// A conversa abre sozinha: sem botão de ativação e sem senha.
+async function ready(page) {
   await page
-    .getByRole('button', {
-      name: initial ? 'Ativar neste navegador' : 'Desbloquear',
-      exact: true,
-    })
-    .click()
-  if (key === passphrase)
-    await page
-      .getByText(
-        'Identidade verificada neste dispositivo. Mensagens protegidas de ponta a ponta.',
-        { exact: true },
-      )
-      .or(
-        page.getByText('Verifique a identidade antes de trocar mensagens.', {
-          exact: true,
-        }),
-      )
-      .waitFor()
+    .getByText(
+      /As mensagens são protegidas com criptografia de ponta a ponta|Identidade confirmada/,
+    )
+    .waitFor()
 }
+const verifiedText = /Identidade confirmada/
+const composerEnabled = (page) =>
+  page.waitForFunction(
+    () => {
+      const field = document.querySelector('textarea[aria-label="Mensagem"]')
+      return !!field && !field.disabled
+    },
+    undefined,
+    { timeout: 45000 },
+  )
 async function request(actor, endpoint, method = 'GET', body) {
   const response = await fetch(
     `http://localhost:3000/api/v1/conversations${endpoint}`,
@@ -116,43 +109,18 @@ async function request(actor, endpoint, method = 'GET', body) {
   const b = await account(users[1])
   for (const page of [a, b])
     page.on('pageerror', (error) => errors.push(error.message))
-  await unlock(a)
-  await unlock(b)
-  await a
-    .getByRole('button', { name: 'Verificar identidade', exact: true })
-    .waitFor()
+  await ready(a)
+  await ready(b)
+  // Confiança no primeiro contato: o campo de mensagem libera sem comparar códigos.
+  await composerEnabled(a)
+  await composerEnabled(b)
   assert.equal(
-    await a
-      .getByRole('button', { name: 'Enviar mensagem', exact: true })
-      .isDisabled(),
-    true,
+    await a.getByText(verifiedText).count(),
+    0,
+    'Nothing is marked as verified before the optional code comparison',
   )
-  await a
-    .getByRole('button', { name: 'Verificar identidade', exact: true })
-    .click()
-  await b
-    .getByRole('button', { name: 'Aceitar verificação', exact: true })
-    .click()
-  const codeA = a.getByLabel('Código de verificação', { exact: true })
-  const codeB = b.getByLabel('Código de verificação', { exact: true })
-  await codeA.waitFor()
-  await codeB.waitFor()
-  assert.equal(await codeA.innerText(), await codeB.innerText())
-  await a
-    .getByRole('button', { name: 'Os códigos são iguais', exact: true })
-    .click()
-  await b
-    .getByRole('button', { name: 'Os códigos são iguais', exact: true })
-    .click()
-  for (const page of [a, b])
-    await page
-      .getByText(
-        'Identidade verificada neste dispositivo. Mensagens protegidas de ponta a ponta.',
-        { exact: true },
-      )
-      .waitFor()
   console.log(
-    'PASS: real browser activation, encrypted IndexedDB and mutual SAS verification',
+    'PASS: conversation opens by itself (no activation step, no password) with encrypted IndexedDB; composer enabled without code comparison',
   )
   const text = `Texto protegido ${run} 🙂 çã`
   await a.getByLabel('Mensagem', { exact: true }).fill(text)
@@ -162,6 +130,21 @@ async function request(actor, endpoint, method = 'GET', body) {
   await b.getByLabel('Mensagem', { exact: true }).fill(reply)
   await b.getByRole('button', { name: 'Enviar mensagem', exact: true }).click()
   await a.getByText(reply, { exact: true }).waitFor()
+  // Confirmação de identidade: opcional, pelo banner da conversa.
+  const banner = { name: 'Confirmar identidade, opcional' }
+  await a.getByRole('button', banner).click()
+  await a.getByRole('button', { name: 'Começar a confirmação', exact: true }).click()
+  await b.getByRole('button', banner).click()
+  await b.getByRole('button', { name: 'Aceitar', exact: true }).click()
+  const codeA = a.getByLabel('Código de verificação', { exact: true })
+  const codeB = b.getByLabel('Código de verificação', { exact: true })
+  await codeA.waitFor()
+  await codeB.waitFor()
+  assert.equal(await codeA.innerText(), await codeB.innerText())
+  await a.getByRole('button', { name: 'Os números são iguais', exact: true }).click()
+  await b.getByRole('button', { name: 'Os números são iguais', exact: true }).click()
+  for (const page of [a, b]) await page.getByText(verifiedText).waitFor()
+  console.log('PASS: optional mutual SAS verification through the browser UI')
   const receipt = a.getByLabel('Mensagens', { exact: true }).locator('[data-message-id]').filter({ hasText: text })
   await receipt.getByText(/Entregue/).waitFor()
   assert.equal(await b.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).isChecked(), false)
@@ -184,11 +167,9 @@ async function request(actor, endpoint, method = 'GET', body) {
   // A second tab cannot concurrently open the same crypto database.
   const tab = await a.context().newPage()
   await tab.goto(base + `/conversas/${conversationId}`)
-  await tab.getByLabel('Senha das conversas', { exact: true }).fill(passphrase)
-  await tab.getByRole('button', { name: 'Desbloquear', exact: true }).click()
   await tab
     .getByText(
-      'O mensageiro já está aberto em outra aba. Feche a outra aba e tente novamente.',
+      'As conversas já estão abertas em outra aba. Feche a outra aba para continuar aqui.',
       { exact: true },
     )
     .waitFor()
@@ -238,21 +219,15 @@ async function request(actor, endpoint, method = 'GET', body) {
     JSON.parse(persisted).pending.length > 0,
     'An encrypted outbox entry survives a transport failure',
   )
+  // Reiniciar o navegador: a conversa reabre sozinha e retoma a fila cifrada.
   await a.reload()
-  await unlock(a, false, 'An incorrect passphrase 2026!')
-  await a
-    .getByText(
-      'Não foi possível abrir as chaves. Confira a senha das conversas.',
-      { exact: true },
-    )
-    .waitFor()
-  await unlock(a, false)
+  await ready(a)
   await a.getByText(pending, { exact: true }).waitFor()
   offline = false
   await b.getByText(pending, { exact: true }).waitFor()
   assert.equal(await b.getByText(pending, { exact: true }).count(), 1)
   console.log(
-    'PASS: encrypted offline outbox, browser restart, wrong-passphrase refusal and automatic retry without duplicates',
+    'PASS: encrypted offline outbox, browser restart with no password prompt and automatic retry without duplicates',
   )
   assert.deepEqual(errors, [])
 })()

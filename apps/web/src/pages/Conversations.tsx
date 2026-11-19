@@ -5,9 +5,12 @@ import styled from 'styled-components'
 import {
   conversationTitle,
   conversationMemberLabel,
+  conversationTime,
+  conversationUnreadLabel,
   type ConversationPerson,
   type ConversationSummary,
 } from '@votz/shared-types'
+import { useChatPreview } from '../hooks/useChatPreview'
 import { Navbar } from '../components/layout/Navbar'
 import {
   useConversation,
@@ -21,6 +24,18 @@ import {
 } from '../hooks/useConversations'
 import { useAuthStore } from '../store/auth.store'
 import { ChatPane } from '../components/conversations/ChatPane'
+import { isAxiosError } from 'axios'
+import { deviceRequestText, type ChatDeviceInfo } from '@votz/chat-core'
+import { useChatDeviceAction, useChatDevices } from '../hooks/useChatDevices'
+
+const PLATFORM: Record<string, string> = {
+  android: 'Android',
+  ios: 'iPhone',
+  web: 'Navegador',
+  test: 'Teste',
+}
+const deviceName = (device: { label: string | null; platform: string }) =>
+  device.label || PLATFORM[device.platform] || device.platform
 
 const Shell = styled.main`
   max-width: 760px;
@@ -91,6 +106,90 @@ const Muted = styled.p`
   margin: 5px 0;
   font-size: 14px;
 `
+const LineTop = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  strong {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`
+const LineBottom = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  p {
+    flex: 1;
+    min-width: 0;
+    margin: 3px 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`
+const Time = styled.small<{ $unread: boolean }>`
+  font-size: 12px;
+  white-space: nowrap;
+  color: ${({ theme, $unread }) => ($unread ? theme.colors.action : theme.colors.muted)};
+  font-weight: ${({ $unread }) => ($unread ? 600 : 400)};
+`
+const Badge = styled.span`
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.white};
+  background: ${({ theme }) => theme.colors.action};
+`
+/** Uma conversa da lista: nome, última mensagem (prévia só se este navegador a abriu), horário e não lidas. */
+function InboxLine({ item, userId }: { item: ConversationSummary; userId: string }) {
+  const preview = useChatPreview(item.id)
+  const last = item.lastMessage
+  const unread = item.unreadCount
+  const subtitle = item.archivedAt
+    ? 'Grupo encerrado'
+    : item.kind === 'GROUP'
+      ? conversationMemberLabel(item.memberCount)
+      : item.members.some((m) => m.state === 'INVITED')
+        ? 'Aguardando aceite'
+        : last
+          ? `${last.fromMe ? 'Você: ' : ''}${
+              preview?.eventId === last.eventId ? preview.text : 'Mensagem protegida'
+            }`
+          : 'Conversa aceita'
+  return (
+    <Link
+      to={`/conversas/${item.id}`}
+      aria-label={
+        unread > 0
+          ? `${conversationTitle(item, userId)}, ${unread} ${unread === 1 ? 'mensagem não lida' : 'mensagens não lidas'}`
+          : undefined
+      }
+    >
+      <LineTop>
+        <strong>{conversationTitle(item, userId)}</strong>
+        {last && <Time $unread={unread > 0}>{conversationTime(last.at)}</Time>}
+      </LineTop>
+      <LineBottom>
+        <Muted style={unread > 0 ? { color: 'inherit', fontWeight: 600 } : undefined}>
+          {subtitle}
+        </Muted>
+        {unread > 0 && <Badge aria-hidden="true">{conversationUnreadLabel(unread)}</Badge>}
+      </LineBottom>
+    </Link>
+  )
+}
 const Action = styled.button<{ $secondary?: boolean }>`
   border: 1px solid
     ${({ theme, $secondary }) => ($secondary ? theme.colors.border : theme.colors.action)};
@@ -263,23 +362,35 @@ export function Conversations() {
   const location = useLocation()
   const create = location.pathname === '/conversas/nova'
   const blocked = location.pathname === '/conversas/bloqueios'
+  const devices = location.pathname === '/conversas/aparelhos'
+  const sub = id || create || blocked || devices
   return (
     <>
       <Navbar />
       <Shell>
         <Header>
-          <Link to={id || create ? '/conversas' : '/'} aria-label="Voltar">
+          <Link to={sub ? '/conversas' : '/'} aria-label="Voltar">
             <ArrowLeft size={23} />
           </Link>
-          <h1>{create ? 'Nova conversa' : id ? 'Detalhes da conversa' : 'Conversas'}</h1>
-          {!id && !create && (
+          <h1>
+            {create
+              ? 'Nova conversa'
+              : id
+                ? 'Detalhes da conversa'
+                : devices
+                  ? 'Aparelhos conectados'
+                  : 'Conversas'}
+          </h1>
+          {!sub && (
             <Link to="/conversas/nova" aria-label="Nova conversa">
               <Plus size={24} />
             </Link>
           )}
         </Header>
         <ConversationGate>
-          {blocked ? (
+          {devices ? (
+            <ChatDevices />
+          ) : blocked ? (
             <BlockedPeople />
           ) : create ? (
             <CreateConversation />
@@ -316,7 +427,8 @@ function ConversationInbox() {
           </button>
         ))}
       </TabRow>
-      <Section style={{ paddingBlock: 12 }}>
+      <Section style={{ paddingBlock: 12, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <Link to="/conversas/aparelhos">Aparelhos conectados</Link>
         <Link to="/conversas/bloqueios">Pessoas bloqueadas</Link>
       </Section>
       {list.isError && (
@@ -350,18 +462,7 @@ function ConversationInbox() {
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               {folder === 'active' ? (
-                <Link to={`/conversas/${item.id}`}>
-                  <strong>{conversationTitle(item, user!.id)}</strong>
-                  <Muted>
-                    {item.archivedAt
-                      ? 'Grupo encerrado'
-                      : item.kind === 'GROUP'
-                        ? conversationMemberLabel(item.memberCount)
-                        : item.members.some((m) => m.state === 'INVITED')
-                          ? 'Aguardando aceite'
-                          : 'Conversa aceita'}
-                  </Muted>
-                </Link>
+                <InboxLine item={item} userId={user!.id} />
               ) : (
                 <>
                   <strong>{conversationTitle(item, user!.id)}</strong>
@@ -411,6 +512,100 @@ function ConversationInbox() {
             Carregar mais
           </Action>
         </Section>
+      )}
+    </>
+  )
+}
+function ChatDevices() {
+  const list = useChatDevices()
+  const action = useChatDeviceAction()
+  const devices = list.data?.devices || []
+  const links = list.data?.links || []
+  // 401 aqui significa que ESTE navegador ainda não ativou as conversas.
+  const notActivated = isAxiosError(list.error) && list.error.response?.status === 401
+  function revoke(device: ChatDeviceInfo) {
+    const message = device.current
+      ? 'Sair das conversas neste navegador? Ele deixa de receber mensagens e você perde o acesso ao histórico dele. Para voltar, abra uma conversa de novo; se você usa outros aparelhos, será preciso permitir este acesso.'
+      : `Desconectar ${deviceName(device)}? Esse aparelho deixa de receber mensagens novas. Mensagens que ele já recebeu continuam nele.`
+    if (window.confirm(message))
+      action.mutate({ type: 'revoke', id: device.id })
+  }
+  return (
+    <>
+      <Section>
+        <h2>Aparelhos conectados</h2>
+        <Muted>
+          Você pode usar suas conversas em até 5 aparelhos, como celular e
+          navegador. Desconecte os que não usa mais.
+        </Muted>
+      </Section>
+      {notActivated && (
+        <Section role="status">
+          <strong>Abra uma conversa primeiro</strong>
+          <Muted>
+            Seus aparelhos aparecem aqui depois que você abrir qualquer
+            conversa neste navegador.
+          </Muted>
+        </Section>
+      )}
+      {list.isError && !notActivated && (
+        <Failure
+          error={list.error}
+          retry={() => {
+            void list.refetch()
+          }}
+        />
+      )}
+      {action.isError && <Failure error={action.error} />}
+      {list.isPending && <Section role="status">Carregando…</Section>}
+      {links.map((link) => {
+        const request = deviceRequestText(link)
+        return (
+          <ListItem key={link.id} role="alert">
+            <strong>{request.title}</strong>
+            <Muted>{request.text}</Muted>
+            <Row>
+              <Action
+                disabled={action.isPending}
+                onClick={() => action.mutate({ type: 'approve', id: link.id })}
+              >
+                {request.allow}
+              </Action>
+              <Action
+                $secondary
+                disabled={action.isPending}
+                onClick={() => action.mutate({ type: 'deny', id: link.id })}
+              >
+                {request.deny}
+              </Action>
+            </Row>
+          </ListItem>
+        )
+      })}
+      {devices.map((device) => (
+        <ListItem key={device.id}>
+          <Row>
+            <span style={{ flex: 1 }}>
+              <strong>
+                {deviceName(device)}
+                {device.current ? ' · Este aparelho' : ''}
+              </strong>
+              <Muted>
+                Conectado em {new Date(device.createdAt).toLocaleDateString('pt-BR')}
+              </Muted>
+            </span>
+            <Action
+              $secondary
+              disabled={action.isPending}
+              onClick={() => revoke(device)}
+            >
+              {device.current ? 'Sair' : 'Desconectar'}
+            </Action>
+          </Row>
+        </ListItem>
+      ))}
+      {list.isSuccess && !devices.length && (
+        <Section>Nenhum aparelho conectado.</Section>
       )}
     </>
   )
@@ -703,7 +898,7 @@ function ConversationDetail({ id }: { id: string }) {
         <span>
           {closed
             ? 'Este grupo foi encerrado. Não é possível convidar ou alterar participantes.'
-            : 'Você já pode organizar suas conversas e grupos. O envio de mensagens será liberado em breve.'}
+            : 'Mensagens entre duas pessoas já funcionam. Mensagens em grupo chegam em breve.'}
         </span>
       </Notice>
       {action.isError && <Failure error={action.error} />}

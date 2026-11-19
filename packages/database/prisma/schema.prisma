@@ -340,6 +340,7 @@ model User {
   conversationBlocksReceived ConversationBlock[] @relation("ConversationBlocked")
   conversationDeliveries   ConversationOutbox[]
   chatDevices              ChatDevice[]
+  chatDeviceLinks          ChatDeviceLink[]
   chatPrivacy              ChatPrivacy?
   chatReceipts             ChatReceipt[]
 
@@ -377,6 +378,10 @@ model Conversation {
   ownerId         String? @map("owner_id")
   owner           User? @relation("ConversationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   revision        Int @default(1)
+  // Metadados da última mensagem (nunca o conteúdo, que o servidor não conhece).
+  lastEventId     String? @map("last_event_id")
+  lastEventAt     DateTime? @map("last_event_at")
+  lastSenderId    String? @map("last_sender_id")
   archivedAt      DateTime? @map("archived_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
@@ -394,12 +399,32 @@ model ChatDevice {
   userId String @map("user_id")
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform String @db.VarChar(20)
+  label String? @db.VarChar(60)
   secretHash String @map("secret_hash")
   matrixToken String @map("matrix_token")
   createdAt DateTime @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at")
   @@index([userId, revokedAt])
   @@map("chat_devices")
+}
+
+// Pedido de vínculo de um novo aparelho: só vira dispositivo ativo depois que
+// um aparelho já ativo da mesma conta aprova. O id é o do aparelho candidato.
+model ChatDeviceLink {
+  id String @id
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform String @db.VarChar(20)
+  label String? @db.VarChar(60)
+  secretHash String @map("secret_hash")
+  code String @db.VarChar(6)
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  decidedAt DateTime? @map("decided_at")
+  approved Boolean?
+  decidedByDeviceId String? @map("decided_by_device_id")
+  @@index([userId, expiresAt])
+  @@map("chat_device_links")
 }
 
 model ChatPrivacy {
@@ -433,6 +458,8 @@ model ConversationMember {
   invitedBy      User? @relation("ConversationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
   role           ConversationMemberRole @default(MEMBER)
   state          ConversationMemberState @default(INVITED)
+  // Mensagens recebidas desde a última vez que a pessoa abriu a conversa.
+  unreadCount    Int @default(0) @map("unread_count")
   joinedAt       DateTime? @map("joined_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

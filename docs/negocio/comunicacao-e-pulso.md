@@ -84,3 +84,5 @@ Implementação e acompanhamento: [primeira entrega de Conversas](../dev/convers
 Atualização de 18/11/2026: [interfaces web/mobile e validação no Android](../dev/conversations-ui-2026-11-18.md); [avaliação de E2EE e critérios pendentes](../dev/chat-e2ee-evaluation-2026-11-18.md).
 
 Continuação de 18/11/2026: [implementação de texto cifrado, recibos e requisitos de liberação](../dev/chat-text-2026-11-18.md). O teste Android da etapa anterior validou gestão de conversas; não comprova a nova ponte criptográfica nativa.
+
+Diagnóstico de 18/11/2026: [estado atual, roteiro e checklist até o nível A](../dev/conversations-diagnostico-e-roadmap-2026-11-18.md). Decisões aprovadas: web e mobile evoluem juntos; multi-dispositivo e confiança no primeiro contato (com aviso de mudança de chave) entram antes de qualquer recurso novo; configurações de conversas e refino visual no estilo de aplicativo de mensagens fazem parte do escopo.

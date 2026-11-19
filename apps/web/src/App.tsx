@@ -113,6 +113,7 @@ function App() {
               <Route path="/conversas" element={<ConversationsRoute />} />
               <Route path="/conversas/nova" element={<ConversationsRoute />} />
               <Route path="/conversas/bloqueios" element={<ConversationsRoute />} />
+              <Route path="/conversas/aparelhos" element={<ConversationsRoute />} />
               <Route path="/conversas/:id" element={<ConversationsRoute />} />
               <Route path="/pautas/:slug" element={<PautaDetail />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />

@@ -11,15 +11,50 @@ export interface ChatSession {
 }
 export interface ChatPeer {
     matrixUserId: string;
+    /** Primeiro aparelho do contato; mantido por compatibilidade. */
     deviceId: string | null;
+    /** Todos os aparelhos ativos do contato. */
+    devices?: string[];
     userId: string;
 }
 export interface ChatRoom {
     roomId: string;
     revision: number;
     canSend: boolean;
+    /** Aparelhos ativos da própria conta (inclui o atual). */
+    selfDevices?: string[];
     peer: ChatPeer;
 }
+/** Aviso de segurança: aparelho novo ou chave trocada num aparelho já conhecido. */
+export interface ChatNotice {
+    id: string;
+    kind: 'device-added' | 'key-changed';
+    who: 'peer' | 'self';
+    deviceId: string;
+    fingerprint: string;
+    at: number;
+}
+export interface ChatDeviceLink {
+    id: string;
+    platform: string;
+    label: string | null;
+    code: string;
+    expiresAt: string;
+}
+export interface ChatDeviceInfo {
+    id: string;
+    platform: string;
+    label: string | null;
+    createdAt: string;
+    current: boolean;
+}
+export type ChatEnrollment = ({
+    status: 'ready';
+} & ChatSession) | {
+    status: 'pending_approval';
+    code: string;
+    expiresAt: string;
+};
 export interface ChatVerification {
     state: 'none' | 'requested' | 'ready' | 'comparing' | 'confirmed' | 'done' | 'cancelled';
     incoming?: boolean;
@@ -30,10 +65,21 @@ export interface ChatMessage {
     sender: 'self' | 'peer';
     text: string | null;
     createdAt: number;
-    status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unverified' | 'unavailable';
+    status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unverified' | 'disconnected' | 'unavailable';
     txnId?: string;
 }
 export declare function messageStatusLabel(status: ChatMessage['status']): string;
+/** Texto mostrado no lugar de uma mensagem que não pôde ser aberta. */
+export declare function messagePlaceholder(status: ChatMessage['status']): string;
+/** Estado da conversa segura com o contato, para a interface decidir o que mostrar. */
+export type ChatPeerStatus = 'none' | 'preparing' | 'blocked' | 'ready';
+/** Dica do campo de mensagem, igual no web e no mobile. */
+export declare function composerPlaceholder(state: {
+    peerStatus: ChatPeerStatus;
+    room: {
+        canSend: boolean;
+    } | null;
+}): string;
 export interface PendingChatMessage {
     txnId: string;
     conversationId: string;
@@ -53,6 +99,14 @@ export interface ChatState {
     historyCursor: string | null;
     loadingHistory: boolean;
     readReceiptsEnabled: boolean;
+    /** O contato tem ao menos um aparelho em que confiamos para cifrar. */
+    peerTrusted: boolean;
+    peerStatus: ChatPeerStatus;
+    /** Este aparelho perdeu a autorização (foi desconectado): a tela deve recomeçar com credenciais novas. */
+    reactivate: boolean;
+    notices: ChatNotice[];
+    /** Pedidos de novos aparelhos da minha conta aguardando aprovação. */
+    deviceLinks: ChatDeviceLink[];
 }
 export interface ReceiptJob {
     conversationId: string;
@@ -64,15 +118,23 @@ export interface ChatTransportState {
     pending: PendingChatMessage[];
     receipts?: ReceiptJob[];
     acknowledged?: ReceiptJob[];
+    /** Confiança no primeiro contato: usuário Matrix -> aparelho -> impressão das chaves. */
+    pins?: Record<string, Record<string, string>>;
+    notices?: ChatNotice[];
 }
 export interface ChatStorage {
     load(): Promise<ChatTransportState>;
     save(value: ChatTransportState): Promise<void>;
 }
-export type ChatHttp = <T = Json>(path: string, method?: 'GET' | 'POST' | 'PUT', body?: unknown) => Promise<T>;
+export type ChatHttp = <T = Json>(path: string, method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown) => Promise<T>;
 export type VerificationAction = 'request' | 'accept' | 'compare' | 'confirm' | 'cancel';
 export interface ChatCrypto {
     track(userId: string, roomId?: string): Promise<void>;
+    /**
+     * Define os aparelhos em que confiamos para cifrar para `userId`. Chaves de
+     * sala e eventos cifrados nunca saem para outros aparelhos desse usuário.
+     */
+    trust(userId: string, deviceIds: string[]): void;
     receive(sync: Json): Promise<void>;
     pump(http: ChatHttp): Promise<void>;
     verified(userId: string, deviceId: string): Promise<boolean>;
@@ -80,13 +142,118 @@ export interface ChatCrypto {
         curve25519: string;
         ed25519: string;
     }>;
-    share(roomId: string, userId: string): Promise<void>;
+    share(roomId: string, userIds: string[]): Promise<void>;
+    /** Descarta a sessão de envio da sala; a próxima mensagem distribui uma chave nova. */
+    rotate?(roomId: string): Promise<void>;
     encrypt(roomId: string, text: string): Promise<Json>;
     decrypt(roomId: string, event: Json): Promise<string>;
     verification(peer: ChatPeer): Promise<ChatVerification>;
     verify(peer: ChatPeer, action: VerificationAction, http: ChatHttp): Promise<void>;
 }
 export declare function chatError(error: unknown): string;
+/** Aviso para a pessoa, já em linguagem simples. As duas telas só desenham. */
+export interface ChatViewNotice {
+    id: string;
+    text: string;
+    detail?: string;
+    /** Rótulo do botão que dispensa o aviso. */
+    action: string;
+    /** Enquanto não for resolvido, mensagens novas do contato ficam bloqueadas. */
+    blocking: boolean;
+}
+export interface ChatView {
+    canWrite: boolean;
+    placeholder: string;
+    /** Faixa fixa no topo da conversa. */
+    banner: string;
+    /** Ainda carregando: mostrar indicador, não formulário. */
+    preparing: boolean;
+    /** O contato ainda não abriu as conversas no app dele. */
+    waitingPeer: string | null;
+    notices: ChatViewNotice[];
+}
+/**
+ * Tudo o que a pessoa lê na conversa, num só lugar: o web e o mobile
+ * não repetem texto nem regra. Sem jargão: nada de "chave", "dispositivo"
+ * ou "ativar".
+ */
+export declare function chatView(state: ChatState | null, peerName: string, verified?: boolean): ChatView;
+/** Pedido de outro aparelho para usar a conta, em linguagem simples. */
+export declare function deviceRequestText(link: {
+    label: string | null;
+    platform: string;
+    code: string;
+}, names?: Record<string, string>): {
+    title: string;
+    text: string;
+    allow: string;
+    deny: string;
+};
+/** Tela de quem espera a permissão de outro aparelho. */
+export declare const ENROLL_WAITING: {
+    title: string;
+    text: string;
+    note: string;
+    lost: string;
+};
+/** Aviso antes de redefinir quando não há mais nenhum aparelho antigo. */
+export declare const RESET_WARNING: {
+    title: string;
+    text: string;
+    action: string;
+};
+export interface ChatPreview {
+    /** Id do evento da última mensagem, para casar com `lastMessage.eventId` da lista. */
+    eventId: string;
+    text: string;
+}
+/**
+ * Prévia (texto da última mensagem) para a lista de conversas.
+ *
+ * Só na memória do aplicativo: nunca vai ao disco nem ao servidor. Quem usa
+ * chama `clear()` ao sair da conta e quando o aplicativo vai para segundo
+ * plano, igual ao restante do texto aberto.
+ */
+export declare const chatPreviews: {
+    get: (conversationId: string) => ChatPreview | undefined;
+    set(conversationId: string, preview: ChatPreview): void;
+    clear(): void;
+    subscribe(listener: () => void): () => void;
+};
+/** Este aparelho foi desconectado (por outro aparelho ou pela redefinição). O app deve recomeçar com credenciais novas. */
+export declare class ChatDeviceDisconnectedError extends Error {
+    constructor();
+}
+export interface ChatDevices {
+    devices: ChatDeviceInfo[];
+    links: ChatDeviceLink[];
+}
+/**
+ * Gerenciamento de aparelhos conectados. Não precisa do motor criptográfico:
+ * só das credenciais deste aparelho, enviadas pelo `http` fornecido.
+ */
+export declare function chatDevicesApi(http: ChatHttp): {
+    list: () => Promise<ChatDevices>;
+    decide: (linkId: string, approve: boolean) => Promise<Json>;
+    revoke: (deviceId: string) => Promise<{
+        revoked: boolean;
+        self: boolean;
+    }>;
+};
+/**
+ * Ativa este aparelho. O primeiro da conta entra direto; os demais ficam
+ * aguardando a aprovação de um aparelho já ativo e mostram o código ao usuário.
+ * Repetir o pedido é seguro: o servidor devolve o mesmo código até expirar.
+ */
+export declare function enrollDevice(enroll: () => Promise<ChatEnrollment>, options: {
+    onPending: (pending: {
+        code: string;
+        expiresAt: string;
+    }) => void;
+    signal?: AbortSignal;
+    intervalMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+}): Promise<ChatSession>;
 export declare class ChatClient {
     private readonly conversationId;
     private readonly session;
@@ -95,6 +262,9 @@ export declare class ChatClient {
     private readonly storage;
     private readonly newId;
     private active;
+    private pins;
+    private notices;
+    private trusted;
     private queue;
     private listeners;
     private pending;
@@ -114,8 +284,27 @@ export declare class ChatClient {
     private update;
     private serial;
     private transport;
+    private peerDevices;
+    private hasTrustedPeer;
+    private notify;
+    /**
+     * Confiança no primeiro contato. O primeiro conjunto de aparelhos que o Votz
+     * apresenta para uma pessoa fica fixado; aparelho novo é aceito com aviso;
+     * chave diferente num aparelho já conhecido NÃO é aceita até a pessoa decidir.
+     */
+    private reconcileTrust;
+    /** O usuário decide sobre um aviso: aceitar a chave nova ou apenas dispensar. */
+    acknowledgeNotice(id: string): Promise<void>;
+    deviceList(): Promise<ChatDevices>;
+    decideDeviceLink(linkId: string, approve: boolean): Promise<void>;
+    revokeDevice(deviceId: string): Promise<void>;
+    private refreshDeviceLinks;
     private save;
     private render;
+    private seenAt;
+    private seenTimer;
+    /** Avisa o servidor que a pessoa abriu a conversa (zera as não lidas). Com intervalo mínimo. */
+    private markSeen;
     start(): Promise<void>;
     stop(): Promise<void>;
     private refresh;

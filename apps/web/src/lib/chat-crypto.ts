@@ -11,7 +11,36 @@ import * as sdk from '@matrix-org/matrix-sdk-crypto-wasm'
 /** Official Matrix state machine. Networking stays behind the authenticated Votz API. */
 export class WebChatCrypto implements ChatCrypto {
   private tracked = new Set<string>()
+  /** Aparelhos em que confiamos para cifrar, por usuário (política do chat-core). */
+  private trusted = new Map<string, Set<string>>()
   private constructor(private readonly machine: sdk.OlmMachine) {}
+  trust(userId: string, deviceIds: string[]) {
+    this.trusted.set(userId, new Set(deviceIds))
+  }
+  async rotate(roomId: string) {
+    await this.machine.invalidateGroupSession(new sdk.RoomId(roomId))
+  }
+  /**
+   * Remove de eventos entre aparelhos todos os destinatários fora da política
+   * de confiança. Devolve null quando não sobra ninguém.
+   */
+  private gate(eventType: string, body: Json): Json | null {
+    if (eventType !== 'm.room.encrypted' && eventType !== 'm.room_key.withheld')
+      return body
+    const messages: Json = {}
+    for (const [userId, devices] of Object.entries(body.messages || {}) as [
+      string,
+      Json,
+    ][]) {
+      const allowed = Object.fromEntries(
+        Object.entries(devices).filter(([deviceId]) =>
+          this.trusted.get(userId)?.has(deviceId),
+        ),
+      )
+      if (Object.keys(allowed).length) messages[userId] = allowed
+    }
+    return Object.keys(messages).length ? { ...body, messages } : null
+  }
   static async open(
     userId: string,
     deviceId: string,
@@ -81,13 +110,16 @@ export class WebChatCrypto implements ChatCrypto {
       response = await http('/chat/keys/query', 'POST', body)
     else if (request.type === sdk.RequestType.KeysClaim)
       response = await http('/chat/keys/claim', 'POST', body)
-    else if (request instanceof sdk.ToDeviceRequest)
-      response = await http(
-        `/chat/to-device/${encodeURIComponent(request.event_type)}/${encodeURIComponent(request.txn_id)}`,
-        'PUT',
-        body,
-      )
-    else throw new Error(`Unsupported encrypted SDK request ${request.type}`)
+    else if (request instanceof sdk.ToDeviceRequest) {
+      const allowed = this.gate(request.event_type, body)
+      response = allowed
+        ? await http(
+            `/chat/to-device/${encodeURIComponent(request.event_type)}/${encodeURIComponent(request.txn_id)}`,
+            'PUT',
+            allowed,
+          )
+        : {}
+    } else throw new Error(`Unsupported encrypted SDK request ${request.type}`)
     if (request.id)
       await this.machine.markRequestAsSent(
         request.id,
@@ -126,16 +158,16 @@ export class WebChatCrypto implements ChatCrypto {
       ed25519: device.ed25519Key.toBase64(),
     }
   }
-  async share(roomId: string, userId: string) {
-    const claim = await this.machine.getMissingSessions([
-      new sdk.UserId(userId),
-    ])
+  async share(roomId: string, userIds: string[]) {
+    const claim = await this.machine.getMissingSessions(
+      userIds.map((id) => new sdk.UserId(id)),
+    )
     if (claim) this.explicit.push(claim)
     // The claim must be completed before sharing; send() pumps before encrypt().
-    this.sharing = { roomId, userId }
+    this.sharing = { roomId, userIds }
   }
   private explicit: sdk.OutgoingRequest[] = []
-  private sharing: { roomId: string; userId: string } | null = null
+  private sharing: { roomId: string; userIds: string[] } | null = null
   private flow(peer: ChatPeer) {
     const flows = this.machine
       .getVerificationRequests(new sdk.UserId(peer.matrixUserId))
@@ -241,10 +273,12 @@ export class WebChatCrypto implements ChatCrypto {
     if (sharing) {
       const settings = new sdk.EncryptionSettings()
       settings.algorithm = sdk.EncryptionAlgorithm.MegolmV1AesSha2
-      settings.sharingStrategy = sdk.CollectStrategy.onlyTrustedDevices()
+      // A política de confiança é aplicada por aparelho em gate(); o SDK reúne
+      // todos os aparelhos e o filtro descarta os que não são confiáveis.
+      settings.sharingStrategy = sdk.CollectStrategy.allDevices()
       for (const request of await this.machine.shareRoomKey(
         new sdk.RoomId(sharing.roomId),
-        [new sdk.UserId(sharing.userId)],
+        sharing.userIds.map((id) => new sdk.UserId(id)),
         settings,
       ))
         await this.request(request, http)

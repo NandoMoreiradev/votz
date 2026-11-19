@@ -120,3 +120,6 @@ ImprensaModule, AdminModule, ApiPublicaModule, HealthModule
 - DOMPurify em todos os textos livres antes de persistir
 - MFA obrigatório para Entidade, Político, Empresa, Admin
 - LGPD: CPF criptografado AES-256, relatos anônimos sem exposição de autorId em queries públicas
+
+## Módulo de Conversas (mensageiro)
+Mensageiro criptografado de ponta a ponta, web + mobile. Antes de mexer nele, leia `docs/dev/conversations-diagnostico-e-roadmap-2026-11-18.md` (seção "Como retomar" no topo: estado, o que falta verificar, roteiro por etapas e decisões em aberto). Regras: web e mobile evoluem juntos; os textos que o cidadão lê ficam em `packages/chat-core` (`chatView`) em português simples, sem jargão técnico (há teste que garante); mudanças no modelo de segurança exigem aval do dono do produto; a lógica de transporte e confiança é do chat-core e as plataformas só desenham.

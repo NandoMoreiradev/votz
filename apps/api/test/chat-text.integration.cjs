@@ -100,7 +100,12 @@ async function until(condition, label, timeout = 45000) {
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
   throw new Error(
-    `Timed out: ${label}; ${clients.map((c) => c.getState().error || c.getState().verification.state).join(' | ')}`,
+    `Timed out: ${label}; ${clients
+      .map((c) => {
+        const s = c.getState()
+        return `[${s.error || 'ok'} | trusted=${s.peerTrusted} | notices=${s.notices.map((n) => `${n.kind}:${n.who}`).join(',')} | messages=${s.messages.map((m) => `${m.sender}:${m.status}:${m.text === null ? 'null' : 'text'}`).join(',')}]`
+      })
+      .join(' ')}`,
   )
 }
 ;(async () => {
@@ -156,14 +161,45 @@ async function until(condition, label, timeout = 45000) {
         false,
       ),
     )
-  await request(
-    a,
-    '/chat/devices',
-    'POST',
-    { ...a.credentials, id: randomUUID() },
-    409,
-    false,
+  // Multi-dispositivo: um segundo aparelho precisa da aprovação de um ativo.
+  const second = {
+    ...a.credentials,
+    id: randomUUID(),
+    secret: randomBytes(48).toString('hex'),
+    platform: 'web',
+    label: 'Navegador de teste',
+  }
+  const secondActor = { ...a, credentials: second }
+  const waiting = await request(a, '/chat/devices', 'POST', second, 201, false)
+  assert.equal(waiting.status, 'pending_approval')
+  assert.match(waiting.code, /^\d{6}$/)
+  assert.equal(
+    (await request(a, '/chat/devices', 'POST', second, 201, false)).code,
+    waiting.code,
   )
+  await request(secondActor, '/chat/devices', 'GET', undefined, 401)
+  await request(secondActor, `/chat/device-links/${second.id}`, 'POST', { approve: true }, 401)
+  await request(a, `/chat/device-links/${second.id}`, 'POST', { approve: 'true' }, 400)
+  const pendingList = await request(a, '/chat/devices')
+  assert.equal(pendingList.links.length, 1)
+  assert.equal(pendingList.links[0].code, waiting.code)
+  assert.equal(pendingList.devices.length, 1)
+  assert.equal(pendingList.devices[0].current, true)
+  await request(a, `/chat/device-links/${second.id}`, 'POST', { approve: true }, 201)
+  await request(outsider, `/chat/device-links/${second.id}`, 'POST', { approve: false }, 404)
+  const activated = await request(a, '/chat/devices', 'POST', second, 201, false)
+  assert.equal(activated.status, 'ready')
+  assert.equal(activated.deviceId, second.id)
+  const both = await request(secondActor, '/chat/devices')
+  assert.equal(both.devices.length, 2)
+  assert.equal(both.devices.find((row) => row.id === second.id).current, true)
+  assert.equal(both.devices.find((row) => row.id === second.id).label, 'Navegador de teste')
+  // O segundo aparelho vê a sala só depois de a conversa existir; aqui validamos o ciclo de vida.
+  await request(a, `/chat/devices/${second.id}`, 'DELETE', undefined, 200)
+  await request(secondActor, '/chat/sync', 'GET', undefined, 401)
+  assert.equal((await request(a, '/chat/devices')).devices.length, 1)
+  // Aparelho de outra conta nunca é listado nem revogável.
+  await request(outsider, `/chat/devices/${a.credentials.id}`, 'DELETE', undefined, 404)
   await request(
     {
       ...a,
@@ -186,7 +222,38 @@ async function until(condition, label, timeout = 45000) {
     403,
   )
   console.log(
-    'PASS: device enrollment, ownership, replacement refusal and outsider authorization',
+    'PASS: device enrollment, approval-gated linking, listing, revocation, ownership and outsider authorization',
+  )
+  // Quem perdeu todos os aparelhos recomeça com a senha da conta.
+  const bcrypt = require('bcrypt')
+  const lostUser = await db.user.create({
+    data: {
+      email: `qa-chat-text-${run}-lost@votz.test`,
+      name: 'QA lost devices',
+      emailVerified: true,
+      password: await bcrypt.hash('Qa!reset-1', 4),
+    },
+  })
+  const lost = {
+    ...lostUser,
+    token: jwt.sign({ sub: lostUser.id, typ: 'access' }, { expiresIn: '15m', algorithm: 'HS256' }),
+    credentials: { id: randomUUID(), secret: randomBytes(48).toString('hex'), platform: 'test' },
+  }
+  users.push(lost)
+  await request(lost, '/chat/devices', 'POST', lost.credentials, 201, false)
+  const lostSecond = { ...lost.credentials, id: randomUUID(), secret: randomBytes(48).toString('hex'), platform: 'web' }
+  assert.equal((await request(lost, '/chat/devices', 'POST', lostSecond, 201, false)).status, 'pending_approval')
+  await request(lost, '/chat/devices/reset', 'POST', { password: 'senha errada' }, 403, false)
+  assert.equal((await request(lost, '/chat/devices')).devices.length, 1, 'A wrong password disconnects nothing')
+  const reset = await request(lost, '/chat/devices/reset', 'POST', { password: 'Qa!reset-1' }, 201, false)
+  assert.deepEqual(reset, { reset: true, disconnected: 1 })
+  await request(lost, '/chat/devices', 'GET', undefined, 401)
+  await request(lost, '/chat/devices', 'POST', lost.credentials, 423, false)
+  const fresh = { ...lost, credentials: { ...lostSecond, platform: 'test' } }
+  assert.equal((await request(fresh, '/chat/devices', 'POST', fresh.credentials, 201, false)).status, 'ready')
+  assert.equal((await request(fresh, '/chat/devices')).devices.length, 1)
+  console.log(
+    'PASS: after losing every device, a wrong password changes nothing; the right one disconnects the old devices (423 for them) and the next device enters directly',
   )
   const stores = []
   const withheld = { algorithm: 'm.megolm.v1.aes-sha2', code: 'm.no_olm', reason: 'QA native bridge session discovery', from_device: a.credentials.id, sender_key: 'public-fixture-key' }
@@ -229,9 +296,62 @@ async function until(condition, label, timeout = 45000) {
       return false
     }
   }, 'both crypto devices published and discovered')
-  await assert.rejects(
-    clients[0].send('Cannot send before identity verification'),
+  // Confiança no primeiro contato: nenhuma comparação de código para conversar.
+  await until(
+    () => clients.every((client) => client.getState().peerTrusted),
+    'first contact trusted without comparing codes',
   )
+  assert.deepEqual(
+    clients.map((client) => client.getState().notices),
+    [[], []],
+  )
+  assert.notEqual(clients[0].getState().verification.state, 'done')
+  console.log(
+    'PASS: first contact is trusted without code comparison and without warnings',
+  )
+  const textA = `Mensagem privada A ${run} 🙂`
+  const textB = `Resposta privada B ${run} çã`
+  await clients[0].send(textA)
+  await until(
+    () =>
+      clients[1].getState().messages.some((message) => message.text === textA),
+    'encrypted A to B delivery',
+  )
+  await clients[1].send(textB)
+  await until(
+    () =>
+      clients[0].getState().messages.some((message) => message.text === textB),
+    'encrypted B to A delivery',
+  )
+  console.log(
+    'PASS: encrypted text flowed in both directions with no identity verification step',
+  )
+  // Lista de conversas: horário, autoria e não lidas, sem nunca expor conteúdo.
+  const listed = async (actor) =>
+    (
+      await request(actor, '?folder=active&limit=50', 'GET', undefined, 200, false)
+    ).items.find((item) => item.id === direct.id)
+  const forA = await listed(a)
+  const forB = await listed(b)
+  assert.equal(forA.lastMessage.fromMe, false, 'A last message was written by B')
+  assert.equal(forB.lastMessage.fromMe, true)
+  assert.equal(forA.unreadCount, 1, 'A has not opened B reply yet')
+  assert.equal(forB.unreadCount, 1, 'B has not opened A message yet')
+  assert.match(forA.lastMessage.eventId, /^\$/)
+  assert.ok(Date.now() - new Date(forA.lastMessage.at).getTime() < 120000)
+  assert.deepEqual(Object.keys(forA.lastMessage).sort(), ['at', 'eventId', 'fromMe'])
+  assert.equal(JSON.stringify([forA, forB]).includes(textA), false)
+  assert.equal(JSON.stringify([forA, forB]).includes(textB), false)
+  const receivedByB = clients[1]
+    .getState()
+    .messages.find((message) => message.text === textA && message.sender === 'peer')
+  clients[1].visibleMessages([receivedByB.id])
+  await until(async () => (await listed(b)).unreadCount === 0, 'B opening the conversation clears its unread count')
+  assert.equal((await listed(a)).unreadCount, 1, 'Only the person who opened it is cleared')
+  console.log(
+    'PASS: conversation list carries last-message time, author and unread counts without any message content; opening clears only the opener',
+  )
+  // Verificação por código continua disponível como reforço opcional.
   await clients[0].verification('request')
   await until(
     () => clients[1].getState().verification.state === 'requested',
@@ -259,21 +379,7 @@ async function until(condition, label, timeout = 45000) {
     'mutual verified device trust',
   )
   console.log(
-    'PASS: official Matrix SAS verified both device identities with equal codes',
-  )
-  const textA = `Mensagem privada A ${run} 🙂`
-  const textB = `Resposta privada B ${run} çã`
-  await clients[0].send(textA)
-  await until(
-    () =>
-      clients[1].getState().messages.some((message) => message.text === textA),
-    'encrypted A to B delivery',
-  )
-  await clients[1].send(textB)
-  await until(
-    () =>
-      clients[0].getState().messages.some((message) => message.text === textB),
-    'encrypted B to A delivery',
+    'PASS: optional official Matrix SAS verified both device identities with equal codes',
   )
   assert.ok(
     stores.every((store) => !JSON.stringify(store()).includes(run)),
@@ -375,6 +481,92 @@ async function until(condition, label, timeout = 45000) {
   console.log(
     'PASS: delivery after decryption; read receipts off by default, strict opt-in, visible-message read acknowledgement and no downgrade',
   )
+  // --- Um segundo aparelho da conta A lê e escreve na mesma conversa ---
+  const third = {
+    id: randomUUID(),
+    secret: randomBytes(48).toString('hex'),
+    platform: 'web',
+    label: 'Segundo navegador',
+  }
+  const thirdActor = { ...a, credentials: third }
+  assert.equal(
+    (await request(a, '/chat/devices', 'POST', third, 201, false)).status,
+    'pending_approval',
+  )
+  await request(a, `/chat/device-links/${third.id}`, 'POST', { approve: true }, 201)
+  const thirdSession = await request(a, '/chat/devices', 'POST', third, 201, false)
+  assert.equal(thirdSession.status, 'ready')
+  const engine3 = await WebChatCrypto.open(
+    thirdSession.matrixUserId,
+    thirdSession.deviceId,
+  )
+  engines.push(engine3)
+  let persisted3 = { pending: [] }
+  const client3 = new ChatClient(
+    direct.id,
+    thirdSession,
+    engine3,
+    (endpoint, method = 'GET', body) =>
+      request(thirdActor, endpoint, method, body, method === 'POST' ? 201 : 200),
+    {
+      load: async () => structuredClone(persisted3),
+      save: async (value) => {
+        persisted3 = structuredClone(value)
+      },
+    },
+    () => randomUUID(),
+  )
+  clients.push(client3)
+  await client3.start()
+  await until(() => client3.getState().ready, 'second device ready')
+  await until(async () => {
+    try {
+      await engines[1].identity(sessions[0].matrixUserId, third.id)
+      await engines[0].identity(sessions[0].matrixUserId, third.id)
+      return true
+    } catch {
+      return false
+    }
+  }, 'peer and sibling discover the second device')
+  const textC = `Para os dois aparelhos ${run}`
+  await clients[1].send(textC)
+  await until(
+    () =>
+      [clients[0], client3].every((client) =>
+        client.getState().messages.some((message) => message.text === textC),
+      ),
+    'peer message readable on both devices of the account',
+  )
+  const textD = `Enviada pelo segundo aparelho ${run}`
+  await client3.send(textD)
+  await until(
+    () =>
+      [clients[0], clients[1]].every((client) =>
+        client.getState().messages.some((message) => message.text === textD),
+      ),
+    'second device message readable by sibling and peer',
+  )
+  assert.equal(
+    clients[0].getState().messages.find((message) => message.text === textD)
+      .sender,
+    'self',
+    'A message from my other device is shown as mine',
+  )
+  assert.ok(
+    clients[1]
+      .getState()
+      .notices.some(
+        (notice) => notice.kind === 'device-added' && notice.deviceId === third.id,
+      ),
+    'The peer is told that a new device appeared',
+  )
+  await request(a, `/chat/devices/${third.id}`, 'DELETE', undefined, 200)
+  await request(thirdActor, '/chat/sync', 'GET', undefined, 401)
+  await client3.stop()
+  clients.pop()
+  console.log(
+    'PASS: a second approved device reads and writes the same encrypted conversation; revocation cuts its access',
+  )
   await request(
     a,
     `/${direct.id}/chat/messages/${randomUUID()}`,
@@ -419,7 +611,7 @@ async function until(condition, label, timeout = 45000) {
   assert.equal((await request(a, `/${direct.id}/chat`)).canSend, false)
   assert.equal(
     (await request(a, `/${direct.id}/chat/messages`)).chunk.length,
-    2,
+    4,
     'Blocking preserves previous encrypted history',
   )
   console.log(

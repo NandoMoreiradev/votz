@@ -136,6 +136,17 @@ export class ConversationsService {
       myRole: ownerId === userId ? 'OWNER' : me.role,
       invitedBy: c.members.find((m) => m.userId === me.invitedById)?.user ?? null,
       memberCount: c.members.filter((m) => m.state === 'ACTIVE').length,
+      // Só horário, autoria e contagem: o servidor nunca conhece o texto.
+      // Convites pendentes não veem nada da atividade da conversa.
+      lastMessage:
+        me.state === 'ACTIVE' && c.lastEventId && c.lastEventAt
+          ? {
+              eventId: c.lastEventId,
+              at: c.lastEventAt,
+              fromMe: c.lastSenderId === userId,
+            }
+          : null,
+      unreadCount: me.state === 'ACTIVE' ? me.unreadCount : 0,
     }
     // Pending group invitations never expose the participant roster.
     return {
