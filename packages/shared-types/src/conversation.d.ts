@@ -28,12 +28,36 @@ export interface ConversationSummary {
     unreadCount: number;
     /** Quando preenchido e no futuro, notificações desta conversa ficam silenciadas. */
     mutedUntil?: string | null;
+    /** Último acesso do contato em conversas individuais, respeitando reciprocidade de privacidade. */
+    peerLastSeenAt?: string | null;
     members: {
         user: ConversationPerson;
         state: 'ACTIVE' | 'INVITED';
         role: ConversationRole;
     }[];
 }
+export type ConversationAudience = 'EVERYONE' | 'CONTACTS' | 'NOBODY';
+export type ConversationDirectPolicy = 'EVERYONE' | 'NOBODY';
+export type ConversationMediaAutoDownload = 'WIFI_ONLY' | 'ALWAYS' | 'NEVER';
+export type ConversationFontScale = 'SMALL' | 'MEDIUM' | 'LARGE';
+export type ConversationWallpaper = 'DEFAULT' | 'SOFT' | 'PLAIN';
+export interface ConversationSettings {
+    readReceiptsEnabled: boolean;
+    lastSeenVisibility: ConversationAudience;
+    groupInvitePolicy: ConversationAudience;
+    directRequestPolicy: ConversationDirectPolicy;
+    notifySound: boolean;
+    notifyVibration: boolean;
+    notifyPreview: boolean;
+    securityAlertsEnabled: boolean;
+    keyBackupEnabled: boolean;
+    mediaAutoDownload: ConversationMediaAutoDownload;
+    fontScale: ConversationFontScale;
+    wallpaper: ConversationWallpaper;
+}
+export type UpdateConversationSettings = Partial<ConversationSettings>;
+export declare const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings;
+export declare function conversationFontSize(scale: ConversationFontScale | undefined): number;
 export type ConversationMuteDuration = '8h' | '1w' | 'forever' | 'off';
 export type ConversationReportReason = 'OFFENSIVE' | 'SPAM_OR_ADS' | 'SEXUAL_OR_VIOLENT' | 'FAKE_PROFILE' | 'PERSONAL_DATA' | 'OTHER';
 export declare const CONVERSATION_REPORT_REASONS: {

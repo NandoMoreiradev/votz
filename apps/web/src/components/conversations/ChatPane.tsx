@@ -27,12 +27,18 @@ import {
   type VerificationAction,
 } from '@votz/chat-core'
 import {
+  DEFAULT_CONVERSATION_SETTINGS,
+  conversationFontSize,
   conversationTitle,
   conversationTypingLabel,
   type ConversationSummary,
+  type ConversationWallpaper,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
-import { useConversationList } from '../../hooks/useConversations'
+import {
+  useConversationList,
+  useConversationSettings,
+} from '../../hooks/useConversations'
 import { api } from '../../lib/api'
 import { useTypingUsers } from '../../lib/chat-typing'
 import { webChatStorage } from '../../lib/chat-storage'
@@ -120,7 +126,7 @@ const Status = styled.div`
   gap: 8px;
   align-items: center;
 `
-const History = styled.div`
+const History = styled.div<{ $wallpaper?: ConversationWallpaper }>`
   flex: 1;
   padding: 20px;
   display: flex;
@@ -129,14 +135,21 @@ const History = styled.div`
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: ${({ theme, $wallpaper }) =>
+    $wallpaper === 'SOFT'
+      ? theme.colors.neutral
+      : $wallpaper === 'PLAIN'
+        ? theme.colors.white
+        : theme.colors.surfaceHover};
 `
-const Bubble = styled.div<{ $own: boolean }>`
+const Bubble = styled.div<{ $own: boolean; $fontSize?: number }>`
   flex-shrink: 0;
   align-self: ${({ $own }) => ($own ? 'flex-end' : 'flex-start')};
   max-width: min(85%, 530px);
   padding: 12px 15px;
   border-radius: ${({ $own }) => ($own ? '18px 18px 4px 18px' : '18px 18px 18px 4px')};
   background: ${({ theme, $own }) => ($own ? '#FFF0F1' : theme.colors.neutral)};
+  font-size: ${({ $fontSize }) => ($fontSize ? `${$fontSize}px` : '15px')};
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.5;
@@ -420,6 +433,9 @@ export function ChatPane({
   const navigate = useNavigate()
   const location = useLocation()
   const conversations = useConversationList('active')
+  const settingsQuery = useConversationSettings()
+  const chatSettings = settingsQuery.data ?? DEFAULT_CONVERSATION_SETTINGS
+  const bubbleFontSize = conversationFontSize(chatSettings.fontScale)
   const title = conversationTitle(conversation, userId)
   const [state, setState] = useState<ChatState | null>(null)
   // null: ainda lendo; true: navegador antigo com senha própria.
@@ -1122,6 +1138,8 @@ export function ChatPane({
           {state.error && <Status role="status">{state.error}</Status>}
           <History
             ref={history}
+            $wallpaper={chatSettings.wallpaper}
+            data-wallpaper={chatSettings.wallpaper}
             onScroll={() => {
               const node = history.current
               if (node)
@@ -1148,6 +1166,7 @@ export function ChatPane({
                 key={message.id}
                 data-message-id={message.id}
                 $own={message.own}
+                $fontSize={bubbleFontSize}
               >
                 {message.senderName && <strong>{message.senderName}</strong>}
                 {message.forwarded && <ForwardTag>Encaminhada</ForwardTag>}

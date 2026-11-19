@@ -80,3 +80,58 @@ export class ReportConversationDto {
   @MaxLength(500)
   details?: string
 }
+export class UpdateConversationSettingsDto {
+  @IsOptional()
+  @Transform(({ obj }) => obj.readReceiptsEnabled)
+  @IsBoolean()
+  readReceiptsEnabled?: boolean
+
+  @IsOptional()
+  @IsIn(['EVERYONE', 'CONTACTS', 'NOBODY'])
+  lastSeenVisibility?: 'EVERYONE' | 'CONTACTS' | 'NOBODY'
+
+  @IsOptional()
+  @IsIn(['EVERYONE', 'CONTACTS', 'NOBODY'])
+  groupInvitePolicy?: 'EVERYONE' | 'CONTACTS' | 'NOBODY'
+
+  @IsOptional()
+  @IsIn(['EVERYONE', 'NOBODY'])
+  directRequestPolicy?: 'EVERYONE' | 'NOBODY'
+
+  @IsOptional()
+  @Transform(({ obj }) => obj.notifySound)
+  @IsBoolean()
+  notifySound?: boolean
+
+  @IsOptional()
+  @Transform(({ obj }) => obj.notifyVibration)
+  @IsBoolean()
+  notifyVibration?: boolean
+
+  @IsOptional()
+  @Transform(({ obj }) => obj.notifyPreview)
+  @IsBoolean()
+  notifyPreview?: boolean
+
+  @IsOptional()
+  @Transform(({ obj }) => obj.securityAlertsEnabled)
+  @IsBoolean()
+  securityAlertsEnabled?: boolean
+
+  @IsOptional()
+  @Transform(({ obj }) => obj.keyBackupEnabled)
+  @IsBoolean()
+  keyBackupEnabled?: boolean
+
+  @IsOptional()
+  @IsIn(['WIFI_ONLY', 'ALWAYS', 'NEVER'])
+  mediaAutoDownload?: 'WIFI_ONLY' | 'ALWAYS' | 'NEVER'
+
+  @IsOptional()
+  @IsIn(['SMALL', 'MEDIUM', 'LARGE'])
+  fontScale?: 'SMALL' | 'MEDIUM' | 'LARGE'
+
+  @IsOptional()
+  @IsIn(['DEFAULT', 'SOFT', 'PLAIN'])
+  wallpaper?: 'DEFAULT' | 'SOFT' | 'PLAIN'
+}

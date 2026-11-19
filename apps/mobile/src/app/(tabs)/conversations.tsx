@@ -3,6 +3,7 @@ import { FlatList, View } from 'react-native'
 import { router } from 'expo-router'
 import Plus from 'lucide-react-native/icons/plus'
 import Ban from 'lucide-react-native/icons/ban'
+import Settings from 'lucide-react-native/icons/settings'
 import Smartphone from 'lucide-react-native/icons/smartphone'
 import {
   conversationMemberLabel,
@@ -184,6 +185,12 @@ export default function ConversationsScreen() {
         title="Conversas"
         right={
           <View style={{ flexDirection: 'row' }}>
+            <IconButton
+              label="Configurações de conversas"
+              onPress={() => router.push('/conversation/settings')}
+            >
+              <Settings size={21} color={theme.colors.primary} />
+            </IconButton>
             <IconButton
               label="Aparelhos conectados"
               onPress={() => router.push('/conversation/devices')}

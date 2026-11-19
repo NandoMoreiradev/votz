@@ -168,18 +168,18 @@ Cada item vale para **web e mobile**, salvo indicação.
 
 ### Etapa 6 — Configurações de conversas
 
-Tela própria, no web e no mobile, com:
+Tela própria, no web (`/conversas/configuracoes`) e no mobile (`/conversation/settings`), com:
 
-- [ ] Confirmação de leitura ("azulzinho"), já existente, movida para esta área
-- [ ] Visto por último e online: todos, meus contatos ou ninguém (reciprocidade, como no WhatsApp)
-- [ ] Quem pode me adicionar a grupos e me enviar solicitações
-- [ ] Notificações: prévia do texto, som, vibração
-- [ ] Silenciar conversas e grupos
-- [ ] Pessoas bloqueadas (já existente)
-- [ ] Dispositivos conectados: listar e desconectar
-- [ ] Segurança: código de verificação, alertas de mudança de chave, senha e backup de chaves
-- [ ] Download automático de mídia
-- [ ] Papel de parede, tamanho da fonte, tema
+- [x] Confirmação de leitura ("azulzinho"), espelhada em `GET/PATCH /conversations/settings` (limpa `readAt` ao desativar)
+- [x] Visto por último e online: todos, meus contatos ou ninguém (reciprocidade aplicada em `ConversationsService.get()`)
+- [x] Quem pode me adicionar a grupos e me enviar solicitações (validado no servidor em `direct()`, `group()` e `invite()`)
+- [x] Notificações: prévia discreta, som, vibração
+- [x] Silenciar conversas e grupos (na tela de Detalhes da conversa, com supressão de push no BullMQ)
+- [x] Pessoas bloqueadas (atalho direto em Configurações)
+- [x] Dispositivos conectados: listar e desconectar (atalho direto em Configurações)
+- [x] Segurança: alertas de mudança de aparelho e backup protegido opcional na nuvem (desligado por padrão)
+- [x] Download automático de mídia (Somente Wi-Fi, Wi-Fi e dados móveis, Nunca)
+- [x] Papel de parede (`DEFAULT`/`SOFT`/`PLAIN` usando apenas tokens do tema) e tamanho da fonte (`SMALL`/`MEDIUM`/`LARGE`) aplicados no `ChatPane` Web + Mobile (verificado: API 55/55, `tsc --noEmit` Web + Mobile, Chromium E2E `chat-settings.browser.cjs` 4/4)
 
 ### Etapa 7 — Refino visual (final)
 

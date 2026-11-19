@@ -24,7 +24,48 @@ export interface ConversationSummary {
   unreadCount: number
   /** Quando preenchido e no futuro, notificações desta conversa ficam silenciadas. */
   mutedUntil?: string | null
+  /** Último acesso do contato em conversas individuais, respeitando reciprocidade de privacidade. */
+  peerLastSeenAt?: string | null
   members: { user: ConversationPerson; state: 'ACTIVE' | 'INVITED'; role: ConversationRole }[]
+}
+export type ConversationAudience = 'EVERYONE' | 'CONTACTS' | 'NOBODY'
+export type ConversationDirectPolicy = 'EVERYONE' | 'NOBODY'
+export type ConversationMediaAutoDownload = 'WIFI_ONLY' | 'ALWAYS' | 'NEVER'
+export type ConversationFontScale = 'SMALL' | 'MEDIUM' | 'LARGE'
+export type ConversationWallpaper = 'DEFAULT' | 'SOFT' | 'PLAIN'
+export interface ConversationSettings {
+  readReceiptsEnabled: boolean
+  lastSeenVisibility: ConversationAudience
+  groupInvitePolicy: ConversationAudience
+  directRequestPolicy: ConversationDirectPolicy
+  notifySound: boolean
+  notifyVibration: boolean
+  notifyPreview: boolean
+  securityAlertsEnabled: boolean
+  keyBackupEnabled: boolean
+  mediaAutoDownload: ConversationMediaAutoDownload
+  fontScale: ConversationFontScale
+  wallpaper: ConversationWallpaper
+}
+export type UpdateConversationSettings = Partial<ConversationSettings>
+export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
+  readReceiptsEnabled: false,
+  lastSeenVisibility: 'CONTACTS',
+  groupInvitePolicy: 'EVERYONE',
+  directRequestPolicy: 'EVERYONE',
+  notifySound: true,
+  notifyVibration: true,
+  notifyPreview: false,
+  securityAlertsEnabled: true,
+  keyBackupEnabled: false,
+  mediaAutoDownload: 'WIFI_ONLY',
+  fontScale: 'MEDIUM',
+  wallpaper: 'DEFAULT',
+}
+export function conversationFontSize(scale: ConversationFontScale | undefined): number {
+  if (scale === 'SMALL') return 13
+  if (scale === 'LARGE') return 18
+  return 15
 }
 export type ConversationMuteDuration = '8h' | '1w' | 'forever' | 'off'
 export type ConversationReportReason =

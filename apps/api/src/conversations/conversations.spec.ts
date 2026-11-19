@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config'
-import { NotFoundException } from '@nestjs/common'
+import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { ConversationsService } from './conversations.service'
@@ -106,5 +106,72 @@ describe('Conversation privacy and delivery gates', () => {
     )
     await expect(worker.dispatch()).resolves.toBeUndefined()
     await expect(worker.pruneDelivered()).resolves.toBeUndefined()
+  })
+})
+
+describe('ConversationsService: configurações e políticas (Etapa 6)', () => {
+  const actor = { id: 'u-1', emailVerified: true }
+  const enabled = new ConfigService({ CONVERSATIONS_ENABLED: 'true' })
+  it('retorna defaults quando ainda não há registro e limpa readAt ao desativar confirmação de leitura', async () => {
+    const store = new Map<string, Record<string, unknown>>()
+    const clearReceipts = jest.fn().mockResolvedValue({ count: 2 })
+    const db: Record<string, unknown> = {
+      chatPrivacy: {
+        findUnique: jest.fn(async ({ where }: { where: { userId: string } }) => store.get(where.userId) ?? null),
+        upsert: jest.fn(async ({ where, create, update }: { where: { userId: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+          const next = { ...(store.get(where.userId) ?? create), ...update }
+          store.set(where.userId, next)
+          return next
+        }),
+      },
+      chatReceipt: { updateMany: clearReceipts },
+    }
+    db.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db))
+    const service = new ConversationsService(db as unknown as PrismaService, enabled)
+    const initial = await service.getSettings(actor)
+    expect(initial.readReceiptsEnabled).toBe(false)
+    expect(initial.fontScale).toBe('MEDIUM')
+    expect(initial.wallpaper).toBe('DEFAULT')
+
+    const updated = await service.updateSettings(actor, {
+      readReceiptsEnabled: false,
+      fontScale: 'LARGE',
+      wallpaper: 'SOFT',
+      directRequestPolicy: 'NOBODY',
+    })
+    expect(updated.fontScale).toBe('LARGE')
+    expect(updated.wallpaper).toBe('SOFT')
+    expect(updated.directRequestPolicy).toBe('NOBODY')
+    expect(clearReceipts).toHaveBeenCalledTimes(1)
+  })
+
+  it('recusa nova solicitação direta quando destinatário configurou directRequestPolicy = NOBODY', async () => {
+    const tx = {
+      user: { count: jest.fn().mockResolvedValue(1) },
+      conversationBlock: { count: jest.fn().mockResolvedValue(0) },
+      conversation: { findUnique: jest.fn().mockResolvedValue(null) },
+      chatPrivacy: { findUnique: jest.fn().mockResolvedValue({ directRequestPolicy: 'NOBODY' }) },
+    }
+    const db = { $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) }
+    const service = new ConversationsService(db as unknown as PrismaService, enabled)
+    await expect(service.direct(actor, 'u-2')).rejects.toThrow(ForbiddenException)
+  })
+
+  it('recusa criação de grupo quando um convidado configurou groupInvitePolicy = NOBODY', async () => {
+    const tx = {
+      conversation: { findUnique: jest.fn().mockResolvedValue(null) },
+      user: { count: jest.fn().mockResolvedValue(1) },
+      conversationBlock: { count: jest.fn().mockResolvedValue(0) },
+      chatPrivacy: { findMany: jest.fn().mockResolvedValue([{ userId: 'u-2', groupInvitePolicy: 'NOBODY' }]) },
+    }
+    const db = { $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) }
+    const service = new ConversationsService(db as unknown as PrismaService, enabled)
+    await expect(
+      service.group(actor, {
+        clientRequestId: '11111111-1111-4111-8111-111111111111',
+        title: 'Bairro',
+        memberIds: ['u-2'],
+      }),
+    ).rejects.toThrow(ForbiddenException)
   })
 })

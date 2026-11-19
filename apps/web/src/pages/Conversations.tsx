@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BellSlash, ChatCircle, Flag, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
+import { ArrowLeft, BellSlash, ChatCircle, Flag, GearSix, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
 import styled from 'styled-components'
 import {
   CONVERSATION_REPORT_REASONS,
@@ -28,6 +28,7 @@ import {
 } from '../hooks/useConversations'
 import { useAuthStore } from '../store/auth.store'
 import { ChatPane } from '../components/conversations/ChatPane'
+import { ConversationSettingsView } from '../components/conversations/ConversationSettings'
 import { isAxiosError } from 'axios'
 import { deviceRequestText, type ChatDeviceInfo } from '@votz/chat-core'
 import { useChatDeviceAction, useChatDevices } from '../hooks/useChatDevices'
@@ -374,8 +375,12 @@ export function Conversations() {
   const create = subpath === 'nova'
   const blocked = subpath === 'bloqueios'
   const devices = subpath === 'aparelhos'
-  const id = subpath && !create && !blocked && !devices && !subpath.includes('/') ? subpath : undefined
-  const sub = id || create || blocked || devices
+  const settings = subpath === 'configuracoes'
+  const id =
+    subpath && !create && !blocked && !devices && !settings && !subpath.includes('/')
+      ? subpath
+      : undefined
+  const sub = id || create || blocked || devices || settings
   // Mantém a sessão cifrada aberta enquanto a pessoa navega em /conversas/* e
   // fecha tudo ao sair da área de conversas, trocar de conta ou entrar em contexto.
   useEffect(() => {
@@ -399,16 +404,25 @@ export function Conversations() {
                 ? 'Detalhes da conversa'
                 : devices
                   ? 'Aparelhos conectados'
-                  : 'Conversas'}
+                  : settings
+                    ? 'Configurações de conversas'
+                    : 'Conversas'}
           </h1>
           {!sub && (
-            <Link to="/conversas/nova" aria-label="Nova conversa">
-              <Plus size={24} />
-            </Link>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+              <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
+                <GearSix size={22} />
+              </Link>
+              <Link to="/conversas/nova" aria-label="Nova conversa">
+                <Plus size={24} />
+              </Link>
+            </span>
           )}
         </Header>
         <ConversationGate>
-          {devices ? (
+          {settings ? (
+            <ConversationSettingsView />
+          ) : devices ? (
             <ChatDevices />
           ) : blocked ? (
             <BlockedPeople />
@@ -448,6 +462,7 @@ function ConversationInbox() {
         ))}
       </TabRow>
       <Section style={{ paddingBlock: 12, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <Link to="/conversas/configuracoes">Configurações</Link>
         <Link to="/conversas/aparelhos">Aparelhos conectados</Link>
         <Link to="/conversas/bloqueios">Pessoas bloqueadas</Link>
       </Section>

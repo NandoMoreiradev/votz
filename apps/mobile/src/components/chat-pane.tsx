@@ -17,6 +17,8 @@ import Search from 'lucide-react-native/icons/search'
 import Send from 'lucide-react-native/icons/send'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import {
+  DEFAULT_CONVERSATION_SETTINGS,
+  conversationFontSize,
   conversationTitle,
   conversationTypingLabel,
   type ConversationSummary,
@@ -36,7 +38,10 @@ import {
   type ChatViewMessage,
   type VerificationAction,
 } from '@votz/chat-core'
-import { useConversationList } from '../hooks/use-conversations'
+import {
+  useConversationList,
+  useConversationSettings,
+} from '../hooks/use-conversations'
 import {
   downloadNativeChatMedia,
   forgetNativeChat,
@@ -160,6 +165,15 @@ export function ChatPane({
 }) {
   const userId = useSession((state) => state.user!.id)
   const conversations = useConversationList('active')
+  const settingsQuery = useConversationSettings()
+  const chatSettings = settingsQuery.data ?? DEFAULT_CONVERSATION_SETTINGS
+  const bubbleFontSize = conversationFontSize(chatSettings.fontScale)
+  const listBackground =
+    chatSettings.wallpaper === 'SOFT'
+      ? theme.colors.soft
+      : chatSettings.wallpaper === 'PLAIN'
+        ? theme.colors.surface
+        : theme.colors.background
   const title = conversationTitle(conversation, userId)
   const [focused, setFocused] = useState(false)
   const [foreground, setForeground] = useState(
@@ -658,7 +672,7 @@ export function ChatPane({
           <FlatList
             viewabilityConfig={viewability}
             onViewableItemsChanged={onVisible}
-            style={{ flex: 1 }}
+            style={{ flex: 1, backgroundColor: listBackground }}
             data={[...view.messages].reverse()}
             inverted
             keyExtractor={(message) => message.id}
@@ -695,7 +709,13 @@ export function ChatPane({
                   />
                 )}
                 {!!item.body && (
-                  <Text selectable style={styles.message}>
+                  <Text
+                    selectable
+                    style={[
+                      styles.message,
+                      { fontSize: bubbleFontSize, lineHeight: Math.round(bubbleFontSize * 1.45) },
+                    ]}
+                  >
                     {item.body}
                   </Text>
                 )}

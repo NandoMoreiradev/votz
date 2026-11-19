@@ -4,9 +4,11 @@ import type {
   ConversationBlocksPage,
   ConversationCapabilities,
   ConversationPerson,
+  ConversationSettings,
   ConversationSummary,
   ConversationsPage,
   CreateConversationGroup,
+  UpdateConversationSettings,
 } from '@votz/shared-types'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
@@ -128,4 +130,38 @@ export function useCreateConversationGroup() {
     create: (input: CreateConversationGroup) =>
       action.mutateAsync({ path: '/groups', body: input }),
   }
+}
+export function useConversationSettings() {
+  const scope = useConversationScope()
+  return useQuery({
+    queryKey: [...scope.key, 'settings'],
+    queryFn: ({ signal }) =>
+      api.get<ConversationSettings>('/conversations/settings', { signal }).then((r) => r.data),
+    enabled: scope.enabled,
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+export function useUpdateConversationSettings() {
+  const client = useQueryClient()
+  const scope = useConversationScope()
+  const key = [...scope.key, 'settings'] as const
+  return useMutation({
+    mutationFn: (body: UpdateConversationSettings) =>
+      api.patch<ConversationSettings>('/conversations/settings', body).then((r) => r.data),
+    retry: false,
+    onMutate: async (patch) => {
+      await client.cancelQueries({ queryKey: key })
+      const previous = client.getQueryData<ConversationSettings>(key)
+      if (previous) client.setQueryData<ConversationSettings>(key, { ...previous, ...patch })
+      return { previous }
+    },
+    onError: (_err, _patch, context) => {
+      if (context?.previous) client.setQueryData(key, context.previous)
+    },
+    onSuccess: (data) => {
+      client.setQueryData(key, data)
+      void client.invalidateQueries({ queryKey: scope.key })
+    },
+  })
 }

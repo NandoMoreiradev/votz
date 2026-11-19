@@ -17,7 +17,9 @@ import {
   ConversationPaginationDto,
   GroupConversationDto,
   ReportConversationDto,
+  UpdateConversationSettingsDto,
 } from './conversations.dto'
+import { DEFAULT_CONVERSATION_SETTINGS, type ConversationSettings } from '@votz/shared-types'
 
 const publicUser = {
   id: true,
@@ -226,7 +228,34 @@ export class ConversationsService {
     const c = await this.db.conversation.findUnique({ where: { id }, include })
     if (!c) throw new NotFoundException()
     this.member(c, actor.id)
-    return this.view(c, actor.id)
+    const base = this.view(c, actor.id)
+    // Atualiza "visto por último" do ator em background (best-effort) e aplica reciprocidade em conversas diretas.
+    void this.db.chatPrivacy
+      ?.upsert({
+        where: { userId: actor.id },
+        create: { userId: actor.id, lastSeenAt: new Date() },
+        update: { lastSeenAt: new Date() },
+      })
+      .catch(() => {})
+    if (c.kind === 'DIRECT' && this.db.chatPrivacy?.findMany) {
+      const other = c.members.find((m) => m.userId !== actor.id && m.state === 'ACTIVE')
+      if (other) {
+        const rows = await this.db.chatPrivacy.findMany({
+          where: { userId: { in: [actor.id, other.userId] } },
+          select: { userId: true, lastSeenVisibility: true, lastSeenAt: true },
+        })
+        const mine = rows.find((r) => r.userId === actor.id)
+        const theirs = rows.find((r) => r.userId === other.userId)
+        const myVis = mine?.lastSeenVisibility ?? DEFAULT_CONVERSATION_SETTINGS.lastSeenVisibility
+        const peerVis = theirs?.lastSeenVisibility ?? DEFAULT_CONVERSATION_SETTINGS.lastSeenVisibility
+        const allowed = myVis !== 'NOBODY' && peerVis !== 'NOBODY'
+        return {
+          ...base,
+          peerLastSeenAt: allowed && theirs?.lastSeenAt ? theirs.lastSeenAt.toISOString() : null,
+        }
+      }
+    }
+    return { ...base, peerLastSeenAt: null }
   }
   async direct(actor: ConversationActor, targetUserId: string) {
     this.guard(actor)
@@ -252,6 +281,14 @@ export class ConversationsService {
         this.member(existing, actor.id, true)
         return this.view(existing, actor.id)
       }
+      const targetPrivacy = await tx.chatPrivacy?.findUnique({
+        where: { userId: targetUserId },
+        select: { directRequestPolicy: true },
+      })
+      if (targetPrivacy?.directRequestPolicy === 'NOBODY')
+        throw new ForbiddenException(
+          'Esta pessoa não está aceitando novas solicitações de conversa.',
+        )
       const c = await tx.conversation.create({
         data: {
           kind: 'DIRECT',
@@ -291,6 +328,7 @@ export class ConversationsService {
         return this.view(previous, actor.id)
       }
       await this.targets(tx, actor.id, input.memberIds)
+      await this.enforceGroupInvitePolicies(tx, actor.id, input.memberIds)
       const c = await tx.conversation.create({
         data: {
           kind: 'GROUP',
@@ -350,6 +388,7 @@ export class ConversationsService {
         this.admin(c, actor.id)
         const ids = input.memberIds!
         await this.targets(tx, actor.id, ids)
+        await this.enforceGroupInvitePolicies(tx, actor.id, ids)
         if (
           ids.some((userId) =>
             c.members.some(
@@ -549,5 +588,81 @@ export class ConversationsService {
       select: { id: true },
     })
     return { reported: true, flagId: flag.id }
+  }
+  private mapSettings(row: Partial<ConversationSettings> | null | undefined): ConversationSettings {
+    return {
+      readReceiptsEnabled: row?.readReceiptsEnabled ?? DEFAULT_CONVERSATION_SETTINGS.readReceiptsEnabled,
+      lastSeenVisibility: (row?.lastSeenVisibility as ConversationSettings['lastSeenVisibility']) ?? DEFAULT_CONVERSATION_SETTINGS.lastSeenVisibility,
+      groupInvitePolicy: (row?.groupInvitePolicy as ConversationSettings['groupInvitePolicy']) ?? DEFAULT_CONVERSATION_SETTINGS.groupInvitePolicy,
+      directRequestPolicy: (row?.directRequestPolicy as ConversationSettings['directRequestPolicy']) ?? DEFAULT_CONVERSATION_SETTINGS.directRequestPolicy,
+      notifySound: row?.notifySound ?? DEFAULT_CONVERSATION_SETTINGS.notifySound,
+      notifyVibration: row?.notifyVibration ?? DEFAULT_CONVERSATION_SETTINGS.notifyVibration,
+      notifyPreview: row?.notifyPreview ?? DEFAULT_CONVERSATION_SETTINGS.notifyPreview,
+      securityAlertsEnabled: row?.securityAlertsEnabled ?? DEFAULT_CONVERSATION_SETTINGS.securityAlertsEnabled,
+      keyBackupEnabled: row?.keyBackupEnabled ?? DEFAULT_CONVERSATION_SETTINGS.keyBackupEnabled,
+      mediaAutoDownload: (row?.mediaAutoDownload as ConversationSettings['mediaAutoDownload']) ?? DEFAULT_CONVERSATION_SETTINGS.mediaAutoDownload,
+      fontScale: (row?.fontScale as ConversationSettings['fontScale']) ?? DEFAULT_CONVERSATION_SETTINGS.fontScale,
+      wallpaper: (row?.wallpaper as ConversationSettings['wallpaper']) ?? DEFAULT_CONVERSATION_SETTINGS.wallpaper,
+    }
+  }
+  private async enforceGroupInvitePolicies(tx: Tx, actorId: string, memberIds: string[]) {
+    if (!memberIds.length || !tx.chatPrivacy?.findMany) return
+    const rows = await tx.chatPrivacy.findMany({
+      where: { userId: { in: memberIds } },
+      select: { userId: true, groupInvitePolicy: true },
+    })
+    if (rows.some((r) => r.groupInvitePolicy === 'NOBODY'))
+      throw new ForbiddenException('Uma das pessoas escolhidas não aceita convites para grupos.')
+    const contactsOnly = rows
+      .filter((r) => r.groupInvitePolicy === 'CONTACTS')
+      .map((r) => r.userId)
+    if (!contactsOnly.length) return
+    const shared = await tx.conversation.findMany({
+      where: {
+        archivedAt: null,
+        AND: [
+          { members: { some: { userId: actorId, state: 'ACTIVE' } } },
+          { members: { some: { userId: { in: contactsOnly }, state: 'ACTIVE' } } },
+        ],
+      },
+      select: { members: { select: { userId: true, state: true } } },
+    })
+    const known = new Set<string>()
+    for (const conv of shared) {
+      for (const m of conv.members) {
+        if (m.state === 'ACTIVE' && m.userId !== actorId) known.add(m.userId)
+      }
+    }
+    if (contactsOnly.some((id) => !known.has(id)))
+      throw new ForbiddenException('Uma das pessoas escolhidas aceita convites apenas de contatos.')
+  }
+  async getSettings(actor: ConversationActor): Promise<ConversationSettings> {
+    this.guard(actor)
+    const row = await this.db.chatPrivacy.findUnique({ where: { userId: actor.id } })
+    return this.mapSettings(row as Partial<ConversationSettings> | null)
+  }
+  async updateSettings(
+    actor: ConversationActor,
+    input: UpdateConversationSettingsDto,
+  ): Promise<ConversationSettings> {
+    this.guard(actor)
+    const data: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined) data[key] = value
+    }
+    return this.db.$transaction(async (tx) => {
+      const row = await tx.chatPrivacy.upsert({
+        where: { userId: actor.id },
+        create: { userId: actor.id, ...data },
+        update: data,
+      })
+      if (input.readReceiptsEnabled === false) {
+        await tx.chatReceipt.updateMany({
+          where: { recipientUserId: actor.id, readAt: { not: null } },
+          data: { readAt: null },
+        })
+      }
+      return this.mapSettings(row as Partial<ConversationSettings>)
+    })
   }
 }

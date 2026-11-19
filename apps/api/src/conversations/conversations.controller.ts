@@ -27,6 +27,7 @@ import {
   ReportConversationDto,
   RespondConversationDto,
   RoleConversationDto,
+  UpdateConversationSettingsDto,
 } from './conversations.dto'
 
 @Controller('conversations')
@@ -36,6 +37,18 @@ export class ConversationsController {
   constructor(private readonly service: ConversationsService) {}
   @Get('capabilities') capabilities() {
     return this.service.capabilities()
+  }
+  @Get('settings')
+  settings(@Req() req: { user: ConversationActor }) {
+    return this.service.getSettings(req.user)
+  }
+  @Patch('settings')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  updateSettings(
+    @Req() req: { user: ConversationActor },
+    @Body() body: UpdateConversationSettingsDto,
+  ) {
+    return this.service.updateSettings(req.user, body)
   }
   @Get('contacts')
   contacts(@Req() req: { user: ConversationActor }, @Query() query: ConversationContactsDto) {

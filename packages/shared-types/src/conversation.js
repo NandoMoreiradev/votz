@@ -1,12 +1,34 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CONVERSATION_REPORT_REASONS = void 0;
+exports.CONVERSATION_REPORT_REASONS = exports.DEFAULT_CONVERSATION_SETTINGS = void 0;
+exports.conversationFontSize = conversationFontSize;
 exports.conversationTime = conversationTime;
 exports.conversationUnreadLabel = conversationUnreadLabel;
 exports.conversationMemberLabel = conversationMemberLabel;
 exports.conversationTitle = conversationTitle;
 exports.conversationIsMuted = conversationIsMuted;
 exports.conversationTypingLabel = conversationTypingLabel;
+exports.DEFAULT_CONVERSATION_SETTINGS = {
+    readReceiptsEnabled: false,
+    lastSeenVisibility: 'CONTACTS',
+    groupInvitePolicy: 'EVERYONE',
+    directRequestPolicy: 'EVERYONE',
+    notifySound: true,
+    notifyVibration: true,
+    notifyPreview: false,
+    securityAlertsEnabled: true,
+    keyBackupEnabled: false,
+    mediaAutoDownload: 'WIFI_ONLY',
+    fontScale: 'MEDIUM',
+    wallpaper: 'DEFAULT',
+};
+function conversationFontSize(scale) {
+    if (scale === 'SMALL')
+        return 13;
+    if (scale === 'LARGE')
+        return 18;
+    return 15;
+}
 exports.CONVERSATION_REPORT_REASONS = [
     { value: 'OFFENSIVE', label: 'Ofensa ou assédio' },
     { value: 'SPAM_OR_ADS', label: 'Spam ou golpe' },

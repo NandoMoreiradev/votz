@@ -7,9 +7,11 @@ import type {
   ConversationBlocksPage,
   ConversationCapabilities,
   ConversationPerson,
+  ConversationSettings,
   ConversationSummary,
   ConversationsPage,
   ConversationTypingEvent,
+  UpdateConversationSettings,
 } from '@votz/shared-types'
 import { api, API_URL, conversationSocketToken } from '../lib/api'
 import { clearTyping, recordTyping } from '../lib/chat-typing'
@@ -108,6 +110,43 @@ export function useConversationAction() {
     retry: false,
     onSuccess: () => client.invalidateQueries({ queryKey: scope.key }),
     onError: () => client.invalidateQueries({ queryKey: scope.key }),
+  })
+}
+export function useConversationSettings() {
+  const scope = useConversationScope()
+  return useQuery({
+    queryKey: [...scope.key, 'settings'],
+    queryFn: ({ signal }) =>
+      api<ConversationSettings>('/conversations/settings', { signal }),
+    enabled: scope.enabled,
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+export function useUpdateConversationSettings() {
+  const scope = useConversationScope()
+  const client = useQueryClient()
+  const key = [...scope.key, 'settings'] as const
+  return useMutation({
+    mutationFn: (body: UpdateConversationSettings) =>
+      api<ConversationSettings>('/conversations/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    retry: false,
+    onMutate: async (patch) => {
+      await client.cancelQueries({ queryKey: key })
+      const previous = client.getQueryData<ConversationSettings>(key)
+      if (previous) client.setQueryData<ConversationSettings>(key, { ...previous, ...patch })
+      return { previous }
+    },
+    onError: (_err, _patch, context) => {
+      if (context?.previous) client.setQueryData(key, context.previous)
+    },
+    onSuccess: (data) => {
+      client.setQueryData(key, data)
+      void client.invalidateQueries({ queryKey: scope.key })
+    },
   })
 }
 

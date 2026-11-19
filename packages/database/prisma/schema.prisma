@@ -431,10 +431,22 @@ model ChatDeviceLink {
 }
 
 model ChatPrivacy {
-  userId String @id @map("user_id")
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  readReceiptsEnabled Boolean @default(false) @map("read_receipts_enabled")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  userId                String    @id @map("user_id")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readReceiptsEnabled   Boolean   @default(false) @map("read_receipts_enabled")
+  lastSeenVisibility    String    @default("CONTACTS") @map("last_seen_visibility")
+  lastSeenAt            DateTime? @map("last_seen_at")
+  groupInvitePolicy     String    @default("EVERYONE") @map("group_invite_policy")
+  directRequestPolicy   String    @default("EVERYONE") @map("direct_request_policy")
+  notifySound           Boolean   @default(true) @map("notify_sound")
+  notifyVibration       Boolean   @default(true) @map("notify_vibration")
+  notifyPreview         Boolean   @default(false) @map("notify_preview")
+  securityAlertsEnabled Boolean   @default(true) @map("security_alerts_enabled")
+  keyBackupEnabled      Boolean   @default(false) @map("key_backup_enabled")
+  mediaAutoDownload     String    @default("WIFI_ONLY") @map("media_auto_download")
+  fontScale             String    @default("MEDIUM") @map("font_scale")
+  wallpaper             String    @default("DEFAULT") @map("wallpaper")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
   @@map("chat_privacy")
 }
 
