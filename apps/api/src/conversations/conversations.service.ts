@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { Prisma } from '@prisma/client'
+import { FlagReason, FlagStatus, FlagTargetType, Prisma } from '@prisma/client'
 import { createHash } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import { ChatMatrixService } from './chat-matrix.service'
@@ -16,6 +16,7 @@ import {
   ConversationListDto,
   ConversationPaginationDto,
   GroupConversationDto,
+  ReportConversationDto,
 } from './conversations.dto'
 
 const publicUser = {
@@ -150,6 +151,7 @@ export class ConversationsService {
             }
           : null,
       unreadCount: me.state === 'ACTIVE' ? me.unreadCount : 0,
+      mutedUntil: me.mutedUntil ? me.mutedUntil.toISOString() : null,
     }
     // Pending group invitations never expose the participant roster.
     return {
@@ -485,5 +487,67 @@ export class ConversationsService {
     }
     return { blocked: !remove }
     }, { timeout: 12000, maxWait: 3000 })
+  }
+  async mute(
+    actor: ConversationActor,
+    id: string,
+    duration: '8h' | '1w' | 'forever' | 'off',
+  ) {
+    this.guard(actor)
+    const now = Date.now()
+    const mutedUntil =
+      duration === 'off'
+        ? null
+        : duration === '8h'
+          ? new Date(now + 8 * 60 * 60 * 1000)
+          : duration === '1w'
+            ? new Date(now + 7 * 24 * 60 * 60 * 1000)
+            : new Date('2099-12-31T23:59:59.000Z')
+    const updated = await this.db.conversationMember.updateMany({
+      where: { conversationId: id, userId: actor.id, state: 'ACTIVE' },
+      data: { mutedUntil },
+    })
+    if (!updated.count) throw new NotFoundException()
+    return {
+      conversationId: id,
+      mutedUntil: mutedUntil ? mutedUntil.toISOString() : null,
+    }
+  }
+  async report(
+    actor: ConversationActor,
+    id: string,
+    input: ReportConversationDto,
+  ) {
+    this.guard(actor)
+    const member = await this.db.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId: id, userId: actor.id } },
+      select: { state: true },
+    })
+    if (!member || !['ACTIVE', 'INVITED'].includes(member.state))
+      throw new NotFoundException()
+    const flag = await this.db.contentFlag.upsert({
+      where: {
+        reporterId_targetType_targetId: {
+          reporterId: actor.id,
+          targetType: FlagTargetType.CONVERSATION,
+          targetId: id,
+        },
+      },
+      create: {
+        reporterId: actor.id,
+        targetType: FlagTargetType.CONVERSATION,
+        targetId: id,
+        reason: input.reason as FlagReason,
+        details: input.details || null,
+        status: FlagStatus.OPEN,
+      },
+      update: {
+        reason: input.reason as FlagReason,
+        details: input.details || null,
+        status: FlagStatus.OPEN,
+      },
+      select: { id: true },
+    })
+    return { reported: true, flagId: flag.id }
   }
 }

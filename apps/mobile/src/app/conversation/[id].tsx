@@ -2,9 +2,13 @@ import { useState } from 'react'
 import { Alert, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
+  CONVERSATION_REPORT_REASONS,
+  conversationIsMuted,
   conversationMemberLabel,
   conversationTitle,
+  type ConversationMuteDuration,
   type ConversationPerson,
+  type ConversationReportReason,
 } from '@votz/shared-types'
 import {
   ConversationGate,
@@ -13,7 +17,7 @@ import {
 } from '../../components/conversation-ui'
 import { ConversationPicker } from '../../components/conversation-picker'
 import { FormScroll, Screen, Toolbar } from '../../components/screen'
-import { Button, ErrorText, Heading, State } from '../../components/ui'
+import { Button, ErrorText, Field, Heading, Label, State } from '../../components/ui'
 import {
   useConversation,
   useConversationAction,
@@ -30,6 +34,11 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
   const action = useConversationAction()
   const [inviting, setInviting] = useState(false)
   const [people, setPeople] = useState<ConversationPerson[]>([])
+  const [showMute, setShowMute] = useState(false)
+  const [showReport, setShowReport] = useState(false)
+  const [reportReason, setReportReason] = useState<ConversationReportReason>('OFFENSIVE')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportSent, setReportSent] = useState(false)
   const { user } = useConversationScope()
   const actorId = user!.id
   async function run(
@@ -273,6 +282,105 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
                 }
               />
             )}
+            {conversationIsMuted(conversation.mutedUntil) ? (
+              <Button
+                secondary
+                title="Ativar notificações"
+                disabled={action.isPending}
+                onPress={() => {
+                  void run(
+                    `/${id}/mute`,
+                    { duration: 'off' as ConversationMuteDuration },
+                    'PATCH',
+                  )
+                }}
+              />
+            ) : (
+              <Button
+                secondary
+                title="Silenciar notificações"
+                disabled={action.isPending}
+                onPress={() => {
+                  setShowMute((value) => !value)
+                  setShowReport(false)
+                }}
+              />
+            )}
+            {showMute && (
+              <View style={{ gap: 8 }}>
+                <Label muted>Por quanto tempo silenciar esta conversa?</Label>
+                {(
+                  [
+                    ['8h', '8 horas'],
+                    ['1w', '1 semana'],
+                    ['forever', 'Sempre'],
+                  ] as [ConversationMuteDuration, string][]
+                ).map(([duration, label]) => (
+                  <Button
+                    key={duration}
+                    secondary
+                    title={label}
+                    disabled={action.isPending}
+                    onPress={() => {
+                      setShowMute(false)
+                      void run(`/${id}/mute`, { duration }, 'PATCH')
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+            <Button
+              secondary
+              title="Denunciar conversa"
+              disabled={action.isPending}
+              onPress={() => {
+                setShowReport((value) => !value)
+                setShowMute(false)
+                setReportSent(false)
+              }}
+            />
+            {showReport && (
+              <View style={{ gap: 10 }}>
+                <Label muted>Motivo da denúncia</Label>
+                {CONVERSATION_REPORT_REASONS.map((option) => (
+                  <Button
+                    key={option.value}
+                    secondary={reportReason !== option.value}
+                    title={option.label}
+                    onPress={() => setReportReason(option.value)}
+                  />
+                ))}
+                <Field
+                  accessibilityLabel="Detalhes da denúncia (opcional)"
+                  placeholder="Descreva o que aconteceu (opcional)"
+                  value={reportDetails}
+                  onChangeText={setReportDetails}
+                  maxLength={500}
+                />
+                <Button
+                  title="Enviar denúncia"
+                  loading={action.isPending}
+                  onPress={() => {
+                    void action
+                      .mutateAsync({
+                        path: `/${id}/report`,
+                        method: 'POST',
+                        body: {
+                          reason: reportReason,
+                          details: reportDetails.trim() || undefined,
+                        },
+                      })
+                      .then(() => {
+                        setReportSent(true)
+                        setShowReport(false)
+                        setReportDetails('')
+                      })
+                      .catch(() => {})
+                  }}
+                />
+              </View>
+            )}
+            {reportSent && <Label>Denúncia enviada para análise.</Label>}
           </View>
         )}
       </FormScroll>

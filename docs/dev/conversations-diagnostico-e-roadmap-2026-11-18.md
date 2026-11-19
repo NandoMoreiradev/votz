@@ -151,18 +151,18 @@ Cada item vale para **web e mobile**, salvo indicação.
 
 ### Etapa 3 — Experiência do mensageiro
 
-- [ ] Responder, reagir, encaminhar com identificação
-- [ ] Digitando, silenciar, buscar, denunciar
-- [ ] Cartões de publicações e relatos
+- [x] Responder, reagir, encaminhar com identificação (cifrados ponta a ponta em `br.votz.reply`, `br.votz.reaction` e `br.votz.forwarded`, sem vazar metadados fora do envelope cifrado; Web + Mobile)
+- [x] Digitando (efêmero via Socket.IO, sem gravar no banco), silenciar (8h/1 semana/sempre com supressão de push no BullMQ), buscar (local em memória, sem acento e sem chamada ao servidor), denunciar (reaproveitando `ContentFlag` com `FlagTargetType.CONVERSATION`, sem exigir texto em claro)
+- [x] Cartões de publicações e relatos (links `/relatos/:id` e `/posts/:id` renderizados como cartão clicável no Web e no Mobile; verificado E2E em Chromium 9/9, API 52/52, `chat-core` 36/36 e `tsc --noEmit` Web + Mobile)
 
-### Etapa 4 — Chamadas individuais
+### Etapa 4 — Chamadas individuais *(adiada para após o MVP de mensagens — decisão de produto em 2026-11-19)*
 
 - [ ] LiveKit com salas privadas e autorização própria (sem reaproveitar permissões dos debates)
 - [ ] Estados persistidos: tocando, aceita, recusada, ocupado, expirada, perdida
 - [ ] CallKit (iOS) e ConnectionService (Android); tela bloqueada e segundo plano
 - [ ] Testes em aparelhos: chamada telefônica, Bluetooth, troca de rede
 
-### Etapa 5 — Chamadas em grupo pequeno
+### Etapa 5 — Chamadas em grupo pequeno *(adiada para após o MVP de mensagens)*
 
 - [ ] Limites e qualidade adaptativa
 

@@ -24,6 +24,7 @@ import { ConversationActor } from './conversations.service'
 import { CHAT_MEDIA_MAX_BYTES, ChatService } from './chat.service'
 import {
   ChatPushTokenDto,
+  ChatTypingDto,
   DecideChatDeviceLinkDto,
   ResetChatDevicesDto,
   ChatPrivacyDto,
@@ -159,6 +160,15 @@ export class ChatController {
   @Throttle({ long: { limit: 60, ttl: 60000 } })
   seen(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.seen(req.user, this.device(req), id)
+  }
+  @Post(':id/chat/typing')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  typing(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ChatTypingDto,
+  ) {
+    return this.service.typing(req.user, id, body.typing)
   }
   @Post(':id/chat/receipts/query') receipts(
     @Req() req: Request,

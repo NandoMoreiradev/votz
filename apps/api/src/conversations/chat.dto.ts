@@ -65,3 +65,8 @@ export class ChatPushTokenDto {
   @Matches(/^Expo(nent)?PushToken\[[A-Za-z0-9._-]{10,180}\]$/)
   token!: string
 }
+export class ChatTypingDto {
+  @Transform(({ obj }) => obj.typing)
+  @IsBoolean()
+  typing!: boolean
+}

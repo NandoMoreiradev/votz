@@ -9,8 +9,10 @@ import type {
   ConversationPerson,
   ConversationSummary,
   ConversationsPage,
+  ConversationTypingEvent,
 } from '@votz/shared-types'
 import { api, API_URL, conversationSocketToken } from '../lib/api'
+import { clearTyping, recordTyping } from '../lib/chat-typing'
 import { useSession } from '../lib/session'
 
 export function useConversationScope() {
@@ -131,12 +133,16 @@ export function ConversationsLive() {
     }
     socket.on('connect', invalidate)
     socket.on('conversation:changed', invalidate)
+    socket.on('conversation:typing', (data: ConversationTypingEvent) => {
+      recordTyping(data)
+    })
     const update = (state: string) => {
       if (state === 'active') socket.connect()
       else {
         socket.disconnect()
         // Texto aberto não fica na memória com o aplicativo em segundo plano.
         chatPreviews.clear()
+        clearTyping()
       }
     }
     update(AppState.currentState || 'active')
@@ -146,6 +152,7 @@ export function ConversationsLive() {
       socket.removeAllListeners()
       socket.disconnect()
       chatPreviews.clear()
+      clearTyping()
     }
   }, [client, userId, enabled])
   return null

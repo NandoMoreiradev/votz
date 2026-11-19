@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChatCircle, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
+import { ArrowLeft, BellSlash, ChatCircle, Flag, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
 import styled from 'styled-components'
 import {
+  CONVERSATION_REPORT_REASONS,
+  conversationIsMuted,
   conversationTitle,
   conversationMemberLabel,
   conversationTime,
   conversationUnreadLabel,
+  type ConversationMuteDuration,
   type ConversationPerson,
+  type ConversationReportReason,
   type ConversationSummary,
 } from '@votz/shared-types'
 import { useChatPreview } from '../hooks/useChatPreview'
@@ -180,7 +184,12 @@ function InboxLine({ item, userId }: { item: ConversationSummary; userId: string
     >
       <LineTop>
         <strong>{conversationTitle(item, userId)}</strong>
-        {last && <Time $unread={unread > 0}>{conversationTime(last.at)}</Time>}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {conversationIsMuted(item.mutedUntil) && (
+            <BellSlash size={15} aria-label="Notificações silenciadas" />
+          )}
+          {last && <Time $unread={unread > 0}>{conversationTime(last.at)}</Time>}
+        </span>
       </LineTop>
       <LineBottom>
         <Muted style={unread > 0 ? { color: 'inherit', fontWeight: 600 } : undefined}>
@@ -861,6 +870,11 @@ function ConversationDetail({ id }: { id: string }) {
   const navigate = useNavigate()
   const [inviting, setInviting] = useState(false)
   const [people, setPeople] = useState<ConversationPerson[]>([])
+  const [showMute, setShowMute] = useState(false)
+  const [showReport, setShowReport] = useState(false)
+  const [reportReason, setReportReason] = useState<ConversationReportReason>('OFFENSIVE')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportSent, setReportSent] = useState(false)
   const { user } = useConversationScope()
   if (detail.isPending) return <Section role="status">Carregando conversa…</Section>
   if (detail.isError)
@@ -923,7 +937,7 @@ function ConversationDetail({ id }: { id: string }) {
         <span>
           {closed
             ? 'Este grupo foi encerrado. Não é possível convidar ou alterar participantes.'
-            : 'Mensagens entre duas pessoas já funcionam. Mensagens em grupo chegam em breve.'}
+            : 'Mensagens nesta conversa são protegidas de ponta a ponta.'}
         </span>
       </Notice>
       {action.isError && <Failure error={action.error} />}
@@ -1043,7 +1057,124 @@ function ConversationDetail({ id }: { id: string }) {
                 Bloquear pessoa
               </Action>
             )}
+            {conversationIsMuted(conversation.mutedUntil) ? (
+              <Action
+                $secondary
+                disabled={action.isPending}
+                onClick={() => {
+                  void run(`/${id}/mute`, { duration: 'off' as ConversationMuteDuration }, 'PATCH')
+                }}
+              >
+                Ativar notificações
+              </Action>
+            ) : (
+              <Action
+                $secondary
+                disabled={action.isPending}
+                onClick={() => {
+                  setShowMute((value) => !value)
+                  setShowReport(false)
+                }}
+              >
+                Silenciar notificações
+              </Action>
+            )}
+            <Action
+              $secondary
+              disabled={action.isPending}
+              onClick={() => {
+                setShowReport((value) => !value)
+                setShowMute(false)
+                setReportSent(false)
+              }}
+            >
+              <Flag size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              Denunciar conversa
+            </Action>
           </Buttons>
+          {showMute && (
+            <div style={{ marginTop: 16 }}>
+              <Muted>Por quanto tempo silenciar as notificações desta conversa?</Muted>
+              <Buttons style={{ marginTop: 10 }}>
+                {(
+                  [
+                    ['8h', '8 horas'],
+                    ['1w', '1 semana'],
+                    ['forever', 'Sempre'],
+                  ] as [ConversationMuteDuration, string][]
+                ).map(([duration, label]) => (
+                  <Action
+                    key={duration}
+                    $secondary
+                    disabled={action.isPending}
+                    onClick={() => {
+                      setShowMute(false)
+                      void run(`/${id}/mute`, { duration }, 'PATCH')
+                    }}
+                  >
+                    {label}
+                  </Action>
+                ))}
+              </Buttons>
+            </div>
+          )}
+          {showReport && (
+            <form
+              style={{ marginTop: 16, display: 'grid', gap: 10 }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void action
+                  .mutateAsync({
+                    path: `/${id}/report`,
+                    method: 'POST',
+                    body: {
+                      reason: reportReason,
+                      details: reportDetails.trim() || undefined,
+                    },
+                  })
+                  .then(() => {
+                    setReportSent(true)
+                    setShowReport(false)
+                    setReportDetails('')
+                  })
+                  .catch(() => {})
+              }}
+            >
+              <label htmlFor="conversation-report-reason">Motivo da denúncia</label>
+              <select
+                id="conversation-report-reason"
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value as ConversationReportReason)}
+                style={{ minHeight: 42, padding: '8px 12px', borderRadius: 12 }}
+              >
+                {CONVERSATION_REPORT_REASONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <Field
+                aria-label="Detalhes da denúncia (opcional)"
+                placeholder="Descreva o que aconteceu (opcional)"
+                value={reportDetails}
+                onChange={(event) => setReportDetails(event.target.value)}
+                maxLength={500}
+              />
+              <Buttons>
+                <Action type="submit" disabled={action.isPending}>
+                  Enviar denúncia
+                </Action>
+                <Action $secondary type="button" onClick={() => setShowReport(false)}>
+                  Cancelar
+                </Action>
+              </Buttons>
+            </form>
+          )}
+          {reportSent && (
+            <Notice role="status" style={{ marginTop: 14 }}>
+              Denúncia enviada para análise.
+            </Notice>
+          )}
           {inviting && (
             <div style={{ marginTop: 24 }}>
               <PersonPicker

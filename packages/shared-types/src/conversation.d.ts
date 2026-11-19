@@ -26,11 +26,25 @@ export interface ConversationSummary {
     } | null;
     /** Mensagens recebidas desde a última vez que você abriu a conversa. */
     unreadCount: number;
+    /** Quando preenchido e no futuro, notificações desta conversa ficam silenciadas. */
+    mutedUntil?: string | null;
     members: {
         user: ConversationPerson;
         state: 'ACTIVE' | 'INVITED';
         role: ConversationRole;
     }[];
+}
+export type ConversationMuteDuration = '8h' | '1w' | 'forever' | 'off';
+export type ConversationReportReason = 'OFFENSIVE' | 'SPAM_OR_ADS' | 'SEXUAL_OR_VIOLENT' | 'FAKE_PROFILE' | 'PERSONAL_DATA' | 'OTHER';
+export declare const CONVERSATION_REPORT_REASONS: {
+    value: ConversationReportReason;
+    label: string;
+}[];
+export interface ConversationTypingEvent {
+    conversationId: string;
+    userId: string;
+    userName: string;
+    typing: boolean;
 }
 export interface ConversationsPage {
     items: ConversationSummary[];
@@ -64,4 +78,6 @@ export declare function conversationTime(iso: string, now?: Date): string;
 export declare function conversationUnreadLabel(count: number): string;
 export declare function conversationMemberLabel(count: number): string;
 export declare function conversationTitle(conversation: ConversationSummary, userId: string): string;
+export declare function conversationIsMuted(mutedUntil: string | null | undefined, now?: Date): boolean;
+export declare function conversationTypingLabel(names: string[]): string;
 //# sourceMappingURL=conversation.d.ts.map

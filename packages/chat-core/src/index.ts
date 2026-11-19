@@ -89,9 +89,54 @@ export interface ChatAttachment {
   height?: number
   durationMs?: number
 }
+export interface ChatReplyTo {
+  eventId: string
+  senderName?: string
+  excerpt: string
+}
+export interface ChatReactionSummary {
+  emoji: string
+  count: number
+  mine: boolean
+}
+export interface ChatCard {
+  kind: 'post' | 'report'
+  id: string
+  title?: string
+  url: string
+}
+export interface ChatSendOptions {
+  replyTo?: ChatReplyTo
+  forwarded?: boolean
+  card?: ChatCard
+}
+export interface ChatDecryptedReaction {
+  targetEventId: string
+  emoji: string
+  remove: boolean
+}
 export interface ChatDecryptedContent {
   text: string | null
   attachment?: ChatAttachment
+  replyTo?: ChatReplyTo
+  forwarded?: boolean
+  card?: ChatCard
+  reaction?: ChatDecryptedReaction
+}
+export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '🙏'] as const
+/** Detecta link interno de publicação ou relato do Votz para exibir cartão na bolha. */
+export function extractVotzCard(text: string): ChatCard | undefined {
+  const match = text.match(
+    /(?:https?:\/\/[^\s/]+)?\/(publicacoes|relatos)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+  )
+  if (!match) return undefined
+  const kind = match[1].toLowerCase() === 'publicacoes' ? 'post' : 'report'
+  const id = match[2].toLowerCase()
+  return {
+    kind,
+    id,
+    url: `/${match[1].toLowerCase()}/${id}`,
+  }
 }
 const MEDIA_MSGTYPE: Record<ChatMediaKind, string> = {
   image: 'm.image',
@@ -143,13 +188,83 @@ export function buildMediaEventContent(
     },
   }
 }
+function parseReply(content: Json): ChatReplyTo | undefined {
+  const raw = content['br.votz.reply'] as Json | undefined
+  const relId = (content['m.relates_to'] as Json | undefined)?.['m.in_reply_to']
+    ?.event_id
+  const eventId =
+    typeof raw?.eventId === 'string'
+      ? raw.eventId
+      : typeof relId === 'string'
+        ? relId
+        : null
+  if (!eventId || eventId.length > 200) return undefined
+  return {
+    eventId,
+    ...(typeof raw?.senderName === 'string' && raw.senderName.trim()
+      ? { senderName: raw.senderName.trim().slice(0, 80) }
+      : {}),
+    excerpt:
+      typeof raw?.excerpt === 'string'
+        ? raw.excerpt.trim().slice(0, 140)
+        : 'Mensagem',
+  }
+}
+function parseCard(content: Json, text: string | null): ChatCard | undefined {
+  const raw = content['br.votz.card'] as Json | undefined
+  if (
+    raw &&
+    (raw.kind === 'post' || raw.kind === 'report') &&
+    typeof raw.id === 'string' &&
+    /^[0-9a-f-]{36}$/i.test(raw.id)
+  ) {
+    return {
+      kind: raw.kind,
+      id: raw.id,
+      ...(typeof raw.title === 'string' && raw.title.trim()
+        ? { title: raw.title.trim().slice(0, 140) }
+        : {}),
+      url:
+        typeof raw.url === 'string' && raw.url.startsWith('/')
+          ? raw.url
+          : `/${raw.kind === 'post' ? 'publicacoes' : 'relatos'}/${raw.id}`,
+    }
+  }
+  return text ? extractVotzCard(text) : undefined
+}
 export function parseDecryptedMessage(content: Json): ChatDecryptedContent {
   if (!content || typeof content !== 'object')
     throw new Error('Conteúdo de mensagem inválido.')
+  if (content.msgtype === 'br.votz.reaction') {
+    if (
+      typeof content.targetEventId !== 'string' ||
+      content.targetEventId.length > 200 ||
+      typeof content.emoji !== 'string' ||
+      !content.emoji.trim() ||
+      content.emoji.length > 16
+    )
+      throw new Error('Reação inválida.')
+    return {
+      text: null,
+      reaction: {
+        targetEventId: content.targetEventId,
+        emoji: content.emoji.trim(),
+        remove: content.remove === true,
+      },
+    }
+  }
+  const replyTo = parseReply(content)
+  const forwarded = content['br.votz.forwarded'] === true ? true : undefined
   if (content.msgtype === 'm.text') {
     if (typeof content.body !== 'string' || content.body.length > 4000)
       throw new Error('Conteúdo de mensagem não suportado.')
-    return { text: content.body }
+    const card = parseCard(content, content.body)
+    return {
+      text: content.body,
+      ...(replyTo ? { replyTo } : {}),
+      ...(forwarded ? { forwarded } : {}),
+      ...(card ? { card } : {}),
+    }
   }
   const kind = MSGTYPE_TO_KIND[String(content.msgtype || '')]
   if (!kind) throw new Error('Conteúdo de mensagem não suportado.')
@@ -178,6 +293,8 @@ export function parseDecryptedMessage(content: Json): ChatDecryptedContent {
   const caption = body && body !== name ? body : ''
   return {
     text: caption,
+    ...(replyTo ? { replyTo } : {}),
+    ...(forwarded ? { forwarded } : {}),
     attachment: {
       kind,
       id,
@@ -200,6 +317,10 @@ export interface ChatMessage {
   senderName?: string
   text: string | null
   attachment?: ChatAttachment
+  replyTo?: ChatReplyTo
+  forwarded?: boolean
+  card?: ChatCard
+  reactions?: ChatReactionSummary[]
   createdAt: number
   status:
     | 'pending'
@@ -400,6 +521,11 @@ export interface ChatViewMessage {
   senderName: string | null
   body: string
   attachment: ChatViewAttachment | null
+  replyTo: ChatReplyTo | null
+  forwarded: boolean
+  card: (ChatCard & { label: string }) | null
+  reactions: ChatReactionSummary[]
+  canReact: boolean
   time: string
   meta: string
   retryTxnId: string | null
@@ -447,6 +573,13 @@ function formatMessageTime(createdAt: number | string): string {
     minute: '2-digit',
   })
 }
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
 /**
  * Tudo o que a pessoa lê na conversa, num só lugar: o web e o mobile
  * não repetem texto nem regra. Sem jargão: nada de "chave", "dispositivo"
@@ -456,6 +589,7 @@ export function chatView(
   state: ChatState | null,
   peerName: string,
   verified = state?.verification?.state === 'done',
+  searchQuery = '',
 ): ChatView {
   const isGroup = state?.room?.kind === 'GROUP'
   const banner = isGroup
@@ -546,7 +680,8 @@ export function chatView(
       cancelLabel: 'Cancelar',
     }
   }
-  const messages: ChatViewMessage[] = state.messages.map((message) => {
+  const query = normalizeSearch(searchQuery)
+  const allMessages: ChatViewMessage[] = state.messages.map((message) => {
     const own = message.sender === 'self'
     const time = formatMessageTime(message.createdAt)
     const statusText =
@@ -572,6 +707,22 @@ export function chatView(
             secret: message.attachment.secret,
           }
         : null,
+      replyTo: message.replyTo ?? null,
+      forwarded: message.forwarded === true,
+      card: message.card
+        ? {
+            ...message.card,
+            label:
+              message.card.kind === 'post'
+                ? 'Publicação no Votz'
+                : 'Relato no Votz',
+          }
+        : null,
+      reactions: message.reactions ?? [],
+      canReact:
+        !message.id.startsWith('pending:') &&
+        (message.text !== null || !!message.attachment) &&
+        canWrite,
       time,
       meta: own ? `${time} · ${statusText}` : time,
       retryTxnId:
@@ -580,6 +731,13 @@ export function chatView(
       canRetry: !!state.room?.canSend,
     }
   })
+  const messages = query
+    ? allMessages.filter((message) =>
+        normalizeSearch(
+          `${message.body} ${message.attachment?.name ?? ''} ${message.senderName ?? ''}`,
+        ).includes(query),
+      )
+    : allMessages
   const waitingPeer = !state.ready
     ? null
     : isGroup
@@ -605,12 +763,15 @@ export function chatView(
     canVerify,
     verification,
     messages,
-    emptyText:
-      !state.messages.length && state.ready && canWrite
-        ? isGroup
-          ? 'A conversa do grupo começa aqui.'
-          : 'A conversa de vocês começa aqui.'
-        : null,
+    emptyText: !messages.length
+      ? query
+        ? 'Nenhuma mensagem encontrada.'
+        : state.ready && canWrite
+          ? isGroup
+            ? 'A conversa do grupo começa aqui.'
+            : 'A conversa de vocês começa aqui.'
+          : null
+      : null,
     readReceipts: {
       enabled: state.readReceiptsEnabled,
       disabled: !state.ready || !state.connected,
@@ -1200,6 +1361,12 @@ export class ChatClient {
         ? await this.crypto.verification(room.peer)
         : { state: 'none' }
     this.update({ verification })
+    const reactionEvents: Array<{
+      ts: number
+      id: string
+      sender: string
+      reaction: ChatDecryptedReaction
+    }> = []
     for (const [id, event] of this.events) {
       if (
         event.type !== 'm.room.encrypted' ||
@@ -1238,6 +1405,10 @@ export class ChatClient {
         (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`))
       let text: string | null = null
       let attachment: ChatAttachment | undefined
+      let replyTo: ChatReplyTo | undefined
+      let forwarded: boolean | undefined
+      let card: ChatCard | undefined
+      let reaction: ChatDecryptedReaction | undefined
       let status: ChatMessage['status'] = !listed
         ? 'disconnected'
         : trusted
@@ -1258,9 +1429,14 @@ export class ChatClient {
           )
           if (typeof decoded === 'string') {
             text = decoded
+            card = extractVotzCard(decoded)
           } else {
             text = decoded.text
             attachment = decoded.attachment
+            replyTo = decoded.replyTo
+            forwarded = decoded.forwarded
+            card = decoded.card
+            reaction = decoded.reaction
           }
           status = id.startsWith('pending:')
             ? this.pending.find((item) => item.txnId === txn)?.failed
@@ -1272,6 +1448,18 @@ export class ChatClient {
         }
       }
       if (!this.active) return
+      if (reaction) {
+        this.messages.delete(id)
+        reactionEvents.push({
+          ts: Number.isFinite(event.origin_server_ts)
+            ? event.origin_server_ts
+            : 0,
+          id,
+          sender: event.sender,
+          reaction,
+        })
+        continue
+      }
       const receiptSummary = own ? this.receiptSummaries.get(id) : undefined
       this.messages.set(id, {
         id,
@@ -1281,6 +1469,9 @@ export class ChatClient {
           : {}),
         text,
         ...(attachment ? { attachment } : {}),
+        ...(replyTo ? { replyTo } : {}),
+        ...(forwarded ? { forwarded } : {}),
+        ...(card ? { card } : {}),
         createdAt: Number.isFinite(event.origin_server_ts)
           ? event.origin_server_ts
           : 0,
@@ -1298,6 +1489,41 @@ export class ChatClient {
           this.snapshot.readReceiptsEnabled && this.visible.has(id),
         )
     }
+    // Agrega reações cifradas em ordem cronológica por (mensagem, emoji, remetente).
+    reactionEvents.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id))
+    const byTarget = new Map<string, Map<string, Set<string>>>()
+    for (const item of reactionEvents) {
+      let emojis = byTarget.get(item.reaction.targetEventId)
+      if (!emojis) {
+        emojis = new Map()
+        byTarget.set(item.reaction.targetEventId, emojis)
+      }
+      let senders = emojis.get(item.reaction.emoji)
+      if (!senders) {
+        senders = new Set()
+        emojis.set(item.reaction.emoji, senders)
+      }
+      if (item.reaction.remove) senders.delete(item.sender)
+      else senders.add(item.sender)
+    }
+    for (const [id, message] of this.messages) {
+      const emojis = byTarget.get(id)
+      if (!emojis) {
+        delete message.reactions
+        continue
+      }
+      const list: ChatReactionSummary[] = []
+      for (const [emoji, senders] of emojis) {
+        if (!senders.size) continue
+        list.push({
+          emoji,
+          count: senders.size,
+          mine: senders.has(this.session.matrixUserId),
+        })
+      }
+      if (list.length) message.reactions = list
+      else delete message.reactions
+    }
     this.render()
   }
   async verification(action: VerificationAction) {
@@ -1313,7 +1539,7 @@ export class ChatClient {
       await this.refreshMessages()
     })
   }
-  async send(text: string) {
+  async send(text: string, options: ChatSendOptions = {}) {
     if (!text.trim() || text.length > 4000)
       throw new Error('A mensagem deve ter entre 1 e 4.000 caracteres.')
     if (this.pending.length >= 100)
@@ -1350,7 +1576,18 @@ export class ChatClient {
         this.session.matrixUserId,
       ])
       await this.crypto.pump(this.http)
-      const content = await this.crypto.encrypt(room.roomId, text)
+      const card = options.card ?? extractVotzCard(text)
+      const payload: string | Json =
+        options.replyTo || options.forwarded || card
+          ? {
+              msgtype: 'm.text',
+              body: text,
+              ...(options.replyTo ? { 'br.votz.reply': options.replyTo } : {}),
+              ...(options.forwarded ? { 'br.votz.forwarded': true } : {}),
+              ...(card ? { 'br.votz.card': card } : {}),
+            }
+          : text
+      const content = await this.crypto.encrypt(room.roomId, payload)
       const item: PendingChatMessage = {
         txnId: this.newId(),
         conversationId: this.conversationId,
@@ -1374,12 +1611,57 @@ export class ChatClient {
         id: `pending:${item.txnId}`,
         txnId: item.txnId,
         text,
+        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+        ...(options.forwarded ? { forwarded: true } : {}),
+        ...(card ? { card } : {}),
         sender: 'self',
         createdAt: item.createdAt,
         status: 'pending',
       })
       this.render()
       await this.flush()
+    })
+  }
+  /** Alterna uma reação de emoji cifrada de ponta a ponta em uma mensagem. */
+  async react(targetEventId: string, emoji: string) {
+    const clean = emoji.trim()
+    if (!targetEventId || targetEventId.startsWith('pending:') || !clean) return
+    return this.serial(async () => {
+      await this.refresh(false)
+      const room = this.snapshot.room
+      if (!room?.canSend || !this.hasAnyPeerDevice(room) || !this.hasTrustedPeer(room))
+        return
+      const target = this.messages.get(targetEventId)
+      const already = !!target?.reactions?.some((r) => r.emoji === clean && r.mine)
+      const peers = this.roomPeers(room)
+      await this.crypto.share(room.roomId, [
+        ...peers.map((peer) => peer.matrixUserId),
+        this.session.matrixUserId,
+      ])
+      await this.crypto.pump(this.http)
+      const content = await this.crypto.encrypt(room.roomId, {
+        msgtype: 'br.votz.reaction',
+        body: clean,
+        targetEventId,
+        emoji: clean,
+        remove: already,
+      })
+      const txnId = this.newId()
+      const result = await this.http(
+        `/${this.conversationId}/chat/messages/${encodeURIComponent(txnId)}`,
+        'PUT',
+        { revision: room.revision, content },
+      )
+      const eventId =
+        typeof result.event_id === 'string' ? result.event_id : `local:${txnId}`
+      this.events.set(eventId, {
+        event_id: eventId,
+        origin_server_ts: Date.now(),
+        sender: this.session.matrixUserId,
+        type: 'm.room.encrypted',
+        content,
+      })
+      await this.refreshMessages()
     })
   }
   /**

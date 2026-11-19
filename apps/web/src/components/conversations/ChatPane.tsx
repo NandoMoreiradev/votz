@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import {
+  ArrowBendUpLeft,
   ArrowLeft,
   LockKey,
+  MagnifyingGlass,
   Paperclip,
   PaperPlaneTilt,
+  ShareFat,
   ShieldCheck,
 } from '@phosphor-icons/react'
 import {
   ChatClient,
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
+  QUICK_REACTIONS,
   RESET_WARNING,
   chatError,
   chatView,
   mediaKindFromMime,
+  type ChatReplyTo,
   type ChatState,
   type ChatHttp,
   type ChatViewAttachment,
@@ -23,10 +28,13 @@ import {
 } from '@votz/chat-core'
 import {
   conversationTitle,
+  conversationTypingLabel,
   type ConversationSummary,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
+import { useConversationList } from '../../hooks/useConversations'
 import { api } from '../../lib/api'
+import { useTypingUsers } from '../../lib/chat-typing'
 import { webChatStorage } from '../../lib/chat-storage'
 import {
   WebChatLockBusyError,
@@ -218,6 +226,81 @@ const MediaBox = styled.div`
     max-width: 100%;
   }
 `
+const Quote = styled.div`
+  border-left: 3px solid ${({ theme }) => theme.colors.action};
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  background: rgba(26, 26, 46, 0.05);
+  border-radius: 6px;
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.muted};
+`
+const ForwardTag = styled.div`
+  font-size: 11px;
+  font-style: italic;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 4px;
+`
+const CardLink = styled(Link)`
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.primary};
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+`
+const ReactionRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+`
+const Pill = styled.button<{ $mine?: boolean }>`
+  border: 1px solid
+    ${({ theme, $mine }) => ($mine ? theme.colors.action : theme.colors.border)};
+  background: ${({ theme }) => theme.colors.white};
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+`
+const BubbleTools = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  button {
+    border: 0;
+    background: transparent;
+    color: ${({ theme }) => theme.colors.muted};
+    font-size: 12px;
+    padding: 2px 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+`
+const SearchBar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.neutral};
+  input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: ${({ theme }) => theme.colors.white};
+  }
+`
 const failureMessage = (failure: unknown) =>
   (failure as { response?: { data?: { message?: string } } }).response?.data
     ?.message ||
@@ -334,6 +417,9 @@ export function ChatPane({
   conversation: ConversationSummary
 }) {
   const userId = useAuthStore((state) => state.user!.id)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const conversations = useConversationList('active')
   const title = conversationTitle(conversation, userId)
   const [state, setState] = useState<ChatState | null>(null)
   // null: ainda lendo; true: navegador antigo com senha própria.
@@ -344,6 +430,42 @@ export function ChatPane({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
+  const [replyTo, setReplyTo] = useState<ChatReplyTo | null>(null)
+  const [forwardedDraft, setForwardedDraft] = useState(false)
+  const [forwardingText, setForwardingText] = useState<string | null>(null)
+  const typingNames = useTypingUsers(conversation.id)
+  const typingSentAt = useRef(0)
+  const typingActive = useRef(false)
+  const emitTyping = (typing: boolean) => {
+    const now = Date.now()
+    if (typing) {
+      if (typingActive.current && now - typingSentAt.current < 3000) return
+      typingActive.current = true
+      typingSentAt.current = now
+    } else {
+      if (!typingActive.current) return
+      typingActive.current = false
+      typingSentAt.current = 0
+    }
+    void api
+      .post(`/conversations/${conversation.id}/chat/typing`, { typing })
+      .catch(() => {})
+  }
+  useEffect(() => {
+    return () => {
+      if (typingActive.current) {
+        typingActive.current = false
+        void api
+          .post(`/conversations/${conversation.id}/chat/typing`, {
+            typing: false,
+          })
+          .catch(() => {})
+      }
+    }
+  }, [conversation.id])
+  const [showSearch, setShowSearch] = useState(false)
+  const [search, setSearch] = useState('')
+  const [reactMenuId, setReactMenuId] = useState<string | null>(null)
   const [pending, setPending] = useState<{ code: string } | null>(null)
   const [showVerify, setShowVerify] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -413,6 +535,15 @@ export function ChatPane({
       setPending(null)
     }
   }, [userId, conversation.id, attempt])
+  useEffect(() => {
+    const incoming = (location.state as { forwardText?: string } | null)
+      ?.forwardText
+    if (incoming) {
+      setDraft(incoming)
+      setForwardedDraft(true)
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.state, location.pathname, navigate])
   useEffect(() => {
     if (state?.reactivate) startOver()
   }, [state?.reactivate])
@@ -602,12 +733,27 @@ export function ChatPane({
     setBusy(true)
     setError('')
     try {
-      await client.current.send(draft)
+      await client.current.send(draft, {
+        ...(replyTo ? { replyTo } : {}),
+        ...(forwardedDraft ? { forwarded: true } : {}),
+      })
       setDraft('')
+      setReplyTo(null)
+      setForwardedDraft(false)
+      emitTyping(false)
     } catch (failure) {
       setError((failure as Error).message || chatError(failure))
     } finally {
       setBusy(false)
+    }
+  }
+  async function react(messageId: string, emoji: string) {
+    if (!client.current || busy) return
+    setReactMenuId(null)
+    try {
+      await client.current.react(messageId, emoji)
+    } catch (failure) {
+      setError(chatError(failure))
     }
   }
   async function attachFile(event: ChangeEvent<HTMLInputElement>) {
@@ -656,7 +802,10 @@ export function ChatPane({
       setBusy(false)
     }
   }
-  const view = chatView(state, title)
+  const view = chatView(state, title, undefined, showSearch ? search : '')
+  const forwardTargets = (
+    conversations.data?.pages.flatMap((page) => page.items) ?? []
+  ).filter((item) => item.id !== conversation.id && !item.archivedAt)
   return (
     <Box data-chat-pane>
       <Header>
@@ -665,8 +814,81 @@ export function ChatPane({
         </Link>
         <LockKey size={18} />
         <h1>{title}</h1>
+        <button
+          type="button"
+          aria-label="Buscar na conversa"
+          onClick={() => {
+            setShowSearch((value) => !value)
+            setSearch('')
+          }}
+          style={{
+            border: 0,
+            background: 'transparent',
+            cursor: 'pointer',
+            padding: 6,
+          }}
+        >
+          <MagnifyingGlass size={20} />
+        </button>
         <Link to={`/conversas/${conversation.id}?detalhes=1`}>Detalhes</Link>
       </Header>
+      {showSearch && (
+        <SearchBar>
+          <input
+            aria-label="Buscar mensagens"
+            placeholder="Buscar na conversa…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            autoFocus
+          />
+          <Button
+            $secondary
+            type="button"
+            onClick={() => {
+              setShowSearch(false)
+              setSearch('')
+            }}
+          >
+            Fechar
+          </Button>
+        </SearchBar>
+      )}
+      {forwardingText && (
+        <Card role="dialog" aria-label="Encaminhar mensagem">
+          <h3>Encaminhar para</h3>
+          {forwardTargets.length ? (
+            <Actions>
+              {forwardTargets.slice(0, 8).map((target) => (
+                <Button
+                  key={target.id}
+                  $secondary
+                  type="button"
+                  onClick={() => {
+                    const textToForward = forwardingText
+                    setForwardingText(null)
+                    navigate(`/conversas/${target.id}`, {
+                      state: { forwardText: textToForward },
+                    })
+                  }}
+                >
+                  {conversationTitle(target, userId)}
+                </Button>
+              ))}
+            </Actions>
+          ) : (
+            <p>Nenhuma outra conversa disponível.</p>
+          )}
+          <Actions>
+            <Button
+              $secondary
+              type="button"
+              onClick={() => setForwardingText(null)}
+            >
+              Cancelar
+            </Button>
+          </Actions>
+        </Card>
+      )}
       {pending ? (
         <Card role="status">
           <h2>{ENROLL_WAITING.title}</h2>
@@ -928,6 +1150,15 @@ export function ChatPane({
                 $own={message.own}
               >
                 {message.senderName && <strong>{message.senderName}</strong>}
+                {message.forwarded && <ForwardTag>Encaminhada</ForwardTag>}
+                {message.replyTo && (
+                  <Quote>
+                    {message.replyTo.senderName
+                      ? `${message.replyTo.senderName}: `
+                      : ''}
+                    {message.replyTo.excerpt}
+                  </Quote>
+                )}
                 {message.attachment && (
                   <AttachmentView
                     attachment={message.attachment}
@@ -937,6 +1168,85 @@ export function ChatPane({
                   />
                 )}
                 {message.body && <span>{message.body}</span>}
+                {message.card && (
+                  <CardLink to={message.card.url}>
+                    {message.card.label}
+                    {message.card.title ? ` · ${message.card.title}` : ''}
+                  </CardLink>
+                )}
+                {message.reactions.length > 0 && (
+                  <ReactionRow>
+                    {message.reactions.map((item) => (
+                      <Pill
+                        key={item.emoji}
+                        type="button"
+                        $mine={item.mine}
+                        onClick={() => {
+                          void react(message.id, item.emoji)
+                        }}
+                      >
+                        {item.emoji} {item.count}
+                      </Pill>
+                    ))}
+                  </ReactionRow>
+                )}
+                {message.canReact && (
+                  <BubbleTools>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReplyTo({
+                          eventId: message.id,
+                          senderName: message.own
+                            ? 'Você'
+                            : (message.senderName ?? title),
+                          excerpt:
+                            message.body ||
+                            message.attachment?.kindLabel ||
+                            'Mensagem',
+                        })
+                      }
+                    >
+                      <ArrowBendUpLeft size={14} />
+                      Responder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReactMenuId((id) =>
+                          id === message.id ? null : message.id,
+                        )
+                      }
+                    >
+                      Reagir
+                    </button>
+                    {message.body && (
+                      <button
+                        type="button"
+                        onClick={() => setForwardingText(message.body)}
+                      >
+                        <ShareFat size={14} />
+                        Encaminhar
+                      </button>
+                    )}
+                  </BubbleTools>
+                )}
+                {reactMenuId === message.id && (
+                  <ReactionRow>
+                    {QUICK_REACTIONS.map((emoji) => (
+                      <Pill
+                        key={emoji}
+                        type="button"
+                        aria-label={`Reagir com ${emoji}`}
+                        onClick={() => {
+                          void react(message.id, emoji)
+                        }}
+                      >
+                        {emoji}
+                      </Pill>
+                    ))}
+                  </ReactionRow>
+                )}
                 <small>{message.meta}</small>
                 {message.retryTxnId && (
                   <Button
@@ -979,6 +1289,29 @@ export function ChatPane({
               ⓘ
             </span>
           </Status>
+          {typingNames.length > 0 && (
+            <Status role="status" aria-live="polite">
+              <span>{conversationTypingLabel(typingNames)}</span>
+            </Status>
+          )}
+          {(replyTo || forwardedDraft) && (
+            <Note role="status">
+              <span>
+                {replyTo
+                  ? `Respondendo a ${replyTo.senderName || 'mensagem'}: ${replyTo.excerpt}`
+                  : 'Encaminhando mensagem'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setReplyTo(null)
+                  setForwardedDraft(false)
+                }}
+              >
+                Cancelar
+              </button>
+            </Note>
+          )}
           {uploadProgress !== null && (
             <Note role="status">
               <span>Enviando arquivo… {uploadProgress}%</span>
@@ -1013,7 +1346,12 @@ export function ChatPane({
               aria-label="Mensagem"
               placeholder={view.placeholder}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value
+                setDraft(value)
+                emitTyping(value.trim().length > 0)
+              }}
+              onBlur={() => emitTyping(false)}
               maxLength={4000}
               rows={1}
               disabled={!view.canWrite}

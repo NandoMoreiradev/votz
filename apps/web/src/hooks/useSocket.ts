@@ -3,6 +3,8 @@ import { io, Socket } from 'socket.io-client'
 import { useAuthStore } from '../store/auth.store'
 import { getToken } from '../lib/token'
 import { queryClient } from '../lib/query-client'
+import { clearTyping, recordTyping } from '../lib/chat-typing'
+import type { ConversationTypingEvent } from '@votz/shared-types'
 
 let socket: Socket | null = null
 
@@ -14,9 +16,10 @@ function getWsBase(): string {
 
 export function useSocket() {
   const userId = useAuthStore((s) => s.user?.id)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !sessionReady) {
       socket?.disconnect()
       socket = null
       return
@@ -39,6 +42,9 @@ export function useSocket() {
     socket.on('conversation:changed', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     })
+    socket.on('conversation:typing', (data: ConversationTypingEvent) => {
+      recordTyping(data)
+    })
     socket.on('connect', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     })
@@ -54,10 +60,11 @@ export function useSocket() {
     })
 
     return () => {
+      clearTyping()
       void queryClient.cancelQueries({ queryKey: ['conversations', userId] })
       queryClient.removeQueries({ queryKey: ['conversations', userId] })
       socket?.disconnect()
       socket = null
     }
-  }, [userId])
+  }, [userId, sessionReady])
 }

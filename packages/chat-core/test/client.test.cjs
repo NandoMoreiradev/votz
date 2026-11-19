@@ -948,3 +948,81 @@ test('sendMedia encrypts before upload, sends standard Matrix v2 metadata inside
   await f.client.stop()
   chatPreviews.clear()
 })
+
+
+// --- Etapa 3A: responder, reagir, encaminhar, buscar e cartões ---
+
+test('reply, reaction toggle, forwarded label, local search and Votz post/report cards work E2EE', async () => {
+  const { parseDecryptedMessage, extractVotzCard } = require('../src/index.js')
+  const postId = '11111111-1111-4111-8111-111111111111'
+  const reportId = '22222222-2222-4222-8222-222222222222'
+  assert.deepEqual(extractVotzCard(`Veja https://votz.app/publicacoes/${postId}`), {
+    kind: 'post',
+    id: postId,
+    url: `/publicacoes/${postId}`,
+  })
+  assert.deepEqual(extractVotzCard(`Olha /relatos/${reportId}`), {
+    kind: 'report',
+    id: reportId,
+    url: `/relatos/${reportId}`,
+  })
+
+  const f = fixture()
+  const payloads = new Map()
+  let seq = 0
+  const origHttp = f.client.http
+  f.client.http = async (path, method, body) => {
+    const res = await origHttp(path, method, body)
+    if (method === 'PUT' && path.includes('/chat/messages/')) {
+      seq += 1
+      return { event_id: `$ev_${seq}` }
+    }
+    return res
+  }
+  f.crypto.encrypt = async (_room, payload) => {
+    const token = `cipher:${payloads.size + 1}`
+    payloads.set(token, typeof payload === 'string' ? { msgtype: 'm.text', body: payload } : payload)
+    return {
+      algorithm: 'm.megolm.v1.aes-sha2',
+      ciphertext: token,
+      device_id: 'SELF',
+      sender_key: 'self-key',
+      session_id: 's1',
+    }
+  }
+  f.crypto.decrypt = async (_room, event) => parseDecryptedMessage(payloads.get(event.content.ciphertext))
+
+  await f.client.start()
+  await f.client.send(`Confira /relatos/${reportId}`)
+  const firstMsg = f.client.getState().messages[0]
+  assert.equal(firstMsg.card.kind, 'report')
+  assert.equal(firstMsg.card.id, reportId)
+
+  // Responder com citação + encaminhar com identificação.
+  await f.client.send('Concordo com você!', {
+    replyTo: { eventId: firstMsg.id, senderName: 'Você', excerpt: 'Confira /relatos/...' },
+    forwarded: true,
+  })
+  const secondMsg = f.client.getState().messages[1]
+  assert.equal(secondMsg.replyTo.eventId, firstMsg.id)
+  assert.equal(secondMsg.forwarded, true)
+
+  // Reagir adiciona emoji e reagir de novo remove (toggle), sem virar bolha.
+  await f.client.react(firstMsg.id, '👍')
+  assert.equal(f.client.getState().messages.length, 2, 'Reaction events never render as bubbles')
+  assert.deepEqual(f.client.getState().messages[0].reactions, [{ emoji: '👍', count: 1, mine: true }])
+  await f.client.react(firstMsg.id, '👍')
+  assert.equal(f.client.getState().messages[0].reactions, undefined, 'Toggling same emoji removes reaction')
+
+  // Busca local sem acento no chatView.
+  const hit = chatView(f.client.getState(), 'Bruno', false, 'voce')
+  assert.equal(hit.messages.length, 1)
+  assert.equal(hit.messages[0].body, 'Concordo com você!')
+  assert.equal(hit.messages[0].forwarded, true)
+  const miss = chatView(f.client.getState(), 'Bruno', false, 'inexistente')
+  assert.equal(miss.messages.length, 0)
+  assert.equal(miss.emptyText, 'Nenhuma mensagem encontrada.')
+
+  await f.client.stop()
+  chatPreviews.clear()
+})

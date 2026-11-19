@@ -81,10 +81,43 @@ export interface ChatAttachment {
     height?: number;
     durationMs?: number;
 }
+export interface ChatReplyTo {
+    eventId: string;
+    senderName?: string;
+    excerpt: string;
+}
+export interface ChatReactionSummary {
+    emoji: string;
+    count: number;
+    mine: boolean;
+}
+export interface ChatCard {
+    kind: 'post' | 'report';
+    id: string;
+    title?: string;
+    url: string;
+}
+export interface ChatSendOptions {
+    replyTo?: ChatReplyTo;
+    forwarded?: boolean;
+    card?: ChatCard;
+}
+export interface ChatDecryptedReaction {
+    targetEventId: string;
+    emoji: string;
+    remove: boolean;
+}
 export interface ChatDecryptedContent {
     text: string | null;
     attachment?: ChatAttachment;
+    replyTo?: ChatReplyTo;
+    forwarded?: boolean;
+    card?: ChatCard;
+    reaction?: ChatDecryptedReaction;
 }
+export declare const QUICK_REACTIONS: readonly ["👍", "❤️", "😂", "😮", "🙏"];
+/** Detecta link interno de publicação ou relato do Votz para exibir cartão na bolha. */
+export declare function extractVotzCard(text: string): ChatCard | undefined;
 export declare function mediaKindFromMime(mimeType: string): ChatMediaKind;
 export declare function mediaKindLabel(kind: ChatMediaKind): string;
 export declare function formatFileSize(bytes: number): string;
@@ -96,6 +129,10 @@ export interface ChatMessage {
     senderName?: string;
     text: string | null;
     attachment?: ChatAttachment;
+    replyTo?: ChatReplyTo;
+    forwarded?: boolean;
+    card?: ChatCard;
+    reactions?: ChatReactionSummary[];
     createdAt: number;
     status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unverified' | 'disconnected' | 'unavailable';
     /** Resumo de entrega/leitura em grupos (ex.: "Lida por 1 de 2"). */
@@ -236,6 +273,13 @@ export interface ChatViewMessage {
     senderName: string | null;
     body: string;
     attachment: ChatViewAttachment | null;
+    replyTo: ChatReplyTo | null;
+    forwarded: boolean;
+    card: (ChatCard & {
+        label: string;
+    }) | null;
+    reactions: ChatReactionSummary[];
+    canReact: boolean;
     time: string;
     meta: string;
     retryTxnId: string | null;
@@ -279,7 +323,7 @@ export interface ChatView {
  * não repetem texto nem regra. Sem jargão: nada de "chave", "dispositivo"
  * ou "ativar".
  */
-export declare function chatView(state: ChatState | null, peerName: string, verified?: boolean): ChatView;
+export declare function chatView(state: ChatState | null, peerName: string, verified?: boolean, searchQuery?: string): ChatView;
 /** Pedido de outro aparelho para usar a conta, em linguagem simples. */
 export declare function deviceRequestText(link: {
     label: string | null;
@@ -417,7 +461,9 @@ export declare class ChatClient {
     private poll;
     private refreshMessages;
     verification(action: VerificationAction): Promise<void>;
-    send(text: string): Promise<void>;
+    send(text: string, options?: ChatSendOptions): Promise<void>;
+    /** Alterna uma reação de emoji cifrada de ponta a ponta em uma mensagem. */
+    react(targetEventId: string, emoji: string): Promise<void>;
     /**
      * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
      * antes do upload. O servidor só armazena bytes opacos por 90 dias.

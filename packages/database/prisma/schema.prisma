@@ -479,6 +479,8 @@ model ConversationMember {
   state          ConversationMemberState @default(INVITED)
   // Mensagens recebidas desde a última vez que a pessoa abriu a conversa.
   unreadCount    Int @default(0) @map("unread_count")
+  // Quando preenchido e no futuro, notificações push desta conversa ficam silenciadas.
+  mutedUntil     DateTime? @map("muted_until")
   joinedAt       DateTime? @map("joined_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -1144,6 +1146,7 @@ enum FlagTargetType {
   COMMENT
   POST
   POST_COMMENT
+  CONVERSATION
 }
 
 enum FlagReason {

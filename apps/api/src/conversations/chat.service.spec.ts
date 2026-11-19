@@ -1014,3 +1014,42 @@ describe('ChatService: push discreto por aparelho (Etapa 2B)', () => {
     ).toBeNull()
   })
 })
+
+describe('ChatService: digitando efêmero e silenciar (Etapa 3B)', () => {
+  it('não enfileira push para membro que silenciou a conversa, mas mantém unreadCount', async () => {
+    const f = fixture()
+    const aDev = f.input()
+    await f.service.enroll(alice, aDev)
+    const bobMember = f.convo.members.find((m) => m.userId === bob.id) as unknown as {
+      mutedUntil?: Date | null
+    }
+    bobMember.mutedUntil = new Date(Date.now() + 60 * 60 * 1000)
+
+    f.matrix.request.mockResolvedValueOnce({ event_id: '$muted1' })
+    await f.service.send(alice, f.headers(aDev.id), 'c1', 'txn-m1', {
+      revision: 3,
+      content: {
+        algorithm: 'm.megolm.v1.aes-sha2',
+        ciphertext: 'cipher',
+        device_id: aDev.id,
+        sender_key: 'k',
+        session_id: 's',
+      },
+    })
+    expect(f.pushQueue.add).not.toHaveBeenCalled()
+    expect(f.convo.members.find((m) => m.userId === bob.id)?.unreadCount).toBe(1)
+  })
+
+  it('propaga aviso efêmero de digitando apenas aos outros participantes sem gravar no banco', async () => {
+    const f = fixture()
+    f.emit.mockClear()
+    await expect(f.service.typing(alice, 'c1', true)).resolves.toEqual({ ok: true })
+    expect(f.emit).toHaveBeenCalledTimes(1)
+    expect(f.emit).toHaveBeenCalledWith(bob.id, 'conversation:typing', {
+      conversationId: 'c1',
+      userId: alice.id,
+      userName: 'Alice',
+      typing: true,
+    })
+  })
+})

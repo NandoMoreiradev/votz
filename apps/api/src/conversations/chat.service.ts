@@ -985,7 +985,14 @@ export class ChatService {
               data: { unreadCount: { increment: 1 } },
             })
           notify = [actor.id, ...otherIds]
-          pushRecipients = otherIds
+          const nowMs = Date.now()
+          pushRecipients = c.members
+            .filter(
+              (m) =>
+                otherIds.includes(m.userId) &&
+                (!m.mutedUntil || m.mutedUntil.getTime() <= nowMs),
+            )
+            .map((m) => m.userId)
           pushEventId = result.event_id
         }
         return result
@@ -1044,6 +1051,25 @@ export class ChatService {
     // Outros aparelhos da própria conta limpam o contador na hora.
     if (result.count) this.invalidate([actor.id], id)
     return { unreadCount: 0 }
+  }
+  /** Aviso efêmero de "digitando...": nunca grava no banco, só propaga pelo socket. */
+  async typing(actor: ConversationActor, id: string, typing: boolean) {
+    this.guard(actor)
+    const { c, otherIds } = await this.conversation(actor, id, true)
+    const me = c.members.find((m) => m.userId === actor.id)
+    const userName = me?.user?.name || 'Alguém'
+    for (const userId of otherIds)
+      try {
+        this.events.emitToUser(userId, 'conversation:typing', {
+          conversationId: id,
+          userId: actor.id,
+          userName,
+          typing: Boolean(typing),
+        })
+      } catch {
+        /* Efêmero: falha de socket não afeta a conversa. */
+      }
+    return { ok: true }
   }
   async privacy(actor: ConversationActor, headers: DeviceHeaders) {
     await this.device(actor, headers)

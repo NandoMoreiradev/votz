@@ -23,6 +23,8 @@ import {
   DirectConversationDto,
   GroupConversationDto,
   InviteConversationDto,
+  MuteConversationDto,
+  ReportConversationDto,
   RespondConversationDto,
   RoleConversationDto,
 } from './conversations.dto'
@@ -120,5 +122,23 @@ export class ConversationsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.mutate(req.user, id, 'archive')
+  }
+  @Patch(':id/mute')
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  mute(
+    @Req() req: { user: ConversationActor },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: MuteConversationDto,
+  ) {
+    return this.service.mute(req.user, id, body.duration)
+  }
+  @Post(':id/report')
+  @Throttle({ long: { limit: 10, ttl: 3600000 } })
+  report(
+    @Req() req: { user: ConversationActor },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ReportConversationDto,
+  ) {
+    return this.service.report(req.user, id, body)
   }
 }
