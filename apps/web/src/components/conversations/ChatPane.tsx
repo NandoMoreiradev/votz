@@ -1,15 +1,23 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import {
   ArrowBendUpLeft,
   ArrowLeft,
+  Camera,
+  Check,
+  Checks,
+  Clock,
   LockKey,
   MagnifyingGlass,
+  Microphone,
   Paperclip,
   PaperPlaneTilt,
   ShareFat,
   ShieldCheck,
+  Stop,
+  Users,
+  WarningCircle,
 } from '@phosphor-icons/react'
 import {
   ChatClient,
@@ -20,6 +28,7 @@ import {
   chatError,
   chatView,
   mediaKindFromMime,
+  type ChatDeliveryIcon,
   type ChatReplyTo,
   type ChatState,
   type ChatHttp,
@@ -29,6 +38,8 @@ import {
 import {
   DEFAULT_CONVERSATION_SETTINGS,
   conversationFontSize,
+  conversationMemberLabel,
+  conversationTime,
   conversationTitle,
   conversationTypingLabel,
   type ConversationSummary,
@@ -62,13 +73,18 @@ const Header = styled.header`
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  min-height: 56px;
-  padding: 0 16px;
-  gap: 12px;
+  min-height: 60px;
+  padding: 6px 14px;
+  gap: 10px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.white};
   h1 {
-    flex: 1;
-    font-size: 17px;
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   a {
     color: ${({ theme }) => theme.colors.muted};
@@ -77,6 +93,74 @@ const Header = styled.header`
     display: flex;
     align-items: center;
   }
+`
+const HeaderIdentity = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`
+const HeaderStatus = styled.span<{ $active?: boolean }>`
+  font-size: 12px;
+  color: ${({ theme, $active }) => ($active ? theme.colors.positive : theme.colors.muted)};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+`
+const ChatAvatar = styled.span`
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme }) => theme.colors.white};
+  font-weight: 700;
+  font-size: 14px;
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`
+const DayChip = styled.div`
+  align-self: center;
+  padding: 4px 12px;
+  margin: 8px 0 4px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.muted};
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+const EmptyHint = styled.p`
+  text-align: center;
+  color: ${({ theme }) => theme.colors.muted};
+`
+const MetaRow = styled.small`
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-top: 5px;
+`
+const CheckRead = styled.span`
+  display: inline-flex;
+  color: ${({ theme }) => theme.colors.positive};
+`
+const CheckAlert = styled.span`
+  display: inline-flex;
+  color: ${({ theme }) => theme.colors.action};
 `
 const Card = styled.div`
   padding: 22px;
@@ -142,17 +226,51 @@ const History = styled.div<{ $wallpaper?: ConversationWallpaper }>`
         ? theme.colors.white
         : theme.colors.surfaceHover};
 `
-const Bubble = styled.div<{ $own: boolean; $fontSize?: number }>`
+const Bubble = styled.div<{ $own: boolean; $fontSize?: number; $first?: boolean }>`
+  position: relative;
   flex-shrink: 0;
   align-self: ${({ $own }) => ($own ? 'flex-end' : 'flex-start')};
   max-width: min(85%, 530px);
-  padding: 12px 15px;
-  border-radius: ${({ $own }) => ($own ? '18px 18px 4px 18px' : '18px 18px 18px 4px')};
-  background: ${({ theme, $own }) => ($own ? '#FFF0F1' : theme.colors.neutral)};
+  padding: 10px 14px;
+  margin-top: ${({ $first }) => ($first ? '6px' : '0')};
+  border-radius: ${({ $own, $first }) =>
+    $first
+      ? $own
+        ? '16px 4px 16px 16px'
+        : '4px 16px 16px 16px'
+      : '16px'};
+  border: 1px solid
+    ${({ theme, $own }) =>
+      $own
+        ? `color-mix(in srgb, ${theme.colors.action} 18%, ${theme.colors.border})`
+        : theme.colors.border};
+  background: ${({ theme, $own }) =>
+    $own
+      ? `color-mix(in srgb, ${theme.colors.action} 9%, ${theme.colors.white})`
+      : theme.colors.white};
   font-size: ${({ $fontSize }) => ($fontSize ? `${$fontSize}px` : '15px')};
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.5;
+  ${({ $first, $own, theme }) =>
+    $first
+      ? `
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      ${$own ? 'right: -6px;' : 'left: -6px;'}
+      width: 10px;
+      height: 10px;
+      background: ${
+        $own
+          ? `color-mix(in srgb, ${theme.colors.action} 9%, ${theme.colors.white})`
+          : theme.colors.white
+      };
+      clip-path: ${$own ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)'};
+    }
+  `
+      : ''}
   strong {
     display: block;
     font-size: 12px;
@@ -492,6 +610,9 @@ export function ChatPane({
   const sessionRef = useRef<WebChatSession | null>(null)
   const uploadAbort = useRef<AbortController | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const [recording, setRecording] = useState(false)
   const cleanup = useRef<() => void>(() => {})
   const abort = useRef(new AbortController())
   const bottom = useRef<HTMLDivElement>(null)
@@ -818,6 +939,87 @@ export function ChatPane({
       setBusy(false)
     }
   }
+  async function toggleAudioRecording() {
+    if (!client.current || !sessionRef.current || busy) return
+    if (recording && recorderRef.current) {
+      recorderRef.current.stop()
+      return
+    }
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setError('Gravação de áudio não está disponível neste navegador.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const chunks: BlobPart[] = []
+      const recorder = new MediaRecorder(stream)
+      recorderRef.current = recorder
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunks.push(ev.data)
+      }
+      recorder.onstop = async () => {
+        setRecording(false)
+        recorderRef.current = null
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        if (!blob.size || !client.current || !sessionRef.current) return
+        const controller = new AbortController()
+        uploadAbort.current = controller
+        setBusy(true)
+        setUploadProgress(0)
+        try {
+          const bytes = new Uint8Array(await blob.arrayBuffer())
+          await client.current.sendMedia({
+            kind: 'audio',
+            name: `audio-${Date.now()}.webm`,
+            mimeType: blob.type || 'audio/webm',
+            bytes,
+            upload: (ciphertext) =>
+              sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
+                signal: controller.signal,
+                onProgress: setUploadProgress,
+              }),
+          })
+        } catch (failure) {
+          if (!controller.signal.aborted) setError(failureMessage(failure))
+        } finally {
+          uploadAbort.current = null
+          setUploadProgress(null)
+          setBusy(false)
+        }
+      }
+      recorder.start()
+      setRecording(true)
+    } catch {
+      setError('Não foi possível acessar o microfone.')
+    }
+  }
+  const otherPerson = conversation.members.find((m) => m.user.id !== userId)?.user
+  const headerSubtitle =
+    typingNames.length > 0
+      ? conversationTypingLabel(typingNames)
+      : conversation.kind === 'GROUP'
+        ? conversationMemberLabel(conversation.memberCount)
+        : conversation.peerLastSeenAt
+          ? `Visto por último ${conversationTime(conversation.peerLastSeenAt)}`
+          : 'Protegida de ponta a ponta'
+  const renderDeliveryIcon = (icon: ChatDeliveryIcon | null) => {
+    if (!icon) return null
+    if (icon === 'clock') return <Clock size={13} aria-hidden="true" />
+    if (icon === 'check') return <Check size={13} aria-hidden="true" />
+    if (icon === 'checks') return <Checks size={14} aria-hidden="true" />
+    if (icon === 'checks-read')
+      return (
+        <CheckRead aria-hidden="true">
+          <Checks size={14} weight="bold" />
+        </CheckRead>
+      )
+    return (
+      <CheckAlert aria-hidden="true">
+        <WarningCircle size={13} />
+      </CheckAlert>
+    )
+  }
   const view = chatView(state, title, undefined, showSearch ? search : '')
   const forwardTargets = (
     conversations.data?.pages.flatMap((page) => page.items) ?? []
@@ -828,8 +1030,26 @@ export function ChatPane({
         <Link to="/conversas" aria-label="Voltar às conversas">
           <ArrowLeft size={23} />
         </Link>
-        <LockKey size={18} />
-        <h1>{title}</h1>
+        <ChatAvatar aria-hidden="true">
+          {conversation.kind === 'GROUP' ? (
+            <Users size={18} />
+          ) : otherPerson?.avatarUrl ? (
+            <img src={otherPerson.avatarUrl} alt="" />
+          ) : (
+            title
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((w) => w[0]?.toUpperCase() ?? '')
+              .join('')
+          )}
+        </ChatAvatar>
+        <HeaderIdentity>
+          <h1>{title}</h1>
+          <HeaderStatus $active={typingNames.length > 0}>
+            {typingNames.length === 0 && <LockKey size={12} aria-hidden="true" />}
+            {headerSubtitle}
+          </HeaderStatus>
+        </HeaderIdentity>
         <button
           type="button"
           aria-label="Buscar na conversa"
@@ -1162,12 +1382,16 @@ export function ChatPane({
               )}
             </div>
             {view.messages.map((message) => (
-              <Bubble
-                key={message.id}
-                data-message-id={message.id}
-                $own={message.own}
-                $fontSize={bubbleFontSize}
-              >
+              <Fragment key={message.id}>
+                {message.dayDivider && (
+                  <DayChip data-day-divider>{message.dayDivider}</DayChip>
+                )}
+                <Bubble
+                  data-message-id={message.id}
+                  $own={message.own}
+                  $fontSize={bubbleFontSize}
+                  $first={message.isFirstInGroup}
+                >
                 {message.senderName && <strong>{message.senderName}</strong>}
                 {message.forwarded && <ForwardTag>Encaminhada</ForwardTag>}
                 {message.replyTo && (
@@ -1266,7 +1490,10 @@ export function ChatPane({
                     ))}
                   </ReactionRow>
                 )}
-                <small>{message.meta}</small>
+                <MetaRow>
+                  <span>{message.meta}</span>
+                  {renderDeliveryIcon(message.deliveryIcon)}
+                </MetaRow>
                 {message.retryTxnId && (
                   <Button
                     $secondary
@@ -1280,13 +1507,10 @@ export function ChatPane({
                     {message.retryLabel}
                   </Button>
                 )}
-              </Bubble>
+                </Bubble>
+              </Fragment>
             ))}
-            {view.emptyText && (
-              <p style={{ textAlign: 'center', color: '#6B7280' }}>
-                {view.emptyText}
-              </p>
-            )}
+            {view.emptyText && <EmptyHint>{view.emptyText}</EmptyHint>}
             <div ref={bottom} />
           </History>
           <Status>
@@ -1352,18 +1576,38 @@ export function ChatPane({
                 void attachFile(event)
               }}
             />
+            <input
+              ref={cameraInput}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              aria-label="Tirar foto"
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                void attachFile(event)
+              }}
+            />
             <Button
               $secondary
               type="button"
               aria-label="Anexar arquivo"
-              disabled={!view.canWrite || busy}
+              disabled={!view.canWrite || busy || recording}
               onClick={() => fileInput.current?.click()}
             >
               <Paperclip size={20} />
             </Button>
+            <Button
+              $secondary
+              type="button"
+              aria-label="Enviar foto"
+              disabled={!view.canWrite || busy || recording}
+              onClick={() => cameraInput.current?.click()}
+            >
+              <Camera size={20} />
+            </Button>
             <textarea
               aria-label="Mensagem"
-              placeholder={view.placeholder}
+              placeholder={recording ? 'Gravando áudio…' : view.placeholder}
               value={draft}
               onChange={(event) => {
                 const value = event.target.value
@@ -1373,12 +1617,25 @@ export function ChatPane({
               onBlur={() => emitTyping(false)}
               maxLength={4000}
               rows={1}
-              disabled={!view.canWrite}
+              disabled={!view.canWrite || recording}
             />
+            {!draft.trim() && (
+              <Button
+                $secondary={!recording}
+                type="button"
+                aria-label={recording ? 'Parar e enviar áudio' : 'Gravar áudio'}
+                disabled={!view.canWrite || busy}
+                onClick={() => {
+                  void toggleAudioRecording()
+                }}
+              >
+                {recording ? <Stop size={20} /> : <Microphone size={20} />}
+              </Button>
+            )}
             <Button
               type="submit"
               aria-label="Enviar mensagem"
-              disabled={!view.canWrite || busy || !draft.trim()}
+              disabled={!view.canWrite || busy || recording || !draft.trim()}
             >
               <PaperPlaneTilt size={22} />
             </Button>

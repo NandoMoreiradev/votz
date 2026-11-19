@@ -24,6 +24,7 @@ import {
   GroupConversationDto,
   InviteConversationDto,
   MuteConversationDto,
+  PinConversationDto,
   ReportConversationDto,
   RespondConversationDto,
   RoleConversationDto,
@@ -144,6 +145,15 @@ export class ConversationsController {
     @Body() body: MuteConversationDto,
   ) {
     return this.service.mute(req.user, id, body.duration)
+  }
+  @Patch(':id/pin')
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  pin(
+    @Req() req: { user: ConversationActor },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: PinConversationDto,
+  ) {
+    return this.service.pin(req.user, id, body.pinned)
   }
   @Post(':id/report')
   @Throttle({ long: { limit: 10, ttl: 3600000 } })

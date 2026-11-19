@@ -355,10 +355,49 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
         };
     }
     const query = normalizeSearch(searchQuery);
+    const now = new Date();
+    const dayStamp = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayStamp = dayStamp(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayStamp = dayStamp(yesterday);
+    const formatDayDivider = (ts) => {
+        const d = new Date(ts);
+        if (Number.isNaN(d.getTime()))
+            return 'Hoje';
+        const key = dayStamp(d);
+        if (key === todayStamp)
+            return 'Hoje';
+        if (key === yesterdayStamp)
+            return 'Ontem';
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    };
+    const deliveryIconFor = (own, status, summary) => {
+        if (!own)
+            return null;
+        if (status === 'failed')
+            return 'alert';
+        if (status === 'pending')
+            return 'clock';
+        if (status === 'read' || (summary && summary.startsWith('Lida')))
+            return 'checks-read';
+        if (status === 'delivered' || (summary && summary.startsWith('Entregue')))
+            return 'checks';
+        return 'check';
+    };
+    let prevDayKey = '';
+    let prevAuthor = '';
     const allMessages = state.messages.map((message) => {
         const own = message.sender === 'self';
         const time = formatMessageTime(message.createdAt);
         const statusText = message.receiptSummary ?? messageStatusLabel(message.status);
+        const d = new Date(message.createdAt);
+        const dayKey = Number.isNaN(d.getTime()) ? todayStamp : dayStamp(d);
+        const dayDivider = dayKey !== prevDayKey ? formatDayDivider(message.createdAt) : null;
+        const authorKey = own ? 'self' : (message.senderName ?? 'peer');
+        const isFirstInGroup = dayKey !== prevDayKey || authorKey !== prevAuthor;
+        prevDayKey = dayKey;
+        prevAuthor = authorKey;
         return {
             id: message.id,
             own,
@@ -395,6 +434,10 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
                 canWrite,
             time,
             meta: own ? `${time} · ${statusText}` : time,
+            dayKey,
+            dayDivider,
+            isFirstInGroup,
+            deliveryIcon: deliveryIconFor(own, message.status, message.receiptSummary),
             retryTxnId: message.status === 'failed' && message.txnId ? message.txnId : null,
             retryLabel: 'Tentar enviar novamente',
             canRetry: !!state.room?.canSend,

@@ -282,6 +282,14 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
                 }
               />
             )}
+            <Button
+              secondary
+              title={conversation.pinnedAt ? 'Desafixar conversa' : 'Fixar no topo'}
+              disabled={action.isPending}
+              onPress={() => {
+                void run(`/${id}/pin`, { pinned: !conversation.pinnedAt }, 'PATCH')
+              }}
+            />
             {conversationIsMuted(conversation.mutedUntil) ? (
               <Button
                 secondary

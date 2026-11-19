@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BellSlash, ChatCircle, Flag, GearSix, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
+import { ArrowLeft, BellSlash, ChatCircle, Flag, GearSix, Plus, PushPin, ShieldCheck, Users } from '@phosphor-icons/react'
 import styled from 'styled-components'
 import {
   CONVERSATION_REPORT_REASONS,
@@ -44,14 +44,18 @@ const deviceName = (device: { label: string | null; platform: string }) =>
   device.label || PLATFORM[device.platform] || device.platform
 
 const Shell = styled.main`
-  max-width: 760px;
+  max-width: 1180px;
   margin: auto;
   min-height: calc(100dvh - 56px);
   background: ${({ theme }) => theme.colors.white};
   border-inline: 1px solid ${({ theme }) => theme.colors.border};
-  padding-bottom: 40px;
-  &:has([data-chat-pane]) { padding-bottom: 0; height: calc(100dvh - 56px); min-height: 0; overflow: hidden; }
-  &:has([data-chat-pane]) > header { display: none; }
+  display: flex;
+  flex-direction: column;
+  @media (min-width: 960px) {
+    flex-direction: row;
+    height: calc(100dvh - 56px);
+    overflow: hidden;
+  }
   h1 {
     font-size: 21px;
     margin: 0;
@@ -82,6 +86,50 @@ const Shell = styled.main`
     opacity: 0.5;
     cursor: default;
   }
+`
+const Sidebar = styled.aside<{ $hiddenOnMobile?: boolean }>`
+  display: ${({ $hiddenOnMobile }) => ($hiddenOnMobile ? 'none' : 'flex')};
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  @media (min-width: 960px) {
+    display: flex;
+    width: 340px;
+    flex-shrink: 0;
+    height: 100%;
+    overflow-y: auto;
+    border-right: 1px solid ${({ theme }) => theme.colors.border};
+  }
+`
+const Stage = styled.div<{ $hiddenOnMobile?: boolean }>`
+  display: ${({ $hiddenOnMobile }) => ($hiddenOnMobile ? 'none' : 'flex')};
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  &:has([data-chat-pane]) > header {
+    display: none;
+  }
+  @media (min-width: 960px) {
+    display: flex;
+    height: 100%;
+    overflow-y: auto;
+    &:has([data-chat-pane]) {
+      overflow: hidden;
+    }
+  }
+`
+const EmptyStage = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  gap: 10px;
+  color: ${({ theme }) => theme.colors.muted};
+  background: ${({ theme }) => theme.colors.surfaceHover};
 `
 const Header = styled.header`
   height: 60px;
@@ -186,6 +234,9 @@ function InboxLine({ item, userId }: { item: ConversationSummary; userId: string
       <LineTop>
         <strong>{conversationTitle(item, userId)}</strong>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {item.pinnedAt && (
+            <PushPin size={14} weight="fill" aria-label="Conversa fixada" />
+          )}
           {conversationIsMuted(item.mutedUntil) && (
             <BellSlash size={15} aria-label="Notificações silenciadas" />
           )}
@@ -392,23 +443,13 @@ export function Conversations() {
   return (
     <>
       <Navbar />
-      <Shell>
-        <Header>
-          <Link to={sub ? '/conversas' : '/'} aria-label="Voltar">
-            <ArrowLeft size={23} />
-          </Link>
-          <h1>
-            {create
-              ? 'Nova conversa'
-              : id
-                ? 'Detalhes da conversa'
-                : devices
-                  ? 'Aparelhos conectados'
-                  : settings
-                    ? 'Configurações de conversas'
-                    : 'Conversas'}
-          </h1>
-          {!sub && (
+      <Shell data-split-layout>
+        <Sidebar $hiddenOnMobile={!!sub}>
+          <Header>
+            <Link to="/" aria-label="Voltar">
+              <ArrowLeft size={23} />
+            </Link>
+            <h1>Conversas</h1>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
               <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
                 <GearSix size={22} />
@@ -417,28 +458,55 @@ export function Conversations() {
                 <Plus size={24} />
               </Link>
             </span>
+          </Header>
+          <ConversationGate>
+            <ConversationInbox activeId={id} />
+          </ConversationGate>
+        </Sidebar>
+        <Stage $hiddenOnMobile={!sub}>
+          {sub && (
+            <Header>
+              <Link to="/conversas" aria-label="Voltar às conversas">
+                <ArrowLeft size={23} />
+              </Link>
+              <h1>
+                {create
+                  ? 'Nova conversa'
+                  : id
+                    ? 'Detalhes da conversa'
+                    : devices
+                      ? 'Aparelhos conectados'
+                      : settings
+                        ? 'Configurações de conversas'
+                        : 'Pessoas bloqueadas'}
+              </h1>
+            </Header>
           )}
-        </Header>
-        <ConversationGate>
-          {settings ? (
-            <ConversationSettingsView />
-          ) : devices ? (
-            <ChatDevices />
-          ) : blocked ? (
-            <BlockedPeople />
-          ) : create ? (
-            <CreateConversation />
-          ) : id ? (
-            <ConversationDetail key={id} id={id} />
-          ) : (
-            <ConversationInbox />
-          )}
-        </ConversationGate>
+          <ConversationGate>
+            {settings ? (
+              <ConversationSettingsView />
+            ) : devices ? (
+              <ChatDevices />
+            ) : blocked ? (
+              <BlockedPeople />
+            ) : create ? (
+              <CreateConversation />
+            ) : id ? (
+              <ConversationDetail key={id} id={id} />
+            ) : (
+              <EmptyStage>
+                <ChatCircle size={44} />
+                <h2>Suas conversas no Votz</h2>
+                <p>Selecione uma conversa à esquerda ou inicie uma nova.</p>
+              </EmptyStage>
+            )}
+          </ConversationGate>
+        </Stage>
       </Shell>
     </>
   )
 }
-function ConversationInbox() {
+function ConversationInbox({ activeId }: { activeId?: string }) {
   const [folder, setFolder] = useState<'active' | 'requests'>('active')
   const list = useConversationList(folder)
   const action = useConversationAction()
@@ -489,7 +557,14 @@ function ConversationInbox() {
         </Section>
       ) : null}
       {items.map((item) => (
-        <ListItem key={item.id}>
+        <ListItem
+          key={item.id}
+          style={
+            activeId === item.id
+              ? { background: 'var(--votz-active-chat, rgba(0,0,0,0.04))' }
+              : undefined
+          }
+        >
           <Row>
             <Portrait
               group={item.kind === 'GROUP'}
@@ -1072,6 +1147,16 @@ function ConversationDetail({ id }: { id: string }) {
                 Bloquear pessoa
               </Action>
             )}
+            <Action
+              $secondary
+              disabled={action.isPending}
+              onClick={() => {
+                void run(`/${id}/pin`, { pinned: !conversation.pinnedAt }, 'PATCH')
+              }}
+            >
+              <PushPin size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {conversation.pinnedAt ? 'Desafixar conversa' : 'Fixar no topo'}
+            </Action>
             {conversationIsMuted(conversation.mutedUntil) ? (
               <Action
                 $secondary

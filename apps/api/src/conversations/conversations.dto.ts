@@ -70,6 +70,11 @@ export class MuteConversationDto {
   @IsIn(['8h', '1w', 'forever', 'off'])
   duration!: '8h' | '1w' | 'forever' | 'off'
 }
+export class PinConversationDto {
+  @Transform(({ obj }) => obj.pinned)
+  @IsBoolean()
+  pinned!: boolean
+}
 export class ReportConversationDto {
   @IsIn(['OFFENSIVE', 'SPAM_OR_ADS', 'SEXUAL_OR_VIOLENT', 'FAKE_PROFILE', 'PERSONAL_DATA', 'OTHER'])
   reason!: 'OFFENSIVE' | 'SPAM_OR_ADS' | 'SEXUAL_OR_VIOLENT' | 'FAKE_PROFILE' | 'PERSONAL_DATA' | 'OTHER'

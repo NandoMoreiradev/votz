@@ -28,6 +28,8 @@ export interface ConversationSummary {
     unreadCount: number;
     /** Quando preenchido e no futuro, notificações desta conversa ficam silenciadas. */
     mutedUntil?: string | null;
+    /** Quando preenchido, conversa fixada no topo da lista. */
+    pinnedAt?: string | null;
     /** Último acesso do contato em conversas individuais, respeitando reciprocidade de privacidade. */
     peerLastSeenAt?: string | null;
     members: {

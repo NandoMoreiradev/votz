@@ -183,10 +183,10 @@ Tela própria, no web (`/conversas/configuracoes`) e no mobile (`/conversation/s
 
 ### Etapa 7 — Refino visual (final)
 
-- [ ] Layout de conversa muito próximo do WhatsApp: balões com cauda, agrupamento por dia, divisores, status por ícone (relógio, um check, dois checks, dois checks azuis), barra de entrada com anexo, câmera e microfone, cabeçalho com avatar e status
-- [ ] Lista de conversas: avatar, prévia, horário, não lidas, fixar, silenciar
-- [ ] Responsivo no web (lista e conversa lado a lado em telas grandes) e acessível
-- [ ] Mantém tokens e fontes do tema do Votz; nunca cores fixas no código
+- [x] Layout de conversa estilo WhatsApp no Web e no Mobile: balões com cauda/agrupamento por sequência, divisores de dia (`Hoje`/`Ontem`/data), status por ícone (relógio, 1 check, 2 checks, 2 checks destacados), barra de entrada com anexo, câmera/foto e gravação de áudio E2EE, cabeçalho com avatar e status ao vivo (`digitando...` / `Visto por último` / participantes)
+- [x] Lista de conversas: avatar, prévia, horário, não lidas, fixar no topo (`PATCH /conversations/:id/pin`), silenciar (`BellSlash`)
+- [x] Responsivo no web (split-pane lista + conversa lado a lado em telas ≥ 960 px; empilhado sem overflow em 1440, 390 e 320 px) e acessível
+- [x] Mantém tokens e fontes do tema do Votz sem cores fixas em `ChatPane` (verificado: API 55/55, `chat-core` 36/36, `tsc --noEmit` Web + Mobile, Chromium E2E `chat-experience.browser.cjs` 9/9 + `chat-settings.browser.cjs` 4/4)
 
 ## Critérios de pronto por etapa
 

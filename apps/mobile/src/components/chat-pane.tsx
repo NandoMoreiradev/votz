@@ -12,6 +12,11 @@ import {
 import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import { router, useFocusEffect } from 'expo-router'
+import AlertCircle from 'lucide-react-native/icons/circle-alert'
+import Camera from 'lucide-react-native/icons/camera'
+import Check from 'lucide-react-native/icons/check'
+import CheckCheck from 'lucide-react-native/icons/check-check'
+import Clock from 'lucide-react-native/icons/clock'
 import Paperclip from 'lucide-react-native/icons/paperclip'
 import Search from 'lucide-react-native/icons/search'
 import Send from 'lucide-react-native/icons/send'
@@ -373,12 +378,17 @@ export function ChatPane({
       setError((failure as Error).message || chatError(failure))
     }
   }
-  async function attachMedia() {
+  async function attachMedia(fromCamera = false) {
     if (!runtime || busy) return
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.85,
-    })
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 0.85,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images', 'videos'],
+          quality: 0.85,
+        })
     const asset = result.canceled ? null : result.assets[0]
     if (!asset) return
     const controller = new AbortController()
@@ -681,9 +691,19 @@ export function ChatPane({
             initialNumToRender={20}
             windowSize={7}
             renderItem={({ item }) => (
-              <View
-                style={[styles.bubble, item.own ? styles.own : styles.peer]}
-              >
+              <View>
+                {item.dayDivider && (
+                  <View style={styles.dayChip}>
+                    <Text style={styles.dayChipText}>{item.dayDivider}</Text>
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.bubble,
+                    item.own ? styles.own : styles.peer,
+                    item.isFirstInGroup && (item.own ? styles.ownFirst : styles.peerFirst),
+                  ]}
+                >
                 {item.senderName && (
                   <Text style={styles.sender}>{item.senderName}</Text>
                 )}
@@ -811,7 +831,24 @@ export function ChatPane({
                     ))}
                   </View>
                 )}
-                <Text style={styles.time}>{item.meta}</Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.time}>{item.meta}</Text>
+                  {item.deliveryIcon === 'clock' && (
+                    <Clock size={12} color={theme.colors.muted} />
+                  )}
+                  {item.deliveryIcon === 'check' && (
+                    <Check size={12} color={theme.colors.muted} />
+                  )}
+                  {item.deliveryIcon === 'checks' && (
+                    <CheckCheck size={13} color={theme.colors.muted} />
+                  )}
+                  {item.deliveryIcon === 'checks-read' && (
+                    <CheckCheck size={13} color={theme.colors.positive} />
+                  )}
+                  {item.deliveryIcon === 'alert' && (
+                    <AlertCircle size={12} color={theme.colors.action} />
+                  )}
+                </View>
                 {item.retryTxnId && (
                   <Button
                     title={item.retryLabel}
@@ -824,6 +861,7 @@ export function ChatPane({
                     }}
                   />
                 )}
+                </View>
               </View>
             )}
             ListEmptyComponent={
@@ -901,11 +939,22 @@ export function ChatPane({
               accessibilityLabel="Anexar foto ou vídeo"
               disabled={!view.canWrite || busy}
               onPress={() => {
-                void attachMedia()
+                void attachMedia(false)
               }}
               style={[styles.attach, (!view.canWrite || busy) && { opacity: 0.4 }]}
             >
               <Paperclip size={20} color={theme.colors.primary} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Tirar foto"
+              disabled={!view.canWrite || busy}
+              onPress={() => {
+                void attachMedia(true)
+              }}
+              style={[styles.attach, (!view.canWrite || busy) && { opacity: 0.4 }]}
+            >
+              <Camera size={20} color={theme.colors.primary} />
             </Pressable>
             <View style={{ flex: 1 }}>
               <Field
@@ -945,6 +994,36 @@ export function ChatPane({
   )
 }
 const styles = StyleSheet.create({
+  dayChip: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginVertical: 6,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  dayChipText: {
+    fontSize: 12,
+    fontFamily: theme.fonts.medium,
+    color: theme.colors.muted,
+  },
+  ownFirst: {
+    borderTopRightRadius: 4,
+    marginTop: 6,
+  },
+  peerFirst: {
+    borderTopLeftRadius: 4,
+    marginTop: 6,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 4,
+  },
   name: {
     fontSize: 16,
     fontFamily: theme.fonts.medium,

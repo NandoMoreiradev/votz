@@ -267,6 +267,7 @@ export interface ChatViewAttachment {
     kindLabel: string;
     secret: string;
 }
+export type ChatDeliveryIcon = 'clock' | 'check' | 'checks' | 'checks-read' | 'alert';
 export interface ChatViewMessage {
     id: string;
     own: boolean;
@@ -282,6 +283,10 @@ export interface ChatViewMessage {
     canReact: boolean;
     time: string;
     meta: string;
+    dayKey: string;
+    dayDivider: string | null;
+    isFirstInGroup: boolean;
+    deliveryIcon: ChatDeliveryIcon | null;
     retryTxnId: string | null;
     retryLabel: string;
     canRetry: boolean;

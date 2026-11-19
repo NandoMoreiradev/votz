@@ -96,8 +96,8 @@ async function send(page, text) {
   const reportId = '22222222-2222-4222-8222-222222222222'
   const msg1 = `Olha esse problema /relatos/${reportId}`
   await send(pageA, msg1)
-  await pageB.getByText(msg1, { exact: true }).waitFor()
-  const cardLink = pageB.getByRole('link', { name: /Relato no Votz/ })
+  await pageB.locator('[data-chat-pane]').getByText(msg1, { exact: true }).waitFor()
+  const cardLink = pageB.locator('[data-chat-pane]').getByRole('link', { name: /Relato no Votz/ })
   await cardLink.waitFor()
   assert.equal(await cardLink.getAttribute('href'), `/relatos/${reportId}`)
   console.log('PASS: Votz report link renders clickable card inside E2EE bubble')
@@ -108,7 +108,7 @@ async function send(page, text) {
   await pageB.getByText(/Respondendo a/).waitFor()
   const replyText = `Vou apoiar agora! ${run}`
   await send(pageB, replyText)
-  await pageA.getByText(replyText, { exact: true }).waitFor()
+  await pageA.locator('[data-chat-pane]').getByText(replyText, { exact: true }).waitFor()
   const replyBubbleA = pageA.locator('[data-message-id]').filter({ hasText: replyText })
   assert.ok((await replyBubbleA.innerText()).includes('Olha esse problema'), 'Quoted excerpt is visible on reply')
   console.log('PASS: E2EE reply quote delivered and displayed')
@@ -129,7 +129,7 @@ async function send(page, text) {
   await composerReady(pageB)
   await pageB.getByText('Encaminhando mensagem').waitFor()
   await pageB.getByRole('button', { name: 'Enviar mensagem', exact: true }).click()
-  await pageC.getByText(replyText, { exact: true }).waitFor()
+  await pageC.locator('[data-chat-pane]').getByText(replyText, { exact: true }).waitFor()
   const forwardedBubbleC = pageC.locator('[data-message-id]').filter({ hasText: replyText })
   assert.ok((await forwardedBubbleC.innerText()).includes('Encaminhada'), 'Forwarded label is shown to recipient')
   console.log('PASS: forwarded message delivered E2EE with Encaminhada label')
@@ -148,7 +148,7 @@ async function send(page, text) {
   await pageB.goto(base + `/conversas/${ab.id}`, { waitUntil: 'domcontentloaded' })
   await composerReady(pageB)
   await pageA.getByLabel('Mensagem', { exact: true }).fill('Digitando teste')
-  await pageB.getByText('QA está digitando...').waitFor()
+  await pageB.getByText('QA está digitando...').first().waitFor()
   await pageA.getByLabel('Mensagem', { exact: true }).fill('')
   console.log('PASS: ephemeral typing indicator propagates over Socket.IO')
 
@@ -176,12 +176,17 @@ async function send(page, text) {
   assert.ok(flag, 'Conversation report stored in content_flags')
   console.log('PASS: conversation report persisted in content_flags without plaintext')
 
-  // 8) Responsivo.
+  // 8) Etapa 7: Fixar conversa, divisor de dia ("Hoje"), botões de câmera/áudio e layout split-pane + responsivo.
+  await pageB.getByRole('button', { name: 'Fixar no topo' }).click()
+  await pageB.getByRole('button', { name: 'Desafixar conversa' }).waitFor()
+  await pageA.locator('[data-day-divider]').filter({ hasText: 'Hoje' }).waitFor()
+  await pageA.getByRole('button', { name: 'Enviar foto' }).waitFor()
+  await pageA.getByRole('button', { name: 'Gravar áudio' }).waitFor()
   for (const width of [1440, 390, 320]) {
     await pageA.setViewportSize({ width, height: 950 })
     assert.equal(await pageA.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   }
-  console.log('PASS: Etapa 3 UI responsive at 1440, 390 and 320 px')
+  console.log('PASS: Etapa 7 visual layout (split-pane, day divider, pin, camera/audio, responsive 1440/390/320)')
 })()
   .catch((error) => {
     console.error(String(error.stack || error).split('\n').slice(0, 8).join('\n'))

@@ -154,6 +154,7 @@ export class ConversationsService {
           : null,
       unreadCount: me.state === 'ACTIVE' ? me.unreadCount : 0,
       mutedUntil: me.mutedUntil ? me.mutedUntil.toISOString() : null,
+      pinnedAt: me.pinnedAt ? me.pinnedAt.toISOString() : null,
     }
     // Pending group invitations never expose the participant roster.
     return {
@@ -217,7 +218,13 @@ export class ConversationsService {
       { isolationLevel: 'RepeatableRead' },
     )
     return {
-      items: rows.map((c) => this.view(c, actor.id)),
+      items: rows
+        .map((c) => this.view(c, actor.id))
+        .sort((a, b) => {
+          const ap = a.pinnedAt ? new Date(a.pinnedAt).getTime() : 0
+          const bp = b.pinnedAt ? new Date(b.pinnedAt).getTime() : 0
+          return bp - ap
+        }),
       total,
       page: query.page,
       limit: query.limit,
@@ -550,6 +557,19 @@ export class ConversationsService {
     return {
       conversationId: id,
       mutedUntil: mutedUntil ? mutedUntil.toISOString() : null,
+    }
+  }
+  async pin(actor: ConversationActor, id: string, pinned: boolean) {
+    this.guard(actor)
+    const pinnedAt = pinned ? new Date() : null
+    const updated = await this.db.conversationMember.updateMany({
+      where: { conversationId: id, userId: actor.id, state: 'ACTIVE' },
+      data: { pinnedAt },
+    })
+    if (!updated.count) throw new NotFoundException()
+    return {
+      conversationId: id,
+      pinnedAt: pinnedAt ? pinnedAt.toISOString() : null,
     }
   }
   async report(
