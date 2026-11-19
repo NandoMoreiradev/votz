@@ -119,10 +119,19 @@ const backToList = async (page) => {
   assert.ok(closedRow.includes('Mensagem protegida'), 'The list says the message is protected instead')
   console.log('PASS: unread badge appears for a closed conversation and the list never shows undecrypted text')
 
-  // 3) B abre: lê, o contador zera e a prévia mostra a mensagem.
+  // 3) B abre de novo dentro de /conversas: reutiliza a sessão cifrada sem reativar,
+  // lê, o contador zera e a prévia mostra a mensagem.
+  let enrollCalls = 0
+  const countEnroll = (req) => {
+    if (req.method() === 'POST' && req.url().endsWith('/conversations/chat/devices'))
+      enrollCalls += 1
+  }
+  b.on('request', countEnroll)
   await row(b).click()
   await composerReady(b)
   await b.getByText(second, { exact: true }).waitFor()
+  b.off('request', countEnroll)
+  assert.equal(enrollCalls, 0, 'Reopening a conversation inside /conversas reuses the live web crypto session')
   await b.waitForTimeout(2500)
   await backToList(b)
   await b.waitForFunction(
@@ -131,7 +140,7 @@ const backToList = async (page) => {
     { timeout: 30000 },
   )
   assert.ok((await row(b).innerText()).includes(second))
-  console.log('PASS: opening the conversation clears the unread badge and previews the message')
+  console.log('PASS: reopening inside /conversas reuses the live session; opening clears the unread badge and previews the message')
 
   // 4) Recarregar a página: a prévia (só em memória) some; horário e não lidas continuam do servidor.
   await b.reload({ waitUntil: 'domcontentloaded' })

@@ -356,39 +356,72 @@ export class ChatService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, banned: true, emailVerified: true } },
+            user: {
+              select: { id: true, name: true, banned: true, emailVerified: true },
+            },
           },
         },
       },
     })
-    if (
-      !c ||
-      !c.members.some((m) => m.userId === actor.id && m.state === 'ACTIVE')
+    const me = c?.members.find(
+      (m) => m.userId === actor.id && m.state === 'ACTIVE',
     )
-      throw new NotFoundException()
-    if (
-      c.kind !== 'DIRECT' ||
-      c.archivedAt ||
-      c.members.length !== 2 ||
-      c.members.some(
-        (m) => m.state !== 'ACTIVE' || m.user.banned || !m.user.emailVerified,
+    if (!c || !me) throw new NotFoundException()
+    if (c.archivedAt)
+      throw new ConflictException('Esta conversa foi encerrada.')
+    if (c.kind === 'DIRECT') {
+      if (
+        c.members.length !== 2 ||
+        c.members.some(
+          (m) => m.state !== 'ACTIVE' || m.user.banned || !m.user.emailVerified,
+        )
       )
+        throw new ConflictException(
+          'O envio será liberado após o aceite da conversa individual.',
+        )
+      const other = c.members.find((m) => m.userId !== actor.id)!
+      const blocked = await client.conversationBlock.count({
+        where: {
+          OR: [
+            { blockerId: actor.id, blockedId: other.userId },
+            { blockedId: actor.id, blockerId: other.userId },
+          ],
+        },
+      })
+      if (write && blocked)
+        throw new ForbiddenException('Esta interação está bloqueada.')
+      return {
+        c,
+        kind: 'DIRECT' as const,
+        otherId: other.userId,
+        otherIds: [other.userId],
+        peerMembers: [other],
+        canSend: !blocked,
+      }
+    }
+    if (me.user.banned || !me.user.emailVerified)
+      throw new ConflictException('Sua conta não pode participar deste grupo.')
+    const peerMembers = c.members.filter(
+      (m) =>
+        m.userId !== actor.id &&
+        m.state === 'ACTIVE' &&
+        !m.user.banned &&
+        m.user.emailVerified,
     )
+    const otherIds = peerMembers.map((m) => m.userId)
+    const canSend = otherIds.length > 0
+    if (write && !canSend)
       throw new ConflictException(
-        'O envio será liberado após o aceite da conversa individual.',
+        'Aguarde outra pessoa aceitar o convite do grupo para enviar mensagens.',
       )
-    const otherId = c.members.find((m) => m.userId !== actor.id)!.userId
-    const blocked = await client.conversationBlock.count({
-      where: {
-        OR: [
-          { blockerId: actor.id, blockedId: otherId },
-          { blockedId: actor.id, blockerId: otherId },
-        ],
-      },
-    })
-    if (write && blocked)
-      throw new ForbiddenException('Esta interação está bloqueada.')
-    return { c, otherId, canSend: !blocked }
+    return {
+      c,
+      kind: 'GROUP' as const,
+      otherId: otherIds[0] ?? null,
+      otherIds,
+      peerMembers,
+      canSend,
+    }
   }
   async transport(
     actor: ConversationActor,
@@ -397,45 +430,51 @@ export class ChatService {
   ) {
     await this.device(actor, headers)
     const before = await this.conversation(actor, id)
-    if (!before.c.matrixRoomId && !before.canSend)
+    if (before.kind === 'DIRECT' && !before.c.matrixRoomId && !before.canSend)
       throw new ForbiddenException('Esta interação está bloqueada.')
     await this.matrix.admin()
     return this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${id} FOR UPDATE`
-        const { c, otherId, canSend } = await this.conversation(
-          actor,
-          id,
-          false,
-          tx,
-        )
+        const { c, kind, otherIds, peerMembers, canSend } =
+          await this.conversation(actor, id, false, tx)
         const roomId =
-          c.matrixRoomId || (await this.matrix.room(id, [actor.id, otherId]))
+          c.matrixRoomId ||
+          (await this.matrix.room(id, [actor.id, ...otherIds]))
         if (!c.matrixRoomId)
           await tx.conversation.update({
             where: { id },
             data: { matrixRoomId: roomId },
           })
+        else if (kind === 'GROUP') await this.matrix.join(roomId, actor.id)
         const rows = await tx.chatDevice.findMany({
-          where: { userId: { in: [actor.id, otherId] }, revokedAt: null },
+          where: { userId: { in: [actor.id, ...otherIds] }, revokedAt: null },
           orderBy: { createdAt: 'asc' },
           select: { id: true, userId: true },
         })
-        const peerDevices = rows.filter((row) => row.userId === otherId)
+        const peers = peerMembers.map((member) => {
+          const devices = rows
+            .filter((row) => row.userId === member.userId)
+            .map((row) => row.id)
+          return {
+            userId: member.userId,
+            name: member.user.name,
+            matrixUserId: this.matrix.userId(member.userId),
+            // `deviceId` fica por compatibilidade com clientes de um aparelho só.
+            deviceId: devices[0] ?? null,
+            devices,
+          }
+        })
         return {
+          kind,
           roomId,
           revision: c.revision,
           canSend,
           selfDevices: rows
             .filter((row) => row.userId === actor.id)
             .map((row) => row.id),
-          peer: {
-            userId: otherId,
-            matrixUserId: this.matrix.userId(otherId),
-            // `deviceId` fica por compatibilidade com clientes de um aparelho só.
-            deviceId: peerDevices[0]?.id ?? null,
-            devices: peerDevices.map((row) => row.id),
-          },
+          peer: kind === 'DIRECT' ? (peers[0] ?? null) : null,
+          peers,
         }
       },
       { timeout: 15000, maxWait: 3000 },
@@ -455,19 +494,26 @@ export class ChatService {
         : ''
     if (!/^[0-9a-f]{32}$/.test(raw)) throw new ForbiddenException()
     const userId = `${raw.slice(0, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}-${raw.slice(16, 20)}-${raw.slice(20)}`
-    const row = await this.db.conversation.findFirst({
+    const rows = await this.db.conversation.findMany({
       where: {
-        kind: 'DIRECT',
+        kind: { in: ['DIRECT', 'GROUP'] },
         archivedAt: null,
         AND: [
           { members: { some: { userId: actor.id, state: 'ACTIVE' } } },
           { members: { some: { userId, state: 'ACTIVE' } } },
         ],
       },
-      select: { id: true },
+      select: { id: true, kind: true },
+      take: 10,
     })
-    if (!row) throw new ForbiddenException()
-    await this.conversation(actor, row.id, write)
+    if (!rows.length) throw new ForbiddenException()
+    // Se compartilham um grupo ativo, estão autorizados mesmo que exista bloqueio individual.
+    const group = rows.find((row) => row.kind === 'GROUP')
+    if (group) {
+      await this.conversation(actor, group.id, false)
+      return userId
+    }
+    await this.conversation(actor, rows[0].id, write)
     return userId
   }
   private size(body: unknown) {
@@ -508,7 +554,7 @@ export class ChatService {
         !targets ||
         typeof targets !== 'object' ||
         Array.isArray(targets) ||
-        Object.keys(targets).length > 20
+        Object.keys(targets).length > 100
       )
         throw new BadRequestException()
       const owners = new Map<string, string>()
@@ -751,7 +797,7 @@ export class ChatService {
     const rooms = data.rooms?.join || {}
     const allowed = await this.db.conversation.findMany({
       where: {
-        kind: 'DIRECT',
+        kind: { in: ['DIRECT', 'GROUP'] },
         archivedAt: null,
         matrixRoomId: { in: Object.keys(rooms) },
         members: { some: { userId: actor.id, state: 'ACTIVE' } },
@@ -858,7 +904,7 @@ export class ChatService {
     const sent = await this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${id} FOR UPDATE`
-        const { c, otherId } = await this.conversation(actor, id, true, tx)
+        const { c, otherIds } = await this.conversation(actor, id, true, tx)
         if (!c.matrixRoomId || c.revision !== input.revision)
           throw new ConflictException('Atualize a conversa antes de enviar.')
         const result = await this.matrix.request(
@@ -869,7 +915,7 @@ export class ChatService {
           8000,
         )
         // Metadados para a lista de conversas: o servidor não conhece o texto,
-        // só quando foi enviado, por quem, e quantas mensagens a outra pessoa
+        // só quando foi enviado, por quem, e quantas mensagens cada participante
         // ainda não abriu. Repetir a mesma transação não conta duas vezes.
         if (
           typeof result.event_id === 'string' &&
@@ -883,11 +929,16 @@ export class ChatService {
               lastSenderId: actor.id,
             },
           })
-          await tx.conversationMember.updateMany({
-            where: { conversationId: id, userId: otherId, state: 'ACTIVE' },
-            data: { unreadCount: { increment: 1 } },
-          })
-          notify = [actor.id, otherId]
+          if (otherIds.length)
+            await tx.conversationMember.updateMany({
+              where: {
+                conversationId: id,
+                userId: { in: otherIds },
+                state: 'ACTIVE',
+              },
+              data: { unreadCount: { increment: 1 } },
+            })
+          notify = [actor.id, ...otherIds]
         }
         return result
       },
@@ -956,16 +1007,61 @@ export class ChatService {
     eventIds: string[],
   ) {
     await this.device(actor, headers)
-    const { otherId } = await this.conversation(actor, id)
+    const { kind, otherId, otherIds } = await this.conversation(actor, id)
+    if (kind === 'DIRECT')
+      return {
+        receipts: await this.db.chatReceipt.findMany({
+          where: {
+            conversationId: id,
+            recipientUserId: otherId!,
+            eventId: { in: eventIds },
+          },
+          select: { eventId: true, deliveredAt: true, readAt: true },
+        }),
+      }
+    if (!otherIds.length) return { receipts: [] }
+    const rows = await this.db.chatReceipt.findMany({
+      where: {
+        conversationId: id,
+        recipientUserId: { in: otherIds },
+        eventId: { in: eventIds },
+      },
+      select: { eventId: true, deliveredAt: true, readAt: true },
+    })
+    const byEvent = new Map<
+      string,
+      {
+        deliveredCount: number
+        readCount: number
+        deliveredAt: Date | null
+        readAt: Date | null
+      }
+    >()
+    for (const row of rows) {
+      const entry = byEvent.get(row.eventId) ?? {
+        deliveredCount: 0,
+        readCount: 0,
+        deliveredAt: null,
+        readAt: null,
+      }
+      entry.deliveredCount += 1
+      if (!entry.deliveredAt || row.deliveredAt > entry.deliveredAt)
+        entry.deliveredAt = row.deliveredAt
+      if (row.readAt) {
+        entry.readCount += 1
+        if (!entry.readAt || row.readAt > entry.readAt) entry.readAt = row.readAt
+      }
+      byEvent.set(row.eventId, entry)
+    }
     return {
-      receipts: await this.db.chatReceipt.findMany({
-        where: {
-          conversationId: id,
-          recipientUserId: otherId,
-          eventId: { in: eventIds },
-        },
-        select: { eventId: true, deliveredAt: true, readAt: true },
-      }),
+      receipts: [...byEvent.entries()].map(([eventId, entry]) => ({
+        eventId,
+        deliveredAt: entry.deliveredAt,
+        readAt: entry.readAt,
+        deliveredCount: entry.deliveredCount,
+        readCount: entry.readCount,
+        totalRecipients: otherIds.length,
+      })),
     }
   }
   async acknowledge(
@@ -975,8 +1071,9 @@ export class ChatService {
     input: ChatReceiptDto,
   ) {
     const device = await this.device(actor, headers)
-    const { c, otherId } = await this.conversation(actor, id, true)
+    const { c, kind, otherId } = await this.conversation(actor, id, true)
     if (!c.matrixRoomId) throw new NotFoundException()
+    const selfMatrixId = this.matrix.userId(actor.id)
     // Validate each receipt against the actual upstream event. Never trust a
     // client-supplied sender, room, or recipient identity.
     for (let offset = 0; offset < input.eventIds.length; offset += 4) {
@@ -989,10 +1086,11 @@ export class ChatService {
             device.token,
             2500,
           )
-          if (
-            event.type !== 'm.room.encrypted' ||
-            event.sender !== this.matrix.userId(otherId)
-          )
+          const validSender =
+            kind === 'DIRECT'
+              ? event.sender === this.matrix.userId(otherId!)
+              : typeof event.sender === 'string' && event.sender !== selfMatrixId
+          if (event.type !== 'm.room.encrypted' || !validSender)
             throw new ForbiddenException(
               'A confirmação deve se referir a uma mensagem recebida nesta conversa.',
             )

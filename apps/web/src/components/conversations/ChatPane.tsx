@@ -14,47 +14,23 @@ import {
   RESET_WARNING,
   chatError,
   chatView,
-  deviceRequestText,
-  enrollDevice,
-  messagePlaceholder,
-  messageStatusLabel,
   type ChatState,
-  type ChatEnrollment,
   type ChatHttp,
   type VerificationAction,
 } from '@votz/chat-core'
-import type { ConversationSummary } from '@votz/shared-types'
+import {
+  conversationTitle,
+  type ConversationSummary,
+} from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
 import { api } from '../../lib/api'
-import { forgetWebChat, webChatStorage } from '../../lib/chat-storage'
-
-/** Nome do aparelho na lista de aparelhos conectados, ex.: "Chrome no Windows". */
-function browserLabel() {
-  const ua = navigator.userAgent
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /OPR\//.test(ua)
-      ? 'Opera'
-      : /Firefox\//.test(ua)
-        ? 'Firefox'
-        : /Chrome\//.test(ua)
-          ? 'Chrome'
-          : /Safari\//.test(ua)
-            ? 'Safari'
-            : 'Navegador'
-  const system = /Windows/.test(ua)
-    ? 'Windows'
-    : /Android/.test(ua)
-      ? 'Android'
-      : /iPhone|iPad/.test(ua)
-        ? 'iOS'
-        : /Mac OS/.test(ua)
-          ? 'macOS'
-          : /Linux/.test(ua)
-            ? 'Linux'
-            : ''
-  return system ? `${browser} no ${system}` : browser
-}
+import { webChatStorage } from '../../lib/chat-storage'
+import {
+  WebChatLockBusyError,
+  acquireWebChatSession,
+  hasWebChatSession,
+  resetWebChatSession,
+} from '../../lib/chat-session'
 
 const Box = styled.section`
   display: flex;
@@ -152,6 +128,12 @@ const Bubble = styled.div<{ $own: boolean }>`
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.5;
+  strong {
+    display: block;
+    font-size: 12px;
+    color: ${({ theme }) => theme.colors.primary};
+    margin-bottom: 3px;
+  }
   small {
     display: block;
     text-align: right;
@@ -215,9 +197,6 @@ const Note = styled.div`
     min-height: 32px;
   }
 `
-/** Outra aba já está com as conversas abertas (só uma aba por vez cuida das chaves). */
-class LockBusy extends Error {}
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const failureMessage = (failure: unknown) =>
   (failure as { response?: { data?: { message?: string } } }).response?.data
     ?.message ||
@@ -236,9 +215,7 @@ export function ChatPane({
   conversation: ConversationSummary
 }) {
   const userId = useAuthStore((state) => state.user!.id)
-  const peer = conversation.members.find(
-    (member) => member.user.id !== userId,
-  )!.user
+  const title = conversationTitle(conversation, userId)
   const [state, setState] = useState<ChatState | null>(null)
   // null: ainda lendo; true: navegador antigo com senha própria.
   const [legacy, setLegacy] = useState<boolean | null>(null)
@@ -255,9 +232,7 @@ export function ChatPane({
   const [attempt, setAttempt] = useState(0)
   const client = useRef<ChatClient | null>(null)
   const cleanup = useRef<() => void>(() => {})
-  const cancelled = useRef(false)
   const abort = useRef(new AbortController())
-  const lockRelease = useRef<(() => void) | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const history = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -266,39 +241,55 @@ export function ChatPane({
     setError('')
     setAttempt((value) => value + 1)
   }
-  // Aparelho desconectado: apaga o que este navegador guardava e recomeça sozinho.
+  function stopClient() {
+    abort.current.abort()
+    client.current = null
+    cleanup.current()
+    cleanup.current = () => {}
+  }
+  // Aparelho desconectado: encerra a sessão cifrada, apaga o armazenamento local e recomeça sozinho.
   const startOver = () => {
-    void forgetWebChat(userId).then(restart)
+    stopClient()
+    void resetWebChatSession(userId).then(restart)
   }
   useEffect(() => {
-    cancelled.current = false
-    abort.current = new AbortController()
-    void webChatStorage(userId)
-      .then((store) => {
-        const secret = store.storeSecret
-        const wasInitialized = store.initialized
-        store.close()
-        if (cancelled.current) return
-        setInitialized(wasInitialized)
-        setLegacy(!secret)
-        if (secret) void begin(secret)
-      })
-      .catch(() =>
-        setError(
-          'O navegador não conseguiu abrir o armazenamento das conversas.',
-        ),
-      )
+    const controller = new AbortController()
+    abort.current = controller
+    const { signal } = controller
+    // Se a sessão cifrada já está aberta nesta visita a /conversas, reutiliza
+    // direto sem reabrir IndexedDB, sem recarregar WASM e sem pedir senha.
+    if (hasWebChatSession(userId)) {
+      setInitialized(true)
+      setLegacy(false)
+      void begin('', signal)
+    } else {
+      void webChatStorage(userId)
+        .then((store) => {
+          const secret = store.storeSecret
+          const wasInitialized = store.initialized
+          store.close()
+          if (signal.aborted) return
+          setInitialized(wasInitialized)
+          setLegacy(!secret)
+          if (secret) void begin(secret, signal)
+        })
+        .catch(() => {
+          if (!signal.aborted)
+            setError(
+              'O navegador não conseguiu abrir o armazenamento das conversas.',
+            )
+        })
+    }
     return () => {
-      cancelled.current = true
-      abort.current.abort()
+      controller.abort()
       client.current = null
       cleanup.current()
-      lockRelease.current?.()
+      cleanup.current = () => {}
       setDraft('')
       setState(null)
       setPending(null)
     }
-  }, [userId, attempt])
+  }, [userId, conversation.id, attempt])
   useEffect(() => {
     if (state?.reactivate) startOver()
   }, [state?.reactivate])
@@ -389,146 +380,55 @@ export function ChatPane({
       setBusy(false)
     }
   }
-  /**
-   * Abre o motor das conversas. Uma só aba cuida das chaves por vez; ao
-   * recarregar ou reabrir, a aba anterior ainda pode estar soltando a vez,
-   * então espera um pouco antes de desistir.
-   */
-  function open(secret: string) {
-    return new Promise<void>((accepted, rejected) => {
-      if (!navigator.locks) {
-        rejected(new Error('Use um navegador atualizado para usar as conversas.'))
-        return
-      }
-      void navigator.locks
-        .request(`votz-chat-${userId}`, { ifAvailable: true }, async (lock) => {
-          if (!lock) {
-            rejected(new LockBusy())
-            return
-          }
-          const store = await webChatStorage(userId)
-          let engine: import('../../lib/chat-crypto').WebChatCrypto | null = null
-          let active: ChatClient | null = null
-          try {
-            if (cancelled.current) {
-              accepted()
-              return
-            }
-            const headers = {
-              'x-votz-chat-device': store.credentials.id,
-              'x-votz-chat-secret': store.credentials.secret,
-            }
-            const http: ChatHttp = async (path, method = 'GET', body) => {
-              const current = useAuthStore.getState()
-              if (
-                current.user?.id !== userId ||
-                current.activeContext ||
-                cancelled.current
-              )
-                throw new Error('Sessão alterada.')
-              return (
-                await api.request({
-                  url: `/conversations${path}`,
-                  method,
-                  data: body,
-                  headers,
-                })
-              ).data
-            }
-            // O primeiro aparelho da conta entra direto; os demais mostram um
-            // código e esperam a permissão de um aparelho que a pessoa já usa.
-            const session = await enrollDevice(
-              async () =>
-                (
-                  await api.post<ChatEnrollment>('/conversations/chat/devices', {
-                    ...store.credentials,
-                    label: browserLabel(),
-                  })
-                ).data,
-              {
-                onPending: (value) => setPending({ code: value.code }),
-                signal: abort.current.signal,
-              },
-            )
-            setPending(null)
-            const { WebChatCrypto } = await import('../../lib/chat-crypto')
-            try {
-              engine = await WebChatCrypto.open(
-                session.matrixUserId,
-                session.deviceId,
-                `votz-keys-${userId}-${session.deviceId}`,
-                secret,
-              )
-            } catch {
-              throw new Error(
-                store.storeSecret
-                  ? 'Não foi possível abrir suas conversas neste navegador.'
-                  : 'Não foi possível abrir suas conversas. Confira a senha.',
-              )
-            }
-            await store.markInitialized()
-            if (cancelled.current) {
-              accepted()
-              return
-            }
-            active = new ChatClient(
-              conversation.id,
-              session,
-              engine,
-              http,
-              store.storage,
-              () => crypto.randomUUID(),
-            )
-            client.current = active
-            const unsubscribe = active.subscribe(setState)
-            cleanup.current = () => {
-              unsubscribe()
-              void active?.stop()
-            }
-            setPassphrase('')
-            setRepeat('')
-            setInitialized(true)
-            void active.start()
-            accepted()
-            await new Promise<void>((resolve) => {
-              lockRelease.current = resolve
-            })
-          } catch (failure) {
-            rejected(failure)
-          } finally {
-            await active?.stop()
-            engine?.close()
-            store.close()
-          }
-        })
-        .catch(rejected)
-    })
-  }
-  async function begin(secret: string) {
+  async function begin(secret: string, signal: AbortSignal = abort.current.signal) {
     setBusy(true)
     setError('')
     try {
-      for (let tries = 0; ; tries++)
-        try {
-          await open(secret)
-          return
-        } catch (failure) {
-          if (failure instanceof LockBusy && tries < 12 && !cancelled.current) {
-            await wait(300)
-            continue
-          }
-          throw failure
-        }
+      const webSession = await acquireWebChatSession({
+        userId,
+        secret,
+        signal,
+        onPending: (value) => {
+          if (signal.aborted) return
+          setPending({ code: value.code })
+          setBusy(false)
+        },
+      })
+      if (signal.aborted) return
+      setPending(null)
+      cleanup.current()
+      const guardedHttp: ChatHttp = (path, method, body) => {
+        if (signal.aborted) return Promise.reject(new Error('Sessão alterada.'))
+        return webSession.http(path, method, body)
+      }
+      const active = new ChatClient(
+        conversation.id,
+        webSession.session,
+        webSession.engine,
+        guardedHttp,
+        webSession.storage,
+        () => crypto.randomUUID(),
+      )
+      client.current = active
+      const unsubscribe = active.subscribe(setState)
+      cleanup.current = () => {
+        unsubscribe()
+        void active.stop()
+      }
+      setPassphrase('')
+      setRepeat('')
+      setInitialized(true)
+      void active.start()
     } catch (failure) {
-      if (cancelled.current) return
+      if (signal.aborted) return
       if (failure instanceof ChatDeviceDisconnectedError) startOver()
-      else if (failure instanceof LockBusy)
+      else if (failure instanceof WebChatLockBusyError)
         setError(
           'As conversas já estão abertas em outra aba. Feche a outra aba para continuar aqui.',
         )
       else setError(failureMessage(failure))
     } finally {
-      setBusy(false)
+      if (!signal.aborted) setBusy(false)
     }
   }
   async function unlock(event: FormEvent) {
@@ -548,9 +448,11 @@ export function ChatPane({
     setError('')
     try {
       await api.post('/conversations/chat/devices/reset', { password })
-      await forgetWebChat(userId)
+      stopClient()
+      await resetWebChatSession(userId)
       setPassword('')
       setResetting(false)
+      setPending(null)
       restart()
     } catch (failure) {
       setError(failureMessage(failure))
@@ -596,11 +498,7 @@ export function ChatPane({
       setBusy(false)
     }
   }
-  const verification = state?.verification
-  const verified = verification?.state === 'done'
-  const view = chatView(state, peer.name, verified)
-  const verifying =
-    !!verification && !['none', 'cancelled', 'done'].includes(verification.state)
+  const view = chatView(state, title)
   return (
     <Box data-chat-pane>
       <Header>
@@ -608,7 +506,7 @@ export function ChatPane({
           <ArrowLeft size={23} />
         </Link>
         <LockKey size={18} />
-        <h1>{peer.name}</h1>
+        <h1>{title}</h1>
         <Link to={`/conversas/${conversation.id}?detalhes=1`}>Detalhes</Link>
       </Header>
       {pending ? (
@@ -730,58 +628,48 @@ export function ChatPane({
       ) : (
         <>
           <Status
-            role={state.room?.peer.deviceId && !verified ? 'button' : undefined}
-            tabIndex={state.room?.peer.deviceId && !verified ? 0 : undefined}
+            role={view.canVerify ? 'button' : undefined}
+            tabIndex={view.canVerify ? 0 : undefined}
             aria-label={
-              state.room?.peer.deviceId && !verified
-                ? 'Confirmar identidade, opcional'
-                : undefined
+              view.canVerify ? 'Confirmar identidade, opcional' : undefined
             }
-            style={
-              state.room?.peer.deviceId && !verified
-                ? { cursor: 'pointer' }
-                : undefined
-            }
+            style={view.canVerify ? { cursor: 'pointer' } : undefined}
             onClick={() => {
-              if (state.room?.peer.deviceId && !verified)
-                setShowVerify((value) => !value)
+              if (view.canVerify) setShowVerify((value) => !value)
             }}
           >
             <ShieldCheck size={18} />
             {view.banner}
           </Status>
-          {state.deviceLinks.map((link) => {
-            const request = deviceRequestText(link)
-            return (
-              <Card key={link.id} role="alert">
-                <h3>{request.title}</h3>
-                <p>{request.text}</p>
-                <Actions>
-                  <Button
-                    disabled={busy}
-                    onClick={() => {
-                      void attemptAction(() =>
-                        client.current!.decideDeviceLink(link.id, true),
-                      )
-                    }}
-                  >
-                    {request.allow}
-                  </Button>
-                  <Button
-                    $secondary
-                    disabled={busy}
-                    onClick={() => {
-                      void attemptAction(() =>
-                        client.current!.decideDeviceLink(link.id, false),
-                      )
-                    }}
-                  >
-                    {request.deny}
-                  </Button>
-                </Actions>
-              </Card>
-            )
-          })}
+          {view.deviceRequests.map((request) => (
+            <Card key={request.id} role="alert">
+              <h3>{request.title}</h3>
+              <p>{request.text}</p>
+              <Actions>
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    void attemptAction(() =>
+                      client.current!.decideDeviceLink(request.id, true),
+                    )
+                  }}
+                >
+                  {request.allow}
+                </Button>
+                <Button
+                  $secondary
+                  disabled={busy}
+                  onClick={() => {
+                    void attemptAction(() =>
+                      client.current!.decideDeviceLink(request.id, false),
+                    )
+                  }}
+                >
+                  {request.deny}
+                </Button>
+              </Actions>
+            </Card>
+          ))}
           {view.notices.map((notice) => (
             <Note key={notice.id} role="status">
               <span>
@@ -806,85 +694,51 @@ export function ChatPane({
               <span>{view.waitingPeer}</span>
             </Note>
           )}
-          {state.ready &&
-            state.room?.peer.deviceId &&
-            !verified &&
-            (showVerify || verifying) && (
-              <Card>
-                <h3>Confirmar identidade (opcional)</h3>
-                <p>
-                  Comparem os três números nas duas telas com {peer.name}. Só
-                  confirme se forem iguais. Você pode conversar sem fazer isso.
+          {view.verification && (showVerify || view.verification.active) && (
+            <Card>
+              <h3>{view.verification.title}</h3>
+              <p>{view.verification.description}</p>
+              {view.verification.code && (
+                <p
+                  aria-label="Código de verificação"
+                  style={{
+                    fontSize: 24,
+                    letterSpacing: 2,
+                    color: '#1A1A2E',
+                    fontWeight: 700,
+                  }}
+                >
+                  {view.verification.code}
                 </p>
-                {verification?.decimals && (
-                  <p
-                    aria-label="Código de verificação"
-                    style={{
-                      fontSize: 24,
-                      letterSpacing: 2,
-                      color: '#1A1A2E',
-                      fontWeight: 700,
+              )}
+              <Actions>
+                {view.verification.primaryAction && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void verify(view.verification!.primaryAction!.action)
                     }}
                   >
-                    {verification.decimals.join(' · ')}
-                  </p>
+                    {view.verification.primaryAction.label}
+                  </Button>
                 )}
-                <Actions>
-                  {(!verification ||
-                    ['none', 'cancelled'].includes(verification.state)) && (
-                    <Button
-                      disabled={busy}
-                      onClick={() => {
-                        void verify('request')
-                      }}
-                    >
-                      Começar a confirmação
-                    </Button>
-                  )}
-                  {verification?.state === 'requested' &&
-                    verification.incoming && (
-                      <Button
-                        disabled={busy}
-                        onClick={() => {
-                          void verify('accept')
-                        }}
-                      >
-                        Aceitar
-                      </Button>
-                    )}
-                  {verification?.state === 'requested' &&
-                    !verification.incoming && (
-                      <p>Esperando a outra pessoa aceitar…</p>
-                    )}
-                  {verification?.state === 'ready' && <p>Preparando os números…</p>}
-                  {verification?.state === 'comparing' && (
-                    <Button
-                      disabled={busy}
-                      onClick={() => {
-                        void verify('confirm')
-                      }}
-                    >
-                      Os números são iguais
-                    </Button>
-                  )}
-                  {verification?.state === 'confirmed' && (
-                    <p>Esperando a outra pessoa confirmar…</p>
-                  )}
-                  {verification &&
-                    !['none', 'cancelled'].includes(verification.state) && (
-                      <Button
-                        $secondary
-                        disabled={busy}
-                        onClick={() => {
-                          void verify('cancel')
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                    )}
-                </Actions>
-              </Card>
-            )}
+                {view.verification.waitingText && (
+                  <p>{view.verification.waitingText}</p>
+                )}
+                {view.verification.canCancel && (
+                  <Button
+                    $secondary
+                    disabled={busy}
+                    onClick={() => {
+                      void verify('cancel')
+                    }}
+                  >
+                    {view.verification.cancelLabel}
+                  </Button>
+                )}
+              </Actions>
+            </Card>
+          )}
           {state.error && <Status role="status">{state.error}</Status>}
           <History
             ref={history}
@@ -897,7 +751,7 @@ export function ChatPane({
             aria-label="Mensagens"
           >
             <div>
-              {state.historyCursor && (
+              {view.canLoadOlder && (
                 <Button
                   $secondary
                   disabled={state.loadingHistory}
@@ -905,44 +759,37 @@ export function ChatPane({
                     void older()
                   }}
                 >
-                  Mensagens anteriores
+                  {view.olderLabel}
                 </Button>
               )}
             </div>
-            {state.messages.map((message) => (
+            {view.messages.map((message) => (
               <Bubble
                 key={message.id}
                 data-message-id={message.id}
-                $own={message.sender === 'self'}
+                $own={message.own}
               >
-                <span>{message.text ?? messagePlaceholder(message.status)}</span>
-                <small>
-                  {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {message.sender === 'self'
-                    ? ` · ${messageStatusLabel(message.status)}`
-                    : ''}
-                </small>
-                {message.status === 'failed' && message.txnId && (
+                {message.senderName && <strong>{message.senderName}</strong>}
+                <span>{message.body}</span>
+                <small>{message.meta}</small>
+                {message.retryTxnId && (
                   <Button
                     $secondary
-                    disabled={!state.room?.canSend || busy}
+                    disabled={!message.canRetry || busy}
                     onClick={() => {
                       void client.current
-                        ?.retry(message.txnId!)
+                        ?.retry(message.retryTxnId!)
                         .catch((failure) => setError(chatError(failure)))
                     }}
                   >
-                    Tentar enviar novamente
+                    {message.retryLabel}
                   </Button>
                 )}
               </Bubble>
             ))}
-            {!state.messages.length && state.ready && view.canWrite && (
+            {view.emptyText && (
               <p style={{ textAlign: 'center', color: '#6B7280' }}>
-                A conversa de vocês começa aqui.
+                {view.emptyText}
               </p>
             )}
             <div ref={bottom} />
@@ -951,16 +798,16 @@ export function ChatPane({
             <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="checkbox"
-                checked={state.readReceiptsEnabled}
-                disabled={busy || !state.ready || !state.connected}
+                checked={view.readReceipts.enabled}
+                disabled={busy || view.readReceipts.disabled}
                 onChange={() => {
                   void toggleReceipts()
                 }}
               />
-              Compartilhar quando eu ler
+              {view.readReceipts.label}
             </label>
             <span
-              title="Entregue significa que a outra pessoa recebeu. Lida só aparece se ela ativar esta opção e a mensagem estiver na tela."
+              title={view.readReceipts.help}
               aria-label="Informações sobre confirmações"
             >
               ⓘ

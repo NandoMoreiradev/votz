@@ -12,19 +12,19 @@ import {
 import { router, useFocusEffect } from 'expo-router'
 import Send from 'lucide-react-native/icons/send'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
-import type { ConversationSummary } from '@votz/shared-types'
+import {
+  conversationTitle,
+  type ConversationSummary,
+} from '@votz/shared-types'
 import {
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
   RESET_WARNING,
   chatError,
   chatView,
-  deviceRequestText,
-  messagePlaceholder,
-  messageStatusLabel,
   type ChatClient,
-  type ChatMessage,
   type ChatState,
+  type ChatViewMessage,
   type VerificationAction,
 } from '@votz/chat-core'
 import { forgetNativeChat, openNativeChat, resetNativeChat } from '../lib/chat-runtime'
@@ -46,9 +46,7 @@ export function ChatPane({
   conversation: ConversationSummary
 }) {
   const userId = useSession((state) => state.user!.id)
-  const peer = conversation.members.find(
-    (member) => member.user.id !== userId,
-  )!.user
+  const title = conversationTitle(conversation, userId)
   const [focused, setFocused] = useState(false)
   const [foreground, setForeground] = useState(
     AppState.currentState === 'active',
@@ -65,7 +63,7 @@ export function ChatPane({
   const [runtime, setRuntime] = useState<ChatClient | null>(null)
   const runtimeRef = useRef<ChatClient | null>(null)
   const onVisible = useCallback(
-    ({ viewableItems }: { viewableItems: { item: ChatMessage }[] }) => {
+    ({ viewableItems }: { viewableItems: { item: ChatViewMessage }[] }) => {
       runtimeRef.current?.visibleMessages(
         viewableItems.map((token) => token.item.id),
       )
@@ -136,11 +134,7 @@ export function ChatPane({
   useEffect(() => {
     if (state?.reactivate) startOver()
   }, [state?.reactivate, startOver])
-  const verification = state?.verification
-  const verified = verification?.state === 'done'
-  const view = chatView(state, peer.name, verified)
-  const verifying =
-    !!verification && !['none', 'cancelled', 'done'].includes(verification.state)
+  const view = chatView(state, title)
   async function attemptAction(work: () => Promise<unknown>) {
     if (busy) return
     setBusy(true)
@@ -189,7 +183,7 @@ export function ChatPane({
     <View style={{ flex: 1 }}>
       <Toolbar
         back
-        title={peer.name}
+        title={title}
         right={
           <Pressable
             accessibilityRole="button"
@@ -275,41 +269,38 @@ export function ChatPane({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Confirmar identidade, opcional"
-            disabled={!state.room?.peer.deviceId || verified}
+            disabled={!view.canVerify}
             onPress={() => setShowVerify((value) => !value)}
             style={styles.status}
           >
             <ShieldCheck size={17} color={theme.colors.muted} />
             <Text style={styles.small}>{view.banner}</Text>
           </Pressable>
-          {state.deviceLinks.map((link) => {
-            const request = deviceRequestText(link)
-            return (
-              <View key={link.id} style={styles.card}>
-                <Text style={styles.name}>{request.title}</Text>
-                <Label muted>{request.text}</Label>
-                <Button
-                  title={request.allow}
-                  loading={busy}
-                  onPress={() => {
-                    void attemptAction(() =>
-                      runtime!.decideDeviceLink(link.id, true),
-                    )
-                  }}
-                />
-                <Button
-                  secondary
-                  title={request.deny}
-                  disabled={busy}
-                  onPress={() => {
-                    void attemptAction(() =>
-                      runtime!.decideDeviceLink(link.id, false),
-                    )
-                  }}
-                />
-              </View>
-            )
-          })}
+          {view.deviceRequests.map((request) => (
+            <View key={request.id} style={styles.card}>
+              <Text style={styles.name}>{request.title}</Text>
+              <Label muted>{request.text}</Label>
+              <Button
+                title={request.allow}
+                loading={busy}
+                onPress={() => {
+                  void attemptAction(() =>
+                    runtime!.decideDeviceLink(request.id, true),
+                  )
+                }}
+              />
+              <Button
+                secondary
+                title={request.deny}
+                disabled={busy}
+                onPress={() => {
+                  void attemptAction(() =>
+                    runtime!.decideDeviceLink(request.id, false),
+                  )
+                }}
+              />
+            </View>
+          ))}
           {view.notices.map((notice) => (
             <View key={notice.id} style={styles.notice}>
               <View style={{ flex: 1, gap: 2 }}>
@@ -332,74 +323,42 @@ export function ChatPane({
               <Text style={styles.small}>{view.waitingPeer}</Text>
             </View>
           )}
-          {!verified &&
-            state.room?.peer.deviceId &&
-            (showVerify || verifying) && (
-              <View style={styles.card}>
-                <Text style={styles.name}>Confirmar identidade (opcional)</Text>
-                <Label muted>
-                  Comparem os três números nas duas telas com {peer.name}. Só
-                  confirme se forem iguais. Você pode conversar sem fazer isso.
-                </Label>
-                {verification?.decimals && (
-                  <Text
-                    accessibilityLabel="Código de verificação"
-                    style={styles.code}
-                  >
-                    {verification.decimals.join(' · ')}
-                  </Text>
-                )}
-                {(!verification ||
-                  ['none', 'cancelled'].includes(verification.state)) && (
-                  <Button
-                    title="Começar a confirmação"
-                    loading={busy}
-                    onPress={() => {
-                      void verify('request')
-                    }}
-                  />
-                )}
-                {verification?.state === 'requested' && verification.incoming && (
-                  <Button
-                    title="Aceitar"
-                    loading={busy}
-                    onPress={() => {
-                      void verify('accept')
-                    }}
-                  />
-                )}
-                {verification?.state === 'requested' &&
-                  !verification.incoming && (
-                    <Label muted>Esperando a outra pessoa aceitar…</Label>
-                  )}
-                {verification?.state === 'ready' && (
-                  <Label muted>Preparando os números…</Label>
-                )}
-                {verification?.state === 'comparing' && (
-                  <Button
-                    title="Os números são iguais"
-                    loading={busy}
-                    onPress={() => {
-                      void verify('confirm')
-                    }}
-                  />
-                )}
-                {verification?.state === 'confirmed' && (
-                  <Label muted>Esperando a outra pessoa confirmar…</Label>
-                )}
-                {verification &&
-                  !['none', 'cancelled'].includes(verification.state) && (
-                    <Button
-                      secondary
-                      title="Cancelar"
-                      disabled={busy}
-                      onPress={() => {
-                        void verify('cancel')
-                      }}
-                    />
-                  )}
-              </View>
-            )}
+          {view.verification && (showVerify || view.verification.active) && (
+            <View style={styles.card}>
+              <Text style={styles.name}>{view.verification.title}</Text>
+              <Label muted>{view.verification.description}</Label>
+              {view.verification.code && (
+                <Text
+                  accessibilityLabel="Código de verificação"
+                  style={styles.code}
+                >
+                  {view.verification.code}
+                </Text>
+              )}
+              {view.verification.primaryAction && (
+                <Button
+                  title={view.verification.primaryAction.label}
+                  loading={busy}
+                  onPress={() => {
+                    void verify(view.verification!.primaryAction!.action)
+                  }}
+                />
+              )}
+              {view.verification.waitingText && (
+                <Label muted>{view.verification.waitingText}</Label>
+              )}
+              {view.verification.canCancel && (
+                <Button
+                  secondary
+                  title={view.verification.cancelLabel}
+                  disabled={busy}
+                  onPress={() => {
+                    void verify('cancel')
+                  }}
+                />
+              )}
+            </View>
+          )}
           {(error || state.error) && (
             <View style={{ paddingHorizontal: 16 }}>
               <ErrorText message={error || state.error || undefined} />
@@ -409,7 +368,7 @@ export function ChatPane({
             viewabilityConfig={viewability}
             onViewableItemsChanged={onVisible}
             style={{ flex: 1 }}
-            data={[...state.messages].reverse()}
+            data={[...view.messages].reverse()}
             inverted
             keyExtractor={(message) => message.id}
             keyboardShouldPersistTaps="handled"
@@ -418,31 +377,23 @@ export function ChatPane({
             windowSize={7}
             renderItem={({ item }) => (
               <View
-                style={[
-                  styles.bubble,
-                  item.sender === 'self' ? styles.own : styles.peer,
-                ]}
+                style={[styles.bubble, item.own ? styles.own : styles.peer]}
               >
+                {item.senderName && (
+                  <Text style={styles.sender}>{item.senderName}</Text>
+                )}
                 <Text selectable style={styles.message}>
-                  {item.text ?? messagePlaceholder(item.status)}
+                  {item.body}
                 </Text>
-                <Text style={styles.time}>
-                  {new Date(item.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {item.sender === 'self'
-                    ? ` · ${messageStatusLabel(item.status)}`
-                    : ''}
-                </Text>
-                {item.status === 'failed' && item.txnId && (
+                <Text style={styles.time}>{item.meta}</Text>
+                {item.retryTxnId && (
                   <Button
-                    title="Tentar enviar novamente"
+                    title={item.retryLabel}
                     secondary
-                    disabled={!state.room?.canSend || busy}
+                    disabled={!item.canRetry || busy}
                     onPress={() => {
                       void runtime
-                        ?.retry(item.txnId!)
+                        ?.retry(item.retryTxnId!)
                         .catch((failure) => setError(chatError(failure)))
                     }}
                   />
@@ -450,16 +401,16 @@ export function ChatPane({
               </View>
             )}
             ListEmptyComponent={
-              view.canWrite && state.ready ? (
+              view.emptyText ? (
                 <View style={{ transform: [{ scaleY: -1 }], padding: 20 }}>
-                  <Label muted>A conversa de vocês começa aqui.</Label>
+                  <Label muted>{view.emptyText}</Label>
                 </View>
               ) : undefined
             }
             ListFooterComponent={
-              state.historyCursor ? (
+              view.canLoadOlder ? (
                 <Button
-                  title="Mensagens anteriores"
+                  title={view.olderLabel}
                   secondary
                   loading={state.loadingHistory}
                   onPress={() => {
@@ -472,11 +423,11 @@ export function ChatPane({
             }
           />
           <View style={styles.status}>
-            <Text style={styles.small}>Compartilhar quando eu ler</Text>
+            <Text style={styles.small}>{view.readReceipts.label}</Text>
             <Switch
-              accessibilityLabel="Compartilhar quando eu ler"
-              value={state.readReceiptsEnabled}
-              disabled={busy || !state.ready || !state.connected}
+              accessibilityLabel={view.readReceipts.label}
+              value={view.readReceipts.enabled}
+              disabled={busy || view.readReceipts.disabled}
               onValueChange={() => {
                 void toggleReceipts()
               }}
@@ -583,6 +534,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     backgroundColor: theme.colors.soft,
     borderBottomLeftRadius: 4,
+  },
+  sender: {
+    fontFamily: theme.fonts.heading,
+    fontSize: 12,
+    color: theme.colors.primary,
   },
   message: {
     fontFamily: theme.fonts.body,

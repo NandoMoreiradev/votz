@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Prisma } from '@prisma/client'
 import { createHash } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service'
+import { ChatMatrixService } from './chat-matrix.service'
 import {
   ConversationListDto,
   ConversationPaginationDto,
@@ -38,6 +40,7 @@ export class ConversationsService {
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService,
+    @Optional() private readonly matrix?: ChatMatrixService,
   ) {}
 
   capabilities() {
@@ -319,7 +322,8 @@ export class ConversationsService {
     } = {},
   ) {
     this.guard(actor)
-    return this.transaction(async (tx) => {
+    let syncTransport: { kind: 'join' | 'kick'; roomId: string; userId: string } | null = null
+    const result = await this.transaction(async (tx) => {
       const c = await this.load(tx, id)
       const me = this.member(c, actor.id, action === 'respond')
       this.open(c)
@@ -400,8 +404,26 @@ export class ConversationsService {
         c,
         c.members.filter((m) => ['ACTIVE', 'INVITED'].includes(m.state)).map((m) => m.userId),
       )
+      if (c.matrixRoomId) {
+        if (action === 'leave')
+          syncTransport = { kind: 'kick', roomId: c.matrixRoomId, userId: actor.id }
+        else if (action === 'remove')
+          syncTransport = { kind: 'kick', roomId: c.matrixRoomId, userId: input.userId! }
+        else if (action === 'respond' && input.accept)
+          syncTransport = { kind: 'join', roomId: c.matrixRoomId, userId: actor.id }
+      }
       return { id, revision: updated.revision }
     })
+    if (syncTransport && this.matrix?.enabled()) {
+      const op = syncTransport as { kind: 'join' | 'kick'; roomId: string; userId: string }
+      try {
+        if (op.kind === 'kick') await this.matrix.kick(op.roomId, op.userId)
+        else await this.matrix.join(op.roomId, op.userId)
+      } catch {
+        /* O banco do Votz é a autoridade; o transporte sincroniza na próxima abertura. */
+      }
+    }
+    return result
   }
   async blocks(actor: ConversationActor, query: ConversationPaginationDto) {
     this.guard(actor)

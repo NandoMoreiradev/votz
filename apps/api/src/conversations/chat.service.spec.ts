@@ -47,20 +47,28 @@ const KEY = 'ab'.repeat(32)
 const SECRET = 'x'.repeat(64)
 const alice = { id: '11111111-1111-4111-8111-111111111111', emailVerified: true }
 const bob = { id: '22222222-2222-4222-8222-222222222222', emailVerified: true }
+const carol = { id: '33333333-3333-4333-8333-333333333333', emailVerified: true }
 const mx = (id: string) => `@votz_${id.replace(/-/g, '')}:votz.test`
 
 function fixture() {
   const devices: Device[] = []
   const links: Link[] = []
+  const receipts: Array<{
+    conversationId: string
+    eventId: string
+    recipientUserId: string
+    deliveredAt: Date
+    readAt: Date | null
+  }> = []
   const matchUser = (value: unknown, id: string) =>
     typeof value === 'string'
       ? value === id
       : (value as { in: string[] }).in.includes(id)
-  const member = (user: { id: string }) => ({
+  const member = (user: { id: string }, name = 'Pessoa') => ({
     userId: user.id,
     state: 'ACTIVE',
     unreadCount: 0,
-    user: { id: user.id, banned: false, emailVerified: true },
+    user: { id: user.id, name, banned: false, emailVerified: true },
   })
   const convo = {
     id: 'c1',
@@ -71,7 +79,7 @@ function fixture() {
     lastEventId: null as string | null,
     lastEventAt: null as Date | null,
     lastSenderId: null as string | null,
-    members: [member(alice), member(bob)],
+    members: [member(alice, 'Alice'), member(bob, 'Bruno')],
   }
   const account = {
     password: hashSync('senha-certa', 4) as string | null,
@@ -82,14 +90,40 @@ function fixture() {
     user: { findUnique: jest.fn(async () => account) },
     conversation: {
       findUnique: jest.fn(async () => convo),
+      findMany: jest.fn(async () => [convo]),
       update: jest.fn(async ({ data }) => Object.assign(convo, data)),
     },
     conversationBlock: { count: jest.fn(async () => 0) },
+    chatReceipt: {
+      findMany: jest.fn(async ({ where }) =>
+        receipts.filter(
+          (row) =>
+            row.conversationId === where.conversationId &&
+            matchUser(where.recipientUserId, row.recipientUserId) &&
+            where.eventId.in.includes(row.eventId),
+        ),
+      ),
+      upsert: jest.fn(async ({ create }) => {
+        if (
+          !receipts.some(
+            (r) =>
+              r.conversationId === create.conversationId &&
+              r.eventId === create.eventId &&
+              r.recipientUserId === create.recipientUserId,
+          )
+        )
+          receipts.push({ ...create, deliveredAt: new Date(), readAt: null })
+      }),
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    chatPrivacy: {
+      findUnique: jest.fn(async () => ({ readReceiptsEnabled: false })),
+    },
     conversationMember: {
       updateMany: jest.fn(async ({ where, data }) => {
         const rows = convo.members.filter(
           (row) =>
-            row.userId === where.userId &&
+            matchUser(where.userId, row.userId) &&
             row.state === where.state &&
             (where.unreadCount?.gt === undefined ||
               row.unreadCount > where.unreadCount.gt),
@@ -188,10 +222,13 @@ function fixture() {
     enabled: () => true,
     admin: jest.fn().mockResolvedValue('admin-token'),
     provision: jest.fn().mockResolvedValue(undefined),
+    room: jest.fn().mockResolvedValue('!room:test'),
+    join: jest.fn().mockResolvedValue(undefined),
+    kick: jest.fn().mockResolvedValue(undefined),
     userId: mx,
     serverName: () => 'votz.test',
-    login: jest.fn(async (_localpart: string, deviceId: string) => ({
-      user_id: matrixUserOf.current,
+    login: jest.fn(async (localpart: string, deviceId: string) => ({
+      user_id: `@${localpart}:votz.test`,
       device_id: deviceId,
       access_token: `token-${deviceId}`,
     })),
@@ -211,7 +248,21 @@ function fixture() {
     platform,
   })
   const headers = (id: string) => ({ id, secret: SECRET })
-  return { service, db, devices, links, matrix, input, headers, convo, tx, emit, account }
+  return {
+    service,
+    db,
+    devices,
+    links,
+    receipts,
+    matrix,
+    input,
+    headers,
+    convo,
+    member,
+    tx,
+    emit,
+    account,
+  }
 }
 
 describe('ChatService: aparelhos conectados', () => {
@@ -668,5 +719,128 @@ describe('ChatService: redefinição e aparelho desconectado', () => {
     await expect(
       f.service.enroll(alice, { ...f.first, secret: 'y'.repeat(64) }),
     ).rejects.toBeInstanceOf(ConflictException)
+  })
+})
+
+describe('ChatService: texto em grupo', () => {
+  async function groupFixture() {
+    const f = fixture()
+    f.convo.kind = 'GROUP'
+    f.convo.members = [
+      f.member(alice, 'Alice'),
+      f.member(bob, 'Bruno'),
+      f.member(carol, 'Carol'),
+    ]
+    const aDev = f.input()
+    const bDev = f.input()
+    const cDev = f.input()
+    await f.service.enroll(alice, aDev)
+    await f.service.enroll(bob, bDev)
+    await f.service.enroll(carol, cDev)
+    return { ...f, aDev, bDev, cDev }
+  }
+
+  it('transport devolve todos os membros ativos do grupo com seus aparelhos e sincroniza a sala', async () => {
+    const f = await groupFixture()
+    const room = await f.service.transport(alice, f.headers(f.aDev.id), 'c1')
+    expect(room.kind).toBe('GROUP')
+    expect(room.peer).toBeNull()
+    expect(room.canSend).toBe(true)
+    expect(room.peers).toEqual([
+      {
+        userId: bob.id,
+        name: 'Bruno',
+        matrixUserId: mx(bob.id),
+        deviceId: f.bDev.id,
+        devices: [f.bDev.id],
+      },
+      {
+        userId: carol.id,
+        name: 'Carol',
+        matrixUserId: mx(carol.id),
+        deviceId: f.cDev.id,
+        devices: [f.cDev.id],
+      },
+    ])
+    expect(f.matrix.join).toHaveBeenCalledWith('!room:test', alice.id)
+  })
+
+  it('enviar mensagem no grupo incrementa não lidas de todos os outros membros ativos', async () => {
+    const f = await groupFixture()
+    f.matrix.request.mockResolvedValueOnce({ event_id: '$g1' })
+    await f.service.send(alice, f.headers(f.aDev.id), 'c1', 'txn-g1', {
+      revision: 3,
+      content: {
+        algorithm: 'm.megolm.v1.aes-sha2',
+        ciphertext: 'cipher',
+        device_id: f.aDev.id,
+        sender_key: 'k',
+        session_id: 's',
+      },
+    })
+    expect(f.convo.members[0].unreadCount).toBe(0)
+    expect(f.convo.members[1].unreadCount).toBe(1)
+    expect(f.convo.members[2].unreadCount).toBe(1)
+    expect(f.emit).toHaveBeenCalledTimes(3)
+  })
+
+  it('grupo sem outro participante ativo ainda não permite envio', async () => {
+    const f = await groupFixture()
+    f.convo.members[1].state = 'INVITED'
+    f.convo.members[2].state = 'INVITED'
+    const room = await f.service.transport(alice, f.headers(f.aDev.id), 'c1')
+    expect(room.canSend).toBe(false)
+    expect(room.peers).toEqual([])
+    await expect(
+      f.service.send(alice, f.headers(f.aDev.id), 'c1', 'txn-empty', {
+        revision: 3,
+        content: {
+          algorithm: 'm.megolm.v1.aes-sha2',
+          ciphertext: 'cipher',
+          device_id: f.aDev.id,
+          sender_key: 'k',
+          session_id: 's',
+        },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException)
+  })
+
+  it('recibos em grupo agregam entregas e leituras por mensagem e bloqueiam autoconfirmação', async () => {
+    const f = await groupFixture()
+    f.receipts.push(
+      {
+        conversationId: 'c1',
+        eventId: '$g1',
+        recipientUserId: bob.id,
+        deliveredAt: new Date('2026-11-19T12:00:00Z'),
+        readAt: new Date('2026-11-19T12:01:00Z'),
+      },
+      {
+        conversationId: 'c1',
+        eventId: '$g1',
+        recipientUserId: carol.id,
+        deliveredAt: new Date('2026-11-19T12:00:30Z'),
+        readAt: null,
+      },
+    )
+    const { receipts } = await f.service.receipts(alice, f.headers(f.aDev.id), 'c1', ['$g1'])
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({
+      eventId: '$g1',
+      deliveredCount: 2,
+      readCount: 1,
+      totalRecipients: 2,
+    })
+    // Remetente não pode confirmar recebimento da própria mensagem no grupo.
+    f.matrix.request.mockResolvedValueOnce({
+      type: 'm.room.encrypted',
+      sender: mx(alice.id),
+    })
+    await expect(
+      f.service.acknowledge(alice, f.headers(f.aDev.id), 'c1', {
+        eventIds: ['$g1'],
+        read: false,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException)
   })
 })

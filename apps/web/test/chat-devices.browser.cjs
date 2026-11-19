@@ -115,7 +115,10 @@ const ready = (page) =>
   await first.getByRole('button', { name: 'Desconectar', exact: true }).waitFor({ state: 'detached' })
   assert.equal(await first.getByRole('button', { name: 'Sair', exact: true }).count(), 1)
   console.log('PASS: disconnecting the other browser removes it from the list')
-  // Perdeu o acesso aos outros aparelhos: redefine com a senha da conta e recomeça.
+  // Perdeu o acesso aos outros aparelhos: os navegadores anteriores não estão mais acessíveis,
+  // então o terceiro redefine com a senha da conta e recomeça.
+  await first.context().close()
+  await second.context().close()
   const third = await open(users[0], `/conversas/${conversationId}`)
   await third.getByRole('heading', { name: 'Permita no seu outro aparelho' }).waitFor()
   await third.getByRole('button', { name: 'Não tenho mais acesso aos outros aparelhos' }).click()

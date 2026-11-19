@@ -16,20 +16,27 @@ export interface ChatPeer {
     /** Todos os aparelhos ativos do contato. */
     devices?: string[];
     userId: string;
+    /** Nome de exibição (usado em grupos para identificar quem enviou). */
+    name?: string;
 }
 export interface ChatRoom {
+    kind?: 'DIRECT' | 'GROUP';
     roomId: string;
     revision: number;
     canSend: boolean;
     /** Aparelhos ativos da própria conta (inclui o atual). */
     selfDevices?: string[];
-    peer: ChatPeer;
+    /** Contato na conversa individual (nulo em grupos). */
+    peer: ChatPeer | null;
+    /** Todos os outros participantes ativos (1 em conversa individual, N em grupo). */
+    peers?: ChatPeer[];
 }
 /** Aviso de segurança: aparelho novo ou chave trocada num aparelho já conhecido. */
 export interface ChatNotice {
     id: string;
     kind: 'device-added' | 'key-changed';
     who: 'peer' | 'self';
+    userId?: string;
     deviceId: string;
     fingerprint: string;
     at: number;
@@ -63,9 +70,12 @@ export interface ChatVerification {
 export interface ChatMessage {
     id: string;
     sender: 'self' | 'peer';
+    senderName?: string;
     text: string | null;
     createdAt: number;
     status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unverified' | 'disconnected' | 'unavailable';
+    /** Resumo de entrega/leitura em grupos (ex.: "Lida por 1 de 2"). */
+    receiptSummary?: string;
     txnId?: string;
 }
 export declare function messageStatusLabel(status: ChatMessage['status']): string;
@@ -161,6 +171,44 @@ export interface ChatViewNotice {
     /** Enquanto não for resolvido, mensagens novas do contato ficam bloqueadas. */
     blocking: boolean;
 }
+export interface ChatViewDeviceRequest {
+    id: string;
+    title: string;
+    text: string;
+    allow: string;
+    deny: string;
+}
+export interface ChatViewVerification {
+    /** Há uma confirmação em andamento (o painel deve ficar aberto mesmo sem clique no banner). */
+    active: boolean;
+    title: string;
+    description: string;
+    code: string | null;
+    primaryAction: {
+        action: VerificationAction;
+        label: string;
+    } | null;
+    waitingText: string | null;
+    canCancel: boolean;
+    cancelLabel: string;
+}
+export interface ChatViewMessage {
+    id: string;
+    own: boolean;
+    senderName: string | null;
+    body: string;
+    time: string;
+    meta: string;
+    retryTxnId: string | null;
+    retryLabel: string;
+    canRetry: boolean;
+}
+export interface ChatViewReadReceipts {
+    enabled: boolean;
+    disabled: boolean;
+    label: string;
+    help: string;
+}
 export interface ChatView {
     canWrite: boolean;
     placeholder: string;
@@ -171,6 +219,21 @@ export interface ChatView {
     /** O contato ainda não abriu as conversas no app dele. */
     waitingPeer: string | null;
     notices: ChatViewNotice[];
+    /** Pedidos de outros aparelhos da própria conta aguardando permissão. */
+    deviceRequests: ChatViewDeviceRequest[];
+    /** Indica se a confirmação opcional de identidade está disponível. */
+    canVerify: boolean;
+    /** Estado e textos do painel opcional de confirmação de identidade. */
+    verification: ChatViewVerification | null;
+    /** Mensagens prontas para desenhar (texto ou aviso, horário, status e reenvio). */
+    messages: ChatViewMessage[];
+    /** Texto exibido quando a conversa ainda está vazia e pronta para escrever. */
+    emptyText: string | null;
+    /** Controle de confirmação de leitura. */
+    readReceipts: ChatViewReadReceipts;
+    /** Há histórico mais antigo para carregar. */
+    canLoadOlder: boolean;
+    olderLabel: string;
 }
 /**
  * Tudo o que a pessoa lê na conversa, num só lugar: o web e o mobile
@@ -284,12 +347,14 @@ export declare class ChatClient {
     private update;
     private serial;
     private transport;
-    private peerDevices;
+    private roomPeers;
+    private devicesOf;
+    private hasAnyPeerDevice;
     private hasTrustedPeer;
     private notify;
     /**
      * Confiança no primeiro contato. O primeiro conjunto de aparelhos que o Votz
-     * apresenta para uma pessoa fica fixado; aparelho novo é aceito com aviso;
+     * apresenta para cada pessoa fica fixado; aparelho novo é aceito com aviso;
      * chave diferente num aparelho já conhecido NÃO é aceita até a pessoa decidir.
      */
     private reconcileTrust;
@@ -307,6 +372,8 @@ export declare class ChatClient {
     private markSeen;
     start(): Promise<void>;
     stop(): Promise<void>;
+    private lastPeerUsers;
+    private receiptSummaries;
     private refresh;
     private poll;
     private refreshMessages;

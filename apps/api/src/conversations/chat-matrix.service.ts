@@ -14,6 +14,7 @@ export class ChatMatrixService {
   private adminToken: string | null = null
   private starting: Promise<string> | null = null
   private readonly provisioned = new Set<string>()
+  private readonly joined = new Set<string>()
   constructor(private readonly config: ConfigService) {}
 
   enabled() {
@@ -225,13 +226,43 @@ export class ChatMatrixService {
       }
     }
     if (typeof roomId !== 'string') throw new BadRequestException()
-    for (const userId of userIds)
+    for (const userId of userIds) await this.join(roomId, userId)
+    return roomId
+  }
+  async join(roomId: string, userId: string) {
+    const key = `${roomId}|${userId}`
+    if (this.joined.has(key)) return
+    const token = await this.admin()
+    await this.provision(userId)
+    try {
       await this.request(
         `/_synapse/admin/v1/join/${encodeURIComponent(roomId)}`,
         'POST',
         { user_id: this.userId(userId) },
         token,
       )
-    return roomId
+    } catch (error) {
+      if (!(error instanceof HttpException) || error.getStatus() !== 403)
+        throw error
+    }
+    this.joined.add(key)
+  }
+  async kick(roomId: string, userId: string) {
+    this.joined.delete(`${roomId}|${userId}`)
+    const token = await this.admin()
+    try {
+      await this.request(
+        `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/kick`,
+        'POST',
+        { user_id: this.userId(userId), reason: 'removed' },
+        token,
+      )
+    } catch (error) {
+      if (
+        !(error instanceof HttpException) ||
+        ![403, 404].includes(error.getStatus())
+      )
+        throw error
+    }
   }
 }

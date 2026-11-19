@@ -72,12 +72,16 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
       />
     )
   const conversation = detail.data
-  if (
-    conversation.kind === 'DIRECT' &&
-    conversation.members.every((member) => member.state === 'ACTIVE') &&
+  const canOpenChat =
+    !conversation.archivedAt &&
     capabilities.data?.messagingEnabled &&
-    !showDetails
-  )
+    !showDetails &&
+    (conversation.kind === 'GROUP'
+      ? conversation.members.some(
+          (member) => member.user.id === user!.id && member.state === 'ACTIVE',
+        )
+      : conversation.members.every((member) => member.state === 'ACTIVE'))
+  if (canOpenChat)
     return <ChatPane key={`${user!.id}:${id}`} conversation={conversation} />
   const owner = conversation.myRole === 'OWNER'
   const admin = owner || conversation.myRole === 'ADMIN'

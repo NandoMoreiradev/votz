@@ -58,15 +58,26 @@ function chatError(error) {
             'Atualize a conversa antes de continuar.');
     return 'Não foi possível conectar ao mensageiro. Tente novamente.';
 }
+const READ_RECEIPTS_LABEL = 'Compartilhar quando eu ler';
+const READ_RECEIPTS_HELP = 'Entregue significa que a outra pessoa recebeu. Lida só aparece se ela ligar esta opção e a mensagem estiver na tela.';
+function formatMessageTime(createdAt) {
+    return new Date(createdAt).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
 /**
  * Tudo o que a pessoa lê na conversa, num só lugar: o web e o mobile
  * não repetem texto nem regra. Sem jargão: nada de "chave", "dispositivo"
  * ou "ativar".
  */
-function chatView(state, peerName, verified = false) {
-    const banner = verified
-        ? 'Identidade confirmada. As mensagens são protegidas com criptografia de ponta a ponta.'
-        : 'As mensagens são protegidas com criptografia de ponta a ponta.';
+function chatView(state, peerName, verified = state?.verification?.state === 'done') {
+    const isGroup = state?.room?.kind === 'GROUP';
+    const banner = isGroup
+        ? 'As mensagens deste grupo são protegidas com criptografia de ponta a ponta.'
+        : verified
+            ? 'Identidade confirmada. As mensagens são protegidas com criptografia de ponta a ponta.'
+            : 'As mensagens são protegidas com criptografia de ponta a ponta.';
     if (!state)
         return {
             canWrite: false,
@@ -75,36 +86,129 @@ function chatView(state, peerName, verified = false) {
             preparing: true,
             waitingPeer: null,
             notices: [],
+            deviceRequests: [],
+            canVerify: false,
+            verification: null,
+            messages: [],
+            emptyText: null,
+            readReceipts: {
+                enabled: false,
+                disabled: true,
+                label: READ_RECEIPTS_LABEL,
+                help: READ_RECEIPTS_HELP,
+            },
+            canLoadOlder: false,
+            olderLabel: 'Mensagens anteriores',
         };
+    const peers = state.room?.peers ?? (state.room?.peer ? [state.room.peer] : []);
     const notices = [];
     for (const notice of state.notices) {
         // Um aparelho novo da própria conta foi aprovado pela própria pessoa: sem aviso.
         if (notice.who === 'self')
             continue;
+        const whoName = (notice.userId
+            ? peers.find((p) => p.matrixUserId === notice.userId)?.name
+            : undefined) || peerName;
         notices.push(notice.kind === 'key-changed'
             ? {
                 id: notice.id,
-                text: `O código de segurança de ${peerName} mudou.`,
+                text: `O código de segurança de ${whoName} mudou.`,
                 detail: 'Pode ser só uma troca de celular. Até você continuar, as mensagens novas dele não aparecem.',
                 action: 'Continuar',
                 blocking: true,
             }
             : {
                 id: notice.id,
-                text: `${peerName} trocou de aparelho ou entrou em outro.`,
+                text: `${whoName} trocou de aparelho ou entrou em outro.`,
                 action: 'Ok',
                 blocking: false,
             });
     }
+    const canWrite = state.peerTrusted && !!state.room?.canSend;
+    const canVerify = !isGroup && !!state.ready && !!state.room?.peer?.deviceId && !verified;
+    const v = state.verification;
+    let verification = null;
+    if (canVerify) {
+        const idle = !v || ['none', 'cancelled'].includes(v.state);
+        const primaryAction = idle
+            ? { action: 'request', label: 'Começar a confirmação' }
+            : v.state === 'requested' && v.incoming
+                ? { action: 'accept', label: 'Aceitar' }
+                : v.state === 'comparing'
+                    ? { action: 'confirm', label: 'Os números são iguais' }
+                    : null;
+        const waitingText = v?.state === 'requested' && !v.incoming
+            ? 'Esperando a outra pessoa aceitar…'
+            : v?.state === 'ready'
+                ? 'Preparando os números…'
+                : v?.state === 'confirmed'
+                    ? 'Esperando a outra pessoa confirmar…'
+                    : null;
+        verification = {
+            active: !!v && !['none', 'cancelled', 'done'].includes(v.state),
+            title: 'Confirmar identidade (opcional)',
+            description: `Comparem os três números nas duas telas com ${peerName}. Só confirme se forem iguais. Você pode conversar sem fazer isso.`,
+            code: v?.decimals ? v.decimals.join(' · ') : null,
+            primaryAction,
+            waitingText,
+            canCancel: !idle,
+            cancelLabel: 'Cancelar',
+        };
+    }
+    const messages = state.messages.map((message) => {
+        const own = message.sender === 'self';
+        const time = formatMessageTime(message.createdAt);
+        const statusText = message.receiptSummary ?? messageStatusLabel(message.status);
+        return {
+            id: message.id,
+            own,
+            senderName: own ? null : (message.senderName ?? null),
+            body: message.text ?? messagePlaceholder(message.status),
+            time,
+            meta: own ? `${time} · ${statusText}` : time,
+            retryTxnId: message.status === 'failed' && message.txnId ? message.txnId : null,
+            retryLabel: 'Tentar enviar novamente',
+            canRetry: !!state.room?.canSend,
+        };
+    });
+    const waitingPeer = !state.ready
+        ? null
+        : isGroup
+            ? !state.room?.canSend
+                ? 'Aguardando convidados entrarem no grupo.'
+                : state.peerStatus === 'none'
+                    ? 'Ninguém do grupo abriu as conversas no app ainda. Quando abrirem, vocês já podem conversar.'
+                    : null
+            : state.peerStatus === 'none'
+                ? `${peerName} ainda não abriu as conversas no app. Quando abrir, vocês já podem conversar.`
+                : null;
     return {
-        canWrite: state.peerTrusted && !!state.room?.canSend,
+        canWrite,
         placeholder: composerPlaceholder(state),
         banner,
         preparing: !state.ready && !state.room,
-        waitingPeer: state.ready && state.peerStatus === 'none'
-            ? `${peerName} ainda não abriu as conversas no app. Quando abrir, vocês já podem conversar.`
-            : null,
+        waitingPeer,
         notices,
+        deviceRequests: state.deviceLinks.map((link) => ({
+            id: link.id,
+            ...deviceRequestText(link),
+        })),
+        canVerify,
+        verification,
+        messages,
+        emptyText: !state.messages.length && state.ready && canWrite
+            ? isGroup
+                ? 'A conversa do grupo começa aqui.'
+                : 'A conversa de vocês começa aqui.'
+            : null,
+        readReceipts: {
+            enabled: state.readReceiptsEnabled,
+            disabled: !state.ready || !state.connected,
+            label: READ_RECEIPTS_LABEL,
+            help: READ_RECEIPTS_HELP,
+        },
+        canLoadOlder: !!state.historyCursor,
+        olderLabel: 'Mensagens anteriores',
     };
 }
 /** Pedido de outro aparelho para usar a conta, em linguagem simples. */
@@ -300,32 +404,56 @@ class ChatClient {
             notices: this.notices,
         };
     }
-    peerDevices(room) {
+    roomPeers(room) {
         if (!room)
             return [];
-        return room.peer.devices ?? (room.peer.deviceId ? [room.peer.deviceId] : []);
+        return room.peers ?? (room.peer ? [room.peer] : []);
+    }
+    devicesOf(peer) {
+        return peer.devices ?? (peer.deviceId ? [peer.deviceId] : []);
+    }
+    hasAnyPeerDevice(room) {
+        return this.roomPeers(room).some((peer) => this.devicesOf(peer).length > 0);
     }
     hasTrustedPeer(room) {
-        return (!!room &&
-            this.peerDevices(room).some((id) => this.trusted.has(`${room.peer.matrixUserId}|${id}`)));
+        if (!room)
+            return false;
+        const peers = this.roomPeers(room);
+        const hasBlockingKeyChange = this.notices.some((n) => n.who === 'peer' && n.kind === 'key-changed');
+        if (hasBlockingKeyChange)
+            return false;
+        return peers.some((peer) => this.devicesOf(peer).some((id) => this.trusted.has(`${peer.matrixUserId}|${id}`)));
     }
-    notify(kind, who, deviceId, fingerprint) {
-        const id = `${kind}:${who}:${deviceId}:${fingerprint.slice(0, 24)}`;
+    notify(kind, who, deviceId, fingerprint, userId) {
+        const id = `${kind}:${who}:${userId ? `${userId}:` : ''}${deviceId}:${fingerprint.slice(0, 24)}`;
         if (this.notices.some((notice) => notice.id === id))
             return;
         this.notices = [
             ...this.notices,
-            { id, kind, who, deviceId, fingerprint, at: Date.now() },
+            {
+                id,
+                kind,
+                who,
+                ...(userId ? { userId } : {}),
+                deviceId,
+                fingerprint,
+                at: Date.now(),
+            },
         ].slice(-50);
     }
     /**
      * Confiança no primeiro contato. O primeiro conjunto de aparelhos que o Votz
-     * apresenta para uma pessoa fica fixado; aparelho novo é aceito com aviso;
+     * apresenta para cada pessoa fica fixado; aparelho novo é aceito com aviso;
      * chave diferente num aparelho já conhecido NÃO é aceita até a pessoa decidir.
      */
     async reconcileTrust(room) {
+        const peers = this.roomPeers(room);
         const groups = [
-            [room.peer.matrixUserId, this.peerDevices(room), 'peer'],
+            ...peers.map((peer) => [
+                peer.matrixUserId,
+                this.devicesOf(peer),
+                'peer',
+            ]),
             [
                 this.session.matrixUserId,
                 (room.selfDevices ?? []).filter((id) => id !== this.session.deviceId),
@@ -362,10 +490,10 @@ class ChatClient {
                     pins[deviceId] = fingerprint;
                     changed = true;
                     if (!first)
-                        this.notify('device-added', who, deviceId, fingerprint);
+                        this.notify('device-added', who, deviceId, fingerprint, userId);
                 }
                 else if (pinned !== fingerprint) {
-                    this.notify('key-changed', who, deviceId, fingerprint);
+                    this.notify('key-changed', who, deviceId, fingerprint, userId);
                     continue;
                 }
                 trusted.add(`${userId}|${deviceId}`);
@@ -382,7 +510,7 @@ class ChatClient {
         const peerTrusted = this.hasTrustedPeer(room);
         this.update({
             peerTrusted,
-            peerStatus: !this.peerDevices(room).length
+            peerStatus: !this.hasAnyPeerDevice(room)
                 ? 'none'
                 : peerTrusted
                     ? 'ready'
@@ -402,7 +530,7 @@ class ChatClient {
                 return;
             const room = this.snapshot.room;
             const userId = notice.who === 'peer'
-                ? room?.peer.matrixUserId
+                ? (notice.userId ?? room?.peer?.matrixUserId)
                 : this.session.matrixUserId;
             if (notice.kind === 'key-changed' && userId) {
                 ;
@@ -536,7 +664,9 @@ class ChatClient {
         this.messages.clear();
         this.visible.clear();
         this.received.clear();
+        this.receiptSummaries.clear();
         this.trusted.clear();
+        this.lastPeerUsers = null;
         this.snapshot = {
             ...this.snapshot,
             ready: false,
@@ -549,12 +679,31 @@ class ChatClient {
         };
         return this.queue.then(() => { this.events.clear(); this.messages.clear(); });
     }
+    lastPeerUsers = null;
+    receiptSummaries = new Map();
     async refresh(links = true) {
         const room = await this.http(`/${this.conversationId}/chat`);
         if (!this.active)
             return;
+        const peers = this.roomPeers(room);
+        const currentPeerUsers = new Set(peers.map((peer) => peer.matrixUserId));
+        // Rotação de chave de grupo: se alguém saiu ou foi removido desde a última
+        // leitura, descarta a confiança dele e gira a sessão Megolm da sala.
+        if (this.lastPeerUsers) {
+            let removed = false;
+            for (const previous of this.lastPeerUsers) {
+                if (!currentPeerUsers.has(previous)) {
+                    this.crypto.trust(previous, []);
+                    removed = true;
+                }
+            }
+            if (removed)
+                await this.crypto.rotate?.(room.roomId);
+        }
+        this.lastPeerUsers = currentPeerUsers;
         this.update({ room });
-        await this.crypto.track(room.peer.matrixUserId, room.roomId);
+        for (const peer of peers)
+            await this.crypto.track(peer.matrixUserId, room.roomId);
         await this.crypto.track(this.session.matrixUserId, room.roomId);
         await this.crypto.pump(this.http);
         await this.reconcileTrust(room);
@@ -573,7 +722,7 @@ class ChatClient {
                 if (!this.active)
                     return;
                 if (Date.now() - this.refreshAt > 15000 ||
-                    !this.snapshot.room?.peer.deviceId)
+                    !this.hasAnyPeerDevice(this.snapshot.room))
                     await this.refresh();
                 await this.crypto.receive(sync);
                 await this.crypto.pump(this.http);
@@ -614,21 +763,26 @@ class ChatClient {
         const room = this.snapshot.room;
         if (!room)
             return;
-        const verification = await this.crypto.verification(room.peer);
+        const peers = this.roomPeers(room);
+        const peerByMatrix = new Map(peers.map((peer) => [peer.matrixUserId, peer]));
+        const verification = room.kind !== 'GROUP' && room.peer
+            ? await this.crypto.verification(room.peer)
+            : { state: 'none' };
         this.update({ verification });
         for (const [id, event] of this.events) {
             if (event.type !== 'm.room.encrypted' ||
                 event.content?.algorithm !== 'm.megolm.v1.aes-sha2')
                 continue;
             const own = event.sender === this.session.matrixUserId;
-            if (!own && event.sender !== room.peer.matrixUserId)
+            const senderPeer = own ? undefined : peerByMatrix.get(event.sender);
+            if (!own && !senderPeer)
                 continue;
             // O aparelho remetente vem do envelope; a chave do remetente é conferida
             // abaixo contra a identidade que o Votz publicou para esse aparelho.
             const claimed = typeof event.content?.device_id === 'string'
                 ? event.content.device_id
                 : undefined;
-            const deviceId = claimed ?? (own ? this.session.deviceId : room.peer.deviceId);
+            const deviceId = claimed ?? (own ? this.session.deviceId : senderPeer?.deviceId ?? null);
             const txn = event.unsigned?.transaction_id;
             if (!id.startsWith('pending:') && typeof txn === 'string') {
                 this.messages.delete(`pending:${txn}`);
@@ -642,7 +796,9 @@ class ChatClient {
                 ? !selfList ||
                     deviceId === this.session.deviceId ||
                     (!!deviceId && selfList.includes(deviceId))
-                : !!deviceId && this.peerDevices(room).includes(deviceId);
+                : !!deviceId &&
+                    !!senderPeer &&
+                    this.devicesOf(senderPeer).includes(deviceId);
             const trusted = (own && deviceId === this.session.deviceId) ||
                 (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`));
             let text = null;
@@ -671,14 +827,19 @@ class ChatClient {
             }
             if (!this.active)
                 return;
+            const receiptSummary = own ? this.receiptSummaries.get(id) : undefined;
             this.messages.set(id, {
                 id,
                 sender: own ? 'self' : 'peer',
+                ...(!own && room.kind === 'GROUP' && senderPeer?.name
+                    ? { senderName: senderPeer.name }
+                    : {}),
                 text,
                 createdAt: Number.isFinite(event.origin_server_ts)
                     ? event.origin_server_ts
                     : 0,
                 status,
+                ...(receiptSummary ? { receiptSummary } : {}),
                 ...(typeof txn === 'string' ? { txnId: txn } : {}),
             });
             if (!own && text !== null && !id.startsWith('pending:'))
@@ -688,7 +849,9 @@ class ChatClient {
     }
     async verification(action) {
         return this.serial(async () => {
-            if (!this.snapshot.room?.peer.deviceId || !this.snapshot.room.canSend)
+            if (this.snapshot.room?.kind === 'GROUP' ||
+                !this.snapshot.room?.peer?.deviceId ||
+                !this.snapshot.room.canSend)
                 throw new Error('Peer not ready');
             await this.crypto.verify(this.snapshot.room.peer, action, this.http);
             await this.crypto.pump(this.http);
@@ -709,14 +872,19 @@ class ChatClient {
             if (this.pending.length >= 100)
                 throw new Error('Aguarde o envio das mensagens pendentes antes de continuar.');
             if (!room?.canSend)
-                throw new Error('Esta interação está bloqueada.');
-            if (!this.peerDevices(room).length)
-                throw new Error('A outra pessoa ainda não ativou as conversas protegidas.');
+                throw new Error(room?.kind === 'GROUP'
+                    ? 'Aguarde outra pessoa entrar no grupo para enviar mensagens.'
+                    : 'Esta interação está bloqueada.');
+            if (!this.hasAnyPeerDevice(room))
+                throw new Error(room.kind === 'GROUP'
+                    ? 'Ninguém do grupo abriu as conversas no app ainda.'
+                    : 'A outra pessoa ainda não abriu as conversas no app.');
             if (!this.hasTrustedPeer(room))
                 throw new Error('A segurança desta conversa mudou. Confira o aviso antes de enviar.');
-            // Cifra para os aparelhos do contato e para os outros aparelhos desta conta.
+            const peers = this.roomPeers(room);
+            // Cifra para os aparelhos de todos os participantes ativos e para os outros aparelhos desta conta.
             await this.crypto.share(room.roomId, [
-                room.peer.matrixUserId,
+                ...peers.map((peer) => peer.matrixUserId),
                 this.session.matrixUserId,
             ]);
             await this.crypto.pump(this.http);
@@ -935,11 +1103,42 @@ class ChatClient {
         for (const receipt of result.receipts || []) {
             if (!eventIds.includes(receipt.eventId) || !receipt.deliveredAt)
                 continue;
-            const status = receipt.readAt ? 'read' : 'delivered';
+            const total = typeof receipt.totalRecipients === 'number'
+                ? receipt.totalRecipients
+                : 0;
+            let status;
+            let summary;
+            if (total > 1) {
+                const readCount = Number(receipt.readCount || 0);
+                const deliveredCount = Number(receipt.deliveredCount || 0);
+                if (readCount >= total) {
+                    status = 'read';
+                }
+                else if (readCount > 0) {
+                    status = 'delivered';
+                    summary = `Lida por ${readCount} de ${total}`;
+                }
+                else if (deliveredCount >= total) {
+                    status = 'delivered';
+                }
+                else {
+                    status = 'delivered';
+                    summary = `Entregue a ${deliveredCount} de ${total}`;
+                }
+            }
+            else {
+                status = receipt.readAt ? 'read' : 'delivered';
+            }
             this.received.set(receipt.eventId, status);
+            if (summary)
+                this.receiptSummaries.set(receipt.eventId, summary);
+            else
+                this.receiptSummaries.delete(receipt.eventId);
             const message = this.messages.get(receipt.eventId);
-            if (message)
+            if (message) {
                 message.status = status;
+                message.receiptSummary = summary;
+            }
         }
         this.render();
     }

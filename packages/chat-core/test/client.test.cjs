@@ -667,8 +667,45 @@ test('the chat view speaks plain language and drives what the screens show', asy
   assert.equal(ok.placeholder, 'Escreva uma mensagem…')
   assert.equal(ok.waitingPeer, null)
   assert.deepEqual(ok.notices, [])
+  assert.equal(ok.emptyText, 'A conversa de vocês começa aqui.')
+  assert.equal(ok.canVerify, true)
+  assert.equal(ok.verification.active, false)
+  assert.deepEqual(ok.verification.primaryAction, { action: 'request', label: 'Começar a confirmação' })
+  assert.equal(ok.verification.canCancel, false)
+  assert.equal(ok.readReceipts.label, 'Compartilhar quando eu ler')
+  assert.equal(ok.readReceipts.disabled, false)
   assert.match(ok.banner, /criptografia de ponta a ponta/)
-  assert.match(chatView(ready.client.getState(), 'Bruno', true).banner, /Identidade confirmada/)
+  const verifiedView = chatView(ready.client.getState(), 'Bruno', true)
+  assert.match(verifiedView.banner, /Identidade confirmada/)
+  assert.equal(verifiedView.canVerify, false)
+  assert.equal(verifiedView.verification, null)
+
+  // Estados do painel de confirmação opcional e mensagens prontas para desenhar.
+  const baseState = ready.client.getState()
+  const incoming = chatView({ ...baseState, verification: { state: 'requested', incoming: true } }, 'Bruno')
+  assert.equal(incoming.verification.active, true)
+  assert.deepEqual(incoming.verification.primaryAction, { action: 'accept', label: 'Aceitar' })
+  assert.equal(incoming.verification.canCancel, true)
+
+  const outgoing = chatView({ ...baseState, verification: { state: 'requested', incoming: false } }, 'Bruno')
+  assert.equal(outgoing.verification.primaryAction, null)
+  assert.equal(outgoing.verification.waitingText, 'Esperando a outra pessoa aceitar…')
+
+  const comparing = chatView({ ...baseState, verification: { state: 'comparing', incoming: false, decimals: [1234, 5678, 9012] } }, 'Bruno')
+  assert.equal(comparing.verification.code, '1234 · 5678 · 9012')
+  assert.deepEqual(comparing.verification.primaryAction, { action: 'confirm', label: 'Os números são iguais' })
+
+  const withFailed = chatView({
+    ...baseState,
+    messages: [{ id: 'local:1', txnId: 't1', sender: 'self', text: 'Oi', status: 'failed', createdAt: '2026-11-19T12:00:00.000Z' }],
+  }, 'Bruno')
+  assert.equal(withFailed.emptyText, null)
+  assert.equal(withFailed.messages.length, 1)
+  assert.equal(withFailed.messages[0].own, true)
+  assert.equal(withFailed.messages[0].body, 'Oi')
+  assert.equal(withFailed.messages[0].retryTxnId, 't1')
+  assert.equal(withFailed.messages[0].canRetry, true)
+  assert.match(withFailed.messages[0].meta, /Não enviada/)
   await ready.client.stop()
 })
 
@@ -695,7 +732,26 @@ test('security notices are short, blocking only when a known contact key really 
 test('nothing the person reads uses technical words', async () => {
   const strings = []
   const collect = (view) =>
-    strings.push(view.placeholder, view.banner, view.waitingPeer ?? '', ...view.notices.flatMap((n) => [n.text, n.detail ?? '', n.action]))
+    strings.push(
+      view.placeholder,
+      view.banner,
+      view.waitingPeer ?? '',
+      view.emptyText ?? '',
+      view.olderLabel,
+      view.readReceipts.label,
+      view.readReceipts.help,
+      ...(view.verification
+        ? [
+            view.verification.title,
+            view.verification.description,
+            view.verification.primaryAction?.label ?? '',
+            view.verification.waitingText ?? '',
+            view.verification.cancelLabel,
+          ]
+        : []),
+      ...view.deviceRequests.flatMap((d) => [d.title, d.text, d.allow, d.deny]),
+      ...view.notices.flatMap((n) => [n.text, n.detail ?? '', n.action]),
+    )
   collect(chatView(null, 'Ana'))
   for (const options of [{}, { pins: changedKey }]) {
     const f = fixture(options)
@@ -744,4 +800,60 @@ test('losing authorization while a conversation is open asks the screen to recon
   await new Promise((resolve) => setTimeout(resolve, 30))
   assert.equal(outage.client.getState().reactivate, false, 'A plain outage must not wipe the device')
   await outage.client.stop()
+})
+
+// --- Etapa 1: texto em grupo ---
+
+test('group chat encrypts for all active members, rotates keys when a member leaves, shows sender names and group receipts', async () => {
+  const f = fixture({ keys: { '@carol:test|CAROL': 'carol-curve' } })
+  f.room.kind = 'GROUP'
+  f.room.peer = null
+  f.room.peers = [
+    { userId: 'u2', name: 'Bruno', matrixUserId: '@peer:test', deviceId: 'PEER', devices: ['PEER'] },
+    { userId: 'u3', name: 'Carol', matrixUserId: '@carol:test', deviceId: 'CAROL', devices: ['CAROL'] },
+  ]
+  const sharedTo = []
+  let rotated = 0
+  const origShare = f.crypto.share
+  f.crypto.share = async (roomId, userIds) => {
+    sharedTo.push([...userIds])
+    return origShare(roomId, userIds)
+  }
+  f.crypto.rotate = async () => {
+    rotated += 1
+  }
+  await f.client.start()
+  const view0 = chatView(f.client.getState(), 'Grupo do Bairro')
+  assert.equal(view0.canWrite, true)
+  assert.equal(view0.canVerify, false, '1-to-1 SAS verification is hidden in groups')
+  assert.match(view0.banner, /deste grupo/)
+  assert.equal(view0.emptyText, 'A conversa do grupo começa aqui.')
+
+  // Envia no grupo: compartilha chave com Bruno, Carol e a própria conta.
+  await f.client.send('Olá grupo')
+  assert.deepEqual(sharedTo[sharedTo.length - 1], ['@peer:test', '@carol:test', '@self:test'])
+
+  // Remove Carol do grupo: o próximo envio gira a chave Megolm e exclui Carol.
+  f.room.peers = [f.room.peers[0]]
+  f.room.revision += 1
+  await f.client.send('Depois da saída')
+  assert.equal(rotated, 1, 'Removing a member rotates the outbound Megolm session')
+  assert.deepEqual(sharedTo[sharedTo.length - 1], ['@peer:test', '@self:test'])
+
+  // Mensagem recebida em grupo traz o nome de quem enviou e recibos agregados aparecem na view.
+  const state = f.client.getState()
+  const v = chatView(
+    {
+      ...state,
+      messages: [
+        { id: '$m1', sender: 'peer', senderName: 'Bruno', text: 'Oi!', createdAt: Date.now(), status: 'sent' },
+        { id: '$m2', sender: 'self', text: 'Tudo bem?', createdAt: Date.now(), status: 'delivered', receiptSummary: 'Lida por 1 de 2' },
+      ],
+    },
+    'Grupo do Bairro',
+  )
+  assert.equal(v.messages[0].senderName, 'Bruno')
+  assert.equal(v.messages[1].senderName, null)
+  assert.match(v.messages[1].meta, /Lida por 1 de 2/)
+  await f.client.stop()
 })

@@ -1,5 +1,5 @@
-import { useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChatCircle, Plus, ShieldCheck, Users } from '@phosphor-icons/react'
 import styled from 'styled-components'
 import {
@@ -27,6 +27,7 @@ import { ChatPane } from '../components/conversations/ChatPane'
 import { isAxiosError } from 'axios'
 import { deviceRequestText, type ChatDeviceInfo } from '@votz/chat-core'
 import { useChatDeviceAction, useChatDevices } from '../hooks/useChatDevices'
+import { closeWebChatSession } from '../lib/chat-session'
 
 const PLATFORM: Record<string, string> = {
   android: 'Android',
@@ -358,12 +359,22 @@ export function ConversationGate({ children }: PropsWithChildren) {
   return <>{children}</>
 }
 export function Conversations() {
-  const { id } = useParams<{ id: string }>()
+  const scope = useConversationScope()
   const location = useLocation()
-  const create = location.pathname === '/conversas/nova'
-  const blocked = location.pathname === '/conversas/bloqueios'
-  const devices = location.pathname === '/conversas/aparelhos'
+  const subpath = location.pathname.replace(/^\/conversas\/?/, '').replace(/\/+$/, '')
+  const create = subpath === 'nova'
+  const blocked = subpath === 'bloqueios'
+  const devices = subpath === 'aparelhos'
+  const id = subpath && !create && !blocked && !devices && !subpath.includes('/') ? subpath : undefined
   const sub = id || create || blocked || devices
+  // Mantém a sessão cifrada aberta enquanto a pessoa navega em /conversas/* e
+  // fecha tudo ao sair da área de conversas, trocar de conta ou entrar em contexto.
+  useEffect(() => {
+    if (!scope.user?.id || scope.activeContext) void closeWebChatSession()
+    return () => {
+      void closeWebChatSession()
+    }
+  }, [scope.user?.id, scope.activeContext])
   return (
     <>
       <Navbar />
@@ -528,7 +539,14 @@ function ChatDevices() {
       ? 'Sair das conversas neste navegador? Ele deixa de receber mensagens e você perde o acesso ao histórico dele. Para voltar, abra uma conversa de novo; se você usa outros aparelhos, será preciso permitir este acesso.'
       : `Desconectar ${deviceName(device)}? Esse aparelho deixa de receber mensagens novas. Mensagens que ele já recebeu continuam nele.`
     if (window.confirm(message))
-      action.mutate({ type: 'revoke', id: device.id })
+      action.mutate(
+        { type: 'revoke', id: device.id },
+        {
+          onSuccess: () => {
+            if (device.current) void closeWebChatSession()
+          },
+        },
+      )
   }
   return (
     <>
@@ -855,7 +873,14 @@ function ConversationDetail({ id }: { id: string }) {
       />
     )
   const conversation = detail.data
-  if (conversation.kind === 'DIRECT' && conversation.members.every(member => member.state === 'ACTIVE') && capabilities.data?.messagingEnabled && !showDetails) return <ChatPane key={`${user!.id}:${id}`} conversation={conversation} />
+  const canOpenChat =
+    !conversation.archivedAt &&
+    capabilities.data?.messagingEnabled &&
+    !showDetails &&
+    (conversation.kind === 'GROUP'
+      ? conversation.members.some((member) => member.user.id === user!.id && member.state === 'ACTIVE')
+      : conversation.members.every((member) => member.state === 'ACTIVE'))
+  if (canOpenChat) return <ChatPane key={`${user!.id}:${id}`} conversation={conversation} />
   const owner = conversation.myRole === 'OWNER'
   const admin = owner || conversation.myRole === 'ADMIN'
   const closed = !!conversation.archivedAt
