@@ -388,6 +388,7 @@ model Conversation {
   members         ConversationMember[]
   outbox          ConversationOutbox[]
   chatReceipts    ChatReceipt[]
+  attachments     ChatAttachment[]
 
   @@unique([createdById, clientRequestId])
   @@index([updatedAt, id])
@@ -446,6 +447,22 @@ model ChatReceipt {
   @@id([conversationId, eventId, recipientUserId])
   @@index([conversationId, recipientUserId])
   @@map("chat_receipts")
+}
+
+// Anexo cifrado de ponta a ponta (bytes opacos no bucket privado; chave fica só no evento Megolm).
+model ChatAttachment {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  uploaderId     String       @map("uploader_id")
+  objectKey      String       @unique @map("object_key")
+  sizeBytes      Int          @map("size_bytes")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  expiresAt      DateTime     @map("expires_at")
+  deletedAt      DateTime?    @map("deleted_at")
+  @@index([conversationId, createdAt])
+  @@index([expiresAt, deletedAt])
+  @@map("chat_attachments")
 }
 
 model ConversationMember {

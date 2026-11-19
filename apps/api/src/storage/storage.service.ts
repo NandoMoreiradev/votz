@@ -318,6 +318,28 @@ export class StorageService {
     )
   }
 
+  /** Armazena bytes já cifrados de ponta a ponta (nunca inspeciona MIME nem gera URL pública). */
+  async uploadEncryptedBlob(key: string, data: Buffer): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: data,
+        ContentType: 'application/octet-stream',
+      }),
+    )
+  }
+
+  /** Baixa bytes cifrados do bucket privado para streaming autenticado pelo gateway. */
+  async downloadEncryptedBlob(key: string): Promise<Buffer> {
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    )
+    if (!response.Body) throw new BadRequestException('Arquivo indisponível.')
+    const bytes = await response.Body.transformToByteArray()
+    return Buffer.from(bytes)
+  }
+
   async getSignedDownloadUrl(key: string, expiresInSeconds = 3600): Promise<string> {
     return getSignedUrl(
       this.client,

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
 import {
   ArrowLeft,
   LockKey,
+  Paperclip,
   PaperPlaneTilt,
   ShieldCheck,
 } from '@phosphor-icons/react'
@@ -14,8 +15,10 @@ import {
   RESET_WARNING,
   chatError,
   chatView,
+  mediaKindFromMime,
   type ChatState,
   type ChatHttp,
+  type ChatViewAttachment,
   type VerificationAction,
 } from '@votz/chat-core'
 import {
@@ -30,6 +33,7 @@ import {
   acquireWebChatSession,
   hasWebChatSession,
   resetWebChatSession,
+  type WebChatSession,
 } from '../../lib/chat-session'
 
 const Box = styled.section`
@@ -197,11 +201,126 @@ const Note = styled.div`
     min-height: 32px;
   }
 `
+const MediaBox = styled.div`
+  margin: 4px 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  img,
+  video {
+    display: block;
+    max-width: 100%;
+    max-height: 280px;
+    border-radius: 12px;
+    object-fit: cover;
+  }
+  audio {
+    max-width: 100%;
+  }
+`
 const failureMessage = (failure: unknown) =>
   (failure as { response?: { data?: { message?: string } } }).response?.data
     ?.message ||
   (failure as Error).message ||
   'Não foi possível abrir suas conversas. Tente de novo.'
+
+function AttachmentView({
+  attachment,
+  conversationId,
+  client,
+  session,
+}: {
+  attachment: ChatViewAttachment
+  conversationId: string
+  client: ChatClient | null
+  session: WebChatSession | null
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState('')
+  const urlRef = useRef<string | null>(null)
+  const autoLoad = attachment.kind === 'image' || attachment.kind === 'audio'
+
+  async function load(triggerDownload = false) {
+    if (!client || !session || loading) return
+    if (urlRef.current) {
+      if (triggerDownload) {
+        const a = document.createElement('a')
+        a.href = urlRef.current
+        a.download = attachment.name
+        a.click()
+      }
+      return
+    }
+    setLoading(true)
+    setFailed('')
+    try {
+      const cipher = await session.downloadMedia(conversationId, attachment.id)
+      const plain = await client.decryptMedia(cipher, attachment.secret)
+      const copy = new Uint8Array(plain.byteLength)
+      copy.set(plain)
+      const objectUrl = URL.createObjectURL(
+        new Blob([copy.buffer], { type: attachment.mimeType }),
+      )
+      urlRef.current = objectUrl
+      setUrl(objectUrl)
+      if (triggerDownload) {
+        const a = document.createElement('a')
+        a.href = objectUrl
+        a.download = attachment.name
+        a.click()
+      }
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status
+      setFailed(
+        status === 410
+          ? 'Este arquivo expirou após 90 dias.'
+          : 'Não foi possível abrir este arquivo.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (autoLoad) void load(false)
+    return () => {
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current)
+        urlRef.current = null
+      }
+    }
+  }, [attachment.id])
+
+  return (
+    <MediaBox>
+      {url && attachment.kind === 'image' && (
+        <img src={url} alt={attachment.name} />
+      )}
+      {url && attachment.kind === 'video' && (
+        <video controls src={url} />
+      )}
+      {url && attachment.kind === 'audio' && (
+        <audio controls src={url} />
+      )}
+      {(!url || attachment.kind === 'file') && (
+        <Button
+          $secondary
+          type="button"
+          disabled={loading}
+          onClick={() => {
+            void load(attachment.kind === 'file')
+          }}
+        >
+          {loading
+            ? 'Baixando…'
+            : `${attachment.kind === 'file' ? 'Baixar' : 'Abrir'} ${attachment.kindLabel.toLowerCase()} (${attachment.name} · ${attachment.sizeLabel})`}
+        </Button>
+      )}
+      {failed && <small role="alert">{failed}</small>}
+    </MediaBox>
+  )
+}
 
 /**
  * A conversa abre sozinha: um segredo gerado neste navegador protege as
@@ -230,7 +349,11 @@ export function ChatPane({
   const [resetting, setResetting] = useState(false)
   const [password, setPassword] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const client = useRef<ChatClient | null>(null)
+  const sessionRef = useRef<WebChatSession | null>(null)
+  const uploadAbort = useRef<AbortController | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const cleanup = useRef<() => void>(() => {})
   const abort = useRef(new AbortController())
   const bottom = useRef<HTMLDivElement>(null)
@@ -395,6 +518,7 @@ export function ChatPane({
         },
       })
       if (signal.aborted) return
+      sessionRef.current = webSession
       setPending(null)
       cleanup.current()
       const guardedHttp: ChatHttp = (path, method, body) => {
@@ -483,6 +607,40 @@ export function ChatPane({
     } catch (failure) {
       setError((failure as Error).message || chatError(failure))
     } finally {
+      setBusy(false)
+    }
+  }
+  async function attachFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !client.current || !sessionRef.current || busy) return
+    const controller = new AbortController()
+    uploadAbort.current = controller
+    setBusy(true)
+    setUploadProgress(0)
+    setError('')
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const kind = mediaKindFromMime(file.type)
+      await client.current.sendMedia({
+        kind,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        bytes,
+        caption: draft.trim() || undefined,
+        upload: (ciphertext) =>
+          sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
+            signal: controller.signal,
+            onProgress: setUploadProgress,
+          }),
+      })
+      setDraft('')
+    } catch (failure) {
+      if (!controller.signal.aborted)
+        setError(failureMessage(failure))
+    } finally {
+      uploadAbort.current = null
+      setUploadProgress(null)
       setBusy(false)
     }
   }
@@ -770,7 +928,15 @@ export function ChatPane({
                 $own={message.own}
               >
                 {message.senderName && <strong>{message.senderName}</strong>}
-                <span>{message.body}</span>
+                {message.attachment && (
+                  <AttachmentView
+                    attachment={message.attachment}
+                    conversationId={conversation.id}
+                    client={client.current}
+                    session={sessionRef.current}
+                  />
+                )}
+                {message.body && <span>{message.body}</span>}
                 <small>{message.meta}</small>
                 {message.retryTxnId && (
                   <Button
@@ -813,7 +979,36 @@ export function ChatPane({
               ⓘ
             </span>
           </Status>
+          {uploadProgress !== null && (
+            <Note role="status">
+              <span>Enviando arquivo… {uploadProgress}%</span>
+              <button
+                type="button"
+                onClick={() => uploadAbort.current?.abort()}
+              >
+                Cancelar
+              </button>
+            </Note>
+          )}
           <Composer onSubmit={send}>
+            <input
+              ref={fileInput}
+              type="file"
+              aria-label="Escolher arquivo"
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                void attachFile(event)
+              }}
+            />
+            <Button
+              $secondary
+              type="button"
+              aria-label="Anexar arquivo"
+              disabled={!view.canWrite || busy}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Paperclip size={20} />
+            </Button>
             <textarea
               aria-label="Mensagem"
               placeholder={view.placeholder}

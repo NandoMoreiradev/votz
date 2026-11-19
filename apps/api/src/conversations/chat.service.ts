@@ -6,10 +6,13 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common'
+import { Cron } from '@nestjs/schedule'
 import { ConfigService } from '@nestjs/config'
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { compare } from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
 import {
@@ -20,6 +23,7 @@ import {
 import { ConversationActor } from './conversations.service'
 import { ChatMatrixService } from './chat-matrix.service'
 import { NotificationsGateway } from '../notifications/notifications.gateway'
+import { StorageService } from '../storage/storage.service'
 import {
   ChatReceiptDto,
   EnrollChatDeviceDto,
@@ -34,6 +38,9 @@ export const MAX_PENDING_CHAT_LINKS = 3
 export const CHAT_LINK_TTL_MS = 10 * 60 * 1000
 /** HTTP 423: o aparelho existe, mas foi desconectado. Não confundir com 401 (sessão) nem 410 (pedido expirado). */
 export const CHAT_DEVICE_DISCONNECTED = 423
+/** Retenção de anexos cifrados na nuvem (decisão de produto: 90 dias). */
+export const CHAT_MEDIA_RETENTION_DAYS = 90
+export const CHAT_MEDIA_MAX_BYTES = 50 * 1024 * 1024
 @Injectable()
 export class ChatService {
   constructor(
@@ -41,6 +48,7 @@ export class ChatService {
     private readonly config: ConfigService,
     private readonly matrix: ChatMatrixService,
     private readonly events: NotificationsGateway,
+    @Optional() private readonly storage?: StorageService,
   ) {}
   private guard(actor: ConversationActor) {
     if (!this.matrix.enabled()) throw new NotFoundException()
@@ -1137,5 +1145,92 @@ export class ChatService {
       },
       { timeout: 10000, maxWait: 3000 },
     )
+  }
+  /**
+   * Recebe bytes já cifrados de ponta a ponta (AES-256-CTR no cliente), grava no
+   * bucket privado e registra metadados mínimos com expiração de 90 dias.
+   */
+  async uploadMedia(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    conversationId: string,
+    data: Buffer,
+  ) {
+    await this.device(actor, headers)
+    await this.conversation(actor, conversationId, true)
+    if (!data || !data.length)
+      throw new BadRequestException('O arquivo enviado está vazio.')
+    if (data.length > CHAT_MEDIA_MAX_BYTES)
+      throw new BadRequestException('O arquivo excede o limite de 50 MB.')
+    if (!this.storage)
+      throw new ServiceUnavailableException(
+        'Armazenamento de mídia indisponível.',
+      )
+    const id = randomUUID()
+    const objectKey = `chat-media/${conversationId}/${id}.enc`
+    const expiresAt = new Date(
+      Date.now() + CHAT_MEDIA_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    )
+    await this.storage.uploadEncryptedBlob(objectKey, data)
+    await this.db.chatAttachment.create({
+      data: {
+        id,
+        conversationId,
+        uploaderId: actor.id,
+        objectKey,
+        sizeBytes: data.length,
+        expiresAt,
+      },
+    })
+    return {
+      id,
+      sizeBytes: data.length,
+      expiresAt: expiresAt.toISOString(),
+    }
+  }
+  /** Baixa anexo cifrado garantindo pertencimento à conversa e validade de 90 dias. */
+  async downloadMedia(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    conversationId: string,
+    attachmentId: string,
+  ) {
+    await this.device(actor, headers)
+    await this.conversation(actor, conversationId, false)
+    const row = await this.db.chatAttachment.findFirst({
+      where: { id: attachmentId, conversationId },
+    })
+    if (!row) throw new NotFoundException('Arquivo não encontrado.')
+    if (row.deletedAt || row.expiresAt <= new Date())
+      throw new GoneException('Este arquivo expirou após 90 dias.')
+    if (!this.storage)
+      throw new ServiceUnavailableException(
+        'Armazenamento de mídia indisponível.',
+      )
+    const buffer = await this.storage.downloadEncryptedBlob(row.objectKey)
+    return { buffer, sizeBytes: row.sizeBytes }
+  }
+  /** Limpeza diária de anexos cifrados que passaram dos 90 dias de retenção. */
+  @Cron('0 4 * * *')
+  async purgeExpiredAttachments() {
+    if (!this.storage) return 0
+    const now = new Date()
+    const expired = await this.db.chatAttachment.findMany({
+      where: { deletedAt: null, expiresAt: { lte: now } },
+      take: 200,
+      select: { id: true, objectKey: true },
+    })
+    for (const row of expired) {
+      try {
+        await this.storage.delete(row.objectKey)
+      } catch {
+        /* Objeto já ausente ou indisponível: ainda assim marca como expirado. */
+      }
+      await this.db.chatAttachment.update({
+        where: { id: row.id },
+        data: { deletedAt: now },
+      })
+    }
+    return expired.length
   }
 }

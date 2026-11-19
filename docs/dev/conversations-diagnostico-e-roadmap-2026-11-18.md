@@ -29,7 +29,7 @@ Base sólida, mas a entrega funcional é só **texto em conversa individual**.
 | Enviada, entregue, lida (leitura opcional) | Pronto | Pronto | Pronto |
 | Fila offline durável, reenvio sem duplicar | Pronto | Pronto | Pronto |
 | Texto em grupo | Pronto | Pronto | Pronto (validado no Android físico) |
-| Imagem, vídeo, áudio, arquivo | Ausente | Ausente | Ausente |
+| Imagem, vídeo, áudio, arquivo | Pronto (bucket privado, retenção 90 dias) | Pronto (imagem/vídeo/áudio/arquivo E2EE) | Parcial (imagem/vídeo via galeria + decifração Matrix v2 validada no Android físico; nota de voz e seletor de documentos pendentes de libs Expo + build EAS) |
 | Chamada de voz e de vídeo | Ausente | Ausente | Ausente |
 | Responder, reagir, encaminhar | Ausente | Ausente | Ausente |
 | Prévia e não lidas na lista | Ausente | Ausente | Ausente |
@@ -133,10 +133,16 @@ Cada item vale para **web e mobile**, salvo indicação.
 
 ### Etapa 2 — Mídia e notificações
 
-- [ ] Imagem, vídeo, áudio (nota de voz) e arquivo, cifrados no cliente antes do envio (formato padronizado do Matrix, sem esquema próprio)
-- [ ] Progresso, cancelamento, retomada e limites de tamanho
-- [ ] Download automático configurável
-- [ ] Push discreto com aplicativo fechado
+- **Bloco 2A — Mídia cifrada de ponta a ponta concluído e validado no servidor, navegador e Android físico (19/11/2026):**
+  - **Banco e API (`20261119170000_chat_encrypted_media`, `StorageService`, `ChatService`, `ChatController`):** tabela `chat_attachments` com retenção de **90 dias** (`expiresAt = createdAt + 90d`) e limpeza diária (`@Cron('0 4 * * *') purgeExpiredAttachments`); bucket privado `chat-media/<convId>/<id>.enc` sempre `application/octet-stream` (nunca revela MIME ou nome); `POST :id/chat/media` (limite 50 MB) e `GET :id/chat/media/:attachmentId` (isolado por conversa, retorna `410 Gone` após 90 dias).
+  - **`packages/chat-core` + adaptadores Web (WASM) e Mobile (Rust nativo):** formato oficial **Matrix `v2`** (`AES-256-CTR + SHA-256`) via `sdk.Attachment.encrypt`/`decrypt` no Web e `react-native-matrix-crypto` `encryptAttachment`/`decryptAttachment` no Mobile (zero esquema próprio); `sendMedia`, `decryptMedia`, `parseDecryptedMessage`, `buildMediaEventContent`, limites por tipo (10 MB foto, 25 MB áudio/arquivo, 50 MB vídeo) e prévia limpa (`"Foto"`, `"Vídeo"`, `"Áudio"`, `"Arquivo"`).
+  - **Web e Mobile (`ChatPane.tsx`, `chat-session.ts`, `chat-pane.tsx`, `chat-runtime.ts`):** botão de anexo, progresso/cancelamento, renderização inline de imagem/áudio/vídeo decifrados em memória e download de arquivos. No mobile, usa `expo-image-picker` (já no APK atual) para foto/vídeo; nota de voz e seletor de documentos ficam para a próxima dev build EAS.
+  - **Verificação:** API 47/47 + build; `chat-core` 35/35; adaptador nativo 6/6; `tsc --noEmit` web e mobile limpos; novo teste E2E `apps/web/test/chat-media.browser.cjs` 4/4 (imagem inline decifrada, arquivo com download, retenção de 90 dias + bloqueio de terceiros, responsivo 1440/390/320 px); **interoperabilidade real Web (WASM) → Android físico (`RMX3840`, Rust nativo) aprovada** (imagem cifrada no navegador baixada e decifrada no celular).
+
+- [x] Imagem, vídeo, áudio e arquivo cifrados no cliente antes do envio (formato padrão Matrix `v2`, retenção 90 dias; validado em API, navegador e Android físico; gravador de nota de voz e picker de documentos no mobile pendentes de libs Expo + build EAS)
+- [x] Progresso, cancelamento e limites de tamanho (10 MB foto, 25 MB áudio/arquivo, 50 MB vídeo; retomada de upload parcial fica para melhoria futura)
+- [ ] Download automático configurável (hoje imagens e áudios baixam automaticamente; configuração entra na Etapa 6)
+- [ ] Push discreto com aplicativo fechado (Bloco 2B)
 
 ### Etapa 3 — Experiência do mensageiro
 

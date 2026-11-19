@@ -1,10 +1,11 @@
-import type {
-  ChatCrypto,
-  ChatHttp,
-  ChatPeer,
-  ChatVerification,
-  Json,
-  VerificationAction,
+import {
+  parseDecryptedMessage,
+  type ChatCrypto,
+  type ChatHttp,
+  type ChatPeer,
+  type ChatVerification,
+  type Json,
+  type VerificationAction,
 } from '@votz/chat-core'
 import * as sdk from '@matrix-org/matrix-sdk-crypto-wasm'
 
@@ -174,14 +175,18 @@ export class WebChatCrypto implements ChatCrypto {
       .filter((request) => request.otherDeviceId?.toString() === peer.deviceId)
     return flows[flows.length - 1]
   }
-  async encrypt(roomId: string, text: string) {
+  async encrypt(roomId: string, payload: string | Json) {
     if (this.sharing || this.explicit.length)
       throw new Error('Room keys must be shared before encryption')
+    const content =
+      typeof payload === 'string'
+        ? { msgtype: 'm.text', body: payload }
+        : payload
     return JSON.parse(
       await this.machine.encryptRoomEvent(
         new sdk.RoomId(roomId),
         'm.room.message',
-        JSON.stringify({ msgtype: 'm.text', body: text }),
+        JSON.stringify(content),
       ),
     ) as Json
   }
@@ -192,13 +197,18 @@ export class WebChatCrypto implements ChatCrypto {
       new sdk.DecryptionSettings(sdk.TrustRequirement.Untrusted),
     )
     const content = JSON.parse(decrypted.event).content
-    if (
-      content?.msgtype !== 'm.text' ||
-      typeof content.body !== 'string' ||
-      content.body.length > 4000
-    )
-      throw new Error('Unsupported message content')
-    return content.body as string
+    return parseDecryptedMessage(content)
+  }
+  async encryptAttachment(bytes: Uint8Array) {
+    const sealed = sdk.Attachment.encrypt(bytes)
+    const ciphertext = new Uint8Array(sealed.encryptedData)
+    const secret = sealed.mediaEncryptionInfo
+    if (!secret) throw new Error('Não foi possível cifrar o arquivo.')
+    return { ciphertext, secret }
+  }
+  async decryptAttachment(ciphertext: Uint8Array, secret: string) {
+    const encrypted = new sdk.EncryptedAttachment(ciphertext, secret)
+    return new Uint8Array(sdk.Attachment.decrypt(encrypted))
   }
   async verification(peer: ChatPeer): Promise<ChatVerification> {
     if (

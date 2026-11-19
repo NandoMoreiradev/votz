@@ -9,14 +9,19 @@ import {
   Put,
   Query,
   Req,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
+import type { Response } from 'express'
 import { Throttle } from '@nestjs/throttler'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { ConversationsPrivacyInterceptor } from './conversations-privacy.interceptor'
 import { ConversationActor } from './conversations.service'
-import { ChatService } from './chat.service'
+import { CHAT_MEDIA_MAX_BYTES, ChatService } from './chat.service'
 import {
   DecideChatDeviceLinkDto,
   ResetChatDevicesDto,
@@ -157,5 +162,40 @@ export class ChatController {
     @Body() body: ChatReceiptDto,
   ) {
     return this.service.acknowledge(req.user, this.device(req), id, body)
+  }
+  @Post(':id/chat/media')
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: CHAT_MEDIA_MAX_BYTES } }),
+  )
+  uploadMedia(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: { buffer?: Buffer },
+  ) {
+    return this.service.uploadMedia(
+      req.user,
+      this.device(req),
+      id,
+      file?.buffer ?? Buffer.alloc(0),
+    )
+  }
+  @Get(':id/chat/media/:attachmentId')
+  async downloadMedia(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer } = await this.service.downloadMedia(
+      req.user,
+      this.device(req),
+      id,
+      attachmentId,
+    )
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    return new StreamableFile(buffer)
   }
 }

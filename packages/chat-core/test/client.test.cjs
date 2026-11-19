@@ -857,3 +857,94 @@ test('group chat encrypts for all active members, rotates keys when a member lea
   assert.match(v.messages[1].meta, /Lida por 1 de 2/)
   await f.client.stop()
 })
+
+// --- Etapa 2: mídia cifrada (formato padrão Matrix v2) ---
+
+test('sendMedia encrypts before upload, sends standard Matrix v2 metadata inside Megolm, and enforces size limits', async () => {
+  const {
+    buildMediaEventContent,
+    parseDecryptedMessage,
+    formatFileSize,
+    mediaKindFromMime,
+    CHAT_MEDIA_LIMITS,
+  } = require('../src/index.js')
+  assert.equal(mediaKindFromMime('image/jpeg'), 'image')
+  assert.equal(mediaKindFromMime('video/mp4'), 'video')
+  assert.equal(mediaKindFromMime('audio/webm'), 'audio')
+  assert.equal(mediaKindFromMime('application/pdf'), 'file')
+  assert.equal(formatFileSize(512), '512 B')
+  assert.equal(formatFileSize(2048), '2 KB')
+  assert.equal(formatFileSize(1.5 * 1024 * 1024), '1,5 MB')
+
+  const secret = JSON.stringify({
+    v: 'v2',
+    key: { kty: 'oct', key_ops: ['encrypt', 'decrypt'], alg: 'A256CTR', k: 'abc', ext: true },
+    iv: 'iv123',
+    hashes: { sha256: 'hash123' },
+  })
+  const attId = '11111111-1111-4111-8111-111111111111'
+  const built = buildMediaEventContent(
+    { kind: 'image', id: attId, name: 'foto.jpg', mimeType: 'image/jpeg', size: 1234, secret },
+    'Olha essa foto',
+  )
+  assert.equal(built.msgtype, 'm.image')
+  assert.equal(built.file.v, 'v2')
+  assert.equal(built.file.url, `votz-media://${attId}`)
+  const parsed = parseDecryptedMessage(built)
+  assert.equal(parsed.text, 'Olha essa foto')
+  assert.equal(parsed.attachment.id, attId)
+  assert.equal(parsed.attachment.kind, 'image')
+  assert.equal(parsed.attachment.name, 'foto.jpg')
+
+  // Anexo com url inválida ou versão fora do padrão v2 é recusado.
+  assert.throws(() => parseDecryptedMessage({ ...built, file: { ...built.file, v: 'v1' } }))
+  assert.throws(() => parseDecryptedMessage({ ...built, file: { ...built.file, url: 'https://evil.test/x' } }))
+
+  const f = fixture()
+  let uploadedBytes = null
+  let encryptedPayload = null
+  f.crypto.encryptAttachment = async (bytes) => ({
+    ciphertext: new Uint8Array(bytes.map((b) => b ^ 0xff)),
+    secret,
+  })
+  f.crypto.encrypt = async (_room, payload) => {
+    encryptedPayload = payload
+    return {
+      algorithm: 'm.megolm.v1.aes-sha2',
+      ciphertext: 'cipher',
+      device_id: 'SELF',
+      sender_key: 'self-key',
+      session_id: 's1',
+    }
+  }
+  await f.client.start()
+  const raw = new Uint8Array([10, 20, 30, 40])
+  await f.client.sendMedia({
+    kind: 'image',
+    name: 'foto.jpg',
+    mimeType: 'image/jpeg',
+    bytes: raw,
+    caption: 'No bairro',
+    upload: async (ciphertext) => {
+      uploadedBytes = ciphertext
+      return { id: attId }
+    },
+  })
+  assert.deepEqual([...uploadedBytes], [245, 235, 225, 215], 'Server only ever receives encrypted bytes')
+  assert.equal(encryptedPayload.msgtype, 'm.image')
+  assert.equal(chatPreviews.get('conversation').text, 'Foto: No bairro')
+
+  // Limite de tamanho por tipo é aplicado antes de cifrar/enviar.
+  await assert.rejects(
+    f.client.sendMedia({
+      kind: 'image',
+      name: 'gigante.jpg',
+      mimeType: 'image/jpeg',
+      bytes: new Uint8Array(CHAT_MEDIA_LIMITS.image + 1),
+      upload: async () => ({ id: attId }),
+    }),
+    /ultrapassa o limite/,
+  )
+  await f.client.stop()
+  chatPreviews.clear()
+})

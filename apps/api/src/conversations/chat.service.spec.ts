@@ -10,7 +10,14 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { randomUUID } from 'node:crypto'
 import { hashSync } from 'bcrypt'
-import { ChatService, MAX_CHAT_DEVICES, MAX_PENDING_CHAT_LINKS } from './chat.service'
+import {
+  CHAT_MEDIA_MAX_BYTES,
+  CHAT_MEDIA_RETENTION_DAYS,
+  ChatService,
+  MAX_CHAT_DEVICES,
+  MAX_PENDING_CHAT_LINKS,
+} from './chat.service'
+import { StorageService } from '../storage/storage.service'
 import { ChatMatrixService } from './chat-matrix.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificationsGateway } from '../notifications/notifications.gateway'
@@ -53,6 +60,30 @@ const mx = (id: string) => `@votz_${id.replace(/-/g, '')}:votz.test`
 function fixture() {
   const devices: Device[] = []
   const links: Link[] = []
+  const attachments: Array<{
+    id: string
+    conversationId: string
+    uploaderId: string
+    objectKey: string
+    sizeBytes: number
+    createdAt: Date
+    expiresAt: Date
+    deletedAt: Date | null
+  }> = []
+  const blobs = new Map<string, Buffer>()
+  const storage = {
+    uploadEncryptedBlob: jest.fn(async (key: string, data: Buffer) => {
+      blobs.set(key, Buffer.from(data))
+    }),
+    downloadEncryptedBlob: jest.fn(async (key: string) => {
+      const data = blobs.get(key)
+      if (!data) throw new NotFoundException()
+      return data
+    }),
+    delete: jest.fn(async (key: string) => {
+      blobs.delete(key)
+    }),
+  }
   const receipts: Array<{
     conversationId: string
     eventId: string
@@ -94,6 +125,28 @@ function fixture() {
       update: jest.fn(async ({ data }) => Object.assign(convo, data)),
     },
     conversationBlock: { count: jest.fn(async () => 0) },
+    chatAttachment: {
+      create: jest.fn(async ({ data }) => {
+        const row = { createdAt: new Date(), deletedAt: null, ...data }
+        attachments.push(row)
+        return row
+      }),
+      findFirst: jest.fn(async ({ where }) =>
+        attachments.find(
+          (row) =>
+            row.id === where.id && row.conversationId === where.conversationId,
+        ) ?? null,
+      ),
+      findMany: jest.fn(async ({ where }) =>
+        attachments.filter(
+          (row) =>
+            row.deletedAt === null && row.expiresAt <= where.expiresAt.lte,
+        ),
+      ),
+      update: jest.fn(async ({ where, data }) =>
+        Object.assign(attachments.find((row) => row.id === where.id)!, data),
+      ),
+    },
     chatReceipt: {
       findMany: jest.fn(async ({ where }) =>
         receipts.filter(
@@ -241,6 +294,7 @@ function fixture() {
     new ConfigService({ CHAT_TOKEN_ENCRYPTION_KEY: KEY }),
     matrix as unknown as ChatMatrixService,
     { emitToUser: emit } as unknown as NotificationsGateway,
+    storage as unknown as StorageService,
   )
   const input = (id = randomUUID(), platform = 'android') => ({
     id,
@@ -254,6 +308,9 @@ function fixture() {
     devices,
     links,
     receipts,
+    attachments,
+    blobs,
+    storage,
     matrix,
     input,
     headers,
@@ -842,5 +899,70 @@ describe('ChatService: texto em grupo', () => {
         read: false,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException)
+  })
+})
+
+describe('ChatService: mídia cifrada (Etapa 2, retenção 90 dias)', () => {
+  it('sobe e baixa bytes cifrados opacos com expiração de 90 dias e isola por conversa', async () => {
+    const f = fixture()
+    const aDev = f.input()
+    const bDev = f.input()
+    await f.service.enroll(alice, aDev)
+    await f.service.enroll(bob, bDev)
+
+    const cipher = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8])
+    const uploaded = await f.service.uploadMedia(alice, f.headers(aDev.id), 'c1', cipher)
+    expect(uploaded.sizeBytes).toBe(8)
+    const days =
+      (new Date(uploaded.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+    expect(days).toBeGreaterThan(CHAT_MEDIA_RETENTION_DAYS - 1)
+    expect(days).toBeLessThanOrEqual(CHAT_MEDIA_RETENTION_DAYS + 0.1)
+
+    const downloaded = await f.service.downloadMedia(
+      bob,
+      f.headers(bDev.id),
+      'c1',
+      uploaded.id,
+    )
+    expect(downloaded.buffer.equals(cipher)).toBe(true)
+
+    // Outro id ou conversa inexistente retorna 404.
+    await expect(
+      f.service.downloadMedia(bob, f.headers(bDev.id), 'c1', randomUUID()),
+    ).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it('rejeita arquivo vazio ou acima de 50 MB e retorna 410 após expiração + purga', async () => {
+    const f = fixture()
+    const aDev = f.input()
+    await f.service.enroll(alice, aDev)
+
+    await expect(
+      f.service.uploadMedia(alice, f.headers(aDev.id), 'c1', Buffer.alloc(0)),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    await expect(
+      f.service.uploadMedia(
+        alice,
+        f.headers(aDev.id),
+        'c1',
+        Buffer.alloc(CHAT_MEDIA_MAX_BYTES + 1),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException)
+
+    const uploaded = await f.service.uploadMedia(
+      alice,
+      f.headers(aDev.id),
+      'c1',
+      Buffer.from('ciphertext'),
+    )
+    f.attachments[0].expiresAt = new Date(Date.now() - 1000)
+    await expect(
+      f.service.downloadMedia(alice, f.headers(aDev.id), 'c1', uploaded.id),
+    ).rejects.toBeInstanceOf(GoneException)
+
+    const purged = await f.service.purgeExpiredAttachments()
+    expect(purged).toBe(1)
+    expect(f.storage.delete).toHaveBeenCalledTimes(1)
+    expect(f.attachments[0].deletedAt).not.toBeNull()
   })
 })

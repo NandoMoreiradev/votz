@@ -1,6 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChatClient = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.RESET_WARNING = exports.ENROLL_WAITING = void 0;
+exports.ChatClient = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.mediaKindFromMime = mediaKindFromMime;
+exports.mediaKindLabel = mediaKindLabel;
+exports.formatFileSize = formatFileSize;
+exports.buildMediaEventContent = buildMediaEventContent;
+exports.parseDecryptedMessage = parseDecryptedMessage;
 exports.messageStatusLabel = messageStatusLabel;
 exports.messagePlaceholder = messagePlaceholder;
 exports.composerPlaceholder = composerPlaceholder;
@@ -9,6 +14,112 @@ exports.chatView = chatView;
 exports.deviceRequestText = deviceRequestText;
 exports.chatDevicesApi = chatDevicesApi;
 exports.enrollDevice = enrollDevice;
+exports.CHAT_MEDIA_LIMITS = {
+    image: 10 * 1024 * 1024,
+    audio: 25 * 1024 * 1024,
+    file: 25 * 1024 * 1024,
+    video: 50 * 1024 * 1024,
+};
+const MEDIA_MSGTYPE = {
+    image: 'm.image',
+    video: 'm.video',
+    audio: 'm.audio',
+    file: 'm.file',
+};
+const MSGTYPE_TO_KIND = {
+    'm.image': 'image',
+    'm.video': 'video',
+    'm.audio': 'audio',
+    'm.file': 'file',
+};
+function mediaKindFromMime(mimeType) {
+    const mime = (mimeType || '').toLowerCase();
+    if (mime.startsWith('image/'))
+        return 'image';
+    if (mime.startsWith('video/'))
+        return 'video';
+    if (mime.startsWith('audio/'))
+        return 'audio';
+    return 'file';
+}
+function mediaKindLabel(kind) {
+    return { image: 'Foto', video: 'Vídeo', audio: 'Áudio', file: 'Arquivo' }[kind];
+}
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 1024)
+        return `${Math.max(0, Math.round(bytes || 0))} B`;
+    if (bytes < 1024 * 1024)
+        return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}
+function buildMediaEventContent(attachment, caption) {
+    const parsed = JSON.parse(attachment.secret);
+    const trimmed = (caption || '').trim().slice(0, 1000);
+    return {
+        msgtype: MEDIA_MSGTYPE[attachment.kind],
+        body: trimmed || attachment.name,
+        filename: attachment.name,
+        info: {
+            mimetype: attachment.mimeType || 'application/octet-stream',
+            size: attachment.size,
+            ...(attachment.width ? { w: attachment.width } : {}),
+            ...(attachment.height ? { h: attachment.height } : {}),
+            ...(attachment.durationMs ? { duration: attachment.durationMs } : {}),
+        },
+        file: {
+            ...parsed,
+            url: `votz-media://${attachment.id}`,
+        },
+    };
+}
+function parseDecryptedMessage(content) {
+    if (!content || typeof content !== 'object')
+        throw new Error('Conteúdo de mensagem inválido.');
+    if (content.msgtype === 'm.text') {
+        if (typeof content.body !== 'string' || content.body.length > 4000)
+            throw new Error('Conteúdo de mensagem não suportado.');
+        return { text: content.body };
+    }
+    const kind = MSGTYPE_TO_KIND[String(content.msgtype || '')];
+    if (!kind)
+        throw new Error('Conteúdo de mensagem não suportado.');
+    const file = content.file;
+    if (!file ||
+        typeof file !== 'object' ||
+        file.v !== 'v2' ||
+        typeof file.url !== 'string' ||
+        !/^votz-media:\/\/[0-9a-f-]{36}$/i.test(file.url) ||
+        typeof file.iv !== 'string' ||
+        !file.key ||
+        !file.hashes?.sha256)
+        throw new Error('Anexo cifrado inválido.');
+    const id = file.url.slice('votz-media://'.length);
+    const { url: _unused, ...secretObj } = file;
+    const info = (content.info && typeof content.info === 'object' ? content.info : {});
+    const name = typeof content.filename === 'string' && content.filename.trim()
+        ? content.filename.trim().slice(0, 200)
+        : typeof content.body === 'string' && content.body.trim()
+            ? content.body.trim().slice(0, 200)
+            : mediaKindLabel(kind);
+    const body = typeof content.body === 'string' ? content.body.trim().slice(0, 1000) : '';
+    const caption = body && body !== name ? body : '';
+    return {
+        text: caption,
+        attachment: {
+            kind,
+            id,
+            name,
+            mimeType: typeof info.mimetype === 'string'
+                ? info.mimetype
+                : 'application/octet-stream',
+            size: typeof info.size === 'number' && info.size > 0 ? info.size : 0,
+            secret: JSON.stringify(secretObj),
+            ...(typeof info.w === 'number' ? { width: info.w } : {}),
+            ...(typeof info.h === 'number' ? { height: info.h } : {}),
+            ...(typeof info.duration === 'number' ? { durationMs: info.duration } : {}),
+        },
+    };
+}
 function messageStatusLabel(status) {
     return {
         pending: 'Aguardando envio',
@@ -163,7 +274,22 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
             id: message.id,
             own,
             senderName: own ? null : (message.senderName ?? null),
-            body: message.text ?? messagePlaceholder(message.status),
+            body: message.text !== null
+                ? message.text
+                : message.attachment
+                    ? ''
+                    : messagePlaceholder(message.status),
+            attachment: message.attachment
+                ? {
+                    kind: message.attachment.kind,
+                    id: message.attachment.id,
+                    name: message.attachment.name,
+                    mimeType: message.attachment.mimeType,
+                    sizeLabel: formatFileSize(message.attachment.size),
+                    kindLabel: mediaKindLabel(message.attachment.kind),
+                    secret: message.attachment.secret,
+                }
+                : null,
             time,
             meta: own ? `${time} · ${statusText}` : time,
             retryTxnId: message.status === 'failed' && message.txnId ? message.txnId : null,
@@ -577,12 +703,16 @@ class ChatClient {
         const last = messages[messages.length - 1];
         if (this.active &&
             last &&
-            last.text !== null &&
-            !last.id.startsWith('pending:'))
+            (last.text !== null || last.attachment) &&
+            !last.id.startsWith('pending:')) {
+            const previewText = last.attachment
+                ? `${mediaKindLabel(last.attachment.kind)}${last.text ? `: ${last.text}` : ''}`
+                : last.text || '';
             exports.chatPreviews.set(this.conversationId, {
                 eventId: last.id,
-                text: last.text.replace(/\s+/g, ' ').trim().slice(0, 140),
+                text: previewText.replace(/\s+/g, ' ').trim().slice(0, 140),
             });
+        }
         this.update({ messages });
     }
     seenAt = 0;
@@ -802,6 +932,7 @@ class ChatClient {
             const trusted = (own && deviceId === this.session.deviceId) ||
                 (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`));
             let text = null;
+            let attachment;
             let status = !listed
                 ? 'disconnected'
                 : trusted
@@ -814,7 +945,16 @@ class ChatClient {
                         throw new Error('Sender device mismatch');
                     // Local queue identifiers are UI identifiers, not Matrix event IDs.
                     // The SDK validates the latter even for a not-yet-sent envelope.
-                    text = await this.crypto.decrypt(room.roomId, id.startsWith('pending:') ? { ...event, event_id: `$votz_pending_${txn}` } : event);
+                    const decoded = await this.crypto.decrypt(room.roomId, id.startsWith('pending:')
+                        ? { ...event, event_id: `$votz_pending_${txn}` }
+                        : event);
+                    if (typeof decoded === 'string') {
+                        text = decoded;
+                    }
+                    else {
+                        text = decoded.text;
+                        attachment = decoded.attachment;
+                    }
                     status = id.startsWith('pending:')
                         ? this.pending.find((item) => item.txnId === txn)?.failed
                             ? 'failed'
@@ -835,6 +975,7 @@ class ChatClient {
                     ? { senderName: senderPeer.name }
                     : {}),
                 text,
+                ...(attachment ? { attachment } : {}),
                 createdAt: Number.isFinite(event.origin_server_ts)
                     ? event.origin_server_ts
                     : 0,
@@ -842,7 +983,9 @@ class ChatClient {
                 ...(receiptSummary ? { receiptSummary } : {}),
                 ...(typeof txn === 'string' ? { txnId: txn } : {}),
             });
-            if (!own && text !== null && !id.startsWith('pending:'))
+            if (!own &&
+                (text !== null || attachment) &&
+                !id.startsWith('pending:'))
                 this.queueReceipt(id, this.snapshot.readReceiptsEnabled && this.visible.has(id));
         }
         this.render();
@@ -919,6 +1062,92 @@ class ChatClient {
             this.render();
             await this.flush();
         });
+    }
+    /**
+     * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
+     * antes do upload. O servidor só armazena bytes opacos por 90 dias.
+     */
+    async sendMedia(input) {
+        if (!input.bytes.length)
+            throw new Error('O arquivo selecionado está vazio.');
+        const limit = exports.CHAT_MEDIA_LIMITS[input.kind];
+        if (input.bytes.length > limit)
+            throw new Error(`Este arquivo ultrapassa o limite de ${formatFileSize(limit)}.`);
+        if (!this.crypto.encryptAttachment)
+            throw new Error('O envio de anexos ainda não está disponível neste aparelho.');
+        if (this.pending.length >= 100)
+            throw new Error('Aguarde o envio das mensagens pendentes antes de continuar.');
+        return this.serial(async () => {
+            await this.refresh(false);
+            const room = this.snapshot.room;
+            if (!room?.canSend)
+                throw new Error(room?.kind === 'GROUP'
+                    ? 'Aguarde outra pessoa entrar no grupo para enviar mensagens.'
+                    : 'Esta interação está bloqueada.');
+            if (!this.hasAnyPeerDevice(room))
+                throw new Error(room.kind === 'GROUP'
+                    ? 'Ninguém do grupo abriu as conversas no app ainda.'
+                    : 'A outra pessoa ainda não abriu as conversas no app.');
+            if (!this.hasTrustedPeer(room))
+                throw new Error('A segurança desta conversa mudou. Confira o aviso antes de enviar.');
+            const sealed = await this.crypto.encryptAttachment(input.bytes);
+            const uploaded = await input.upload(sealed.ciphertext);
+            const attachment = {
+                kind: input.kind,
+                id: uploaded.id,
+                name: input.name.trim().slice(0, 200) || mediaKindLabel(input.kind),
+                mimeType: input.mimeType || 'application/octet-stream',
+                size: input.bytes.length,
+                secret: sealed.secret,
+                ...(input.width ? { width: input.width } : {}),
+                ...(input.height ? { height: input.height } : {}),
+                ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+            };
+            const peers = this.roomPeers(room);
+            await this.crypto.share(room.roomId, [
+                ...peers.map((peer) => peer.matrixUserId),
+                this.session.matrixUserId,
+            ]);
+            await this.crypto.pump(this.http);
+            const payload = buildMediaEventContent(attachment, input.caption);
+            const content = await this.crypto.encrypt(room.roomId, payload);
+            const item = {
+                txnId: this.newId(),
+                conversationId: this.conversationId,
+                roomId: room.roomId,
+                revision: room.revision,
+                content,
+                createdAt: Date.now(),
+            };
+            const next = [...this.pending, item];
+            await this.storage.save(this.transport(next));
+            this.pending = next;
+            this.events.set(`pending:${item.txnId}`, {
+                event_id: `pending:${item.txnId}`,
+                origin_server_ts: item.createdAt,
+                sender: this.session.matrixUserId,
+                type: 'm.room.encrypted',
+                content,
+                unsigned: { transaction_id: item.txnId },
+            });
+            this.messages.set(`pending:${item.txnId}`, {
+                id: `pending:${item.txnId}`,
+                txnId: item.txnId,
+                text: (input.caption || '').trim(),
+                attachment,
+                sender: 'self',
+                createdAt: item.createdAt,
+                status: 'pending',
+            });
+            this.render();
+            await this.flush();
+        });
+    }
+    /** Decifra bytes baixados de um anexo usando o segredo padrão Matrix v2. */
+    async decryptMedia(ciphertext, secret) {
+        if (!this.crypto.decryptAttachment)
+            throw new Error('Não foi possível abrir o anexo neste aparelho.');
+        return this.crypto.decryptAttachment(ciphertext, secret);
     }
     async flush() {
         for (const item of [...this.pending].filter((row) => !row.failed)) {

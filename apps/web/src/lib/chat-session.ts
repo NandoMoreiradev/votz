@@ -24,6 +24,16 @@ export interface WebChatSession {
   storage: ChatStorage
   http: ChatHttp
   credentials: ChatCredentials
+  uploadMedia: (
+    conversationId: string,
+    ciphertext: Uint8Array,
+    options?: { signal?: AbortSignal; onProgress?: (pct: number) => void },
+  ) => Promise<{ id: string }>
+  downloadMedia: (
+    conversationId: string,
+    attachmentId: string,
+    signal?: AbortSignal,
+  ) => Promise<Uint8Array>
 }
 
 interface ActiveWebChatSession extends WebChatSession {
@@ -174,6 +184,56 @@ function openOnce(options: {
             rejected(new DOMException('Aborted', 'AbortError'))
             return
           }
+          const uploadMedia: WebChatSession['uploadMedia'] = async (
+            conversationId,
+            ciphertext,
+            opts,
+          ) => {
+            const current = useAuthStore.getState()
+            if (current.user?.id !== userId || current.activeContext)
+              throw new Error('Sessão alterada.')
+            const form = new FormData()
+            const copy = new Uint8Array(ciphertext.byteLength)
+            copy.set(ciphertext)
+            form.append(
+              'file',
+              new Blob([copy.buffer], { type: 'application/octet-stream' }),
+              'encrypted.bin',
+            )
+            const response = await api.post<{ id: string }>(
+              `/conversations/${conversationId}/chat/media`,
+              form,
+              {
+                headers: { ...headers, 'Content-Type': 'multipart/form-data' },
+                signal: opts?.signal,
+                onUploadProgress: (event) => {
+                  if (opts?.onProgress && event.total)
+                    opts.onProgress(
+                      Math.min(100, Math.round((event.loaded / event.total) * 100)),
+                    )
+                },
+              },
+            )
+            return response.data
+          }
+          const downloadMedia: WebChatSession['downloadMedia'] = async (
+            conversationId,
+            attachmentId,
+            dlSignal,
+          ) => {
+            const current = useAuthStore.getState()
+            if (current.user?.id !== userId || current.activeContext)
+              throw new Error('Sessão alterada.')
+            const response = await api.get<ArrayBuffer>(
+              `/conversations/${conversationId}/chat/media/${attachmentId}`,
+              {
+                headers,
+                responseType: 'arraybuffer',
+                signal: dlSignal,
+              },
+            )
+            return new Uint8Array(response.data)
+          }
           const entry: ActiveWebChatSession = {
             userId,
             session,
@@ -181,6 +241,8 @@ function openOnce(options: {
             storage: store.storage,
             http,
             credentials: store.credentials,
+            uploadMedia,
+            downloadMedia,
             release,
             done: Promise.resolve(),
           }

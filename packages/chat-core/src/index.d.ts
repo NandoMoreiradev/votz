@@ -67,11 +67,35 @@ export interface ChatVerification {
     incoming?: boolean;
     decimals?: number[];
 }
+export type ChatMediaKind = 'image' | 'video' | 'audio' | 'file';
+export declare const CHAT_MEDIA_LIMITS: Record<ChatMediaKind, number>;
+export interface ChatAttachment {
+    kind: ChatMediaKind;
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    /** JSON padrão Matrix v2 (key, iv, hashes.sha256) trafegado só dentro do evento cifrado. */
+    secret: string;
+    width?: number;
+    height?: number;
+    durationMs?: number;
+}
+export interface ChatDecryptedContent {
+    text: string | null;
+    attachment?: ChatAttachment;
+}
+export declare function mediaKindFromMime(mimeType: string): ChatMediaKind;
+export declare function mediaKindLabel(kind: ChatMediaKind): string;
+export declare function formatFileSize(bytes: number): string;
+export declare function buildMediaEventContent(attachment: ChatAttachment, caption?: string): Json;
+export declare function parseDecryptedMessage(content: Json): ChatDecryptedContent;
 export interface ChatMessage {
     id: string;
     sender: 'self' | 'peer';
     senderName?: string;
     text: string | null;
+    attachment?: ChatAttachment;
     createdAt: number;
     status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unverified' | 'disconnected' | 'unavailable';
     /** Resumo de entrega/leitura em grupos (ex.: "Lida por 1 de 2"). */
@@ -155,8 +179,13 @@ export interface ChatCrypto {
     share(roomId: string, userIds: string[]): Promise<void>;
     /** Descarta a sessão de envio da sala; a próxima mensagem distribui uma chave nova. */
     rotate?(roomId: string): Promise<void>;
-    encrypt(roomId: string, text: string): Promise<Json>;
-    decrypt(roomId: string, event: Json): Promise<string>;
+    encrypt(roomId: string, payload: string | Json): Promise<Json>;
+    decrypt(roomId: string, event: Json): Promise<string | ChatDecryptedContent>;
+    encryptAttachment?(bytes: Uint8Array): Promise<{
+        ciphertext: Uint8Array;
+        secret: string;
+    }>;
+    decryptAttachment?(ciphertext: Uint8Array, secret: string): Promise<Uint8Array>;
     verification(peer: ChatPeer): Promise<ChatVerification>;
     verify(peer: ChatPeer, action: VerificationAction, http: ChatHttp): Promise<void>;
 }
@@ -192,11 +221,21 @@ export interface ChatViewVerification {
     canCancel: boolean;
     cancelLabel: string;
 }
+export interface ChatViewAttachment {
+    kind: ChatMediaKind;
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeLabel: string;
+    kindLabel: string;
+    secret: string;
+}
 export interface ChatViewMessage {
     id: string;
     own: boolean;
     senderName: string | null;
     body: string;
+    attachment: ChatViewAttachment | null;
     time: string;
     meta: string;
     retryTxnId: string | null;
@@ -379,6 +418,25 @@ export declare class ChatClient {
     private refreshMessages;
     verification(action: VerificationAction): Promise<void>;
     send(text: string): Promise<void>;
+    /**
+     * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
+     * antes do upload. O servidor só armazena bytes opacos por 90 dias.
+     */
+    sendMedia(input: {
+        kind: ChatMediaKind;
+        name: string;
+        mimeType: string;
+        bytes: Uint8Array;
+        caption?: string;
+        width?: number;
+        height?: number;
+        durationMs?: number;
+        upload: (ciphertext: Uint8Array) => Promise<{
+            id: string;
+        }>;
+    }): Promise<void>;
+    /** Decifra bytes baixados de um anexo usando o segredo padrão Matrix v2. */
+    decryptMedia(ciphertext: Uint8Array, secret: string): Promise<Uint8Array>;
     private flush;
     private readHistory;
     older(): Promise<void>;

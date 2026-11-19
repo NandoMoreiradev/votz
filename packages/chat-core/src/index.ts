@@ -70,11 +70,136 @@ export interface ChatVerification {
   incoming?: boolean
   decimals?: number[]
 }
+export type ChatMediaKind = 'image' | 'video' | 'audio' | 'file'
+export const CHAT_MEDIA_LIMITS: Record<ChatMediaKind, number> = {
+  image: 10 * 1024 * 1024,
+  audio: 25 * 1024 * 1024,
+  file: 25 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+}
+export interface ChatAttachment {
+  kind: ChatMediaKind
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  /** JSON padrão Matrix v2 (key, iv, hashes.sha256) trafegado só dentro do evento cifrado. */
+  secret: string
+  width?: number
+  height?: number
+  durationMs?: number
+}
+export interface ChatDecryptedContent {
+  text: string | null
+  attachment?: ChatAttachment
+}
+const MEDIA_MSGTYPE: Record<ChatMediaKind, string> = {
+  image: 'm.image',
+  video: 'm.video',
+  audio: 'm.audio',
+  file: 'm.file',
+}
+const MSGTYPE_TO_KIND: Record<string, ChatMediaKind> = {
+  'm.image': 'image',
+  'm.video': 'video',
+  'm.audio': 'audio',
+  'm.file': 'file',
+}
+export function mediaKindFromMime(mimeType: string): ChatMediaKind {
+  const mime = (mimeType || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  return 'file'
+}
+export function mediaKindLabel(kind: ChatMediaKind): string {
+  return { image: 'Foto', video: 'Vídeo', audio: 'Áudio', file: 'Arquivo' }[kind]
+}
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}
+export function buildMediaEventContent(
+  attachment: ChatAttachment,
+  caption?: string,
+): Json {
+  const parsed = JSON.parse(attachment.secret) as Json
+  const trimmed = (caption || '').trim().slice(0, 1000)
+  return {
+    msgtype: MEDIA_MSGTYPE[attachment.kind],
+    body: trimmed || attachment.name,
+    filename: attachment.name,
+    info: {
+      mimetype: attachment.mimeType || 'application/octet-stream',
+      size: attachment.size,
+      ...(attachment.width ? { w: attachment.width } : {}),
+      ...(attachment.height ? { h: attachment.height } : {}),
+      ...(attachment.durationMs ? { duration: attachment.durationMs } : {}),
+    },
+    file: {
+      ...parsed,
+      url: `votz-media://${attachment.id}`,
+    },
+  }
+}
+export function parseDecryptedMessage(content: Json): ChatDecryptedContent {
+  if (!content || typeof content !== 'object')
+    throw new Error('Conteúdo de mensagem inválido.')
+  if (content.msgtype === 'm.text') {
+    if (typeof content.body !== 'string' || content.body.length > 4000)
+      throw new Error('Conteúdo de mensagem não suportado.')
+    return { text: content.body }
+  }
+  const kind = MSGTYPE_TO_KIND[String(content.msgtype || '')]
+  if (!kind) throw new Error('Conteúdo de mensagem não suportado.')
+  const file = content.file as Json | undefined
+  if (
+    !file ||
+    typeof file !== 'object' ||
+    file.v !== 'v2' ||
+    typeof file.url !== 'string' ||
+    !/^votz-media:\/\/[0-9a-f-]{36}$/i.test(file.url) ||
+    typeof file.iv !== 'string' ||
+    !file.key ||
+    !file.hashes?.sha256
+  )
+    throw new Error('Anexo cifrado inválido.')
+  const id = file.url.slice('votz-media://'.length)
+  const { url: _unused, ...secretObj } = file
+  const info = (content.info && typeof content.info === 'object' ? content.info : {}) as Json
+  const name =
+    typeof content.filename === 'string' && content.filename.trim()
+      ? content.filename.trim().slice(0, 200)
+      : typeof content.body === 'string' && content.body.trim()
+        ? content.body.trim().slice(0, 200)
+        : mediaKindLabel(kind)
+  const body = typeof content.body === 'string' ? content.body.trim().slice(0, 1000) : ''
+  const caption = body && body !== name ? body : ''
+  return {
+    text: caption,
+    attachment: {
+      kind,
+      id,
+      name,
+      mimeType:
+        typeof info.mimetype === 'string'
+          ? info.mimetype
+          : 'application/octet-stream',
+      size: typeof info.size === 'number' && info.size > 0 ? info.size : 0,
+      secret: JSON.stringify(secretObj),
+      ...(typeof info.w === 'number' ? { width: info.w } : {}),
+      ...(typeof info.h === 'number' ? { height: info.h } : {}),
+      ...(typeof info.duration === 'number' ? { durationMs: info.duration } : {}),
+    },
+  }
+}
 export interface ChatMessage {
   id: string
   sender: 'self' | 'peer'
   senderName?: string
   text: string | null
+  attachment?: ChatAttachment
   createdAt: number
   status:
     | 'pending'
@@ -195,8 +320,15 @@ export interface ChatCrypto {
   share(roomId: string, userIds: string[]): Promise<void>
   /** Descarta a sessão de envio da sala; a próxima mensagem distribui uma chave nova. */
   rotate?(roomId: string): Promise<void>
-  encrypt(roomId: string, text: string): Promise<Json>
-  decrypt(roomId: string, event: Json): Promise<string>
+  encrypt(roomId: string, payload: string | Json): Promise<Json>
+  decrypt(roomId: string, event: Json): Promise<string | ChatDecryptedContent>
+  encryptAttachment?(
+    bytes: Uint8Array,
+  ): Promise<{ ciphertext: Uint8Array; secret: string }>
+  decryptAttachment?(
+    ciphertext: Uint8Array,
+    secret: string,
+  ): Promise<Uint8Array>
   verification(peer: ChatPeer): Promise<ChatVerification>
   verify(
     peer: ChatPeer,
@@ -253,11 +385,21 @@ export interface ChatViewVerification {
   canCancel: boolean
   cancelLabel: string
 }
+export interface ChatViewAttachment {
+  kind: ChatMediaKind
+  id: string
+  name: string
+  mimeType: string
+  sizeLabel: string
+  kindLabel: string
+  secret: string
+}
 export interface ChatViewMessage {
   id: string
   own: boolean
   senderName: string | null
   body: string
+  attachment: ChatViewAttachment | null
   time: string
   meta: string
   retryTxnId: string | null
@@ -413,7 +555,23 @@ export function chatView(
       id: message.id,
       own,
       senderName: own ? null : (message.senderName ?? null),
-      body: message.text ?? messagePlaceholder(message.status),
+      body:
+        message.text !== null
+          ? message.text
+          : message.attachment
+            ? ''
+            : messagePlaceholder(message.status),
+      attachment: message.attachment
+        ? {
+            kind: message.attachment.kind,
+            id: message.attachment.id,
+            name: message.attachment.name,
+            mimeType: message.attachment.mimeType,
+            sizeLabel: formatFileSize(message.attachment.size),
+            kindLabel: mediaKindLabel(message.attachment.kind),
+            secret: message.attachment.secret,
+          }
+        : null,
       time,
       meta: own ? `${time} · ${statusText}` : time,
       retryTxnId:
@@ -849,13 +1007,17 @@ export class ChatClient {
     if (
       this.active &&
       last &&
-      last.text !== null &&
+      (last.text !== null || last.attachment) &&
       !last.id.startsWith('pending:')
-    )
+    ) {
+      const previewText = last.attachment
+        ? `${mediaKindLabel(last.attachment.kind)}${last.text ? `: ${last.text}` : ''}`
+        : last.text || ''
       chatPreviews.set(this.conversationId, {
         eventId: last.id,
-        text: last.text.replace(/\s+/g, ' ').trim().slice(0, 140),
+        text: previewText.replace(/\s+/g, ' ').trim().slice(0, 140),
       })
+    }
     this.update({ messages })
   }
   private seenAt = 0
@@ -1075,6 +1237,7 @@ export class ChatClient {
         (own && deviceId === this.session.deviceId) ||
         (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`))
       let text: string | null = null
+      let attachment: ChatAttachment | undefined
       let status: ChatMessage['status'] = !listed
         ? 'disconnected'
         : trusted
@@ -1087,7 +1250,18 @@ export class ChatClient {
             throw new Error('Sender device mismatch')
           // Local queue identifiers are UI identifiers, not Matrix event IDs.
           // The SDK validates the latter even for a not-yet-sent envelope.
-          text = await this.crypto.decrypt(room.roomId, id.startsWith('pending:') ? { ...event, event_id: `$votz_pending_${txn}` } : event)
+          const decoded = await this.crypto.decrypt(
+            room.roomId,
+            id.startsWith('pending:')
+              ? { ...event, event_id: `$votz_pending_${txn}` }
+              : event,
+          )
+          if (typeof decoded === 'string') {
+            text = decoded
+          } else {
+            text = decoded.text
+            attachment = decoded.attachment
+          }
           status = id.startsWith('pending:')
             ? this.pending.find((item) => item.txnId === txn)?.failed
               ? 'failed'
@@ -1106,6 +1280,7 @@ export class ChatClient {
           ? { senderName: senderPeer.name }
           : {}),
         text,
+        ...(attachment ? { attachment } : {}),
         createdAt: Number.isFinite(event.origin_server_ts)
           ? event.origin_server_ts
           : 0,
@@ -1113,7 +1288,11 @@ export class ChatClient {
         ...(receiptSummary ? { receiptSummary } : {}),
         ...(typeof txn === 'string' ? { txnId: txn } : {}),
       })
-      if (!own && text !== null && !id.startsWith('pending:'))
+      if (
+        !own &&
+        (text !== null || attachment) &&
+        !id.startsWith('pending:')
+      )
         this.queueReceipt(
           id,
           this.snapshot.readReceiptsEnabled && this.visible.has(id),
@@ -1202,6 +1381,112 @@ export class ChatClient {
       this.render()
       await this.flush()
     })
+  }
+  /**
+   * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
+   * antes do upload. O servidor só armazena bytes opacos por 90 dias.
+   */
+  async sendMedia(input: {
+    kind: ChatMediaKind
+    name: string
+    mimeType: string
+    bytes: Uint8Array
+    caption?: string
+    width?: number
+    height?: number
+    durationMs?: number
+    upload: (ciphertext: Uint8Array) => Promise<{ id: string }>
+  }) {
+    if (!input.bytes.length)
+      throw new Error('O arquivo selecionado está vazio.')
+    const limit = CHAT_MEDIA_LIMITS[input.kind]
+    if (input.bytes.length > limit)
+      throw new Error(
+        `Este arquivo ultrapassa o limite de ${formatFileSize(limit)}.`,
+      )
+    if (!this.crypto.encryptAttachment)
+      throw new Error('O envio de anexos ainda não está disponível neste aparelho.')
+    if (this.pending.length >= 100)
+      throw new Error(
+        'Aguarde o envio das mensagens pendentes antes de continuar.',
+      )
+    return this.serial(async () => {
+      await this.refresh(false)
+      const room = this.snapshot.room
+      if (!room?.canSend)
+        throw new Error(
+          room?.kind === 'GROUP'
+            ? 'Aguarde outra pessoa entrar no grupo para enviar mensagens.'
+            : 'Esta interação está bloqueada.',
+        )
+      if (!this.hasAnyPeerDevice(room))
+        throw new Error(
+          room.kind === 'GROUP'
+            ? 'Ninguém do grupo abriu as conversas no app ainda.'
+            : 'A outra pessoa ainda não abriu as conversas no app.',
+        )
+      if (!this.hasTrustedPeer(room))
+        throw new Error(
+          'A segurança desta conversa mudou. Confira o aviso antes de enviar.',
+        )
+      const sealed = await this.crypto.encryptAttachment!(input.bytes)
+      const uploaded = await input.upload(sealed.ciphertext)
+      const attachment: ChatAttachment = {
+        kind: input.kind,
+        id: uploaded.id,
+        name: input.name.trim().slice(0, 200) || mediaKindLabel(input.kind),
+        mimeType: input.mimeType || 'application/octet-stream',
+        size: input.bytes.length,
+        secret: sealed.secret,
+        ...(input.width ? { width: input.width } : {}),
+        ...(input.height ? { height: input.height } : {}),
+        ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+      }
+      const peers = this.roomPeers(room)
+      await this.crypto.share(room.roomId, [
+        ...peers.map((peer) => peer.matrixUserId),
+        this.session.matrixUserId,
+      ])
+      await this.crypto.pump(this.http)
+      const payload = buildMediaEventContent(attachment, input.caption)
+      const content = await this.crypto.encrypt(room.roomId, payload)
+      const item: PendingChatMessage = {
+        txnId: this.newId(),
+        conversationId: this.conversationId,
+        roomId: room.roomId,
+        revision: room.revision,
+        content,
+        createdAt: Date.now(),
+      }
+      const next = [...this.pending, item]
+      await this.storage.save(this.transport(next))
+      this.pending = next
+      this.events.set(`pending:${item.txnId}`, {
+        event_id: `pending:${item.txnId}`,
+        origin_server_ts: item.createdAt,
+        sender: this.session.matrixUserId,
+        type: 'm.room.encrypted',
+        content,
+        unsigned: { transaction_id: item.txnId },
+      })
+      this.messages.set(`pending:${item.txnId}`, {
+        id: `pending:${item.txnId}`,
+        txnId: item.txnId,
+        text: (input.caption || '').trim(),
+        attachment,
+        sender: 'self',
+        createdAt: item.createdAt,
+        status: 'pending',
+      })
+      this.render()
+      await this.flush()
+    })
+  }
+  /** Decifra bytes baixados de um anexo usando o segredo padrão Matrix v2. */
+  async decryptMedia(ciphertext: Uint8Array, secret: string): Promise<Uint8Array> {
+    if (!this.crypto.decryptAttachment)
+      throw new Error('Não foi possível abrir o anexo neste aparelho.')
+    return this.crypto.decryptAttachment(ciphertext, secret)
   }
   private async flush() {
     for (const item of [...this.pending].filter((row) => !row.failed)) {

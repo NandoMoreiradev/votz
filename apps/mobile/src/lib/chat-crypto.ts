@@ -1,10 +1,11 @@
-import type {
-  ChatCrypto,
-  ChatHttp,
-  ChatPeer,
-  ChatVerification,
-  Json,
-  VerificationAction,
+import {
+  parseDecryptedMessage,
+  type ChatCrypto,
+  type ChatHttp,
+  type ChatPeer,
+  type ChatVerification,
+  type Json,
+  type VerificationAction,
 } from '@votz/chat-core'
 import type * as Native from 'react-native-matrix-crypto'
 
@@ -196,11 +197,15 @@ export class NativeChatCrypto implements ChatCrypto {
     // The native bridge explicitly requires both calls, separated by the pump.
     this.sharing = { roomId, userIds }
   }
-  async encrypt(roomId: string, text: string) {
+  async encrypt(roomId: string, payload: string | Json) {
+    const content =
+      typeof payload === 'string'
+        ? { msgtype: 'm.text', body: payload }
+        : payload
     const event = await this.module.encryptEvent(
       this.module.asCryptoScopeId(roomId),
       'm.room.message',
-      { msgtype: 'm.text', body: text },
+      content,
     )
     return JSON.parse(new TextDecoder().decode(event.ciphertext)) as Json
   }
@@ -220,13 +225,14 @@ export class NativeChatCrypto implements ChatCrypto {
       throw new Error('Não foi possível autenticar o remetente.')
     const value = JSON.parse(new TextDecoder().decode(decrypted.ciphertext))
     const content = value.content ?? value
-    if (
-      content?.msgtype !== 'm.text' ||
-      typeof content.body !== 'string' ||
-      content.body.length > 4000
-    )
-      throw new Error('Conteúdo de mensagem não suportado.')
-    return content.body as string
+    return parseDecryptedMessage(content)
+  }
+  async encryptAttachment(bytes: Uint8Array) {
+    const sealed = await this.module.encryptAttachment(bytes)
+    return { ciphertext: sealed.ciphertext, secret: sealed.secret }
+  }
+  async decryptAttachment(ciphertext: Uint8Array, secret: string) {
+    return this.module.decryptAttachment(ciphertext, secret)
   }
   private flow(peer: ChatPeer) {
     return this.flows.get(`${peer.matrixUserId}:${peer.deviceId}`)

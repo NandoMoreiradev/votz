@@ -9,7 +9,10 @@ import {
   Text,
   View,
 } from 'react-native'
+import { Image } from 'expo-image'
+import * as ImagePicker from 'expo-image-picker'
 import { router, useFocusEffect } from 'expo-router'
+import Paperclip from 'lucide-react-native/icons/paperclip'
 import Send from 'lucide-react-native/icons/send'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import {
@@ -22,18 +25,120 @@ import {
   RESET_WARNING,
   chatError,
   chatView,
+  mediaKindFromMime,
   type ChatClient,
   type ChatState,
+  type ChatViewAttachment,
   type ChatViewMessage,
   type VerificationAction,
 } from '@votz/chat-core'
-import { forgetNativeChat, openNativeChat, resetNativeChat } from '../lib/chat-runtime'
+import {
+  downloadNativeChatMedia,
+  forgetNativeChat,
+  openNativeChat,
+  resetNativeChat,
+  uploadNativeChatMedia,
+} from '../lib/chat-runtime'
+import { ApiError } from '../lib/api'
 import { useSession } from '../lib/session'
 import { Button, ErrorText, Field, Heading, Label } from './ui'
 import { theme } from '../theme'
 import { Toolbar } from './screen'
 
 const viewability = { itemVisiblePercentThreshold: 60, minimumViewTime: 500 }
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chars =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  let out = ''
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0
+    const n = (a << 16) | (b << 8) | c
+    out +=
+      chars[(n >> 18) & 63] +
+      chars[(n >> 12) & 63] +
+      (i + 1 < bytes.length ? chars[(n >> 6) & 63] : '=') +
+      (i + 2 < bytes.length ? chars[n & 63] : '=')
+  }
+  return out
+}
+
+function NativeAttachmentView({
+  attachment,
+  userId,
+  conversationId,
+  runtime,
+}: {
+  attachment: ChatViewAttachment
+  userId: string
+  conversationId: string
+  runtime: ChatClient | null
+}) {
+  const [dataUri, setDataUri] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState('')
+
+  const load = useCallback(async () => {
+    if (!runtime || loading || dataUri) return
+    setLoading(true)
+    setFailed('')
+    try {
+      const cipher = await downloadNativeChatMedia(
+        userId,
+        conversationId,
+        attachment.id,
+      )
+      const plain = await runtime.decryptMedia(cipher, attachment.secret)
+      if (attachment.kind === 'image')
+        setDataUri(
+          `data:${attachment.mimeType || 'image/jpeg'};base64,${bytesToBase64(plain)}`,
+        )
+    } catch (err) {
+      setFailed(
+        err instanceof ApiError && err.status === 410
+          ? 'Este arquivo expirou após 90 dias.'
+          : 'Não foi possível abrir este arquivo.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [runtime, loading, dataUri, userId, conversationId, attachment])
+
+  useEffect(() => {
+    if (attachment.kind === 'image') void load()
+  }, [attachment.id, attachment.kind, load])
+
+  return (
+    <View style={styles.mediaBox}>
+      {dataUri && attachment.kind === 'image' ? (
+        <Image
+          source={{ uri: dataUri }}
+          accessibilityLabel={attachment.name}
+          contentFit="cover"
+          style={styles.mediaImage}
+        />
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          disabled={loading}
+          onPress={() => {
+            void load()
+          }}
+          style={styles.mediaCard}
+        >
+          <Text style={styles.small}>
+            {loading
+              ? 'Baixando…'
+              : `${attachment.kindLabel}: ${attachment.name} (${attachment.sizeLabel})`}
+          </Text>
+        </Pressable>
+      )}
+      {!!failed && <Text style={styles.mediaError}>{failed}</Text>}
+    </View>
+  )
+}
 
 /**
  * A conversa abre sozinha: as chaves são criadas e guardadas no cofre do
@@ -61,6 +166,8 @@ export function ChatPane({
   const [resetting, setResetting] = useState(false)
   const [password, setPassword] = useState('')
   const [runtime, setRuntime] = useState<ChatClient | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const uploadAbort = useRef<AbortController | null>(null)
   const runtimeRef = useRef<ChatClient | null>(null)
   const onVisible = useCallback(
     ({ viewableItems }: { viewableItems: { item: ChatViewMessage }[] }) => {
@@ -176,6 +283,53 @@ export function ChatPane({
     } catch (failure) {
       setError((failure as Error).message || chatError(failure))
     } finally {
+      setBusy(false)
+    }
+  }
+  async function attachMedia() {
+    if (!runtime || busy) return
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      quality: 0.85,
+    })
+    const asset = result.canceled ? null : result.assets[0]
+    if (!asset) return
+    const controller = new AbortController()
+    uploadAbort.current = controller
+    setBusy(true)
+    setUploading(true)
+    setError('')
+    try {
+      const { File } = await import('expo-file-system')
+      const bytes = await new File(asset.uri).bytes()
+      const mimeType =
+        asset.mimeType ||
+        (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+      const kind = mediaKindFromMime(mimeType)
+      await runtime.sendMedia({
+        kind,
+        name: asset.fileName || (kind === 'video' ? 'video.mp4' : 'foto.jpg'),
+        mimeType,
+        bytes,
+        caption: draft.trim() || undefined,
+        width: asset.width,
+        height: asset.height,
+        durationMs: asset.duration ?? undefined,
+        upload: (ciphertext) =>
+          uploadNativeChatMedia(
+            userId,
+            conversation.id,
+            ciphertext,
+            controller.signal,
+          ),
+      })
+      setDraft('')
+    } catch (failure) {
+      if (!controller.signal.aborted)
+        setError((failure as Error).message || chatError(failure))
+    } finally {
+      uploadAbort.current = null
+      setUploading(false)
       setBusy(false)
     }
   }
@@ -382,9 +536,19 @@ export function ChatPane({
                 {item.senderName && (
                   <Text style={styles.sender}>{item.senderName}</Text>
                 )}
-                <Text selectable style={styles.message}>
-                  {item.body}
-                </Text>
+                {item.attachment && (
+                  <NativeAttachmentView
+                    attachment={item.attachment}
+                    userId={userId}
+                    conversationId={conversation.id}
+                    runtime={runtime}
+                  />
+                )}
+                {!!item.body && (
+                  <Text selectable style={styles.message}>
+                    {item.body}
+                  </Text>
+                )}
                 <Text style={styles.time}>{item.meta}</Text>
                 {item.retryTxnId && (
                   <Button
@@ -433,7 +597,29 @@ export function ChatPane({
               }}
             />
           </View>
+          {uploading && (
+            <View style={styles.notice}>
+              <Text style={styles.small}>Enviando mídia…</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => uploadAbort.current?.abort()}
+              >
+                <Text style={styles.link}>Cancelar</Text>
+              </Pressable>
+            </View>
+          )}
           <View style={styles.composer}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Anexar foto ou vídeo"
+              disabled={!view.canWrite || busy}
+              onPress={() => {
+                void attachMedia()
+              }}
+              style={[styles.attach, (!view.canWrite || busy) && { opacity: 0.4 }]}
+            >
+              <Paperclip size={20} color={theme.colors.primary} />
+            </Pressable>
             <View style={{ flex: 1 }}>
               <Field
                 accessibilityLabel="Mensagem"
@@ -567,6 +753,35 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: 44,
     maxHeight: 130,
+  },
+  attach: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.soft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaBox: {
+    gap: 4,
+  },
+  mediaImage: {
+    width: 220,
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: theme.colors.soft,
+  },
+  mediaCard: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  mediaError: {
+    fontFamily: theme.fonts.body,
+    fontSize: 12,
+    color: theme.colors.action,
   },
   send: {
     width: 44,

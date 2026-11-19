@@ -7,7 +7,7 @@ import {
 } from '@votz/chat-core'
 import { Platform } from 'react-native'
 import { uuid } from 'expo-modules-core'
-import { api, ApiError, json } from './api'
+import { API_URL, api, ApiError, conversationSocketToken, json } from './api'
 import { useSession } from './session'
 import { NativeChatCrypto } from './chat-crypto'
 import { forgetNativeChat, nativeChatStorage } from './chat-storage'
@@ -126,4 +126,83 @@ export { forgetNativeChat }
 export async function resetNativeChat(userId: string, password: string) {
   await api('/conversations/chat/devices/reset', json({ password }))
   await forgetNativeChat(userId)
+}
+
+/** Sobe bytes já cifrados de ponta a ponta (nunca envia mídia em claro). */
+export async function uploadNativeChatMedia(
+  userId: string,
+  conversationId: string,
+  ciphertext: Uint8Array,
+  signal?: AbortSignal,
+): Promise<{ id: string }> {
+  const { File, Paths } = await import('expo-file-system')
+  const storage = await nativeChatStorage(userId)
+  const token = await conversationSocketToken()
+  const temp = new File(Paths.cache, `votz-enc-${uuid.v4()}.bin`)
+  try {
+    temp.write(ciphertext)
+    const form = new FormData()
+    form.append('file', {
+      uri: temp.uri,
+      name: 'encrypted.bin',
+      type: 'application/octet-stream',
+    } as unknown as Blob)
+    const response = await fetch(
+      `${API_URL}/conversations/${conversationId}/chat/media`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'x-votz-chat-device': storage.credentials.id,
+          'x-votz-chat-secret': storage.credentials.secret,
+        },
+        body: form,
+        signal,
+      },
+    )
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok)
+      throw new ApiError(
+        (data as { message?: string }).message || 'Não foi possível enviar o arquivo.',
+        response.status,
+      )
+    return data as { id: string }
+  } finally {
+    try {
+      if (temp.exists) temp.delete()
+    } catch {
+      /* Arquivo temporário cifrado; limpeza best-effort. */
+    }
+  }
+}
+
+/** Baixa bytes cifrados de um anexo autenticado pelo gateway da conversa. */
+export async function downloadNativeChatMedia(
+  userId: string,
+  conversationId: string,
+  attachmentId: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const storage = await nativeChatStorage(userId)
+  const token = await conversationSocketToken()
+  const response = await fetch(
+    `${API_URL}/conversations/${conversationId}/chat/media/${attachmentId}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'x-votz-chat-device': storage.credentials.id,
+        'x-votz-chat-secret': storage.credentials.secret,
+      },
+      signal,
+    },
+  )
+  if (!response.ok)
+    throw new ApiError(
+      response.status === 410
+        ? 'Este arquivo expirou após 90 dias.'
+        : 'Não foi possível baixar o arquivo.',
+      response.status,
+    )
+  return new Uint8Array(await response.arrayBuffer())
 }
