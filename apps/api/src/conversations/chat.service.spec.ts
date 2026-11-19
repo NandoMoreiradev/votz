@@ -289,12 +289,14 @@ function fixture() {
   }
   const matrixUserOf = { current: mx(alice.id) }
   const emit = jest.fn()
+  const pushQueue = { add: jest.fn().mockResolvedValue(undefined) }
   const service = new ChatService(
     db as unknown as PrismaService,
     new ConfigService({ CHAT_TOKEN_ENCRYPTION_KEY: KEY }),
     matrix as unknown as ChatMatrixService,
     { emitToUser: emit } as unknown as NotificationsGateway,
     storage as unknown as StorageService,
+    pushQueue as unknown as import('bullmq').Queue,
   )
   const input = (id = randomUUID(), platform = 'android') => ({
     id,
@@ -311,6 +313,7 @@ function fixture() {
     attachments,
     blobs,
     storage,
+    pushQueue,
     matrix,
     input,
     headers,
@@ -964,5 +967,50 @@ describe('ChatService: mídia cifrada (Etapa 2, retenção 90 dias)', () => {
     expect(purged).toBe(1)
     expect(f.storage.delete).toHaveBeenCalledTimes(1)
     expect(f.attachments[0].deletedAt).not.toBeNull()
+  })
+})
+
+describe('ChatService: push discreto por aparelho (Etapa 2B)', () => {
+  it('registra e limpa pushToken, apaga ao revogar aparelho e enfileira push idempotente no envio', async () => {
+    const f = fixture()
+    const aDev = f.input()
+    const bDev = f.input()
+    await f.service.enroll(alice, aDev)
+    await f.service.enroll(bob, bDev)
+
+    await f.service.registerPushToken(
+      bob,
+      f.headers(bDev.id),
+      'ExponentPushToken[abc1234567890]',
+    )
+    expect(
+      (f.devices.find((d) => d.id === bDev.id) as unknown as { pushToken?: string })
+        ?.pushToken,
+    ).toBe('ExponentPushToken[abc1234567890]')
+
+    // Enviar mensagem enfileira job discreto na fila BullMQ sem texto em claro.
+    f.matrix.request.mockResolvedValueOnce({ event_id: '$p1' })
+    await f.service.send(alice, f.headers(aDev.id), 'c1', 'txn-p1', {
+      revision: 3,
+      content: {
+        algorithm: 'm.megolm.v1.aes-sha2',
+        ciphertext: 'cipher',
+        device_id: aDev.id,
+        sender_key: 'k',
+        session_id: 's',
+      },
+    })
+    expect(f.pushQueue.add).toHaveBeenCalledWith(
+      'discrete-push',
+      { conversationId: 'c1', recipientUserIds: [bob.id], eventId: '$p1' },
+      expect.objectContaining({ jobId: 'push:c1:$p1' }),
+    )
+
+    // Revogar aparelho limpa imediatamente o pushToken.
+    await f.service.revokeDevice(bob, f.headers(bDev.id), bDev.id)
+    expect(
+      (f.devices.find((d) => d.id === bDev.id) as unknown as { pushToken?: string | null })
+        ?.pushToken,
+    ).toBeNull()
   })
 })

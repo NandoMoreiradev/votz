@@ -10,6 +10,7 @@ import { uuid } from 'expo-modules-core'
 import { API_URL, api, ApiError, conversationSocketToken, json } from './api'
 import { useSession } from './session'
 import { NativeChatCrypto } from './chat-crypto'
+import { clearChatPushToken, registerChatPushToken } from './chat-push'
 import { forgetNativeChat, nativeChatStorage } from './chat-storage'
 
 /**
@@ -105,6 +106,7 @@ export function openNativeChat(
     const unsubscribe = client.subscribe(listener)
     previous = { client, engine }
     onClient(client)
+    void registerChatPushToken(userId)
     void client.start()
     return () => {
       unsubscribe()
@@ -125,6 +127,7 @@ export { forgetNativeChat }
  */
 export async function resetNativeChat(userId: string, password: string) {
   await api('/conversations/chat/devices/reset', json({ password }))
+  await clearChatPushToken(userId)
   await forgetNativeChat(userId)
 }
 

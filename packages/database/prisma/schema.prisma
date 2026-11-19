@@ -403,6 +403,8 @@ model ChatDevice {
   label String? @db.VarChar(60)
   secretHash String @map("secret_hash")
   matrixToken String @map("matrix_token")
+  pushToken String? @map("push_token") @db.VarChar(255)
+  pushTokenUpdatedAt DateTime? @map("push_token_updated_at")
   createdAt DateTime @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at")
   @@index([userId, revokedAt])

@@ -59,3 +59,9 @@ export class ChatReceiptDto extends ChatReceiptQueryDto {
 export class ResetChatDevicesDto {
   @IsString() @MinLength(1) @MaxLength(200) password!: string
 }
+export class ChatPushTokenDto {
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^Expo(nent)?PushToken\[[A-Za-z0-9._-]{10,180}\]$/)
+  token!: string
+}

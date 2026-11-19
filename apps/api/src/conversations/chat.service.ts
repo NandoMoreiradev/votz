@@ -11,7 +11,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { InjectQueue } from '@nestjs/bullmq'
 import { ConfigService } from '@nestjs/config'
+import type { Queue } from 'bullmq'
 import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { compare } from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
@@ -24,6 +26,7 @@ import { ConversationActor } from './conversations.service'
 import { ChatMatrixService } from './chat-matrix.service'
 import { NotificationsGateway } from '../notifications/notifications.gateway'
 import { StorageService } from '../storage/storage.service'
+import { CHAT_PUSH_QUEUE, type ChatPushJobData } from './chat-push.processor'
 import {
   ChatReceiptDto,
   EnrollChatDeviceDto,
@@ -49,6 +52,9 @@ export class ChatService {
     private readonly matrix: ChatMatrixService,
     private readonly events: NotificationsGateway,
     @Optional() private readonly storage?: StorageService,
+    @Optional()
+    @InjectQueue(CHAT_PUSH_QUEUE)
+    private readonly pushQueue?: Queue<ChatPushJobData>,
   ) {}
   private guard(actor: ConversationActor) {
     if (!this.matrix.enabled()) throw new NotFoundException()
@@ -257,7 +263,11 @@ export class ChatService {
       })
       await tx.chatDevice.updateMany({
         where: { userId: actor.id, revokedAt: null },
-        data: { revokedAt: new Date() },
+        data: {
+          revokedAt: new Date(),
+          pushToken: null,
+          pushTokenUpdatedAt: null,
+        },
       })
       await tx.chatDeviceLink.deleteMany({ where: { userId: actor.id } })
       return active
@@ -337,7 +347,11 @@ export class ChatService {
     const current = await this.device(actor, headers)
     const result = await this.db.chatDevice.updateMany({
       where: { id: deviceId, userId: actor.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: {
+        revokedAt: new Date(),
+        pushToken: null,
+        pushTokenUpdatedAt: null,
+      },
     })
     if (!result.count) throw new NotFoundException()
     try {
@@ -352,6 +366,28 @@ export class ChatService {
       /* O banco é a autoridade: toda rota passa por device() e as consultas de chaves são filtradas. */
     }
     return { revoked: true, self: deviceId === current.id }
+  }
+  /** Registra ou atualiza o token de push discreto deste aparelho ativo. */
+  async registerPushToken(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    token: string,
+  ) {
+    const current = await this.device(actor, headers)
+    await this.db.chatDevice.updateMany({
+      where: { id: current.id, userId: actor.id, revokedAt: null },
+      data: { pushToken: token, pushTokenUpdatedAt: new Date() },
+    })
+    return { registered: true }
+  }
+  /** Remove o token de push deste aparelho (ex.: ao sair da conta). */
+  async clearPushToken(actor: ConversationActor, headers: DeviceHeaders) {
+    const current = await this.device(actor, headers)
+    await this.db.chatDevice.updateMany({
+      where: { id: current.id, userId: actor.id, revokedAt: null },
+      data: { pushToken: null, pushTokenUpdatedAt: null },
+    })
+    return { registered: false }
   }
   private async conversation(
     actor: ConversationActor,
@@ -909,6 +945,8 @@ export class ChatService {
         'Apenas envelopes cifrados do protocolo são aceitos.',
       )
     let notify: string[] = []
+    let pushRecipients: string[] = []
+    let pushEventId: string | null = null
     const sent = await this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${id} FOR UPDATE`
@@ -947,12 +985,35 @@ export class ChatService {
               data: { unreadCount: { increment: 1 } },
             })
           notify = [actor.id, ...otherIds]
+          pushRecipients = otherIds
+          pushEventId = result.event_id
         }
         return result
       },
       { timeout: 11000, maxWait: 3000 },
     )
     this.invalidate(notify, id)
+    if (pushEventId && pushRecipients.length && this.pushQueue) {
+      void this.pushQueue
+        .add(
+          'discrete-push',
+          {
+            conversationId: id,
+            recipientUserIds: pushRecipients,
+            eventId: pushEventId,
+          },
+          {
+            jobId: `push:${id}:${pushEventId}`,
+            removeOnComplete: true,
+            removeOnFail: 100,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2000 },
+          },
+        )
+        .catch(() => {
+          /* Falha na fila de push nunca reverte uma mensagem já enviada. */
+        })
+    }
     return sent
   }
   /** Avisa as listas abertas (só id e revisão, nunca conteúdo); falha não afeta o envio. */

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AppState, Platform } from 'react-native'
-import { Stack } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
 import { useFonts } from 'expo-font'
@@ -13,6 +13,7 @@ import { queryClient } from '../lib/query-client'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
 import { ConversationsLive } from '../hooks/use-conversations'
+import { subscribeChatPushOpen } from '../lib/chat-push'
 
 void SplashScreen.preventAutoHideAsync()
 export { ErrorBoundary } from 'expo-router'
@@ -26,6 +27,12 @@ export default function RootLayout() {
       if (Platform.OS !== 'web') focusManager.setFocused(state === 'active')
     })
     return () => listener.remove()
+  }, [])
+  useEffect(() => {
+    return subscribeChatPushOpen((conversationId) => {
+      if (useSession.getState().user)
+        router.push({ pathname: '/conversation/[id]', params: { id: conversationId } })
+    })
   }, [])
   useEffect(() => { if ((loaded || fontError) && ready) void SplashScreen.hideAsync() }, [loaded, fontError, ready])
   if ((!loaded && !fontError) || !ready) return null

@@ -33,7 +33,7 @@ Base sólida, mas a entrega funcional é só **texto em conversa individual**.
 | Chamada de voz e de vídeo | Ausente | Ausente | Ausente |
 | Responder, reagir, encaminhar | Ausente | Ausente | Ausente |
 | Prévia e não lidas na lista | Ausente | Ausente | Ausente |
-| Push com aplicativo fechado | Ausente | n/a | Ausente |
+| Push com aplicativo fechado | Pronto (BullMQ + Expo Push discreto, flag `CHAT_PUSH_ENABLED=false`) | n/a | Código pronto (import gracioso de `expo-notifications`; requer lib + build EAS + credenciais FCM/APNs para disparo real) |
 | Digitando, visto por último, silenciar, buscar, denunciar | Ausente | Ausente | Ausente |
 | Configurações de conversas | Parcial (só confirmação de leitura) | Parcial | Parcial |
 
@@ -139,10 +139,15 @@ Cada item vale para **web e mobile**, salvo indicação.
   - **Web e Mobile (`ChatPane.tsx`, `chat-session.ts`, `chat-pane.tsx`, `chat-runtime.ts`):** botão de anexo, progresso/cancelamento, renderização inline de imagem/áudio/vídeo decifrados em memória e download de arquivos. No mobile, usa `expo-image-picker` (já no APK atual) para foto/vídeo; nota de voz e seletor de documentos ficam para a próxima dev build EAS.
   - **Verificação:** API 47/47 + build; `chat-core` 35/35; adaptador nativo 6/6; `tsc --noEmit` web e mobile limpos; novo teste E2E `apps/web/test/chat-media.browser.cjs` 4/4 (imagem inline decifrada, arquivo com download, retenção de 90 dias + bloqueio de terceiros, responsivo 1440/390/320 px); **interoperabilidade real Web (WASM) → Android físico (`RMX3840`, Rust nativo) aprovada** (imagem cifrada no navegador baixada e decifrada no celular).
 
+- **Bloco 2B — Push discreto com aplicativo fechado concluído no código e validado em testes unitários (19/11/2026):**
+  - **Banco e API (`20261119180000_chat_device_push_token`, `chat-push.processor.ts`, `chat.service.ts`, `chat.controller.ts`):** `push_token` / `push_token_updated_at` em `chat_devices`; endpoints `PUT`/`DELETE /conversations/chat/devices/push-token` (validando formato `ExponentPushToken[...]` e credenciais do aparelho); limpeza automática do token ao revogar ou redefinir aparelho; enfileiramento assíncrono via BullMQ (`chat-push`, `jobId` idempotente `push:<convId>:<eventId>`) no `send()`; worker dispara payload estritamente discreto (`title: "Votz"`, `body: "Você recebeu uma nova mensagem"`, `data: { type: "chat_message", conversationId }`, zero texto em claro), protegido pela flag `CHAT_PUSH_ENABLED=false` por padrão, com limpeza automática em `DeviceNotRegistered`.
+  - **Mobile (`chat-push.ts`, `chat-runtime.ts`, `_layout.tsx`):** registro do token ao abrir chat, canal Android `chat-messages`, limpeza na redefinição e navegação direta para a conversa ao tocar na notificação; import dinâmico gracioso para manter compatibilidade com o APK atual sem `expo-notifications`.
+  - **Verificação:** API **50/50 testes unitários** (3 suítes: `conversations.spec`, `chat.service.spec`, `chat-push.processor.spec`) + build da API + `tsc --noEmit` do mobile limpos. **Ainda não verificado em aparelho real com app fechado:** requer instalar `expo-notifications`, configurar credenciais FCM/APNs no EAS e gerar nova development build.
+
 - [x] Imagem, vídeo, áudio e arquivo cifrados no cliente antes do envio (formato padrão Matrix `v2`, retenção 90 dias; validado em API, navegador e Android físico; gravador de nota de voz e picker de documentos no mobile pendentes de libs Expo + build EAS)
 - [x] Progresso, cancelamento e limites de tamanho (10 MB foto, 25 MB áudio/arquivo, 50 MB vídeo; retomada de upload parcial fica para melhoria futura)
 - [ ] Download automático configurável (hoje imagens e áudios baixam automaticamente; configuração entra na Etapa 6)
-- [ ] Push discreto com aplicativo fechado (Bloco 2B)
+- [x] Push discreto com aplicativo fechado (API BullMQ + mobile prontos e cobertos por testes unitários; disparo real em aparelho pendente de `expo-notifications` + FCM/APNs + nova build EAS)
 
 ### Etapa 3 — Experiência do mensageiro
 

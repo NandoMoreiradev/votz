@@ -23,6 +23,7 @@ import { ConversationsPrivacyInterceptor } from './conversations-privacy.interce
 import { ConversationActor } from './conversations.service'
 import { CHAT_MEDIA_MAX_BYTES, ChatService } from './chat.service'
 import {
+  ChatPushTokenDto,
   DecideChatDeviceLinkDto,
   ResetChatDevicesDto,
   ChatPrivacyDto,
@@ -76,6 +77,16 @@ export class ChatController {
     @Body() body: DecideChatDeviceLinkDto,
   ) {
     return this.service.decideLink(req.user, this.device(req), id, body.approve)
+  }
+  @Put('chat/devices/push-token')
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  registerPushToken(@Req() req: Request, @Body() body: ChatPushTokenDto) {
+    return this.service.registerPushToken(req.user, this.device(req), body.token)
+  }
+  @Delete('chat/devices/push-token')
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  clearPushToken(@Req() req: Request) {
+    return this.service.clearPushToken(req.user, this.device(req))
   }
   @Delete('chat/devices/:id') @Throttle({ long: { limit: 20, ttl: 60000 } })
   revoke(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
