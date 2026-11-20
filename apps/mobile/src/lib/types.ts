@@ -14,6 +14,12 @@ export interface Report {
   _count: { votes: number; comments: number }
   timeline?: { id: string; content: string; createdAt: string; type: string }[]
 }
+export interface SimilarReport {
+  id: string; title: string; description: string; category: Category; status: ReportStatus
+  city: string | null; state: string | null; createdAt: string; pressureScore: number
+}
+export type RecipientKind = 'ENTITY' | 'POLITICIAN' | 'COMPANY'
+export interface Recipient { type: RecipientKind; id: string; name: string }
 export type ReportSummary = Pick<Report, 'id' | 'title' | 'status' | 'city' | 'createdAt' | '_count'>
 export type ProfileKind = 'users' | 'politicians' | 'entities'
 export interface PublicProfile {

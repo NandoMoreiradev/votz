@@ -40,9 +40,43 @@ export class ReportsService {
     @Optional() private readonly topics?: TopicsService,
   ) {}
 
+  /** Compara nomes sem olhar maiúsculas, acentos, hífen ou apóstrofo ("Santa Bárbara d'Oeste" = "SANTA BARBARA D OESTE"). */
+  private placeKey(value: string): string {
+    return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  }
+
+  private readonly cityKeysByState = new Map<string, { loadedAt: number; keys: Set<string> }>()
+  private static readonly CITY_CACHE_MS = 60 * 60 * 1000
+
+  private async knownCityKeys(state: string): Promise<Set<string>> {
+    const cached = this.cityKeysByState.get(state)
+    if (cached && Date.now() - cached.loadedAt < ReportsService.CITY_CACHE_MS) return cached.keys
+    // O sync do IBGE grava cada município como entidade (com ibgeCode); é a lista oficial de cidades que já temos.
+    const rows = await this.prisma.entity.findMany({
+      where: { state, ibgeCode: { not: null } },
+      select: { city: true },
+    })
+    const keys = new Set(rows.map((row) => this.placeKey(row.city ?? '')).filter(Boolean))
+    this.cityKeysByState.set(state, { loadedAt: Date.now(), keys })
+    return keys
+  }
+
+  /**
+   * A cidade precisa existir na UF informada: ela liga o relato aos alertas de surto e às regras das entidades,
+   * e um nome errado deixa o relato de fora sem ninguém perceber. Sem a lista (sync do IBGE ainda não rodou
+   * para essa UF), não bloqueia ninguém.
+   */
+  private async assertKnownCity(city?: string, state?: string): Promise<void> {
+    if (!city || !state) return
+    const keys = await this.knownCityKeys(state)
+    if (keys.size === 0 || keys.has(this.placeKey(city))) return
+    throw new BadRequestException(`Não encontramos "${city}" em ${state}. Escolha a cidade na lista ou confira o estado.`)
+  }
+
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
     if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
     this.storage.assertOwnStorageUrls(dto.media, 'reports')
+    await this.assertKnownCity(dto.city, dto.state)
 
     if (dto.recipientType === RecipientType.POLITICIAN && dto.recipientId) {
       const politician = await this.prisma.politician.findUnique({

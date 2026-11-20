@@ -6,7 +6,7 @@ import X from 'lucide-react-native/icons/x'
 import { IconButton } from './ui'
 import { theme } from '../theme'
 
-export function ChoiceSheet<T extends string>({ visible, title, options, value, onChange, onClose }: { visible: boolean; title: string; options: readonly { value: T; label: string }[]; value: T; onChange: (value: T) => void; onClose: () => void }) {
+export function ChoiceSheet<T extends string>({ visible, title, options, value, onChange, onClose }: { visible: boolean; title: string; options: readonly { value: T; label: string }[]; value: T | null; onChange: (value: T) => void; onClose: () => void }) {
   useEffect(() => { if (visible) Keyboard.dismiss() }, [visible])
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000055' }}><Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel="Fechar opções" onPress={onClose} />

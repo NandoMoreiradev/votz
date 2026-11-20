@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Alert, Modal, Pressable, Share, Text, View } from 'react-native'
+import { Alert, Linking, Modal, Pressable, Share, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
@@ -10,6 +10,8 @@ import Repeat2 from 'lucide-react-native/icons/repeat-2'
 import Share2 from 'lucide-react-native/icons/share-2'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
 import X from 'lucide-react-native/icons/x'
+import Video from 'lucide-react-native/icons/video'
+import FileText from 'lucide-react-native/icons/file-text'
 import type { PostDto, Report, ProfileKind } from '../lib/types'
 import { useAction } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
@@ -17,6 +19,7 @@ import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
 import { Avatar, IconButton, styles } from './ui'
+import { VideoModal } from './video-modal'
 
 export const statusLabels: Record<string, string> = { OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento', RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado' }
 export function profileLink(author: PostDto['author']): { kind: ProfileKind; id: string } {
@@ -26,12 +29,23 @@ export function profileLink(author: PostDto['author']): { kind: ProfileKind; id:
 }
 export function MediaGrid({ urls, detail = false }: { urls: string[]; detail?: boolean }) {
   const [opened, setOpened] = useState<string | null>(null)
-  const images = urls.filter((url) => !/\.(mp4|mov|webm)(\?|$)/i.test(url)).slice(0, detail ? 5 : 4)
-  if (!images.length) return null
+  const [playing, setPlaying] = useState<string | null>(null)
+  const isFile = (url: string) => /\.(mp4|mov|webm|pdf)(\?|$)/i.test(url)
+  const images = urls.filter((url) => !isFile(url)).slice(0, detail ? 5 : 4)
+  const files = urls.filter((url) => isFile(url) && /^https?:\/\//i.test(url)).slice(0, detail ? 5 : 2)
+  if (!images.length && !files.length) return null
   return <>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, borderRadius: 12, overflow: 'hidden', marginTop: 10 }}>{images.map((url, index) => <Pressable key={`${url}-${index}`} accessibilityRole="button" accessibilityLabel={`Ampliar imagem ${index + 1}`} onPress={(event) => { event.stopPropagation(); setOpened(url) }} style={{ width: images.length === 1 ? '100%' : '49.4%', aspectRatio: images.length === 1 ? 1.4 : 1 }}>
+    {files.length > 0 && <View style={{ gap: 6, marginTop: 10 }}>{files.map((url) => {
+      const pdf = /\.pdf(\?|$)/i.test(url)
+      return <Pressable key={url} accessibilityRole="link" accessibilityLabel={pdf ? 'Abrir PDF anexado' : 'Abrir vídeo anexado'} onPress={(event) => { event.stopPropagation(); if (!pdf) { setPlaying(url); return } void Linking.openURL(url).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.')) }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12 }}>
+        {pdf ? <FileText size={20} color={theme.colors.action} /> : <Video size={20} color={theme.colors.action} />}
+        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: theme.colors.primary }}>{pdf ? 'Abrir PDF anexado' : 'Assistir vídeo anexado'}</Text>
+      </Pressable>
+    })}</View>}
+    {images.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, borderRadius: 12, overflow: 'hidden', marginTop: 10 }}>{images.map((url, index) => <Pressable key={`${url}-${index}`} accessibilityRole="button" accessibilityLabel={`Ampliar imagem ${index + 1}`} onPress={(event) => { event.stopPropagation(); setOpened(url) }} style={{ width: images.length === 1 ? '100%' : '49.4%', aspectRatio: images.length === 1 ? 1.4 : 1 }}>
       <Image source={url} recyclingKey={url} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-    </Pressable>)}</View>
+    </Pressable>)}</View>}
+    <VideoModal url={playing} onClose={() => setPlaying(null)} />
     <Modal visible={!!opened} transparent animationType="fade" onRequestClose={() => setOpened(null)}>
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.primary }}>
         <View style={{ alignItems: 'flex-end', paddingHorizontal: 16 }}><IconButton label="Fechar imagem" onPress={() => setOpened(null)}><X color={theme.colors.surface} size={24} /></IconButton></View>

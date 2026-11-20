@@ -638,6 +638,81 @@ function PoliticianSearch({
   )
 }
 
+// ── Company search ─────────────────────────────────────────────────────────
+
+interface CompanyOption {
+  id: string
+  tradeName: string
+  legalName?: string
+  sector?: string
+}
+
+function CompanySearch({
+  onSelect,
+  initialValue = null,
+}: {
+  onSelect: (company: CompanyOption | null) => void
+  initialValue?: CompanyOption | null
+}) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<CompanyOption | null>(initialValue)
+  const [open, setOpen] = useState(false)
+
+  const { data } = useQuery({
+    queryKey: ['companies-search', search],
+    queryFn: () =>
+      api
+        .get<{ data: CompanyOption[] }>('/companies', { params: { search, limit: 8 } })
+        .then((r) => r.data),
+    enabled: search.length >= 2,
+    staleTime: 30_000,
+  })
+
+  function select(company: CompanyOption) {
+    setSelected(company)
+    setSearch('')
+    setOpen(false)
+    onSelect(company)
+  }
+
+  function clear() {
+    setSelected(null)
+    onSelect(null)
+  }
+
+  if (selected) {
+    return (
+      <SelectedEntity>
+        <SelectedName>{selected.tradeName}</SelectedName>
+        <ClearBtn type="button" onClick={clear}>✕ remover</ClearBtn>
+      </SelectedEntity>
+    )
+  }
+
+  return (
+    <SearchWrapper>
+      <SearchInput
+        type="text"
+        placeholder="Buscar por nome da empresa..."
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && data && data.data.length > 0 && (
+        <Dropdown>
+          {data.data.map((c) => (
+            <DropdownItem key={c.id} onMouseDown={() => select(c)}>
+              {c.tradeName}
+              {c.legalName && c.legalName !== c.tradeName && <DropdownSub>{c.legalName}</DropdownSub>}
+            </DropdownItem>
+          ))}
+        </Dropdown>
+      )}
+    </SearchWrapper>
+  )
+}
+
 // ── Seletor de destinatário ────────────────────────────────────────────────
 
 const RecipientTabs = styled.div`
@@ -692,11 +767,18 @@ export function CreateReport() {
       ? { id: initRecipientId, name: initRecipientName, party: { id: '', name: '', abbreviation: '', number: 0, logoUrl: null }, office: '', status: 'ATIVO' as const, termStart: '', termEnd: '', electoralZone: '', state: '', city: null, avatarUrl: null, website: null, verified: false, plan: 'BASICO', mandatometer: null, createdAt: '' }
       : null
 
-  const [recipientTab, setRecipientTab] = useState<'entity' | 'politician'>(
-    initRecipientType === 'POLITICIAN' ? 'politician' : 'entity'
+  const initCompany: CompanyOption | null =
+    initRecipientType === 'COMPANY' && initRecipientId && initRecipientName
+      ? { id: initRecipientId, tradeName: initRecipientName }
+      : null
+
+  const [recipientTab, setRecipientTab] = useState<'entity' | 'politician' | 'company'>(
+    initRecipientType === 'POLITICIAN' ? 'politician' : initRecipientType === 'COMPANY' ? 'company' : 'entity'
   )
   const [selectedEntity, setSelectedEntity] = useState<EntityListItem | null>(initEntity)
   const [selectedPolitician, setSelectedPolitician] = useState<Politician | null>(initPolitician)
+  const [selectedCompany, setSelectedCompany] = useState<CompanyOption | null>(initCompany)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
 
   // ── Location state ─────────────────────────────────────────────────────────
@@ -730,6 +812,7 @@ export function CreateReport() {
   }
 
   function clearLocation() {
+    setLocationError(null)
     setCep('')
     setAddress(null)
     setStreet('')
@@ -744,6 +827,8 @@ export function CreateReport() {
     setLocationMode(mode)
     clearLocation()
   }
+
+  useEffect(() => { setLocationError(null) }, [manualStreet, manualNeighborhood, manualCity, manualState])
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     defaultValues: { anonymous: false },
@@ -800,7 +885,18 @@ export function CreateReport() {
         ? { recipientType: 'ENTITY', recipientId: selectedEntity.id }
         : recipientTab === 'politician' && selectedPolitician
           ? { recipientType: 'POLITICIAN', recipientId: selectedPolitician.id }
-          : {}
+          : recipientTab === 'company' && selectedCompany
+            ? { recipientType: 'COMPANY', recipientId: selectedCompany.id }
+            : {}
+
+    // A API recusa cidade ou UF vazias: se o usuário começou a preencher, exige as duas (UF com 2 letras).
+    const manualUf = manualState.trim().toUpperCase()
+    const manualStarted = !!(manualStreet.trim() || manualNeighborhood.trim() || manualCity.trim() || manualUf)
+    if (locationMode === 'manual' && manualStarted) {
+      if (!/^[A-Z]{2}$/.test(manualUf)) return setLocationError('Escolha o estado na lista ou limpe a localização.')
+      if (!manualCity.trim()) return setLocationError('Escolha a cidade na lista ou limpe a localização.')
+    }
+    setLocationError(null)
 
     const location = (() => {
       if (locationMode === 'cep' && address) {
@@ -815,17 +911,19 @@ export function CreateReport() {
             neighborhood || address.neighborhood,
             address.city,
             address.state,
-          ].filter(Boolean).join(', '),
+          ].filter(Boolean).join(', ').slice(0, 300),
         }
       }
-      if (locationMode === 'manual' && (manualCity || manualStreet)) {
+      if (locationMode === 'manual' && manualStarted) {
+        const neighborhoodValue = manualNeighborhood.trim()
         return {
-          city: manualCity,
-          state: manualState,
-          neighborhood: manualNeighborhood,
-          typedAddress: [manualStreet, manualNeighborhood, manualCity, manualState]
+          city: manualCity.trim(),
+          state: manualUf,
+          ...(neighborhoodValue ? { neighborhood: neighborhoodValue } : {}),
+          typedAddress: [manualStreet.trim(), neighborhoodValue, manualCity.trim(), manualUf]
             .filter(Boolean)
-            .join(', '),
+            .join(', ')
+            .slice(0, 300),
         }
       }
       return {}
@@ -900,21 +998,30 @@ export function CreateReport() {
                 <RecipientTab
                   type="button"
                   $active={recipientTab === 'entity'}
-                  onClick={() => { setRecipientTab('entity'); setSelectedPolitician(null) }}
+                  onClick={() => { setRecipientTab('entity'); setSelectedPolitician(null); setSelectedCompany(null) }}
                 >
                   Entidade pública
                 </RecipientTab>
                 <RecipientTab
                   type="button"
                   $active={recipientTab === 'politician'}
-                  onClick={() => { setRecipientTab('politician'); setSelectedEntity(null) }}
+                  onClick={() => { setRecipientTab('politician'); setSelectedEntity(null); setSelectedCompany(null) }}
                 >
                   Político
+                </RecipientTab>
+                <RecipientTab
+                  type="button"
+                  $active={recipientTab === 'company'}
+                  onClick={() => { setRecipientTab('company'); setSelectedEntity(null); setSelectedPolitician(null) }}
+                >
+                  Empresa
                 </RecipientTab>
               </RecipientTabs>
               {recipientTab === 'entity'
                 ? <EntitySearch onSelect={setSelectedEntity} initialValue={initEntity} />
-                : <PoliticianSearch onSelect={setSelectedPolitician} initialValue={initPolitician} />
+                : recipientTab === 'politician'
+                  ? <PoliticianSearch onSelect={setSelectedPolitician} initialValue={initPolitician} />
+                  : <CompanySearch onSelect={setSelectedCompany} initialValue={initCompany} />
               }
             </Field>
 
@@ -998,7 +1105,7 @@ export function CreateReport() {
               {locationMode === 'manual' && (
                 <LocationBox>
                   <Hint>
-                    Preencha os campos que souber — pelo menos cidade e estado.
+                    Escolha o estado e a cidade. Rua e bairro, só se souber.
                   </Hint>
                   <FullManualAddressFields
                     street={manualStreet}
@@ -1010,13 +1117,14 @@ export function CreateReport() {
                     onCityChange={setManualCity}
                     onStateChange={setManualState}
                   />
-                  {(manualStreet || manualCity) && (
+                  {(manualStreet || manualNeighborhood || manualCity || manualState) && (
                     <LocationClear type="button" onClick={clearLocation}>
                       Limpar localização
                     </LocationClear>
                   )}
                 </LocationBox>
               )}
+              {locationError && <ErrorMsg role="alert">{locationError}</ErrorMsg>}
             </Field>
 
             <Field>

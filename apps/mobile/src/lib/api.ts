@@ -49,12 +49,14 @@ export function setAccessToken(token: string) {
   } catch { tokenExpiresAt = 0 }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export type ApiOptions = RequestInit & { timeoutMs?: number }
+
+async function request<T>(path: string, { timeoutMs = 20_000, ...options }: ApiOptions = {}): Promise<T> {
   const controller = new AbortController()
   const abort = () => controller.abort()
   if (options.signal?.aborted) controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
-  const timer = setTimeout(abort, 20_000)
+  const timer = setTimeout(abort, timeoutMs)
   try {
     const response = await fetch(`${API_URL}${path}`, {
       ...options, credentials: 'omit', signal: controller.signal,
@@ -95,7 +97,7 @@ export function refreshSession(): Promise<void> {
   return refreshing
 }
 
-export async function api<T>(path: string, options: RequestInit = {}, authenticated = true): Promise<T> {
+export async function api<T>(path: string, options: ApiOptions = {}, authenticated = true): Promise<T> {
   // Optional-auth feeds can return 200 anonymously with an expired JWT, so
   // renew before sending rather than waiting only for a protected-route 401.
   if (authenticated && accessToken && tokenExpiresAt && tokenExpiresAt <= Date.now() + 5_000) await refreshSession()

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
-import styled from 'styled-components'
+import styled, { css } from 'styled-components'
+import { CitySelect, StateSelect } from './LocationSelect'
 
 export interface CepAddressResult {
   zipCode: string        // digits only
@@ -297,9 +298,28 @@ interface FullManualProps {
   onStateChange: (v: string) => void
 }
 
-const StateInput = styled(InlineInput)`
-  text-transform: uppercase;
-  width: 80px;
+const selectCss = css`
+  height: 40px;
+  width: 100%;
+  padding: 0 10px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
+  &:disabled { background: ${({ theme }) => theme.colors.neutral}; cursor: not-allowed; }
+`
+
+const StyledStateSelect = styled(StateSelect)`${selectCss}`
+const StyledCitySelect = styled(CitySelect)`${selectCss}`
+
+const SourceNote = styled.span`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
 `
 
 export function FullManualAddressFields({
@@ -337,28 +357,30 @@ export function FullManualAddressFields({
         />
       </InlineField>
 
-      <TwoCol>
+      <ManualGrid>
+        <InlineField>
+          <InlineLabel>Estado</InlineLabel>
+          <StyledStateSelect
+            value={state}
+            onChange={(uf) => { onStateChange(uf); onCityChange('') }}
+            placeholder="Escolher estado"
+            aria-label="Estado"
+          />
+        </InlineField>
         <InlineField>
           <InlineLabel>Cidade</InlineLabel>
-          <InlineInput
-            type="text"
+          <StyledCitySelect
+            uf={state}
             value={city}
-            onChange={(e) => onCityChange(e.target.value)}
-            maxLength={100}
-            placeholder="São Paulo"
+            onChange={onCityChange}
+            placeholder="Escolher cidade"
+            aria-label="Cidade"
           />
         </InlineField>
-        <InlineField>
-          <InlineLabel>Estado (UF)</InlineLabel>
-          <StateInput
-            type="text"
-            value={state}
-            onChange={(e) => onStateChange(e.target.value.toUpperCase().slice(0, 2))}
-            maxLength={2}
-            placeholder="SP"
-          />
-        </InlineField>
-      </TwoCol>
+        <SourceNote>
+          Estado e cidade vêm da lista oficial do IBGE. Rua e bairro são informados por você e não são conferidos.
+        </SourceNote>
+      </ManualGrid>
     </ManualGrid>
   )
 }

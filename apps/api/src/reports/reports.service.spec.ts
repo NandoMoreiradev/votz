@@ -42,7 +42,7 @@ const mockEmbedding = { embed: jest.fn().mockResolvedValue([]) }
 const mockPrisma = {
   politician: { findUnique: jest.fn() },
   follower: { findMany: jest.fn().mockResolvedValue([]) },
-  entity: { findUnique: jest.fn() },
+  entity: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   orgMembership: { findUnique: jest.fn() },
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
@@ -132,6 +132,42 @@ describe('ReportsService', () => {
       expect(mockTimeline.record).toHaveBeenCalledWith(
         expect.objectContaining({ reportId: 'r1', type: EventType.CREATED }),
       )
+    })
+
+    describe('cidade e UF', () => {
+      const user = { id: 'u1', type: 'CITIZEN', emailVerified: true }
+      const spCities = [{ city: 'São Paulo' }, { city: "Santa Bárbara d'Oeste" }, { city: 'Embu-Guaçu' }]
+
+      it('aceita cidade que existe na UF, sem olhar acento, caixa ou pontuação', async () => {
+        mockPrisma.entity.findMany.mockResolvedValue(spCities)
+        mockRepo.create.mockResolvedValue(makeReport({ id: 'r1' }))
+
+        for (const city of ['São Paulo', 'sao paulo', "SANTA BARBARA D'OESTE", 'Embu Guacu']) {
+          await expect(service.create({ ...dto, city, state: 'SP' }, user)).resolves.toBeDefined()
+        }
+        expect(mockPrisma.entity.findMany).toHaveBeenCalledTimes(1) // lista da UF fica em cache
+        expect(mockPrisma.entity.findMany).toHaveBeenCalledWith({ where: { state: 'SP', ibgeCode: { not: null } }, select: { city: true } })
+      })
+
+      it('recusa cidade que não existe na UF e não grava o relato', async () => {
+        mockPrisma.entity.findMany.mockImplementation(async ({ where }: { where: { state: string } }) =>
+          where.state === 'SP' ? spCities : [{ city: 'Rio Branco' }])
+        mockRepo.create.mockClear()
+
+        await expect(service.create({ ...dto, city: 'Xyzlândia', state: 'SP' }, user)).rejects.toThrow(/Xyzlândia.*SP/)
+        // cidade de outra UF também é recusada
+        await expect(service.create({ ...dto, city: 'São Paulo', state: 'AC' }, user)).rejects.toThrow(BadRequestException)
+        expect(mockRepo.create).not.toHaveBeenCalled()
+      })
+
+      it('não bloqueia quando a lista da UF ainda não foi sincronizada, nem quando falta cidade ou UF', async () => {
+        mockPrisma.entity.findMany.mockResolvedValue([])
+        mockRepo.create.mockResolvedValue(makeReport({ id: 'r1' }))
+
+        await expect(service.create({ ...dto, city: 'Qualquer', state: 'SP' }, user)).resolves.toBeDefined()
+        await expect(service.create({ ...dto, city: 'Qualquer' }, user)).resolves.toBeDefined()
+        await expect(service.create({ ...dto, state: 'SP' }, user)).resolves.toBeDefined()
+      })
     })
 
     it('passes null authorId for anonymous reports', async () => {
