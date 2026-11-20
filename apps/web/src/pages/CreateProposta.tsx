@@ -15,9 +15,9 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 720px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 24px 32px 64px;
 
   @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
@@ -33,13 +33,62 @@ const BackLink = styled(Link)`
   &:hover { color: ${({ theme }) => theme.colors.text}; }
 `
 
-const Card = styled.div`
+const FormGrid = styled.form`
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+
+  @media (max-width: 1000px) { grid-template-columns: minmax(0, 1fr); }
+`
+
+const Panel = styled.section`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 32px;
+  padding: 28px;
+  min-width: 0;
 
-  @media (max-width: 640px) { padding: 20px 18px; }
+  @media (max-width: 640px) { padding: 20px 16px; }
+`
+
+const PanelHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+`
+
+const StepBadge = styled.span`
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const PanelTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.xl};
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0;
+`
+
+const PanelSub = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 2px 0 0;
+`
+
+const SubmitBar = styled.div`
+  padding-top: 20px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const PageTitle = styled.h1`
@@ -47,13 +96,13 @@ const PageTitle = styled.h1`
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 `
 
 const PageSubtitle = styled.p`
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   color: ${({ theme }) => theme.colors.muted};
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 `
 
 const Label = styled.label`
@@ -129,12 +178,6 @@ const ErrorMsg = styled.p`
   font-size: 0.875rem;
   color: ${({ theme }) => theme.colors.action};
   margin-top: 16px;
-`
-
-const Divider = styled.hr`
-  border: none;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
-  margin: 24px 0;
 `
 
 const AccessDenied = styled.div`
@@ -230,13 +273,20 @@ export function CreateProposta() {
       <Navbar />
       <Content>
         <BackLink to="/propostas">← Propostas</BackLink>
-        <Card>
-          <PageTitle>Nova Proposta</PageTitle>
-          <PageSubtitle>
-            Apresente sua proposta de forma clara. Ela ficará em rascunho até você publicar.
-          </PageSubtitle>
+        <PageTitle>Nova Proposta</PageTitle>
+        <PageSubtitle>
+          Apresente sua proposta de forma clara. Ela ficará em rascunho até você publicar.
+        </PageSubtitle>
 
-          <form onSubmit={handleSubmit}>
+        <FormGrid onSubmit={handleSubmit}>
+          <Panel>
+            <PanelHeader>
+              <StepBadge>1</StepBadge>
+              <div>
+                <PanelTitle>Qual é a proposta?</PanelTitle>
+                <PanelSub>Diga o que quer fazer, por quê e como.</PanelSub>
+              </div>
+            </PanelHeader>
             <Field>
               <Label htmlFor="titulo">Título da proposta *</Label>
               <Hint>Seja direto e objetivo (ex: "Criação de faixas exclusivas de ônibus no centro")</Hint>
@@ -262,7 +312,16 @@ export function CreateProposta() {
               />
               <CharCount $warn={descricao.length > 9000}>{descricao.length}/10.000</CharCount>
             </Field>
+          </Panel>
 
+          <Panel>
+            <PanelHeader>
+              <StepBadge>2</StepBadge>
+              <div>
+                <PanelTitle>Para quem e onde?</PanelTitle>
+                <PanelSub>Escolha as áreas e, se já existir, o documento oficial.</PanelSub>
+              </div>
+            </PanelHeader>
             <Field>
               <Label>Categorias * (até 5)</Label>
               <Hint>Selecione as áreas temáticas da proposta.</Hint>
@@ -280,8 +339,6 @@ export function CreateProposta() {
               </CatGrid>
             </Field>
 
-            <Divider />
-
             <Field>
               <Label htmlFor="link">Link para documento oficial (opcional)</Label>
               <Hint>Se a proposta já foi protocolada, cole o link aqui.</Hint>
@@ -294,25 +351,28 @@ export function CreateProposta() {
               />
             </Field>
 
-            {error && (
-              <ErrorMsg>
-                {(error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Erro ao criar proposta. Tente novamente.'}
-              </ErrorMsg>
-            )}
+            <SubmitBar>
+              {error && (
+                <ErrorMsg style={{ marginTop: 0, marginBottom: 12 }}>
+                  {(error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Erro ao criar proposta. Tente novamente.'}
+                </ErrorMsg>
+              )}
 
-            <Button
-              type="submit"
-              disabled={
-                isPending ||
-                titulo.trim().length < 10 ||
-                descricao.trim().length < 30 ||
-                categorias.length === 0
-              }
-            >
-              {isPending ? 'Criando…' : 'Criar Proposta (Rascunho)'}
-            </Button>
-          </form>
-        </Card>
+              <Button
+                type="submit"
+                fullWidth
+                disabled={
+                  isPending ||
+                  titulo.trim().length < 10 ||
+                  descricao.trim().length < 30 ||
+                  categorias.length === 0
+                }
+              >
+                {isPending ? 'Criando…' : 'Criar Proposta (Rascunho)'}
+              </Button>
+            </SubmitBar>
+          </Panel>
+        </FormGrid>
       </Content>
     </Page>
   )

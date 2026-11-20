@@ -10,18 +10,25 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import type { Response } from 'express'
 import { OrgPermission, OrgType } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { OrgPermissionGuard, RequireOrgPermission } from '../org-memberships/org-memberships.guard'
-import { PageInboxService } from './page-inbox.service'
+import { PAGE_MEDIA_MAX_BYTES, PageInboxService } from './page-inbox.service'
 import {
   PageFollowersQueryDto,
   PageListQueryDto,
+  PageMediaDto,
   PageMessageDto,
   PageRespondDto,
   PageStartDto,
@@ -29,9 +36,23 @@ import {
 } from './dto/page-inbox.dto'
 
 type Authed = { id: string; emailVerified?: boolean }
+type UploadedMedia = { buffer?: Buffer; originalname?: string; mimetype?: string }
 
 function requireVerified(user: Authed) {
   if (!user.emailVerified) throw new ForbiddenException('Confirme seu e-mail para enviar mensagens.')
+}
+
+function sendMediaFile(res: Response, file: { buffer: Buffer; mimeType: string; name: string; kind: string }) {
+  const safeName = file.name.replace(/["\\\r\n]/g, '_')
+  const disposition = file.kind === 'file' ? 'attachment' : 'inline'
+  res.set({
+    'Content-Type': file.mimeType,
+    'Content-Length': String(file.buffer.length),
+    'Content-Disposition': `${disposition}; filename="${safeName}"`,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, no-store',
+  })
+  return new StreamableFile(file.buffer)
 }
 
 @ApiTags('page-inbox')
@@ -59,6 +80,18 @@ export class PageInboxController {
   @Get('mine/:id')
   mineOne(@CurrentUser() user: Authed, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.myConversation(user.id, id)
+  }
+
+  @ApiOperation({ summary: 'Baixar anexo ou áudio de uma conversa minha com uma página' })
+  @Get('mine/:id/media/:attachmentId')
+  async mineMedia(
+    @CurrentUser() user: Authed,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.service.downloadMediaForCitizen(user.id, id, attachmentId)
+    return sendMediaFile(res, file)
   }
 
   @ApiOperation({ summary: 'Aceitar ou recusar uma conversa que a página começou' })
@@ -93,7 +126,22 @@ export class PageInboxController {
     @Body() dto: PageMessageDto,
   ) {
     requireVerified(user)
-    return this.service.sendAsCitizen(user.id, orgType, orgId, dto.text)
+    return this.service.sendAsCitizen(user.id, orgType, orgId, dto.text, dto.replyToId)
+  }
+
+  @ApiOperation({ summary: 'Enviar mídia ou áudio para a equipe de uma página' })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PAGE_MEDIA_MAX_BYTES } }))
+  @Post(':orgType/:orgId/media')
+  sendMedia(
+    @CurrentUser() user: Authed,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @UploadedFile() file: UploadedMedia | undefined,
+    @Body() dto: PageMediaDto,
+  ) {
+    requireVerified(user)
+    return this.service.sendMediaAsCitizen(user.id, orgType, orgId, file, dto)
   }
 
   // ── Equipe da página ───────────────────────────────────────────────────────
@@ -134,6 +182,21 @@ export class PageInboxController {
     return this.service.openForStaff(user.id, orgType, orgId, id)
   }
 
+  @ApiOperation({ summary: 'Baixar anexo ou áudio de uma conversa da página' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.READ_MESSAGES)
+  @Get(':orgType/:orgId/conversations/:id/media/:attachmentId')
+  async staffMedia(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.service.downloadMediaForStaff(orgType, orgId, id, attachmentId)
+    return sendMediaFile(res, file)
+  }
+
   @ApiOperation({ summary: 'Seguidores que a página pode chamar' })
   @UseGuards(OrgPermissionGuard)
   @RequireOrgPermission(OrgPermission.REPLY_MESSAGES)
@@ -172,7 +235,24 @@ export class PageInboxController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PageMessageDto,
   ) {
-    return this.service.replyAsStaff(user.id, orgType, orgId, id, dto.text)
+    return this.service.replyAsStaff(user.id, orgType, orgId, id, dto.text, dto.replyToId)
+  }
+
+  @ApiOperation({ summary: 'Enviar mídia ou áudio como equipe da página' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.REPLY_MESSAGES)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PAGE_MEDIA_MAX_BYTES } }))
+  @Post(':orgType/:orgId/conversations/:id/media')
+  replyMedia(
+    @CurrentUser() user: Authed,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: UploadedMedia | undefined,
+    @Body() dto: PageMediaDto,
+  ) {
+    return this.service.replyMediaAsStaff(user.id, orgType, orgId, id, file, dto)
   }
 
   @ApiOperation({ summary: 'Marcar como resolvida, reabrir ou bloquear' })

@@ -12,6 +12,24 @@ export interface PageSummary {
   avatarUrl: string | null
 }
 
+export interface PageAttachmentView {
+  id: string
+  kind: 'image' | 'video' | 'audio' | 'file'
+  name: string
+  mimeType: string
+  sizeBytes: number
+  width?: number
+  height?: number
+  durationMs?: number
+  thumbnail?: string
+}
+
+export interface PageReplyView {
+  id: string
+  from: 'CITIZEN' | 'STAFF'
+  excerpt: string
+}
+
 export interface PageMessageView {
   id: string
   from: 'CITIZEN' | 'STAFF'
@@ -19,6 +37,8 @@ export interface PageMessageView {
   createdAt: string
   /** Só a equipe vê quem respondeu. */
   staffName?: string
+  replyTo?: PageReplyView
+  attachment?: PageAttachmentView
 }
 
 export interface CitizenSummary {
@@ -95,9 +115,59 @@ export function useMyPageConversationList(enabled = true) {
 export function useSendPageMessage(orgType: OrgType, orgId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
       api
-        .post<{ conversationId: string; message: PageMessageView }>(`${base}/${orgType}/${orgId}/messages`, { text })
+        .post<{ conversationId: string; message: PageMessageView }>(`${base}/${orgType}/${orgId}/messages`, {
+          text,
+          ...(replyToId ? { replyToId } : {}),
+        })
+        .then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox'] }),
+  })
+}
+
+export interface PageMediaUploadInput {
+  file: Blob
+  fileName: string
+  caption?: string
+  replyToId?: string
+  width?: number
+  height?: number
+  durationMs?: number
+  thumbnail?: string
+  signal?: AbortSignal
+  onProgress?: (percent: number) => void
+}
+
+function buildMediaForm(input: PageMediaUploadInput): FormData {
+  const form = new FormData()
+  form.append('file', input.file, input.fileName)
+  if (input.caption) form.append('caption', input.caption)
+  if (input.replyToId) form.append('replyToId', input.replyToId)
+  if (input.width) form.append('width', String(input.width))
+  if (input.height) form.append('height', String(input.height))
+  if (input.durationMs) form.append('durationMs', String(input.durationMs))
+  if (input.thumbnail) form.append('thumbnail', input.thumbnail)
+  return form
+}
+
+export function useSendPageMedia(orgType: OrgType, orgId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: PageMediaUploadInput) =>
+      api
+        .post<{ conversationId: string; message: PageMessageView }>(
+          `${base}/${orgType}/${orgId}/media`,
+          buildMediaForm(input),
+          {
+            signal: input.signal,
+            onUploadProgress: (ev) => {
+              if (ev.total && input.onProgress) {
+                input.onProgress(Math.min(100, Math.round((ev.loaded * 100) / ev.total)))
+              }
+            },
+          },
+        )
         .then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox'] }),
   })
@@ -240,10 +310,42 @@ export function useStartAsStaff(orgType: OrgType, orgId: string) {
 export function useReplyAsStaff(orgType: OrgType, orgId: string, id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (text: string) =>
-      api.post<PageMessageView>(`${base}/${orgType}/${orgId}/conversations/${id}/replies`, { text }).then((r) => r.data),
+    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
+      api
+        .post<PageMessageView>(`${base}/${orgType}/${orgId}/conversations/${id}/replies`, {
+          text,
+          ...(replyToId ? { replyToId } : {}),
+        })
+        .then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
   })
+}
+
+export function useReplyPageMedia(orgType: OrgType, orgId: string, id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: PageMediaUploadInput) =>
+      api
+        .post<PageMessageView>(
+          `${base}/${orgType}/${orgId}/conversations/${id}/media`,
+          buildMediaForm(input),
+          {
+            signal: input.signal,
+            onUploadProgress: (ev) => {
+              if (ev.total && input.onProgress) {
+                input.onProgress(Math.min(100, Math.round((ev.loaded * 100) / ev.total)))
+              }
+            },
+          },
+        )
+        .then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
+  })
+}
+
+export async function downloadPageMediaBlob(path: string): Promise<Blob> {
+  const res = await api.get<Blob>(path, { responseType: 'blob' })
+  return res.data
 }
 
 export function useSetConversationStatus(orgType: OrgType, orgId: string, id: string) {

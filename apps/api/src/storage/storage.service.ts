@@ -69,7 +69,7 @@ const VIDEO_MAX_SIZE = 100 * 1024 * 1024  // 100 MB
 const PDF_MAX_SIZE   = 50 * 1024 * 1024   // 50 MB
 const AUDIO_MAX_SIZE = 50 * 1024 * 1024   // 50 MB
 
-function detectMimeFromBuffer(buf: Buffer): string {
+export function detectMimeFromBuffer(buf: Buffer): string {
   if (buf.length < 12) return ''
   // JPEG: FF D8 FF
   if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'

@@ -12,9 +12,9 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 960px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 24px 32px 64px;
 
   @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
@@ -25,10 +25,10 @@ const Header = styled.div`
 
 const Title = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes['3xl']};
+  font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 `
 
 const Subtitle = styled.p`
@@ -57,9 +57,10 @@ const FilterBtn = styled.button<{ $active: boolean }>`
 `
 
 const PropostaList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const PropostaCard = styled(Link)`

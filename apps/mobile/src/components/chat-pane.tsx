@@ -10,20 +10,15 @@ import {
   View,
 } from 'react-native'
 import { Image } from 'expo-image'
-import * as ImagePicker from 'expo-image-picker'
 import { useNetworkState } from 'expo-network'
 import { router, useFocusEffect } from 'expo-router'
 import AlertCircle from 'lucide-react-native/icons/circle-alert'
-import Camera from 'lucide-react-native/icons/camera'
 import Check from 'lucide-react-native/icons/check'
 import CheckCheck from 'lucide-react-native/icons/check-check'
 import Clock from 'lucide-react-native/icons/clock'
 import Copy from 'lucide-react-native/icons/copy'
 import Forward from 'lucide-react-native/icons/forward'
-import Mic from 'lucide-react-native/icons/mic'
-import Paperclip from 'lucide-react-native/icons/paperclip'
 import Reply from 'lucide-react-native/icons/reply'
-import Send from 'lucide-react-native/icons/send'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import {
   DEFAULT_CONVERSATION_SETTINGS,
@@ -33,7 +28,6 @@ import {
   type ConversationSummary,
 } from '@votz/shared-types'
 import {
-  CHAT_QUALITY_VIEW,
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
   QUICK_REACTIONS,
@@ -41,7 +35,6 @@ import {
   chatError,
   chatSeedState,
   chatView,
-  mediaKindFromMime,
   parseChatQuality,
   type ChatClient,
   type ChatMediaQuality,
@@ -66,10 +59,10 @@ import {
 } from '../lib/chat-runtime'
 import { api, ApiError } from '../lib/api'
 import { getNativeMediaCache } from '../lib/chat-media-cache'
-import { imageManipulatorAvailable, prepareChatImage } from '../lib/chat-media-prepare'
 import { useTypingUsers } from '../lib/chat-typing'
 import { useSession } from '../lib/session'
 import { ChatHeader } from './chat-header'
+import { ChatComposerBar, pickPreparedChatMedia } from './chat-ui'
 import { MessageMenu, type MenuAction, type MenuAnchor } from './chat-sheet'
 import { copyText } from '../lib/clipboard'
 import { shouldAutoDownload } from '../lib/network-policy'
@@ -717,67 +710,26 @@ export function ChatPane({
   }
   async function attachMedia(fromCamera = false) {
     if (!runtime || busy) return
-    // Com o módulo de imagem (versão nova do app) a foto é reduzida aqui e o seletor não precisa recomprimir;
-    // sem ele, mantém o comportamento de antes (JPEG a 85%).
-    const reducible = imageManipulatorAvailable()
-    const photoQuality = reducible ? 1 : 0.85
-    // No iPhone o vídeo já sai reduzido pelo próprio sistema; no Android ainda vai como veio.
-    const videoExportPreset =
-      quality === 'high'
-        ? ImagePicker.VideoExportPreset.H264_1920x1080
-        : ImagePicker.VideoExportPreset.H264_1280x720
-    const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          quality: photoQuality,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images', 'videos'],
-          quality: photoQuality,
-          videoExportPreset,
-        })
-    const asset = result.canceled ? null : result.assets[0]
-    if (!asset) return
+    const picked = await pickPreparedChatMedia(fromCamera, quality)
+    if (!picked) return
     const controller = new AbortController()
     uploadAbort.current = controller
     setBusy(true)
     setUploading(true)
     setError('')
     try {
-      const mimeType =
-        asset.mimeType ||
-        (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-      const kind = mediaKindFromMime(mimeType)
-      let uri = asset.uri
-      let width = asset.width
-      let height = asset.height
-      let sentMime = mimeType
-      let name = asset.fileName || (kind === 'video' ? 'video.mp4' : 'foto.jpg')
-      let thumbnail: string | undefined
-      if (kind === 'image') {
-        // O servidor não vê o conteúdo e não consegue comprimir: a foto é reduzida aqui, antes de cifrar.
-        const prepared = await prepareChatImage({ uri, width, height }, quality)
-        if (prepared) {
-          uri = prepared.uri
-          width = prepared.width
-          height = prepared.height
-          sentMime = prepared.mimeType
-          thumbnail = prepared.thumbnail
-          name = `${name.replace(/\.[^./\\]+$/, '') || 'foto'}.jpg`
-        }
-      }
       const { File } = await import('expo-file-system')
-      const bytes = await new File(uri).bytes()
+      const bytes = await new File(picked.uri).bytes()
       await runtime.sendMedia({
-        kind,
-        name,
-        mimeType: sentMime,
+        kind: picked.kind,
+        name: picked.name,
+        mimeType: picked.mimeType,
         bytes,
         caption: draft.trim() || undefined,
-        width,
-        height,
-        durationMs: asset.duration ?? undefined,
-        thumbnail,
+        width: picked.width,
+        height: picked.height,
+        durationMs: picked.durationMs,
+        thumbnail: picked.thumbnail,
         upload: (ciphertext, info) =>
           uploadNativeChatMedia(
             userId,
@@ -1109,122 +1061,31 @@ export function ChatPane({
             }}
             actions={menu ? messageActions(menu.message) : []}
           />
-          {(replyTo || forwardedDraft) && (
-            <View style={styles.notice}>
-              <Text style={[styles.small, { flex: 1 }]} numberOfLines={1}>
-                {replyTo
-                  ? `Respondendo a ${replyTo.senderName || 'mensagem'}: ${replyTo.excerpt}`
-                  : 'Encaminhando mensagem'}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setReplyTo(null)
-                  setForwardedDraft(false)
-                }}
-              >
-                <Text style={styles.link}>Cancelar</Text>
-              </Pressable>
-            </View>
-          )}
-          {uploading && (
-            <View style={styles.notice}>
-              <Text style={styles.small}>Enviando mídia…</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => uploadAbort.current?.abort()}
-              >
-                <Text style={styles.link}>Cancelar</Text>
-              </Pressable>
-            </View>
-          )}
-          <View style={styles.composer}>
-            <View style={styles.inputWrap}>
-              <View style={{ flex: 1 }}>
-                <Field
-                  accessibilityLabel="Mensagem"
-                  bare
-                  multiline
-                  maxLength={4000}
-                  value={draft}
-                  onChangeText={(value) => {
-                    setDraft(value)
-                    emitTyping(value.trim().length > 0)
-                  }}
-                  onBlur={() => emitTyping(false)}
-                  editable={view.canType}
-                  placeholder={view.placeholder}
-                  style={styles.field}
-                />
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: quality === 'high' }}
-                accessibilityLabel={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
-                disabled={!view.canWrite || busy}
-                onPress={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
-                style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
-              >
-                <Text
-                  style={[
-                    styles.hdText,
-                    { color: quality === 'high' ? theme.colors.action : theme.colors.muted },
-                  ]}
-                >
-                  {CHAT_QUALITY_VIEW.oneShotLabel}
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Anexar foto ou vídeo"
-                disabled={!view.canWrite || busy}
-                onPress={() => {
-                  void attachMedia(false)
-                }}
-                style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
-              >
-                <Paperclip size={21} color={theme.colors.muted} />
-              </Pressable>
-              {!draft.trim() && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Tirar foto"
-                  disabled={!view.canWrite || busy}
-                  onPress={() => {
-                    void attachMedia(true)
-                  }}
-                  style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
-                >
-                  <Camera size={21} color={theme.colors.muted} />
-                </Pressable>
-              )}
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                draft.trim() ? 'Enviar mensagem' : 'Gravar mensagem de voz'
-              }
-              disabled={!view.canWrite || (!!draft.trim() && busy)}
-              onPress={() => {
-                if (draft.trim()) void send()
-                else
-                  Alert.alert(
-                    'Mensagem de voz',
-                    'A gravação de voz chega em breve no celular.',
-                  )
-              }}
-              style={[
-                styles.send,
-                (!view.canWrite || (!!draft.trim() && busy)) && { opacity: 0.4 },
-              ]}
-            >
-              {draft.trim() ? (
-                <Send size={21} color={theme.colors.surface} />
-              ) : (
-                <Mic size={22} color={theme.colors.surface} />
-              )}
-            </Pressable>
-          </View>
+          <ChatComposerBar
+            draft={draft}
+            onChangeDraft={(value) => {
+              setDraft(value)
+              emitTyping(value.trim().length > 0)
+            }}
+            onBlur={() => emitTyping(false)}
+            onSendText={() => void send()}
+            onAttachMedia={(fromCamera) => void attachMedia(fromCamera)}
+            placeholder={view.placeholder}
+            maxLength={4000}
+            canType={view.canType}
+            canWrite={view.canWrite}
+            busy={busy}
+            quality={quality}
+            onToggleQuality={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
+            replyTo={replyTo}
+            forwardedDraft={forwardedDraft}
+            onCancelNote={() => {
+              setReplyTo(null)
+              setForwardedDraft(false)
+            }}
+            uploading={uploading}
+            onCancelUpload={() => uploadAbort.current?.abort()}
+          />
         </>
       )}
     </View>

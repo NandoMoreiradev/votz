@@ -66,6 +66,31 @@ export function decryptWithKey(ciphertext: string, key: Buffer): string {
   return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
 }
 
+const GCM_TAG_BYTES = 16
+
+/** Cifra bytes em formato binário versionado: [0x01][iv 12B][tag 16B][ciphertext]. */
+export function encryptBufferWithKey(data: Buffer, key: Buffer): Buffer {
+  const iv = randomBytes(GCM_IV_BYTES)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([Buffer.from([1]), iv, tag, encrypted])
+}
+
+/** Decifra bytes produzidos por `encryptBufferWithKey`. */
+export function decryptBufferWithKey(payload: Buffer, key: Buffer): Buffer {
+  const headerLen = 1 + GCM_IV_BYTES + GCM_TAG_BYTES
+  if (payload.length < headerLen || payload[0] !== 1) {
+    throw new Error('Invalid binary ciphertext format')
+  }
+  const iv = payload.subarray(1, 1 + GCM_IV_BYTES)
+  const tag = payload.subarray(1 + GCM_IV_BYTES, headerLen)
+  const enc = payload.subarray(headerLen)
+  const decipher = createDecipheriv('aes-256-gcm', key, iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(enc), decipher.final()])
+}
+
 @Injectable()
 export class CryptoService {
   private readonly key: Buffer
@@ -81,5 +106,13 @@ export class CryptoService {
 
   decrypt(ciphertext: string): string {
     return decryptWithKey(ciphertext, this.key)
+  }
+
+  encryptBuffer(data: Buffer): Buffer {
+    return encryptBufferWithKey(data, this.key)
+  }
+
+  decryptBuffer(payload: Buffer): Buffer {
+    return decryptBufferWithKey(payload, this.key)
   }
 }

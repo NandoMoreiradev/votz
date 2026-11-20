@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import * as FileSystem from 'expo-file-system/legacy'
+import { API_URL, api, conversationSocketToken, uploadFile } from '../lib/api'
 import { useSession } from '../lib/session'
 import type { ProfileKind } from '../lib/types'
 
@@ -18,7 +19,26 @@ export const KIND_BY_ORG: Record<OrgType, ProfileKind> = {
 
 export type PageStatus = 'OPEN' | 'RESOLVED' | 'BLOCKED'
 export interface PageSummary { orgType: OrgType; orgId: string; name: string; username: string | null; avatarUrl: string | null }
-export interface PageMessageView { id: string; from: 'CITIZEN' | 'STAFF'; text: string; createdAt: string }
+export interface PageAttachmentView {
+  id: string
+  kind: 'image' | 'video' | 'audio' | 'file'
+  name: string
+  mimeType: string
+  sizeBytes: number
+  width?: number
+  height?: number
+  durationMs?: number
+  thumbnail?: string
+}
+export interface PageReplyView { id: string; from: 'CITIZEN' | 'STAFF'; excerpt: string }
+export interface PageMessageView {
+  id: string
+  from: 'CITIZEN' | 'STAFF'
+  text: string
+  createdAt: string
+  replyTo?: PageReplyView
+  attachment?: PageAttachmentView
+}
 export interface MyPageConversationRow {
   id: string; page: PageSummary; status: PageStatus; unread: number
   startedBy: 'CITIZEN' | 'STAFF'; accepted: boolean
@@ -55,12 +75,61 @@ export function useMyPageConversationList(enabled = true) {
 export function useSendPageMessage(orgType: OrgType | undefined, orgId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
       api<{ conversationId: string; message: PageMessageView }>(`/page-inbox/${orgType}/${orgId}/messages`, {
-        method: 'POST', body: JSON.stringify({ text }),
+        method: 'POST',
+        body: JSON.stringify({ text, ...(replyToId ? { replyToId } : {}) }),
       }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox'] }),
   })
+}
+
+export interface MobilePageMediaInput {
+  uri: string
+  mimeType: string
+  caption?: string
+  replyToId?: string
+  width?: number
+  height?: number
+  durationMs?: number
+  thumbnail?: string
+  signal?: AbortSignal
+}
+
+export function useSendPageMedia(orgType: OrgType | undefined, orgId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MobilePageMediaInput) =>
+      uploadFile<{ conversationId: string; message: PageMessageView }>(
+        `/page-inbox/${orgType}/${orgId}/media`,
+        { uri: input.uri, mimeType: input.mimeType },
+        {
+          timeoutMs: 5 * 60_000,
+          signal: input.signal,
+          parameters: {
+            ...(input.caption ? { caption: input.caption } : {}),
+            ...(input.replyToId ? { replyToId: input.replyToId } : {}),
+            ...(input.width ? { width: String(input.width) } : {}),
+            ...(input.height ? { height: String(input.height) } : {}),
+            ...(input.durationMs ? { durationMs: String(input.durationMs) } : {}),
+            ...(input.thumbnail ? { thumbnail: input.thumbnail } : {}),
+          },
+        },
+      ),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox'] }),
+  })
+}
+
+export async function downloadPageMediaFile(conversationId: string, attachmentId: string): Promise<string> {
+  const token = await conversationSocketToken()
+  const dest = `${FileSystem.cacheDirectory}page-media-${attachmentId}`
+  const res = await FileSystem.downloadAsync(
+    `${API_URL}/page-inbox/mine/${conversationId}/media/${attachmentId}`,
+    dest,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (res.status < 200 || res.status >= 300) throw new Error('Não foi possível baixar o arquivo.')
+  return res.uri
 }
 
 export function useMyPageConversations() {

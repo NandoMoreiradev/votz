@@ -22,7 +22,7 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 960px;
+  max-width: 1480px;
   margin: 0 auto;
   padding: 24px 32px 64px;
   @media (max-width: 720px) { padding: 16px 16px 48px; }
@@ -111,7 +111,6 @@ const DebateCard = styled(Link)`
   text-decoration: none;
   color: inherit;
   transition: box-shadow 0.15s, border-color 0.15s;
-  margin-bottom: 12px;
   &:hover {
     box-shadow: ${({ theme }) => theme.shadows.md};
     border-color: ${({ theme }) => theme.colors.primary}40;
@@ -201,6 +200,13 @@ const EmptyState = styled.div`
   padding: 64px 0;
   color: ${({ theme }) => theme.colors.muted};
   font-size: 0.9375rem;
+`
+
+const DebateGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const Skeleton = styled.div`
@@ -510,11 +516,11 @@ export default function DebatesList() {
         </Tabs>
 
         {current.isLoading ? (
-          <>
+          <DebateGrid>
             <Skeleton />
             <Skeleton />
             <Skeleton style={{ opacity: 0.5 }} />
-          </>
+          </DebateGrid>
         ) : !current.data?.data.length ? (
           <EmptyState>
             {tab === 'LIVE'
@@ -524,9 +530,11 @@ export default function DebatesList() {
                 : 'Nenhum debate encerrado ainda.'}
           </EmptyState>
         ) : (
-          current.data.data.map((debate) => (
-            <DebateCardItem key={debate.id} debate={debate} />
-          ))
+          <DebateGrid>
+            {current.data.data.map((debate) => (
+              <DebateCardItem key={debate.id} debate={debate} />
+            ))}
+          </DebateGrid>
         )}
       </Content>
 

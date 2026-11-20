@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { OrgType } from '@prisma/client'
 import { CITIZEN_DAILY_LIMIT, PAGE_STARTED_PER_DAY, PageInboxService } from './page-inbox.service'
+import { decryptBufferWithKey, encryptBufferWithKey } from '../crypto/crypto.service'
 
 jest.mock('isomorphic-dompurify', () => ({
   sanitize: (s: string) => s.replace(/<[^>]*>/g, ''),
@@ -9,11 +10,14 @@ jest.mock('isomorphic-dompurify', () => ({
 const fakeCrypto = {
   encrypt: (t: string) => `enc(${t})`,
   decrypt: (t: string) => t.replace(/^enc\(/, '').replace(/\)$/, ''),
+  encryptBuffer: (b: Buffer) => Buffer.concat([Buffer.from('ENC:'), b]),
+  decryptBuffer: (b: Buffer) => (b.subarray(0, 4).toString() === 'ENC:' ? b.subarray(4) : b),
 }
 
 describe('PageInboxService', () => {
   let prisma: any
   let memberships: any
+  let storage: any
   let service: PageInboxService
   const org = { orgType: OrgType.POLITICIAN, orgId: 'p1' }
 
@@ -33,7 +37,11 @@ describe('PageInboxService', () => {
       },
       pageMessage: {
         count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'm1', createdAt: new Date(), ...data })),
+      },
+      pageAttachment: {
+        findFirst: jest.fn(),
       },
       pageConversationRead: {
         upsert: jest.fn().mockReturnValue('upsert'),
@@ -48,7 +56,12 @@ describe('PageInboxService', () => {
       typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
     )
     memberships = { findMembership: jest.fn().mockResolvedValue(null) }
-    service = new PageInboxService(prisma, fakeCrypto as any, memberships)
+    storage = {
+      uploadEncryptedBlob: jest.fn().mockResolvedValue(undefined),
+      downloadEncryptedBlob: jest.fn().mockResolvedValue(Buffer.from('ENC:hello')),
+      delete: jest.fn().mockResolvedValue(undefined),
+    }
+    service = new PageInboxService(prisma, fakeCrypto as any, memberships, storage)
   })
 
   describe('sendAsCitizen', () => {
@@ -213,10 +226,18 @@ describe('PageInboxService', () => {
   })
 
   describe('cidadão', () => {
-    it('só apaga a própria conversa', async () => {
-      prisma.pageConversation.deleteMany.mockResolvedValue({ count: 0 })
-      await expect(service.deleteMine('u1', 'c1')).rejects.toThrow(NotFoundException)
+    it('só apaga a própria conversa e remove os anexos do bucket', async () => {
+      prisma.pageConversation.findFirst.mockResolvedValue({
+        id: 'c1',
+        attachments: [{ objectKey: 'page-media/c1/a1.enc' }],
+      })
+      prisma.pageConversation.deleteMany.mockResolvedValue({ count: 1 })
+      await service.deleteMine('u1', 'c1')
       expect(prisma.pageConversation.deleteMany).toHaveBeenCalledWith({ where: { id: 'c1', citizenId: 'u1' } })
+      expect(storage.delete).toHaveBeenCalledWith('page-media/c1/a1.enc')
+
+      prisma.pageConversation.findFirst.mockResolvedValue(null)
+      await expect(service.deleteMine('u1', 'c1')).rejects.toThrow(NotFoundException)
     })
 
     it('não deixa abrir conversa de outra pessoa', async () => {
@@ -236,6 +257,86 @@ describe('PageInboxService', () => {
         citizenId: 'u1',
         NOT: { status: 'BLOCKED', citizenAccepted: false },
       })
+    })
+  })
+
+  describe('mídia, áudio e resposta', () => {
+    it('cifra e decifra buffer binário com AES-256-GCM', () => {
+      const key = Buffer.alloc(32, 7)
+      const plain = Buffer.from('conteudo secreto de audio')
+      const cipher = encryptBufferWithKey(plain, key)
+      expect(cipher.equals(plain)).toBe(false)
+      expect(decryptBufferWithKey(cipher, key).equals(plain)).toBe(true)
+    })
+
+    it('recusa arquivo HTML/SVG perigoso e aceita imagem cifrada no bucket', async () => {
+      await expect(
+        service.sendMediaAsCitizen(
+          'u1',
+          org.orgType,
+          org.orgId,
+          { buffer: Buffer.from('<svg></svg>'), originalname: 'x.svg', mimetype: 'image/svg+xml' },
+          {},
+        ),
+      ).rejects.toThrow(BadRequestException)
+
+      const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 1, 2, 3, 4, 5, 6, 7])
+      prisma.pageMessage.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve({
+          id: 'm1',
+          senderKind: 'CITIZEN',
+          bodyEnc: data.bodyEnc,
+          createdAt: new Date(),
+          attachment: {
+            id: 'a1',
+            kind: data.attachment.create.kind,
+            mimeType: data.attachment.create.mimeType,
+            nameEnc: data.attachment.create.nameEnc,
+            sizeBytes: jpeg.length,
+            width: 100,
+            height: 80,
+            durationMs: null,
+            thumbnail: null,
+          },
+        }),
+      )
+      const res = await service.sendMediaAsCitizen(
+        'u1',
+        org.orgType,
+        org.orgId,
+        { buffer: jpeg, originalname: 'foto.jpg', mimetype: 'image/jpeg' },
+        { caption: 'Olha só', width: 100, height: 80 },
+      )
+      expect(storage.uploadEncryptedBlob).toHaveBeenCalledTimes(1)
+      expect(storage.uploadEncryptedBlob.mock.calls[0][1].subarray(0, 4).toString()).toBe('ENC:')
+      expect(res.message.text).toBe('Olha só')
+      expect(res.message.attachment?.kind).toBe('image')
+      expect(res.message.attachment?.name).toBe('foto.jpg')
+    })
+
+    it('baixa e decifra anexo apenas para o cidadão dono da conversa', async () => {
+      prisma.pageConversation.findFirst.mockResolvedValue({ id: 'c1' })
+      prisma.pageAttachment.findFirst.mockResolvedValue({
+        id: 'a1',
+        objectKey: 'page-media/c1/a1.enc',
+        mimeType: 'audio/webm',
+        nameEnc: 'enc(audio.webm)',
+        kind: 'audio',
+      })
+      const file = await service.downloadMediaForCitizen('u1', 'c1', 'a1')
+      expect(file.buffer.toString()).toBe('hello')
+      expect(file.mimeType).toBe('audio/webm')
+
+      prisma.pageConversation.findFirst.mockResolvedValue(null)
+      await expect(service.downloadMediaForCitizen('u2', 'c1', 'a1')).rejects.toThrow(NotFoundException)
+    })
+
+    it('recusa responder mensagem que não pertence à mesma conversa', async () => {
+      prisma.pageConversation.findUnique.mockResolvedValue({ id: 'c1', status: 'OPEN', citizenAccepted: true })
+      prisma.pageMessage.findFirst.mockResolvedValue(null)
+      await expect(service.sendAsCitizen('u1', org.orgType, org.orgId, 'Resposta', 'm-outra')).rejects.toThrow(
+        BadRequestException,
+      )
     })
   })
 })

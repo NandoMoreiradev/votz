@@ -1,30 +1,19 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import styled from 'styled-components'
 import {
   ArrowBendUpLeft,
   ArrowLeft,
-  Camera,
   CaretDown,
-  Check,
-  Checks,
-  Clock,
   Copy as CopyIcon,
   DotsThreeVertical,
   Info,
   LockKey,
   MagnifyingGlass,
-  Microphone,
-  Paperclip,
-  PaperPlaneTilt,
   ShareFat,
   ShieldCheck,
-  Stop,
   Users,
-  WarningCircle,
 } from '@phosphor-icons/react'
 import {
-  CHAT_QUALITY_VIEW,
   ChatClient,
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
@@ -35,7 +24,6 @@ import {
   chatView,
   mediaKindFromMime,
   parseChatQuality,
-  type ChatDeliveryIcon,
   type ChatMediaQuality,
   type ChatPendingLink,
   type ChatReplyTo,
@@ -50,7 +38,6 @@ import {
   conversationHeaderStatus,
   conversationTitle,
   type ConversationSummary,
-  type ConversationWallpaper,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
 import {
@@ -70,575 +57,46 @@ import {
   resetWebChatSession,
   type WebChatSession,
 } from '../../lib/chat-session'
+import {
+  ChatActions as Actions,
+  ChatAvatar,
+  ChatBanner as Banner,
+  ChatBox as Box,
+  ChatBubble as Bubble,
+  ChatBubbleMenuButton as BubbleMenuButton,
+  ChatButton as Button,
+  ChatCard as Card,
+  ChatCardLink as CardLink,
+  ChatComposerBar,
+  ChatDayChip as DayChip,
+  ChatEmptyHint as EmptyHint,
+  ChatForwardTag as ForwardTag,
+  ChatHeader as Header,
+  ChatHeaderIdentity as HeaderIdentity,
+  ChatHeaderMenuWrap as HeaderMenuWrap,
+  ChatHeaderStatus as HeaderStatus,
+  ChatHistory as History,
+  ChatIconButton as IconButton,
+  ChatMediaBox as MediaBox,
+  ChatMenuBackdrop as MenuBackdrop,
+  ChatMenuPanel as MenuPanel,
+  ChatMenuReactions as MenuReactions,
+  ChatMetaRow as MetaRow,
+  ChatNote as Note,
+  ChatPill as Pill,
+  ChatQuote as Quote,
+  ChatReactionRow as ReactionRow,
+  ChatSearchBar as SearchBar,
+  ChatStatus as Status,
+  ChatVisuallyHidden as VisuallyHidden,
+  renderChatDeliveryIcon,
+} from './ChatUi'
 
-const Box = styled.section`
-  display: flex;
-  flex-direction: column;
-  height: calc(100dvh - 56px);
-  min-height: 0;
-  overflow: hidden;
-  @media (min-width: 960px) {
-    height: 100%;
-  }
-  background: ${({ theme }) => theme.colors.white};
-`
-const Header = styled.header`
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  min-height: 64px;
-  padding: 0 16px;
-  gap: 12px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  background: ${({ theme }) => theme.colors.white};
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  a {
-    color: ${({ theme }) => theme.colors.muted};
-    font-size: 14px;
-    min-height: 40px;
-    display: flex;
-    align-items: center;
-  }
-`
-const HeaderIdentity = styled.div`
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-`
-const HeaderStatus = styled.span<{ $active?: boolean }>`
-  font-size: 12.5px;
-  color: ${({ theme, $active }) => ($active ? theme.colors.positive : theme.colors.muted)};
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-`
-const ChatAvatar = styled.span`
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: ${({ theme }) => theme.colors.action}14;
-  color: ${({ theme }) => theme.colors.action};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-weight: 700;
-  font-size: 17px;
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-`
-const DayChip = styled.div`
-  align-self: center;
-  padding: 5px 14px;
-  margin: 16px 0 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: ${({ theme }) => theme.colors.muted};
-  background: ${({ theme }) => theme.colors.white};
-  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.1);
-`
-const EmptyHint = styled.p`
-  text-align: center;
-  color: ${({ theme }) => theme.colors.muted};
-`
-// A hora fica no canto da última linha (flutua à direita); se não couber, desce para a linha de baixo.
-const MetaRow = styled.small`
-  float: right;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin: 8px 0 -3px 12px;
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 10.5px;
-  line-height: 1;
-  color: ${({ theme }) => theme.colors.muted};
-  white-space: nowrap;
-  user-select: none;
-`
-const CheckRead = styled.span`
-  display: inline-flex;
-  color: ${({ theme }) => theme.colors.positive};
-`
-const CheckAlert = styled.span`
-  display: inline-flex;
-  color: ${({ theme }) => theme.colors.action};
-`
-const Card = styled.div`
-  padding: 22px;
-  margin: 20px;
-  min-height: 0;
-  overflow-y: auto;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 16px;
-  p {
-    color: ${({ theme }) => theme.colors.muted};
-    line-height: 1.6;
-  }
-  input {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    padding: 12px;
-    border: 1px solid ${({ theme }) => theme.colors.border};
-    border-radius: 10px;
-    margin: 8px 0 16px;
-    font: inherit;
-  }
-`
-const Button = styled.button<{ $secondary?: boolean }>`
-  min-height: 42px;
-  padding: 9px 16px;
-  border: 1px solid
-    ${({ theme, $secondary }) => ($secondary ? theme.colors.border : theme.colors.action)};
-  border-radius: 22px;
-  color: ${({ theme, $secondary }) => ($secondary ? theme.colors.text : theme.colors.white)};
-  background: ${({ theme, $secondary }) => ($secondary ? theme.colors.white : theme.colors.action)};
-  font: inherit;
-  cursor: pointer;
-  &:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-`
-const Status = styled.div`
-  svg { flex-shrink: 0; }
-  padding: 10px 20px;
-  font-size: 13px;
-  color: ${({ theme }) => theme.colors.muted};
-  background: ${({ theme }) => theme.colors.neutral};
-  line-height: 1.5;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-`
-const History = styled.div<{ $wallpaper?: ConversationWallpaper }>`
-  flex: 1;
-  padding: 24px clamp(16px, 6%, 112px);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: ${({ theme, $wallpaper }) =>
-    $wallpaper === 'SOFT'
-      ? theme.colors.neutral
-      : $wallpaper === 'PLAIN'
-        ? theme.colors.white
-        : theme.colors.chatBackground};
-`
-const Bubble = styled.div<{
-  $own: boolean
-  $fontSize?: number
-  $first?: boolean
-  $unreadable?: boolean
-  $tools?: boolean
-}>`
-  position: relative;
-  display: flow-root;
-  flex-shrink: 0;
-  align-self: ${({ $own }) => ($own ? 'flex-end' : 'flex-start')};
-  max-width: min(78%, 640px);
-  padding: 8px 12px;
-  margin-top: ${({ $first }) => ($first ? '14px' : '0')};
-  border-radius: ${({ $own, $first }) =>
-    $first ? ($own ? '12px 0 12px 12px' : '0 12px 12px 12px') : '12px'};
-  background: ${({ theme, $own }) =>
-    $own ? theme.colors.bubbleOwn : theme.colors.bubblePeer};
-  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.14);
-  color: ${({ theme, $unreadable }) => ($unreadable ? theme.colors.muted : theme.colors.text)};
-  font-size: ${({ $fontSize, $unreadable }) =>
-    $unreadable ? '13px' : $fontSize ? `${$fontSize}px` : '15px'};
-  font-style: ${({ $unreadable }) => ($unreadable ? 'italic' : 'normal')};
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.4;
-  ${({ $first, $own, theme }) =>
-    $first
-      ? `
-    &::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      ${$own ? 'right: -8px;' : 'left: -8px;'}
-      width: 8px;
-      height: 10px;
-      background: ${$own ? theme.colors.bubbleOwn : theme.colors.bubblePeer};
-      clip-path: ${$own ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)'};
-    }
-  `
-      : ''}
-  ${({ $tools }) =>
-    $tools
-      ? `
-    @media (hover: none) {
-      padding-right: 32px;
-    }
-  `
-      : ''}
-  &:hover > [data-bubble-menu],
-  &:focus-within > [data-bubble-menu] {
-    opacity: 1;
-  }
-  strong {
-    display: block;
-    font-size: 12px;
-    color: ${({ theme }) => theme.colors.primary};
-    margin-bottom: 2px;
-  }
-`
-const BubbleMenuButton = styled.button`
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  z-index: 1;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: ${({ theme }) => theme.colors.muted};
-  background: transparent;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s;
-  &:focus-visible {
-    opacity: 1;
-  }
-  @media (hover: none) {
-    opacity: 0.75;
-  }
-`
-const MenuBackdrop = styled.div`
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-`
-const MenuPanel = styled.div<{ $align: 'left' | 'right' }>`
-  position: absolute;
-  top: 100%;
-  ${({ $align }) => ($align === 'right' ? 'right: 0;' : 'left: 0;')}
-  z-index: 20;
-  min-width: 224px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 12px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  background: ${({ theme }) => theme.colors.white};
-  box-shadow: ${({ theme }) => theme.shadows.lg};
-  color: ${({ theme }) => theme.colors.text};
-  font-size: 14.5px;
-  font-style: normal;
-  font-weight: 400;
-  white-space: normal;
-  text-align: left;
-  button,
-  a,
-  label {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: 42px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-decoration: none;
-    cursor: pointer;
-  }
-  button:hover,
-  a:hover,
-  label:hover {
-    background: ${({ theme }) => theme.colors.neutral};
-  }
-  input[type='checkbox'] {
-    width: 18px;
-    height: 18px;
-    margin: 0;
-    accent-color: ${({ theme }) => theme.colors.action};
-  }
-`
-const MenuReactions = styled.div`
-  display: flex;
-  justify-content: space-around;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 24px;
-  background: ${({ theme }) => theme.colors.neutral};
-  button {
-    width: 40px;
-    min-height: 40px;
-    padding: 0;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 22px;
-    line-height: 1;
-  }
-  button:hover {
-    background: ${({ theme }) => theme.colors.white};
-  }
-`
-const HeaderMenuWrap = styled.div`
-  position: relative;
-  flex-shrink: 0;
-`
-const IconButton = styled.button`
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: ${({ theme }) => theme.colors.primary};
-  cursor: pointer;
-  &:hover {
-    background: ${({ theme }) => theme.colors.neutral};
-  }
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-`
-const Banner = styled.div`
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  max-width: 92%;
-  margin: 4px 0 12px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: ${({ theme }) => theme.colors.white};
-  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.1);
-  color: ${({ theme }) => theme.colors.muted};
-  font-size: 12.5px;
-  line-height: 1.4;
-  text-align: center;
-  svg {
-    flex-shrink: 0;
-  }
-`
-const VisuallyHidden = styled.span`
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-`
-const Composer = styled.form`
-  flex-shrink: 0;
-  background: ${({ theme }) => theme.colors.chatBackground};
-  padding: 12px 16px;
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  button {
-    display: grid;
-    place-items: center;
-  }
-`
-const InputPill = styled.div`
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: flex-end;
-  min-height: 46px;
-  padding-right: 6px;
-  border-radius: 24px;
-  background: ${({ theme }) => theme.colors.white};
-  textarea {
-    flex: 1;
-    min-width: 0;
-    resize: none;
-    max-height: 150px;
-    min-height: 46px;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    padding: 13px 18px;
-    font: inherit;
-    font-size: 15px;
-    line-height: 1.3;
-    box-sizing: border-box;
-  }
-  &:focus-within {
-    box-shadow: 0 0 0 2px ${({ theme }) => theme.colors.action};
-  }
-`
-const InlineIcon = styled.button`
-  width: 40px;
-  height: 46px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: ${({ theme }) => theme.colors.muted};
-  cursor: pointer;
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-`
-const RoundButton = styled.button`
-  flex-shrink: 0;
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: ${({ theme }) => theme.colors.action};
-  color: ${({ theme }) => theme.colors.white};
-  cursor: pointer;
-  &:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-`
-const Actions = styled.div`
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-`
-
-const Note = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 8px 20px 0;
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: ${({ theme }) => theme.colors.muted};
-  background: ${({ theme }) => theme.colors.neutral};
-  > span {
-    flex: 1;
-  }
-  button {
-    border: 0;
-    background: transparent;
-    color: ${({ theme }) => theme.colors.action};
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    min-height: 32px;
-  }
-`
-const MediaBox = styled.div`
-  margin: 4px 0 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  img,
-  video {
-    display: block;
-    max-width: 100%;
-    max-height: 280px;
-    border-radius: 12px;
-    object-fit: cover;
-  }
-  audio {
-    max-width: 100%;
-  }
-`
-const Quote = styled.div`
-  border-left: 3px solid ${({ theme }) => theme.colors.action};
-  padding: 4px 8px;
-  margin-bottom: 6px;
-  background: rgba(26, 26, 46, 0.05);
-  border-radius: 6px;
-  font-size: 12px;
-  color: ${({ theme }) => theme.colors.muted};
-`
-const ForwardTag = styled.div`
-  font-size: 11px;
-  font-style: italic;
-  color: ${({ theme }) => theme.colors.muted};
-  margin-bottom: 4px;
-`
-const CardLink = styled(Link)`
-  display: block;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 10px;
-  background: ${({ theme }) => theme.colors.white};
-  color: ${({ theme }) => theme.colors.primary};
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-`
-const ReactionRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-`
-const Pill = styled.button<{ $mine?: boolean }>`
-  border: 1px solid
-    ${({ theme, $mine }) => ($mine ? theme.colors.action : theme.colors.border)};
-  background: ${({ theme }) => theme.colors.white};
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 12px;
-  cursor: pointer;
-`
-const SearchBar = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  background: ${({ theme }) => theme.colors.neutral};
-  input {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid ${({ theme }) => theme.colors.border};
-    border-radius: 8px;
-    padding: 6px 10px;
-    background: ${({ theme }) => theme.colors.white};
-  }
-`
 const failureMessage = (failure: unknown) =>
   (failure as { response?: { data?: { message?: string } } }).response?.data
     ?.message ||
   (failure as Error).message ||
   'Não foi possível abrir suas conversas. Tente de novo.'
-
-/** Botão "HD" do envio: liga a alta qualidade só para o próximo arquivo. */
-const HdToggle = styled(InlineIcon)<{ $on: boolean }>`
-  width: 36px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: ${({ theme, $on }) => ($on ? theme.colors.action : theme.colors.muted)};
-`
 
 function AttachmentView({
   attachment,
@@ -849,10 +307,6 @@ export function ChatPane({
   const client = useRef<ChatClient | null>(null)
   const sessionRef = useRef<WebChatSession | null>(null)
   const uploadAbort = useRef<AbortController | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const cameraInput = useRef<HTMLInputElement>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const [recording, setRecording] = useState(false)
   const cleanup = useRef<() => void>(() => {})
   const abort = useRef(new AbortController())
   const bottom = useRef<HTMLDivElement>(null)
@@ -1104,8 +558,7 @@ export function ChatPane({
       setBusy(false)
     }
   }
-  async function send(event: FormEvent) {
-    event.preventDefault()
+  async function send() {
     if (!client.current || !draft.trim()) return
     // Como no WhatsApp: o campo esvazia na hora e a bolha aparece; o envio segue por trás.
     // Só se for recusado o texto volta para o campo. O campo não trava: dá para mandar várias seguidas.
@@ -1138,10 +591,8 @@ export function ChatPane({
       setError(chatError(failure))
     }
   }
-  async function attachFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !client.current || !sessionRef.current || busy) return
+  async function sendFile(file: File, chosenQuality: ChatMediaQuality) {
+    if (!client.current || !sessionRef.current || busy) return
     const controller = new AbortController()
     uploadAbort.current = controller
     setBusy(true)
@@ -1153,7 +604,7 @@ export function ChatPane({
       // cifrar. O vídeo ainda vai como veio, com miniatura e medidas. O resto vai sem mudança.
       const prepared: PreparedMedia =
         kind === 'image'
-          ? await prepareChatImage(file, quality)
+          ? await prepareChatImage(file, chosenQuality)
           : {
               bytes: new Uint8Array(await file.arrayBuffer()),
               mimeType: file.type || 'application/octet-stream',
@@ -1200,60 +651,32 @@ export function ChatPane({
       setBusy(false)
     }
   }
-  async function toggleAudioRecording() {
+  async function sendAudio(blob: Blob) {
     if (!client.current || !sessionRef.current || busy) return
-    if (recording && recorderRef.current) {
-      recorderRef.current.stop()
-      return
-    }
-    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setError('Gravação de áudio não está disponível neste navegador.')
-      return
-    }
+    const controller = new AbortController()
+    uploadAbort.current = controller
+    setBusy(true)
+    setUploadProgress(0)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const chunks: BlobPart[] = []
-      const recorder = new MediaRecorder(stream)
-      recorderRef.current = recorder
-      recorder.ondataavailable = (ev) => {
-        if (ev.data.size > 0) chunks.push(ev.data)
-      }
-      recorder.onstop = async () => {
-        setRecording(false)
-        recorderRef.current = null
-        stream.getTracks().forEach((t) => t.stop())
-        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-        if (!blob.size || !client.current || !sessionRef.current) return
-        const controller = new AbortController()
-        uploadAbort.current = controller
-        setBusy(true)
-        setUploadProgress(0)
-        try {
-          const bytes = new Uint8Array(await blob.arrayBuffer())
-          await client.current.sendMedia({
-            kind: 'audio',
-            name: `audio-${Date.now()}.webm`,
-            mimeType: blob.type || 'audio/webm',
-            bytes,
-            upload: (ciphertext, info) =>
-              sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
-                signal: controller.signal,
-                onProgress: setUploadProgress,
-                kind: info.kind,
-              }),
-          })
-        } catch (failure) {
-          if (!controller.signal.aborted) setError(failureMessage(failure))
-        } finally {
-          uploadAbort.current = null
-          setUploadProgress(null)
-          setBusy(false)
-        }
-      }
-      recorder.start()
-      setRecording(true)
-    } catch {
-      setError('Não foi possível acessar o microfone.')
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      await client.current.sendMedia({
+        kind: 'audio',
+        name: `audio-${Date.now()}.webm`,
+        mimeType: blob.type || 'audio/webm',
+        bytes,
+        upload: (ciphertext, info) =>
+          sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
+            signal: controller.signal,
+            onProgress: setUploadProgress,
+            kind: info.kind,
+          }),
+      })
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failureMessage(failure))
+    } finally {
+      uploadAbort.current = null
+      setUploadProgress(null)
+      setBusy(false)
     }
   }
   const otherPerson = conversation.members.find((m) => m.user.id !== userId)?.user
@@ -1263,23 +686,6 @@ export function ChatPane({
     chatSettings.mediaAutoDownload === 'ALWAYS' ||
     (chatSettings.mediaAutoDownload === 'WIFI_ONLY' &&
       (navigator as { connection?: { type?: string } }).connection?.type !== 'cellular')
-  const renderDeliveryIcon = (icon: ChatDeliveryIcon | null) => {
-    if (!icon) return null
-    if (icon === 'clock') return <Clock size={13} aria-hidden="true" />
-    if (icon === 'check') return <Check size={13} aria-hidden="true" />
-    if (icon === 'checks') return <Checks size={14} aria-hidden="true" />
-    if (icon === 'checks-read')
-      return (
-        <CheckRead aria-hidden="true">
-          <Checks size={14} weight="bold" />
-        </CheckRead>
-      )
-    return (
-      <CheckAlert aria-hidden="true">
-        <WarningCircle size={13} />
-      </CheckAlert>
-    )
-  }
   // Voltando a uma conversa recente, as últimas mensagens aparecem na hora, da memória.
   const seed = useMemo(
     () => (state ? null : chatSeedState(conversation.id)),
@@ -1835,7 +1241,7 @@ export function ChatPane({
                 )}
                 <MetaRow>
                   <span>{message.time}</span>
-                  {renderDeliveryIcon(message.deliveryIcon)}
+                  {renderChatDeliveryIcon(message.deliveryIcon)}
                   {message.statusLabel && (
                     <VisuallyHidden>{message.statusLabel}</VisuallyHidden>
                   )}
@@ -1859,122 +1265,33 @@ export function ChatPane({
             {view.emptyText && <EmptyHint>{view.emptyText}</EmptyHint>}
             <div ref={bottom} />
           </History>
-          {(replyTo || forwardedDraft) && (
-            <Note role="status">
-              <span>
-                {replyTo
-                  ? `Respondendo a ${replyTo.senderName || 'mensagem'}: ${replyTo.excerpt}`
-                  : 'Encaminhando mensagem'}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setReplyTo(null)
-                  setForwardedDraft(false)
-                }}
-              >
-                Cancelar
-              </button>
-            </Note>
-          )}
-          {uploadProgress !== null && (
-            <Note role="status">
-              <span>Enviando arquivo… {uploadProgress}%</span>
-              <button
-                type="button"
-                onClick={() => uploadAbort.current?.abort()}
-              >
-                Cancelar
-              </button>
-            </Note>
-          )}
-          <Composer onSubmit={send}>
-            <input
-              ref={fileInput}
-              type="file"
-              aria-label="Escolher arquivo"
-              style={{ display: 'none' }}
-              onChange={(event) => {
-                void attachFile(event)
-              }}
-            />
-            <input
-              ref={cameraInput}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              aria-label="Tirar foto"
-              style={{ display: 'none' }}
-              onChange={(event) => {
-                void attachFile(event)
-              }}
-            />
-            <InputPill>
-              <textarea
-                aria-label="Mensagem"
-                placeholder={recording ? 'Gravando áudio…' : view.placeholder}
-                value={draft}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setDraft(value)
-                  emitTyping(value.trim().length > 0)
-                }}
-                onBlur={() => emitTyping(false)}
-                maxLength={4000}
-                rows={1}
-                disabled={!view.canType || recording}
-              />
-              <HdToggle
-                type="button"
-                $on={quality === 'high'}
-                aria-pressed={quality === 'high'}
-                aria-label={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
-                title={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
-                disabled={!view.canWrite || busy || recording}
-                onClick={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
-              >
-                {CHAT_QUALITY_VIEW.oneShotLabel}
-              </HdToggle>
-              <InlineIcon
-                type="button"
-                aria-label="Anexar arquivo"
-                disabled={!view.canWrite || busy || recording}
-                onClick={() => fileInput.current?.click()}
-              >
-                <Paperclip size={22} />
-              </InlineIcon>
-              {!draft.trim() && (
-                <InlineIcon
-                  type="button"
-                  aria-label="Enviar foto"
-                  disabled={!view.canWrite || busy || recording}
-                  onClick={() => cameraInput.current?.click()}
-                >
-                  <Camera size={22} />
-                </InlineIcon>
-              )}
-            </InputPill>
-            {draft.trim() ? (
-              <RoundButton
-                type="submit"
-                aria-label="Enviar mensagem"
-                disabled={!view.canWrite || busy || recording}
-              >
-                <PaperPlaneTilt size={22} weight="fill" />
-              </RoundButton>
-            ) : (
-              <RoundButton
-                type="button"
-                aria-label={recording ? 'Parar e enviar áudio' : 'Gravar áudio'}
-                disabled={!view.canWrite || busy}
-                onClick={() => {
-                  void toggleAudioRecording()
-                }}
-              >
-                {recording ? <Stop size={22} weight="fill" /> : <Microphone size={22} weight="fill" />}
-              </RoundButton>
-            )}
-          </Composer>
+          <ChatComposerBar
+            draft={draft}
+            onDraftChange={(value) => {
+              setDraft(value)
+              emitTyping(value.trim().length > 0)
+            }}
+            onBlur={() => emitTyping(false)}
+            onSubmitText={send}
+            onSendFile={sendFile}
+            onSendAudio={sendAudio}
+            onError={setError}
+            placeholder={view.placeholder}
+            maxLength={4000}
+            canType={view.canType}
+            canWrite={view.canWrite}
+            busy={busy}
+            quality={quality}
+            onToggleQuality={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
+            replyTo={replyTo}
+            forwardedDraft={forwardedDraft}
+            onCancelNote={() => {
+              setReplyTo(null)
+              setForwardedDraft(false)
+            }}
+            uploadProgress={uploadProgress}
+            onCancelUpload={() => uploadAbort.current?.abort()}
+          />
         </>
       )}
       {error && state && <Status role="alert">{error}</Status>}

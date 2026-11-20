@@ -2023,6 +2023,7 @@ model PageConversation {
   createdAt     DateTime               @default(now()) @map("created_at")
   messages      PageMessage[]
   reads         PageConversationRead[]
+  attachments   PageAttachment[]
 
   @@unique([orgType, orgId, citizenId])
   @@index([orgType, orgId, status, lastMessageAt])
@@ -2038,10 +2039,36 @@ model PageMessage {
   sender         User              @relation("PageMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
   senderKind     PageMessageSender @map("sender_kind")
   bodyEnc        String            @map("body_enc")
+  replyToId      String?           @map("reply_to_id")
+  replyTo        PageMessage?      @relation("PageMessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        PageMessage[]     @relation("PageMessageReply")
+  attachment     PageAttachment?
   createdAt      DateTime          @default(now()) @map("created_at")
 
   @@index([conversationId, createdAt])
   @@map("page_messages")
+}
+
+// Anexos das mensagens com páginas (foto, vídeo, áudio, arquivo). Guardados cifrados no bucket privado.
+model PageAttachment {
+  id             String           @id @default(uuid())
+  conversationId String           @map("conversation_id")
+  conversation   PageConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String           @unique @map("message_id")
+  message        PageMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  objectKey      String           @unique @map("object_key")
+  kind           String
+  mimeType       String           @map("mime_type")
+  nameEnc        String           @map("name_enc")
+  sizeBytes      Int              @map("size_bytes")
+  width          Int?
+  height         Int?
+  durationMs     Int?             @map("duration_ms")
+  thumbnail      String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@map("page_attachments")
 }
 
 // Auditoria: quem da equipe abriu cada conversa e quando foi a última vez.

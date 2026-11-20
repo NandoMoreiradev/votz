@@ -60,15 +60,28 @@ const MapEl = styled.div`
 
 // ── Filtros ────────────────────────────────────────────────────────────────
 
-const FilterBar = styled.div`
+// Barra do topo: filtros à esquerda e alternador à direita, na mesma linha,
+// para que um nunca fique por trás do outro.
+const TopBar = styled.div`
   position: absolute;
   top: 16px;
   left: 16px;
+  right: 56px; /* deixa livre o controle de créditos do mapa */
   z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+  & > * { pointer-events: auto; }
+  @media (max-width: 640px) { flex-direction: column; right: 16px; gap: 8px; }
+`
+
+const FilterBar = styled.div`
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-width: calc(100vw - 32px);
 `
 
 const FilterChip = styled.button<{ $active: boolean; $color?: string }>`
@@ -199,10 +212,7 @@ const ReportCount = styled.div`
 // ── Toggle mapa ────────────────────────────────────────────────────────────
 
 const ViewToggle = styled.div`
-  position: absolute;
-  top: 16px;
-  right: 56px;
-  z-index: 10;
+  flex-shrink: 0;
   display: flex;
   border-radius: ${({ theme }) => theme.radii.full};
   overflow: hidden;
@@ -611,6 +621,7 @@ export function MapView() {
 
         {MAPTILER_KEY && (
           <>
+            <TopBar>
             <FilterBar>
               {categories.map((cat) => {
                 const cfg = CATEGORY_CONFIG[cat]
@@ -635,6 +646,7 @@ export function MapView() {
                 Heatmap
               </ToggleBtn>
             </ViewToggle>
+            </TopBar>
 
             {featureCount > 0 && (
               <ReportCount>

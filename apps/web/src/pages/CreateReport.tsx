@@ -264,11 +264,15 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 680px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 24px 80px;
+  padding: 24px 32px 80px;
 
   @media (max-width: 640px) { padding: 16px 16px 64px; }
+`
+
+const PageHead = styled.div`
+  margin-bottom: 24px;
 `
 
 const BackLink = styled(Link)`
@@ -287,6 +291,54 @@ const Card = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
   padding: 32px;
+  max-width: 640px;
+  margin: 0 auto;
+`
+
+const Panel = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+
+  @media (max-width: 640px) { padding: 20px 16px; }
+`
+
+const PanelHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`
+
+const StepBadge = styled.span`
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const PanelTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.xl};
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0;
+`
+
+const PanelSub = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 2px 0 0;
 `
 
 const PageTitle = styled.h1`
@@ -303,9 +355,20 @@ const PageDesc = styled.p`
 `
 
 const Form = styled.form`
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+
+  @media (max-width: 1000px) { grid-template-columns: minmax(0, 1fr); }
+`
+
+const SubmitBar = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const Field = styled.div`
@@ -938,11 +1001,20 @@ export function CreateReport() {
       <Content>
         <BackLink to="/">← Voltar</BackLink>
 
-        <Card>
+        <PageHead>
           <PageTitle>Novo relato</PageTitle>
-          <PageDesc>Registre um problema público. Seja direto e específico.</PageDesc>
+          <PageDesc style={{ marginBottom: 0 }}>Registre um problema público. Seja direto e específico.</PageDesc>
+        </PageHead>
 
-          <Form onSubmit={handleSubmit(onSubmit)}>
+        <Form onSubmit={handleSubmit(onSubmit)}>
+          <Panel>
+            <PanelHeader>
+              <StepBadge>1</StepBadge>
+              <div>
+                <PanelTitle>O que está acontecendo?</PanelTitle>
+                <PanelSub>Conte o problema com clareza. Quanto mais detalhe, mais força o relato ganha.</PanelSub>
+              </div>
+            </PanelHeader>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <Field>
                 <Label>Título do problema</Label>
@@ -989,6 +1061,43 @@ export function CreateReport() {
             </Field>
 
             <Field>
+              <Label>Descrição detalhada</Label>
+              <Hint>Mínimo 30 caracteres. Inclua contexto: frequência, impacto, localização.</Hint>
+              <Textarea
+                placeholder="Descreva o problema com detalhes..."
+                $error={!!errors.description}
+                {...register('description', {
+                  required: 'Obrigatório',
+                  minLength: { value: 30, message: 'Mínimo 30 caracteres' },
+                  maxLength: { value: 2000, message: 'Máximo 2000 caracteres' },
+                })}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                {errors.description
+                  ? <ErrorMsg>{errors.description.message}</ErrorMsg>
+                  : <span />
+                }
+                <CharCount $warn={description.length > 1900}>{description.length}/2000</CharCount>
+              </div>
+            </Field>
+
+            <Field>
+              <Label>Fotos, vídeos ou PDFs <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
+              <Hint>Evidências visuais e documentos aumentam a credibilidade do relato.</Hint>
+              <MediaUploader onChange={setMediaUrls} />
+            </Field>
+          </Panel>
+
+          <Panel>
+            <PanelHeader>
+              <StepBadge>2</StepBadge>
+              <div>
+                <PanelTitle>Onde e quem responde?</PanelTitle>
+                <PanelSub>Tudo opcional, mas ajuda o relato a chegar em quem pode resolver.</PanelSub>
+              </div>
+            </PanelHeader>
+
+            <Field>
               <Label>Direcionar para <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
               <Hint>Quem deve responder por isso.</Hint>
               <RecipientTabs>
@@ -1020,33 +1129,6 @@ export function CreateReport() {
                   ? <PoliticianSearch onSelect={setSelectedPolitician} initialValue={initPolitician} />
                   : <CompanySearch onSelect={setSelectedCompany} initialValue={initCompany} />
               }
-            </Field>
-
-            <Field>
-              <Label>Descrição detalhada</Label>
-              <Hint>Mínimo 30 caracteres. Inclua contexto: frequência, impacto, localização.</Hint>
-              <Textarea
-                placeholder="Descreva o problema com detalhes..."
-                $error={!!errors.description}
-                {...register('description', {
-                  required: 'Obrigatório',
-                  minLength: { value: 30, message: 'Mínimo 30 caracteres' },
-                  maxLength: { value: 2000, message: 'Máximo 2000 caracteres' },
-                })}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                {errors.description
-                  ? <ErrorMsg>{errors.description.message}</ErrorMsg>
-                  : <span />
-                }
-                <CharCount $warn={description.length > 1900}>{description.length}/2000</CharCount>
-              </div>
-            </Field>
-
-            <Field>
-              <Label>Fotos, vídeos ou PDFs <span style={{ fontWeight: 400, color: '#6B7280' }}>(opcional)</span></Label>
-              <Hint>Evidências visuais e documentos aumentam a credibilidade do relato.</Hint>
-              <MediaUploader onChange={setMediaUrls} />
             </Field>
 
             <Field>
@@ -1131,24 +1213,26 @@ export function CreateReport() {
               </CheckboxRow>
             </Field>
 
-            {error && (
-              <ErrorMsg>
-                {(() => {
-                  const msg = (error as any)?.response?.data?.message
-                  if (!msg) return 'Erro ao criar relato. Tente novamente.'
-                  if (Array.isArray(msg)) return msg.join(' • ')
-                  if (msg === 'Email verification required to create reports')
-                    return 'Você precisa verificar seu e-mail antes de criar relatos.'
-                  return msg
-                })()}
-              </ErrorMsg>
-            )}
+            <SubmitBar>
+              {error && (
+                <ErrorMsg>
+                  {(() => {
+                    const msg = (error as any)?.response?.data?.message
+                    if (!msg) return 'Erro ao criar relato. Tente novamente.'
+                    if (Array.isArray(msg)) return msg.join(' • ')
+                    if (msg === 'Email verification required to create reports')
+                      return 'Você precisa verificar seu e-mail antes de criar relatos.'
+                    return msg
+                  })()}
+                </ErrorMsg>
+              )}
 
-            <Button variant="action" fullWidth disabled={isPending}>
-              {isPending ? 'Publicando...' : 'Publicar relato'}
-            </Button>
-          </Form>
-        </Card>
+              <Button variant="action" fullWidth disabled={isPending}>
+                {isPending ? 'Publicando...' : 'Publicar relato'}
+              </Button>
+            </SubmitBar>
+          </Panel>
+        </Form>
       </Content>
     </Page>
   )

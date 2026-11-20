@@ -1,59 +1,89 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator'
+import { Transform, Type } from 'class-transformer'
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator'
 import { PageConversationStatus } from '@prisma/client'
 
 export class PageMessageDto {
-  @ApiProperty({ example: 'Boa tarde! A rua do meu bairro está sem iluminação.' })
   @IsString()
-  @MinLength(1)
   @MaxLength(2000)
-  text: string
+  text!: string
+
+  @IsOptional()
+  @IsUUID()
+  replyToId?: string
+}
+
+export class PageMediaDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  caption?: string
+
+  @IsOptional()
+  @IsUUID()
+  replyToId?: string
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  width?: number
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  height?: number
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(86_400_000)
+  durationMs?: number
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(24_000)
+  thumbnail?: string
 }
 
 export class PageStartDto {
-  @ApiProperty()
   @IsUUID()
-  citizenId: string
+  citizenId!: string
 
-  @ApiProperty({ example: 'Olá! Queríamos falar sobre o seu relato.' })
   @IsString()
-  @MinLength(1)
   @MaxLength(2000)
-  text: string
+  text!: string
 }
 
 export class PageRespondDto {
-  @ApiProperty()
   @IsBoolean()
-  accept: boolean
+  accept!: boolean
 }
 
 export class PageFollowersQueryDto {
-  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(60)
   q?: string
 }
 
+export class PageStatusDto {
+  @IsEnum(PageConversationStatus)
+  status!: PageConversationStatus
+}
+
 export class PageListQueryDto {
-  @ApiPropertyOptional({ enum: PageConversationStatus })
   @IsOptional()
   @IsEnum(PageConversationStatus)
   status?: PageConversationStatus
 
-  @ApiPropertyOptional({ default: 1 })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)
-  @Max(10_000)
-  page?: number
-}
-
-export class PageStatusDto {
-  @ApiProperty({ enum: PageConversationStatus })
-  @IsEnum(PageConversationStatus)
-  status: PageConversationStatus
+  @Max(500)
+  page = 1
 }

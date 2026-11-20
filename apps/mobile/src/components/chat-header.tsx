@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router'
 import ArrowLeft from 'lucide-react-native/icons/arrow-left'
@@ -24,7 +24,9 @@ export function ChatHeader({
   typing,
   onSearch,
   onDetails,
+  detailsLabel = 'Detalhes da conversa',
   receipts,
+  extraMenu,
 }: {
   title: string
   group: boolean
@@ -33,6 +35,7 @@ export function ChatHeader({
   typing: boolean
   onSearch: () => void
   onDetails: () => void
+  detailsLabel?: string
   /** Opção de confirmação de leitura, mostrada dentro do menu. */
   receipts?: {
     label: string
@@ -40,6 +43,7 @@ export function ChatHeader({
     disabled: boolean
     onToggle: () => void
   }
+  extraMenu?: (close: () => void) => ReactNode
 }) {
   const [menu, setMenu] = useState(false)
   return (
@@ -83,13 +87,14 @@ export function ChatHeader({
       </IconButton>
       <PopoverMenu visible={menu} onClose={() => setMenu(false)}>
         <MenuItem
-          label="Detalhes da conversa"
+          label={detailsLabel}
           icon={<Info size={20} color={theme.colors.muted} />}
           onPress={() => {
             setMenu(false)
             onDetails()
           }}
         />
+        {extraMenu?.(() => setMenu(false))}
         {receipts && (
           <View style={styles.receipts}>
             <Text style={styles.receiptsText}>{receipts.label}</Text>

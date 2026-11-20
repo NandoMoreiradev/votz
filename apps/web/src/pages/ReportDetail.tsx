@@ -107,16 +107,92 @@ const FlagReportBtn = styled.button`
 
 const Title = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-size: ${({ theme }) => theme.fontSizes['3xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
-  line-height: 1.25;
-  margin-bottom: 12px;
+  line-height: 1.2;
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
 `
 
-const Location = styled.p`
+const ByLine = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 22px;
   font-size: 0.875rem;
   color: ${({ theme }) => theme.colors.muted};
-  margin-bottom: 20px;
+`
+
+const ByLineAuthor = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: ${({ theme }) => theme.colors.text};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+
+  a { color: inherit; }
+  a:hover { color: ${({ theme }) => theme.colors.primary}; }
+`
+
+const ByLineAvatar = styled.div<{ $src: string | null }>`
+  width: 32px;
+  height: 32px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.border)};
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const Dot = styled.span`
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.muted};
+  opacity: 0.6;
+`
+
+const StatsStrip = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+
+  @media (max-width: 520px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+`
+
+const Stat = styled.div`
+  background: ${({ theme }) => theme.colors.neutral};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 12px 14px;
+`
+
+const StatValue = styled.div`
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 1.375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
+  line-height: 1.1;
+`
+
+const StatLabel = styled.div`
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-top: 4px;
+`
+
+const SectionLabel = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.8125rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 28px 0 10px;
 `
 
 /** Quadradinho da galeria: usa a miniatura e, se a foto for antiga (sem miniatura), a foto inteira. */
@@ -130,7 +206,6 @@ const MediaGallery = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
-  margin-top: 20px;
 `
 
 const MediaItem = styled.div`
@@ -893,11 +968,54 @@ export function ReportDetail() {
               />
 
               <Title>{report.title}</Title>
-              {location && <Location>📍 {location}</Location>}
+
+              <ByLine>
+                {report.author ? (
+                  <ByLineAuthor>
+                    <ByLineAvatar $src={report.author.avatarUrl}>
+                      {!report.author.avatarUrl && report.author.name.charAt(0).toUpperCase()}
+                    </ByLineAvatar>
+                    <Link to={`/perfil/${report.author.id}`}>{report.author.name}</Link>
+                  </ByLineAuthor>
+                ) : (
+                  <ByLineAuthor>
+                    <ByLineAvatar $src={null}>?</ByLineAvatar>
+                    <span>Cidadão anônimo</span>
+                  </ByLineAuthor>
+                )}
+                <Dot />
+                <span>Relatado em {formatDate(report.createdAt)}</span>
+                {location && (
+                  <>
+                    <Dot />
+                    <span>📍 {location}</span>
+                  </>
+                )}
+              </ByLine>
+
+              <StatsStrip>
+                <Stat>
+                  <StatValue>{report.pressureScore.toFixed(0)}</StatValue>
+                  <StatLabel>Pressão</StatLabel>
+                </Stat>
+                <Stat>
+                  <StatValue>{report._count.votes}</StatValue>
+                  <StatLabel>Apoios</StatLabel>
+                </Stat>
+                <Stat>
+                  <StatValue>{report._count.meTooVotes}</StatValue>
+                  <StatLabel>Eu também</StatLabel>
+                </Stat>
+                <Stat>
+                  <StatValue>{report._count.comments}</StatValue>
+                  <StatLabel>Comentários</StatLabel>
+                </Stat>
+              </StatsStrip>
 
               <PressureBar score={report.pressureScore} />
 
-              <Description style={{ marginTop: 24 }}>
+              <SectionLabel>O que está acontecendo</SectionLabel>
+              <Description>
                 {report.description}
               </Description>
 
@@ -917,6 +1035,8 @@ export function ReportDetail() {
               })()}
 
               {report.media && report.media.length > 0 && (
+                <>
+                <SectionLabel>Fotos, vídeos e documentos</SectionLabel>
                 <MediaGallery>
                   {report.media.map((url, i) => {
                     const isVideo = /\.(mp4|mov|webm)$/i.test(url)
@@ -940,8 +1060,20 @@ export function ReportDetail() {
                     )
                   })}
                 </MediaGallery>
+                </>
               )}
             </Card>
+
+            {report.timeline && report.timeline.length > 0 && (
+              <Card>
+                <SideTitle>Andamento do relato</SideTitle>
+                <TimelineList>
+                  {report.timeline.map((event) => (
+                    <TimelineRow key={event.id} event={event} onOpenMedia={openMedia} />
+                  ))}
+                </TimelineList>
+              </Card>
+            )}
 
             <Card>
               <CommentsSection reportId={report.id} />
@@ -950,26 +1082,10 @@ export function ReportDetail() {
 
           <Sidebar>
             <SideCard>
-              <SideTitle>Autor</SideTitle>
-              {report.author ? (
-                <AuthorCard>
-                  <AuthorAvatar $src={report.author.avatarUrl}>
-                    {!report.author.avatarUrl && report.author.name.charAt(0).toUpperCase()}
-                  </AuthorAvatar>
-                  <AuthorLink to={`/perfil/${report.author.id}`}>
-                    {report.author.name}
-                  </AuthorLink>
-                </AuthorCard>
-              ) : (
-                <AuthorCard>
-                  <AuthorAvatar $src={null}>?</AuthorAvatar>
-                  <AuthorAnonymous>Cidadão anônimo</AuthorAnonymous>
-                </AuthorCard>
-              )}
-            </SideCard>
-
-            <SideCard>
-              <SideTitle>Pressão coletiva</SideTitle>
+              <SideTitle>Isso também é com você?</SideTitle>
+              <p style={{ fontSize: '0.8125rem', color: '#6B7280', lineHeight: 1.5, marginTop: -6, marginBottom: 14 }}>
+                Cada apoio aumenta a pressão para alguém responder.
+              </p>
               <VoteButtons>
                 <VoteBtn
                   variant="outline"
@@ -1419,16 +1535,6 @@ export function ReportDetail() {
               </SideCard>
             )}
 
-            {report.timeline && report.timeline.length > 0 && (
-              <SideCard>
-                <SideTitle>Linha do tempo</SideTitle>
-                <TimelineList>
-                  {report.timeline.map((event) => (
-                    <TimelineRow key={event.id} event={event} onOpenMedia={openMedia} />
-                  ))}
-                </TimelineList>
-              </SideCard>
-            )}
           </Sidebar>
         </Layout>
       </Content>
