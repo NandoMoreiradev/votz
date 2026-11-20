@@ -26,7 +26,7 @@ if (process.argv.includes('--connect')) {
     process.exit(1)
   }
   const serial = devices[0].split(/\s/)[0]
-  for (const port of ['3000', '8081']) {
+  for (const port of ['3000', '8081', '9000']) {
     const reverse = run(['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`])
     if (reverse.status !== 0) { console.error(reverse.stderr); process.exit(1) }
     console.log(`USB: porta ${port} encaminhada para o computador.`)

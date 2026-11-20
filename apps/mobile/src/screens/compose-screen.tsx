@@ -16,7 +16,7 @@ import { Avatar, Button, ErrorText, Field, IconButton } from '../components/ui'
 import { FormScroll, Screen, Toolbar } from '../components/screen'
 import { ChoiceSheet } from '../components/choice-sheet'
 import { LocationPanel, MediaTiles, RecipientPicker, SimilarReportsCard } from '../components/report-compose-parts'
-import { api, errorMessage } from '../lib/api'
+import { errorMessage, UploadError, uploadFile } from '../lib/api'
 import { useCreateContent } from '../hooks/use-content'
 import { useSession } from '../lib/session'
 import { buildLocationPayload, emptyLocation, locationError, type LocationDraft } from '../lib/report-location'
@@ -98,9 +98,15 @@ export default function ComposeScreen() {
       for (const item of media) {
         let url = uploadedUrls.current.get(item.uri)
         if (!url) {
-          const form = new FormData()
-          form.append('file', { uri: item.uri, name: item.name, type: item.mimeType } as unknown as Blob)
-          const uploaded = await api<{ url: string }>(`/storage/upload/${isReport ? 'report-media' : 'post-media'}`, { method: 'POST', body: form, timeoutMs: uploadTimeoutMs(item.kind) })
+          const label = item.kind === 'video' ? 'o vídeo' : item.kind === 'pdf' ? 'o PDF' : 'a foto'
+          const started = Date.now()
+          let uploaded: { url: string }
+          try {
+            uploaded = await uploadFile<{ url: string }>(`/storage/upload/${isReport ? 'report-media' : 'post-media'}`, { uri: item.uri, mimeType: item.mimeType }, uploadTimeoutMs(item.kind))
+          } catch (error) {
+            console.warn('[envio] falhou', JSON.stringify({ tipo: item.kind, arquivo: item.name, mime: item.mimeType, bytes: item.size, uri: item.uri.slice(0, 60), ms: Date.now() - started, erro: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }))
+            throw new UploadError(label, error)
+          }
           url = uploaded.url
           uploadedUrls.current.set(item.uri, url)
         }
@@ -119,6 +125,7 @@ export default function ComposeScreen() {
           }
       return create.mutateAsync({ kind, body })
     },
+    onError: (error) => console.warn('[relato] falhou ao registrar', JSON.stringify({ tipo: kind, midias: media.length, erro: error instanceof Error ? `${error.name}: ${error.message}` : String(error) })),
     onSuccess: (created) => router.replace(isReport ? { pathname: '/report/[id]', params: { id: created.id } } : { pathname: '/post/[id]', params: { id: created.id } }),
   })
 

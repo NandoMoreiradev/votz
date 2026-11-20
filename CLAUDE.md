@@ -34,15 +34,24 @@ npm run db:generate
 # Rodar migrations
 npm run db:migrate
 
-# Dev (api + web em paralelo)
-npm run dev
-
-# Dev só API
-npm run dev --workspace=apps/api
+# Dev da API (a API não tem script "dev": o nome é start:dev)
+npm run start:dev --workspace=apps/api
 
 # Dev só Web
 npm run dev --workspace=apps/web
+
+# Dev só Mobile (Expo, precisa do app de desenvolvimento instalado).
+# O mobile NÃO é workspace da raiz (tem package.json e lockfile próprios): rode de dentro da pasta.
+cd apps/mobile && npm run dev
+
+# Celular Android por USB (em apps/mobile): confere o aparelho e encaminha as portas 3000 (API), 8081 (app) e 9000 (fotos e vídeos no MinIO)
+cd apps/mobile && npm run android:usb
+
+# Atenção: `npm run dev` na raiz NÃO sobe a API nem o mobile (só o web e os pacotes compartilhados).
+# Para o dia a dia, suba a API (start:dev) e o web/mobile em terminais separados.
 ```
+
+Mobile: mudança só de JavaScript sai com `eas update` (canais `development`, `preview`, `production`). Biblioteca nativa nova, troca de versão do Expo ou permissão nova exigem build nova (`eas build --profile development --platform android` em `apps/mobile`).
 
 ## Convenções de Código (seção 12.2 do escopo)
 - **Arquivos:** kebab-case (`relatos.service.ts`)

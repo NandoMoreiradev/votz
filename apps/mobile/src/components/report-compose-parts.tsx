@@ -100,6 +100,7 @@ type LocationMode = 'cep' | 'manual'
 export function LocationPanel({ draft, onChange, disabled }: { draft: LocationDraft; onChange: (draft: LocationDraft) => void; disabled?: boolean }) {
   const [mode, setMode] = useState<LocationMode>('cep')
   const [resolved, setResolved] = useState(false)
+  const [fromGps, setFromGps] = useState(false)
   const [stateSheet, setStateSheet] = useState(false)
   const [citySheet, setCitySheet] = useState(false)
   const requested = useRef('')
@@ -126,25 +127,26 @@ export function LocationPanel({ draft, onChange, disabled }: { draft: LocationDr
       const addresses = await Location.reverseGeocodeAsync(position.coords).catch(() => [])
       return draftFromGps({ latitude: position.coords.latitude, longitude: position.coords.longitude }, addresses[0])
     },
-    onSuccess: (next) => { setMode('manual'); setResolved(false); cep.reset(); onChange(next) },
+    onSuccess: (next) => { setMode('manual'); setResolved(false); setFromGps(true); cep.reset(); onChange(next) },
   })
   const error = locationError(draft)
-  const changeMode = (next: LocationMode) => { if (next === mode) return; setMode(next); setResolved(false); requested.current = ''; cep.reset(); gps.reset(); onChange(emptyLocation) }
+  const changeMode = (next: LocationMode) => { if (next === mode) return; setMode(next); setResolved(false); setFromGps(false); requested.current = ''; cep.reset(); gps.reset(); onChange(emptyLocation) }
   const changeCep = (raw: string) => {
     const digits = digitsOnly(raw).slice(0, 8)
     requested.current = digits
+    setFromGps(false)
     if (resolved) setResolved(false)
     onChange({ ...emptyLocation, cep: digits })
     if (digits.length === 8) cep.mutate(digits)
     else cep.reset()
   }
-  const clear = () => { setResolved(false); requested.current = ''; cep.reset(); gps.reset(); onChange(emptyLocation) }
+  const clear = () => { setResolved(false); setFromGps(false); requested.current = ''; cep.reset(); gps.reset(); onChange(emptyLocation) }
   const hasAnything = !!(draft.cep || draft.street || draft.neighborhood || draft.city || draft.state || draft.latitude !== undefined)
   const edit = (field: 'street' | 'neighborhood' | 'city' | 'state') => (value: string) => onChange(editLocation(draft, field, value))
   return <View style={box}>
     <SectionTitle title="Localização do problema" optional />
     <Text style={{ fontSize: 12, color: theme.colors.muted }}>Com o local, o relato aparece no mapa e ajuda a detectar surtos.</Text>
-    <Button secondary title={draft.latitude !== undefined ? 'Localização do aparelho adicionada' : 'Usar minha localização'} loading={gps.isPending} disabled={disabled || cep.isPending} onPress={() => gps.mutate()} />
+    <Button secondary title={fromGps ? 'Localização do aparelho adicionada' : 'Usar minha localização'} loading={gps.isPending} disabled={disabled || cep.isPending} onPress={() => gps.mutate()} />
     <View style={{ flexDirection: 'row', gap: 8 }}>
       <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === 'cep' }} disabled={disabled} onPress={() => changeMode('cep')} style={pill(mode === 'cep')}><Text style={pillText(mode === 'cep')}>Tenho o CEP</Text></Pressable>
       <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === 'manual' }} disabled={disabled} onPress={() => changeMode('manual')} style={pill(mode === 'manual')}><Text style={pillText(mode === 'manual')}>Não sei o CEP</Text></Pressable>

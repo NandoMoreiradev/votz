@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system/legacy'
 import * as SecureStore from 'expo-secure-store'
 
 const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '')
@@ -110,5 +111,43 @@ export async function api<T>(path: string, options: ApiOptions = {}, authenticat
     return send()
   }
 }
+/**
+ * Envia um arquivo local (multipart) direto do disco, em streaming.
+ * No Expo 58 o `fetch` global não aceita o anexo `{ uri, name, type }` do React Native (erro
+ * "Unsupported FormDataPart implementation") e, com Blob, leria o vídeo inteiro para a memória.
+ */
+export async function uploadFile<T>(path: string, file: { uri: string; mimeType: string }, timeoutMs = 60_000): Promise<T> {
+  const send = async () => {
+    if (accessToken && tokenExpiresAt && tokenExpiresAt <= Date.now() + 5_000) await refreshSession()
+    const task = FileSystem.createUploadTask(`${API_URL}${path}`, file.uri, {
+      httpMethod: 'POST', uploadType: FileSystem.FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: file.mimeType,
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    })
+    const timer = setTimeout(() => { void task.cancelAsync() }, timeoutMs)
+    try {
+      const result = await task.uploadAsync()
+      // Cancelado pelo tempo limite: o upload nativo devolve vazio.
+      if (!result) throw Object.assign(new Error('Tempo esgotado'), { name: 'AbortError' })
+      return result
+    } finally { clearTimeout(timer) }
+  }
+  let result = await send()
+  if (result.status === 401) { await refreshSession(); result = await send() }
+  if (result.status < 200 || result.status >= 300) {
+    const body = (() => { try { return JSON.parse(result.body) as { message?: string | string[] } } catch { return null } })()
+    const message = Array.isArray(body?.message) ? body.message.join('\n') : body?.message
+    throw new ApiError(message || 'Não foi possível concluir. Tente novamente.', result.status)
+  }
+  return JSON.parse(result.body) as T
+}
 export const json = (data: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(data) })
-export const errorMessage = (error: unknown) => error instanceof ApiError ? error.message : 'Não foi possível conectar ao Votz. Verifique sua conexão e tente novamente.'
+/** Falha ao enviar um arquivo do relato: diz qual arquivo e por quê, em vez do aviso genérico de conexão. */
+export class UploadError extends Error {
+  constructor(label: string, cause: unknown) {
+    const why = cause instanceof ApiError ? cause.message
+      : cause instanceof Error && cause.name === 'AbortError' ? 'O envio demorou demais. Tente com sinal melhor ou com um arquivo menor.'
+      : 'A conexão caiu durante o envio. Confira o sinal e tente de novo.'
+    super(`Não foi possível enviar ${label}. ${why}`)
+  }
+}
+export const errorMessage = (error: unknown) => error instanceof ApiError || error instanceof UploadError ? error.message : 'Não foi possível conectar ao Votz. Verifique sua conexão e tente novamente.'
