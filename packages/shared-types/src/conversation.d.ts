@@ -38,8 +38,32 @@ export interface ConversationSummary {
         role: ConversationRole;
     }[];
 }
+/**
+ * Junta listas já ordenadas da mais nova para a mais antiga (conversas entre pessoas e conversas
+ * com páginas) numa caixa só, sem furar a ordem entre páginas de resultado: o que for mais antigo
+ * que o último item carregado de uma lista que ainda tem mais fica de fora até carregar a próxima.
+ * Fixadas vêm primeiro, na ordem em que chegaram.
+ */
+export declare function mergeInboxLists<T>(lists: {
+    items: T[];
+    hasMore: boolean;
+}[], at: (item: T) => string, pinned?: (item: T) => boolean): T[];
 export type ConversationAudience = 'EVERYONE' | 'CONTACTS' | 'NOBODY';
-export type ConversationDirectPolicy = 'EVERYONE' | 'NOBODY';
+export type ConversationDirectPolicy = 'EVERYONE' | 'FOLLOWING' | 'NOBODY';
+/** Página (político, entidade ou empresa) que a pessoa segue, como aparece em "Nova conversa". */
+export interface ConversationPageOption {
+    orgType: 'POLITICIAN' | 'ENTITY' | 'COMPANY';
+    orgId: string;
+    name: string;
+    username: string | null;
+    avatarUrl: string | null;
+}
+/** Primeira tela de "Nova conversa": quem eu sigo, quem me segue e as páginas que eu sigo. */
+export interface ConversationStartOptions {
+    following: ConversationPerson[];
+    followers: ConversationPerson[];
+    pages: ConversationPageOption[];
+}
 export type ConversationMediaAutoDownload = 'WIFI_ONLY' | 'ALWAYS' | 'NEVER';
 /** Qualidade das fotos e dos vídeos que a pessoa envia (NORMAL: 1600 px / 720p; HIGH: 2560 px / 1080p). */
 export type ConversationMediaUploadQuality = 'NORMAL' | 'HIGH';

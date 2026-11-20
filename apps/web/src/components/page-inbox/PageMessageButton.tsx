@@ -1,7 +1,8 @@
+import { useEffect } from 'react'
 import styled from 'styled-components'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
-import { useChatOpen } from './PageChatPanel'
+import type { OrgType } from '../../hooks/useOrgMemberships'
 
 const Btn = styled.button`
   padding: 8px 18px;
@@ -17,16 +18,24 @@ const Btn = styled.button`
   }
 `
 
+/** Endereço da conversa do cidadão com a página, dentro da caixa unificada. */
+export const pageConversationPath = (orgType: OrgType, orgId: string) => `/conversas/pagina/${orgType}/${orgId}`
+
 /**
  * Botão "Mensagem" do perfil de político, entidade ou empresa.
- * Não sai da página: abre o painel de conversa (`PageChatPanel`) no próprio perfil.
+ * Leva à caixa de mensagens (/conversas) com a conversa desta página aberta, como o Direct do Instagram.
  */
-export function PageMessageButton() {
+export function PageMessageButton({ orgType, orgId }: { orgType: OrgType; orgId: string }) {
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
-  const { open, set } = useChatOpen()
+  const [params] = useSearchParams()
+  const legacyLink = params.has('mensagens')
+  // Links antigos (`?mensagens=1`, de quando a conversa abria no perfil) seguem funcionando.
+  useEffect(() => {
+    if (legacyLink && user) navigate(pageConversationPath(orgType, orgId), { replace: true })
+  }, [legacyLink, user, navigate, orgType, orgId])
   return (
-    <Btn type="button" aria-expanded={open} onClick={() => (user ? set(true) : navigate('/entrar'))}>
+    <Btn type="button" onClick={() => navigate(user ? pageConversationPath(orgType, orgId) : '/entrar')}>
       Mensagem
     </Btn>
   )

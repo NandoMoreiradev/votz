@@ -5,9 +5,11 @@ import UserRound from 'lucide-react-native/icons/user-round'
 import Map from 'lucide-react-native/icons/map'
 import MessageCircle from 'lucide-react-native/icons/message-circle'
 import { useConversationCapabilities } from '../../hooks/use-conversations'
+import { useSession } from '../../lib/session'
 import { theme } from '../../theme'
 
 export default function TabLayout() {
+  const user = useSession((s) => s.user)
   const conversations = useConversationCapabilities()
   return <Tabs screenOptions={{
     headerShown: false, tabBarActiveTintColor: theme.colors.action, tabBarInactiveTintColor: theme.colors.muted,
@@ -19,7 +21,7 @@ export default function TabLayout() {
     <Tabs.Screen name="index" options={{ title: 'Início', tabBarIcon: ({ color, size }) => <House color={color} size={size} /> }} />
     <Tabs.Screen name="explore" options={{ title: 'Explorar', tabBarIcon: ({ color, size }) => <Compass color={color} size={size} /> }} />
     <Tabs.Screen name="map" options={{ title: 'Mapa', tabBarIcon: ({ color, size }) => <Map color={color} size={size} /> }} />
-    <Tabs.Screen name="conversations" options={{ title: 'Conversas', href: conversations.data?.enabled ? undefined : null, tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} /> }} />
+    <Tabs.Screen name="conversations" options={{ title: 'Conversas', href: conversations.data?.enabled || user ? undefined : null, tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} /> }} />
     <Tabs.Screen name="account" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound color={color} size={size} /> }} />
   </Tabs>
 }

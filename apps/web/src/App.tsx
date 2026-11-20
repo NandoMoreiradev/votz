@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { ThemeProvider } from 'styled-components'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { theme } from './theme'
 import { GlobalStyle } from './theme/GlobalStyle'
 import { queryClient } from './lib/query-client'
@@ -10,7 +10,6 @@ import { api, refreshSession } from './lib/api'
 import { getToken } from './lib/token'
 import { useAuthStore } from './store/auth.store'
 import { Home } from './pages/Home'
-import { PageMessagesList } from './pages/PageMessages'
 import { ReportDetail } from './pages/ReportDetail'
 import { CreateReport } from './pages/CreateReport'
 import { Login } from './pages/Login'
@@ -114,7 +113,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/publicacoes/:id" element={<PostDetail />} />
-              <Route path="/mensagens" element={<PageMessagesList />} />
+              <Route path="/mensagens" element={<Navigate to="/conversas" replace />} />
               <Route path="/conversas/*" element={<ConversationsRoute />} />
               <Route path="/pautas/:slug" element={<PautaDetail />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />

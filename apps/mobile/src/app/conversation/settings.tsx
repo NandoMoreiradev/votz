@@ -49,6 +49,7 @@ const AUDIENCE: [ConversationAudience, string][] = [
 ]
 const DIRECT: [ConversationDirectPolicy, string][] = [
   ['EVERYONE', 'Todos'],
+  ['FOLLOWING', 'Só quem eu sigo'],
   ['NOBODY', 'Ninguém'],
 ]
 const MEDIA: [ConversationMediaAutoDownload, string][] = [

@@ -2,8 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown, ChatCircle, EnvelopeSimple, MagnifyingGlass, Check } from '@phosphor-icons/react'
-import { useConversationCapabilities } from '../../hooks/useConversations'
+import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass, Check } from '@phosphor-icons/react'
+import { useConversationCapabilities, useConversationsUnread } from '../../hooks/useConversations'
+import { useMyPageUnread, useStaffUnread } from '../../hooks/usePageInbox'
+import type { OrgType } from '../../hooks/useOrgMemberships'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
 import { InviteVotzModal } from '../ui/InviteVotzModal'
@@ -646,8 +648,20 @@ export type FeedMenuKind = 'publicacoes' | 'relatos'
 
 /** `feedMenu` faz do logo um menu (como o Instagram) para escolher entre Publicações e Relatos. Só a Home usa. */
 export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChange: (value: FeedMenuKind) => void } } = {}) {
-  const conversations = useConversationCapabilities()
   const { user, activeContext, logout, sessionReady } = useAuthStore()
+  const conversations = useConversationCapabilities()
+  const convUnread = useConversationsUnread(!!conversations.data?.enabled)
+  const myPageUnread = useMyPageUnread(!!user && !activeContext)
+  const canReadPageInbox = !!activeContext && activeContext.permissions.includes('READ_MESSAGES')
+  const staffUnread = useStaffUnread(
+    (activeContext?.type ?? 'ENTITY') as OrgType,
+    activeContext?.id ?? '',
+    canReadPageInbox,
+  )
+  const chatUnread = activeContext
+    ? (staffUnread.data ?? 0)
+    : (convUnread.data?.unread ?? 0) + (myPageUnread.data ?? 0)
+  const showMessagesIcon = !activeContext || canReadPageInbox
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
@@ -879,8 +893,19 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
                   + Relatar
                 </ReportButton>
                 <NotificationsPanel />
-                {conversations.data?.enabled && <BellBtn as={Link} to="/conversas" aria-label="Conversas" title="Conversas"><ChatCircle size={23} aria-hidden="true" /></BellBtn>}
-                <BellBtn as={Link} to="/mensagens" aria-label="Mensagens para páginas" title="Mensagens para páginas"><EnvelopeSimple size={23} aria-hidden="true" /></BellBtn>
+                {showMessagesIcon && (
+                  <BellWrapper>
+                    <BellBtn
+                      as={Link}
+                      to="/conversas"
+                      aria-label={chatUnread > 0 ? `Conversas, ${chatUnread} não lidas` : 'Conversas'}
+                      title="Conversas"
+                    >
+                      <ChatCircle size={23} aria-hidden="true" />
+                    </BellBtn>
+                    {chatUnread > 0 && <UnreadBadge>{chatUnread > 99 ? '99+' : chatUnread}</UnreadBadge>}
+                  </BellWrapper>
+                )}
                 <AvatarWrapper ref={wrapperRef}>
                   <Avatar
                     $src={user.avatarUrl}

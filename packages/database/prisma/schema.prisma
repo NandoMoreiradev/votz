@@ -2013,6 +2013,9 @@ model PageConversation {
   citizenId     String                 @map("citizen_id")
   citizen       User                   @relation("PageConversationCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
   status        PageConversationStatus @default(OPEN)
+  /// Quem começou. Conversa iniciada pela página só segue depois que o cidadão aceita.
+  startedBy       PageMessageSender      @default(CITIZEN) @map("started_by")
+  citizenAccepted Boolean                @default(true) @map("citizen_accepted")
   lastMessageAt DateTime               @default(now()) @map("last_message_at")
   lastSender    PageMessageSender      @default(CITIZEN) @map("last_sender")
   staffUnread   Int                    @default(0) @map("staff_unread")

@@ -13,8 +13,6 @@ import { useMyProfiles } from '../hooks/useAuth'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
-import { PageChatPanel } from '../components/page-inbox/PageChatPanel'
-import { PageInboxPanel } from '../components/page-inbox/PageInboxPanel'
 import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
 import { HandleLine } from '../components/page-inbox/PageInboxUi'
 import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
@@ -677,7 +675,7 @@ export function EntityProfile() {
                     + Criar relato
                   </ReportCta>
                   {!isOwner && <FollowButton targetType="ENTITY" targetId={entity.id} />}
-                  {!isOwner && currentUser && <PageMessageButton />}
+                  {!isOwner && currentUser && <PageMessageButton orgType="ENTITY" orgId={entity.id} />}
                   {isOwner && (
                     <ReportCta
                       to={`/entidade/${entity.id}/editar`}
@@ -756,11 +754,9 @@ export function EntityProfile() {
           <TwoCol>
             {/* Main: relatos */}
             <MainCol>
-              {currentUser && !isOwner && <PageChatPanel orgType="ENTITY" orgId={entity.id} pageName={entity.legalName} />}
               {currentUser && isOwner && (
                 <>
                   <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
-                <PageInboxPanel orgType="ENTITY" orgId={entity.id} permissions={activeContext?.permissions ?? []} />
                 {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
                   <PageHandlePanel orgType="ENTITY" orgId={entity.id} current={(entity as { username?: string | null }).username} />
                 )}

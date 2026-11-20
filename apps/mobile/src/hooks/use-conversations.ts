@@ -10,6 +10,7 @@ import type {
   ConversationSettings,
   ConversationSummary,
   ConversationsPage,
+  ConversationStartOptions,
   ConversationTypingEvent,
   UpdateConversationSettings,
 } from '@votz/shared-types'
@@ -36,7 +37,7 @@ export function useConversationCapabilities() {
     retry: false,
   })
 }
-export function useConversationList(folder: 'active' | 'requests') {
+export function useConversationList(folder: 'active' | 'requests', enabled = true) {
   const scope = useConversationScope()
   return useInfiniteQuery({
     queryKey: [...scope.key, 'list', folder],
@@ -46,7 +47,7 @@ export function useConversationList(folder: 'active' | 'requests') {
         signal,
       }),
     getNextPageParam: (page) => (page.page * page.limit < page.total ? page.page + 1 : undefined),
-    enabled: scope.enabled,
+    enabled: scope.enabled && enabled,
     retry: false,
     refetchInterval: 15_000,
   })
@@ -87,6 +88,16 @@ export function useConversationContacts(search: string) {
         signal,
       }),
     enabled: scope.enabled && query.length >= 2,
+    retry: false,
+  })
+}
+export function useConversationStartOptions(enabled = true) {
+  const scope = useConversationScope()
+  return useQuery({
+    queryKey: [...scope.key, 'start-options'],
+    queryFn: ({ signal }) => api<ConversationStartOptions>('/conversations/start-options', { signal }),
+    enabled: scope.enabled && enabled,
+    staleTime: 30_000,
     retry: false,
   })
 }

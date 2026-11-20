@@ -19,7 +19,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { OrgPermissionGuard, RequireOrgPermission } from '../org-memberships/org-memberships.guard'
 import { PageInboxService } from './page-inbox.service'
-import { PageListQueryDto, PageMessageDto, PageStatusDto } from './dto/page-inbox.dto'
+import {
+  PageFollowersQueryDto,
+  PageListQueryDto,
+  PageMessageDto,
+  PageRespondDto,
+  PageStartDto,
+  PageStatusDto,
+} from './dto/page-inbox.dto'
 
 type Authed = { id: string; emailVerified?: boolean }
 
@@ -42,10 +49,22 @@ export class PageInboxController {
     return this.service.myConversations(user.id, query.page)
   }
 
+  @ApiOperation({ summary: 'Mensagens de páginas não lidas pelo cidadão' })
+  @Get('mine/unread')
+  mineUnread(@CurrentUser() user: Authed) {
+    return this.service.citizenUnreadCount(user.id)
+  }
+
   @ApiOperation({ summary: 'Abrir uma conversa minha com uma página' })
   @Get('mine/:id')
   mineOne(@CurrentUser() user: Authed, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.myConversation(user.id, id)
+  }
+
+  @ApiOperation({ summary: 'Aceitar ou recusar uma conversa que a página começou' })
+  @Post('mine/:id/respond')
+  respond(@CurrentUser() user: Authed, @Param('id', ParseUUIDPipe) id: string, @Body() dto: PageRespondDto) {
+    return this.service.respondAsCitizen(user.id, id, dto.accept)
   }
 
   @ApiOperation({ summary: 'Apagar minha conversa com uma página' })
@@ -113,6 +132,32 @@ export class PageInboxController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.openForStaff(user.id, orgType, orgId, id)
+  }
+
+  @ApiOperation({ summary: 'Seguidores que a página pode chamar' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.REPLY_MESSAGES)
+  @Get(':orgType/:orgId/followers')
+  followers(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Query() query: PageFollowersQueryDto,
+  ) {
+    return this.service.followersForStaff(orgType, orgId, query.q)
+  }
+
+  @ApiOperation({ summary: 'A página começa uma conversa com um seguidor' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.REPLY_MESSAGES)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post(':orgType/:orgId/conversations')
+  start(
+    @CurrentUser() user: Authed,
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Body() dto: PageStartDto,
+  ) {
+    return this.service.startAsStaff(user.id, orgType, orgId, dto.citizenId, dto.text)
   }
 
   @ApiOperation({ summary: 'Responder como equipe da página' })

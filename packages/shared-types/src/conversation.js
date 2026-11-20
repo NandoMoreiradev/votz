@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CONVERSATION_REPORT_REASONS = exports.DEFAULT_CONVERSATION_SETTINGS = void 0;
+exports.mergeInboxLists = mergeInboxLists;
 exports.conversationFontSize = conversationFontSize;
 exports.conversationTime = conversationTime;
 exports.conversationUnreadLabel = conversationUnreadLabel;
@@ -10,6 +11,27 @@ exports.conversationIsMuted = conversationIsMuted;
 exports.conversationTypingLabel = conversationTypingLabel;
 exports.conversationLastSeenLabel = conversationLastSeenLabel;
 exports.conversationHeaderStatus = conversationHeaderStatus;
+/**
+ * Junta listas já ordenadas da mais nova para a mais antiga (conversas entre pessoas e conversas
+ * com páginas) numa caixa só, sem furar a ordem entre páginas de resultado: o que for mais antigo
+ * que o último item carregado de uma lista que ainda tem mais fica de fora até carregar a próxima.
+ * Fixadas vêm primeiro, na ordem em que chegaram.
+ */
+function mergeInboxLists(lists, at, pinned = () => false) {
+    let cutoff = -Infinity;
+    for (const list of lists) {
+        if (!list.hasMore)
+            continue;
+        const times = list.items.filter((item) => !pinned(item)).map((item) => Date.parse(at(item)));
+        if (times.length)
+            cutoff = Math.max(cutoff, Math.min(...times));
+    }
+    const all = lists.flatMap((list) => list.items);
+    const rest = all
+        .filter((item) => !pinned(item) && Date.parse(at(item)) >= cutoff)
+        .sort((a, b) => Date.parse(at(b)) - Date.parse(at(a)));
+    return [...all.filter(pinned), ...rest];
+}
 exports.DEFAULT_CONVERSATION_SETTINGS = {
     readReceiptsEnabled: false,
     lastSeenVisibility: 'CONTACTS',

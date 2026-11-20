@@ -317,6 +317,7 @@ export function ConversationSettingsView() {
             onChange={(e) => save({ directRequestPolicy: e.target.value as ConversationDirectPolicy })}
           >
             <option value="EVERYONE">Todos</option>
+            <option value="FOLLOWING">Só quem eu sigo</option>
             <option value="NOBODY">Ninguém</option>
           </Select>
         </Row>

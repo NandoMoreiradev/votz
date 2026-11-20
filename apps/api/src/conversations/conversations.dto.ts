@@ -100,8 +100,8 @@ export class UpdateConversationSettingsDto {
   groupInvitePolicy?: 'EVERYONE' | 'CONTACTS' | 'NOBODY'
 
   @IsOptional()
-  @IsIn(['EVERYONE', 'NOBODY'])
-  directRequestPolicy?: 'EVERYONE' | 'NOBODY'
+  @IsIn(['EVERYONE', 'FOLLOWING', 'NOBODY'])
+  directRequestPolicy?: 'EVERYONE' | 'FOLLOWING' | 'NOBODY'
 
   @IsOptional()
   @Transform(({ obj }) => obj.notifySound)

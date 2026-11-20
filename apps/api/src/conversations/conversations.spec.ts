@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config'
 import { ForbiddenException, NotFoundException } from '@nestjs/common'
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
-import { ConversationsService } from './conversations.service'
+import { ConversationsService, UNFOLLOWED_REQUESTS_PER_DAY } from './conversations.service'
 import { ConversationsOutbox } from './conversations.outbox'
 import { RespondConversationDto, UpdateConversationSettingsDto } from './conversations.dto'
 import { PrismaService } from '../prisma/prisma.service'
@@ -173,6 +173,104 @@ describe('ConversationsService: configurações e políticas (Etapa 6)', () => {
     await expect(service.direct(actor, 'u-2')).rejects.toThrow(ForbiddenException)
   })
 
+  describe('solicitação direta: só quem eu sigo e limite para quem não é seguido', () => {
+    function directTx(opts: { policy?: string; followsMe?: boolean; recentTargets?: string[]; followersOfMine?: number }) {
+      const tx = {
+        user: { count: jest.fn().mockResolvedValue(1) },
+        conversationBlock: { count: jest.fn().mockResolvedValue(0) },
+        conversation: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue({ id: 'c1', members: [], kind: 'DIRECT' }),
+          findMany: jest.fn().mockResolvedValue(
+            (opts.recentTargets ?? []).map((id) => ({ members: [{ userId: id }] })),
+          ),
+        },
+        chatPrivacy: {
+          findUnique: jest.fn().mockResolvedValue(opts.policy ? { directRequestPolicy: opts.policy } : null),
+        },
+        userFollow: {
+          count: jest
+            .fn()
+            // 1ª chamada: o destinatário segue quem chama? Depois: quantos dos recentes me seguem de volta.
+            .mockResolvedValueOnce(opts.followsMe ? 1 : 0)
+            .mockResolvedValue(opts.followersOfMine ?? 0),
+        },
+      }
+      const db = { $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) }
+      const service = new ConversationsService(db as unknown as PrismaService, enabled)
+      jest.spyOn(service as never, 'view' as never).mockReturnValue({ id: 'c1' } as never)
+      jest.spyOn(service as never, 'enqueue' as never).mockResolvedValue(undefined as never)
+      return { service, tx }
+    }
+
+    it('"só quem eu sigo" recusa quem o destinatário não segue', async () => {
+      const { service, tx } = directTx({ policy: 'FOLLOWING', followsMe: false })
+      await expect(service.direct(actor, 'u-2')).rejects.toThrow('só recebe solicitações de quem ela segue')
+      expect(tx.conversation.create).not.toHaveBeenCalled()
+    })
+
+    it('"só quem eu sigo" aceita quem o destinatário segue', async () => {
+      const { service, tx } = directTx({ policy: 'FOLLOWING', followsMe: true })
+      await service.direct(actor, 'u-2')
+      expect(tx.conversation.create).toHaveBeenCalled()
+    })
+
+    it('quem já é seguido pelo destinatário não tem limite diário, nem confere o histórico', async () => {
+      const many = Array.from({ length: 50 }, (_, i) => `t${i}`)
+      const { service, tx } = directTx({ followsMe: true, recentTargets: many })
+      await service.direct(actor, 'u-2')
+      expect(tx.conversation.findMany).not.toHaveBeenCalled()
+      expect(tx.conversation.create).toHaveBeenCalled()
+    })
+
+    it('quem não é seguido tem teto diário; os que já seguem de volta não contam', async () => {
+      const recent = Array.from({ length: UNFOLLOWED_REQUESTS_PER_DAY }, (_, i) => `t${i}`)
+      const blocked = directTx({ followsMe: false, recentTargets: recent, followersOfMine: 0 })
+      await expect(blocked.service.direct(actor, 'u-2')).rejects.toMatchObject({ status: 429 })
+      const free = directTx({ followsMe: false, recentTargets: recent, followersOfMine: 5 })
+      await free.service.direct(actor, 'u-2')
+      expect(free.tx.conversation.create).toHaveBeenCalled()
+    })
+
+    it('a política aceita EVERYONE, FOLLOWING e NOBODY e recusa o resto', async () => {
+      const check = (value: unknown) =>
+        validate(plainToInstance(UpdateConversationSettingsDto, { directRequestPolicy: value }))
+      for (const ok of ['EVERYONE', 'FOLLOWING', 'NOBODY']) expect(await check(ok)).toHaveLength(0)
+      for (const bad of ['CONTACTS', 'following', '']) expect((await check(bad)).length).toBeGreaterThan(0)
+    })
+  })
+
+  it('"Nova conversa" começa por quem sigo, depois seguidores (sem repetir) e páginas', async () => {
+    const db = {
+      userFollow: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([{ following: { id: 'b', name: 'Bia', username: 'bia', avatarUrl: null, verified: false } }])
+          .mockResolvedValueOnce([{ follower: { id: 'c', name: 'Caio', username: null, avatarUrl: null, verified: false } }]),
+      },
+      userPoliticianFollower: { findMany: jest.fn().mockResolvedValue([{ politician: { id: 'p1', name: 'Vereador', username: 'vereador', avatarUrl: null } }]) },
+      userEntityFollower: { findMany: jest.fn().mockResolvedValue([{ entity: { id: 'e1', legalName: 'Prefeitura', username: null, logoUrl: null } }]) },
+      userCompanyFollower: { findMany: jest.fn().mockResolvedValue([{ company: { id: 'k1', tradeName: 'Empresa X', username: null, logoUrl: null } }]) },
+    }
+    const service = new ConversationsService(db as unknown as PrismaService, enabled)
+    const res = await service.startOptions(actor)
+    expect(res.following.map((p) => p.name)).toEqual(['Bia'])
+    expect(res.followers.map((p) => p.name)).toEqual(['Caio'])
+    expect(res.pages.map((p) => [p.orgType, p.name])).toEqual([
+      ['COMPANY', 'Empresa X'],
+      ['ENTITY', 'Prefeitura'],
+      ['POLITICIAN', 'Vereador'],
+    ])
+    // Seguidores que eu já sigo de volta não se repetem na segunda seção.
+    const followersWhere = db.userFollow.findMany.mock.calls[1][0].where
+    expect(followersWhere.follower.followerUsers).toEqual({ none: { followerId: actor.id } })
+    // Quem me bloqueou, quem bloqueei, banidos e sem e-mail confirmado ficam de fora.
+    expect(db.userFollow.findMany.mock.calls[0][0].where.following).toMatchObject({
+      banned: false,
+      emailVerified: true,
+    })
+  })
+
   it('recusa criação de grupo quando um convidado configurou groupInvitePolicy = NOBODY', async () => {
     const tx = {
       conversation: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -189,5 +287,20 @@ describe('ConversationsService: configurações e políticas (Etapa 6)', () => {
         memberIds: ['u-2'],
       }),
     ).rejects.toThrow(ForbiddenException)
+  })
+
+  it('soma não lidas e solicitações pendentes no selo de conversas', async () => {
+    const db = {
+      conversationMember: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { unreadCount: 4 } }),
+        count: jest.fn().mockResolvedValue(2),
+      },
+    }
+    const service = new ConversationsService(db as unknown as PrismaService, enabled)
+    expect(await service.unreadCount(actor)).toEqual({ unread: 4, requests: 2 })
+    expect(db.conversationMember.aggregate.mock.calls[0][0].where).toEqual({
+      userId: actor.id,
+      state: 'ACTIVE',
+    })
   })
 })

@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   Optional,
@@ -21,6 +23,9 @@ import {
 } from './conversations.dto'
 import { DEFAULT_CONVERSATION_SETTINGS, type ConversationSettings } from '@votz/shared-types'
 
+/** Teto diário de solicitações novas para quem ainda não segue de volta (quem já segue: sem limite). */
+export const UNFOLLOWED_REQUESTS_PER_DAY = 20
+const START_OPTIONS_LIMIT = 100
 const publicUser = {
   id: true,
   name: true,
@@ -197,6 +202,19 @@ export class ConversationsService {
       skipDuplicates: true,
     })
   }
+  async unreadCount(actor: ConversationActor) {
+    this.guard(actor)
+    const [agg, requests] = await Promise.all([
+      this.db.conversationMember.aggregate({
+        where: { userId: actor.id, state: 'ACTIVE' },
+        _sum: { unreadCount: true },
+      }),
+      this.db.conversationMember.count({
+        where: { userId: actor.id, state: 'INVITED' },
+      }),
+    ])
+    return { unread: agg._sum.unreadCount ?? 0, requests }
+  }
   async list(actor: ConversationActor, query: ConversationListDto) {
     this.guard(actor)
     const where: Prisma.ConversationWhereInput = {
@@ -296,6 +314,14 @@ export class ConversationsService {
         throw new ForbiddenException(
           'Esta pessoa não está aceitando novas solicitações de conversa.',
         )
+      // A pessoa que recebe segue quem está chamando? (decide "só quem eu sigo" e o limite diário)
+      const targetFollowsMe =
+        (await tx.userFollow.count({
+          where: { followerId: targetUserId, followingId: actor.id },
+        })) > 0
+      if (targetPrivacy?.directRequestPolicy === 'FOLLOWING' && !targetFollowsMe)
+        throw new ForbiddenException('Esta pessoa só recebe solicitações de quem ela segue.')
+      if (!targetFollowsMe) await this.enforceUnfollowedRequestLimit(tx, actor.id)
       const c = await tx.conversation.create({
         data: {
           kind: 'DIRECT',
@@ -313,6 +339,27 @@ export class ConversationsService {
       await this.enqueue(tx, c)
       return this.view(c, actor.id)
     })
+  }
+  /**
+   * Sem limite diário para quem chama quem já o segue. Para quem NÃO é seguido pelo destinatário,
+   * há um teto de solicitações novas por dia (decisão do dono, 20/11/2026), contra spam.
+   */
+  private async enforceUnfollowedRequestLimit(tx: Tx, actorId: string) {
+    const since = new Date(Date.now() - 24 * 3_600_000)
+    const recent = await tx.conversation.findMany({
+      where: { kind: 'DIRECT', createdById: actorId, createdAt: { gte: since } },
+      select: { members: { where: { userId: { not: actorId } }, select: { userId: true } } },
+    })
+    const targets = recent.flatMap((c) => c.members.map((m) => m.userId))
+    if (targets.length < UNFOLLOWED_REQUESTS_PER_DAY) return
+    const followers = await tx.userFollow.count({
+      where: { followerId: { in: targets }, followingId: actorId },
+    })
+    if (targets.length - followers >= UNFOLLOWED_REQUESTS_PER_DAY)
+      throw new HttpException(
+        'Você já chamou muita gente que ainda não te segue hoje. Tente de novo amanhã.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
   }
   async group(actor: ConversationActor, input: GroupConversationDto) {
     this.guard(actor)
@@ -490,6 +537,70 @@ export class ConversationsService {
       { isolationLevel: 'RepeatableRead' },
     )
     return { items, total, page: query.page, limit: query.limit }
+  }
+  /**
+   * Primeira tela de "Nova conversa": quem eu sigo, depois quem me segue (sem repetir),
+   * e as páginas que sigo (político, entidade, empresa). Páginas abrem a conversa dentro do perfil.
+   */
+  async startOptions(actor: ConversationActor) {
+    this.guard(actor)
+    const visible = {
+      banned: false,
+      emailVerified: true,
+      conversationBlocksReceived: { none: { blockerId: actor.id } },
+      conversationBlocksSent: { none: { blockedId: actor.id } },
+    } as const
+    const take = START_OPTIONS_LIMIT
+    const [following, followers, politicians, entities, companies] = await Promise.all([
+      this.db.userFollow.findMany({
+        where: { followerId: actor.id, following: visible },
+        select: { following: { select: publicUser } },
+        orderBy: { createdAt: 'desc' },
+        take,
+      }),
+      this.db.userFollow.findMany({
+        where: {
+          followingId: actor.id,
+          follower: { ...visible, followerUsers: { none: { followerId: actor.id } } },
+        },
+        select: { follower: { select: publicUser } },
+        orderBy: { createdAt: 'desc' },
+        take,
+      }),
+      this.db.userPoliticianFollower.findMany({
+        where: { userId: actor.id },
+        select: { politician: { select: { id: true, name: true, username: true, avatarUrl: true } } },
+        take,
+      }),
+      this.db.userEntityFollower.findMany({
+        where: { userId: actor.id },
+        select: { entity: { select: { id: true, legalName: true, username: true, logoUrl: true } } },
+        take,
+      }),
+      this.db.userCompanyFollower.findMany({
+        where: { userId: actor.id },
+        select: { company: { select: { id: true, tradeName: true, username: true, logoUrl: true } } },
+        take,
+      }),
+    ])
+    const byName = <T extends { name: string }>(list: T[]) =>
+      [...list].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    const pages = byName([
+      ...politicians.map(({ politician: p }) => ({
+        orgType: 'POLITICIAN' as const, orgId: p.id, name: p.name, username: p.username, avatarUrl: p.avatarUrl,
+      })),
+      ...entities.map(({ entity: e }) => ({
+        orgType: 'ENTITY' as const, orgId: e.id, name: e.legalName, username: e.username, avatarUrl: e.logoUrl,
+      })),
+      ...companies.map(({ company: c }) => ({
+        orgType: 'COMPANY' as const, orgId: c.id, name: c.tradeName, username: c.username, avatarUrl: c.logoUrl,
+      })),
+    ])
+    return {
+      following: byName(following.map((f) => f.following)),
+      followers: byName(followers.map((f) => f.follower)),
+      pages,
+    }
   }
   async contacts(actor: ConversationActor, query: string) {
     this.guard(actor)

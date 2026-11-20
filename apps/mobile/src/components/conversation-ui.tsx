@@ -11,7 +11,7 @@ import { errorMessage } from '../lib/api'
 import { theme } from '../theme'
 import { conversationUnreadLabel, type ConversationPerson } from '@votz/shared-types'
 
-export function ConversationGate({ children }: PropsWithChildren) {
+export function ConversationGate({ children, allowWithoutChat = false }: PropsWithChildren<{ allowWithoutChat?: boolean }>) {
   const scope = useConversationScope()
   const capabilities = useConversationCapabilities()
   if (!scope.user)
@@ -32,6 +32,8 @@ export function ConversationGate({ children }: PropsWithChildren) {
       />
     )
   if (capabilities.isPending) return <State loading title="Carregando conversas…" />
+  // Conversas com páginas não dependem do chat cifrado: seguem abertas mesmo se ele estiver desligado.
+  if (allowWithoutChat && (capabilities.isError || !capabilities.data?.enabled)) return <>{children}</>
   if (capabilities.isError)
     return (
       <State

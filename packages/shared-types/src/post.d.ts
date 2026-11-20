@@ -172,16 +172,19 @@ export interface GifSearchItem {
     width: number | null;
     height: number | null;
 }
-//# sourceMappingURL=post.d.ts.mapexport interface FeedSuggestedProfile {
+/** Perfil sugerido no cartão "Quem seguir na sua cidade" (quem segue poucas contas). */
+export interface FeedSuggestedProfile {
     kind: 'politicians' | 'entities';
     id: string;
     name: string;
     username: string | null;
     avatarUrl: string | null;
     verified: boolean;
+    /** Cargo/partido do político ou tipo da entidade, em texto simples. */
     subtitle: string | null;
 }
 export interface FeedSuggestions {
     title: string;
     profiles: FeedSuggestedProfile[];
 }
+//# sourceMappingURL=post.d.ts.map

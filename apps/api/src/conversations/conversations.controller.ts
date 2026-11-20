@@ -51,6 +51,10 @@ export class ConversationsController {
   ) {
     return this.service.updateSettings(req.user, body)
   }
+  @Get('start-options')
+  startOptions(@Req() req: { user: ConversationActor }) {
+    return this.service.startOptions(req.user)
+  }
   @Get('contacts')
   contacts(@Req() req: { user: ConversationActor }, @Query() query: ConversationContactsDto) {
     return this.service.contacts(req.user, query.q)
@@ -72,6 +76,9 @@ export class ConversationsController {
     @Param('userId', ParseUUIDPipe) userId: string,
   ) {
     return this.service.block(req.user, userId, true)
+  }
+  @Get('unread') unread(@Req() req: { user: ConversationActor }) {
+    return this.service.unreadCount(req.user)
   }
   @Get() list(@Req() req: { user: ConversationActor }, @Query() query: ConversationListDto) {
     return this.service.list(req.user, query)

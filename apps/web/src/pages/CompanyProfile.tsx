@@ -10,8 +10,6 @@ import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, use
 import { useAuthStore } from '../store/auth.store'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
-import { PageChatPanel } from '../components/page-inbox/PageChatPanel'
-import { PageInboxPanel } from '../components/page-inbox/PageInboxPanel'
 import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
 import { HandleLine } from '../components/page-inbox/PageInboxUi'
 import { ReportStatus } from '@votz/shared-types'
@@ -610,7 +608,7 @@ export function CompanyProfile() {
                     + Criar relato
                   </ReportCta>
                   {!canEdit && <FollowButton targetType="COMPANY" targetId={company.id} />}
-                  {!canEdit && currentUser && <PageMessageButton />}
+                  {!canEdit && currentUser && <PageMessageButton orgType="COMPANY" orgId={company.id} />}
                 </CtaRow>
               </HeaderInfo>
             </HeaderTop>
@@ -644,11 +642,9 @@ export function CompanyProfile() {
         {company && (
           <TwoCol>
             <MainCol>
-              {currentUser && !canEdit && <PageChatPanel orgType="COMPANY" orgId={company.id} pageName={company.tradeName} />}
               {currentUser && canEdit && (
                 <>
                   <TeamPanel orgType="COMPANY" orgId={company.id} currentUserId={currentUser.id} />
-                <PageInboxPanel orgType="COMPANY" orgId={company.id} permissions={activeContext?.permissions ?? []} />
                 {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
                   <PageHandlePanel orgType="COMPANY" orgId={company.id} current={(company as { username?: string | null }).username} />
                 )}

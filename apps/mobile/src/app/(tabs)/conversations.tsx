@@ -15,6 +15,7 @@ import {
   conversationTime,
   conversationTitle,
   conversationUnreadLabel,
+  mergeInboxLists,
   type ConversationSummary,
 } from '@votz/shared-types'
 import { ENROLL_WAITING } from '@votz/chat-core'
@@ -26,13 +27,15 @@ import {
   ConversationLoadingMore,
   ConversationPersonRow,
 } from '../../components/conversation-ui'
-import { Screen } from '../../components/screen'
+import { BrandMark, Screen } from '../../components/screen'
 import { Button, ErrorText, IconButton, State } from '../../components/ui'
 import {
   useConversationAction,
+  useConversationCapabilities,
   useConversationList,
   useConversationScope,
 } from '../../hooks/use-conversations'
+import { useMyPageConversationList, type MyPageConversationRow } from '../../hooks/use-page-inbox'
 import { errorMessage } from '../../lib/api'
 import { theme } from '../../theme'
 
@@ -128,16 +131,78 @@ function FolderRow({
   )
 }
 
+function PageInboxRow({ item }: { item: MyPageConversationRow }) {
+  const pending = item.startedBy === 'STAFF' && !item.accepted
+  const subtitle = pending
+    ? 'Quer conversar com você'
+    : `${item.lastFrom === 'CITIZEN' ? 'Você: ' : ''}${item.lastText}`
+  return (
+    <ConversationPersonRow
+      person={{ id: item.page.orgId, name: item.page.name, username: item.page.username, avatarUrl: item.page.avatarUrl, verified: false }}
+      title={item.page.name}
+      subtitle={subtitle}
+      meta={conversationTime(item.lastMessageAt)}
+      unread={item.unread}
+      onPress={() =>
+        router.push({
+          pathname: '/conversation/page',
+          params: { orgType: item.page.orgType, orgId: item.page.orgId, name: item.page.name },
+        })
+      }
+    />
+  )
+}
+
+type UnifiedInboxItem =
+  | { key: string; kind: 'chat'; sortAt: string; pinned: boolean; chat: ConversationSummary }
+  | { key: string; kind: 'page'; sortAt: string; pinned: false; page: MyPageConversationRow }
+
 function Inbox() {
   const [folder, setFolder] = useState<'active' | 'requests'>('active')
-  const list = useConversationList(folder)
-  const requests = useConversationList('requests')
+  const capabilities = useConversationCapabilities()
+  const chatEnabled = !!capabilities.data?.enabled
+  const list = useConversationList(folder, chatEnabled)
+  const requests = useConversationList('requests', chatEnabled)
+  const pageList = useMyPageConversationList(folder === 'active')
   const action = useConversationAction()
   const deviceStatus = useChatDeviceStatus()
   const { user } = useConversationScope()
-  const items = list.data?.pages.flatMap((page) => page.items) || []
-  const requestCount = requests.data?.pages.flatMap((page) => page.items).length ?? 0
-  const needsApproval = deviceStatus.data?.status === 'needs_approval'
+  const chatItems: UnifiedInboxItem[] = (list.data?.pages.flatMap((page) => page.items) || []).map((chat) => ({
+    key: chat.id,
+    kind: 'chat',
+    sortAt: chat.lastMessage?.at ?? chat.updatedAt,
+    pinned: !!chat.pinnedAt,
+    chat,
+  }))
+  const pageItems: UnifiedInboxItem[] =
+    folder === 'active'
+      ? (pageList.data?.pages.flatMap((page) => page.items) || [])
+          .filter((p) => !(p.startedBy === 'STAFF' && !p.accepted && p.status === 'BLOCKED'))
+          .map((page) => ({
+            key: `page:${page.id}`,
+            kind: 'page',
+            sortAt: page.lastMessageAt,
+            pinned: false,
+            page,
+          }))
+      : []
+  const items =
+    folder === 'active'
+      ? mergeInboxLists(
+          [
+            { items: chatItems, hasMore: chatEnabled && !!list.hasNextPage },
+            { items: pageItems, hasMore: !!pageList.hasNextPage },
+          ],
+          (i) => i.sortAt,
+          (i) => i.pinned,
+        )
+      : chatItems
+  const requestCount = chatEnabled ? (requests.data?.pages.flatMap((page) => page.items).length ?? 0) : 0
+  const needsApproval = chatEnabled && deviceStatus.data?.status === 'needs_approval'
+  const loading = (chatEnabled && list.isPending) || (folder === 'active' && pageList.isPending)
+  const listError = (chatEnabled && list.isError ? list.error : null) || (folder === 'active' && pageList.isError ? pageList.error : null)
+  const hasMore = (chatEnabled && !!list.hasNextPage) || (folder === 'active' && !!pageList.hasNextPage)
+  const fetchingMore = list.isFetchingNextPage || pageList.isFetchingNextPage
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
       {action.isError && (
@@ -145,21 +210,23 @@ function Inbox() {
           <ErrorText message={errorMessage(action.error)} />
         </View>
       )}
-      {list.isError && items.length > 0 && (
+      {listError && items.length > 0 && (
         <State
           title="Não foi possível atualizar"
           retry={() => {
-            void list.refetch()
+            if (chatEnabled) void list.refetch()
+            if (folder === 'active') void pageList.refetch()
           }}
         />
       )}
       <FlatList
         data={items}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 96 }}
-        refreshing={list.isRefetching && !list.isFetchingNextPage}
+        refreshing={(list.isRefetching && !list.isFetchingNextPage) || (pageList.isRefetching && !pageList.isFetchingNextPage)}
         onRefresh={() => {
-          void list.refetch()
+          if (chatEnabled) void list.refetch()
+          if (folder === 'active') void pageList.refetch()
         }}
         ListHeaderComponent={
           <View>
@@ -188,52 +255,57 @@ function Inbox() {
             />
           </View>
         }
-        renderItem={({ item }) => (
-          <InboxRow item={item} folder={folder} userId={user!.id}>
-            {folder === 'requests' && (
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Button
-                  title="Aceitar"
-                  disabled={action.isPending}
-                  onPress={() =>
-                    action.mutate({ path: `/${item.id}/respond`, body: { accept: true } })
-                  }
-                />
-                <Button
-                  title="Recusar"
-                  secondary
-                  disabled={action.isPending}
-                  onPress={() =>
-                    action.mutate({ path: `/${item.id}/respond`, body: { accept: false } })
-                  }
-                />
-              </View>
-            )}
-          </InboxRow>
-        )}
+        renderItem={({ item }) =>
+          item.kind === 'page' ? (
+            <PageInboxRow item={item.page} />
+          ) : (
+            <InboxRow item={item.chat} folder={folder} userId={user!.id}>
+              {folder === 'requests' && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Button
+                    title="Aceitar"
+                    disabled={action.isPending}
+                    onPress={() =>
+                      action.mutate({ path: `/${item.chat.id}/respond`, body: { accept: true } })
+                    }
+                  />
+                  <Button
+                    title="Recusar"
+                    secondary
+                    disabled={action.isPending}
+                    onPress={() =>
+                      action.mutate({ path: `/${item.chat.id}/respond`, body: { accept: false } })
+                    }
+                  />
+                </View>
+              )}
+            </InboxRow>
+          )
+        }
         ListEmptyComponent={
           <State
-            loading={list.isPending}
+            loading={loading}
             title={
-              list.isPending
+              loading
                 ? 'Carregando…'
-                : list.isError
+                : listError
                   ? 'Não foi possível carregar'
                   : folder === 'requests'
                     ? 'Você está em dia'
                     : 'Uma conversa pode aproximar'
             }
             description={
-              list.isError
-                ? errorMessage(list.error)
+              listError
+                ? errorMessage(listError)
                 : folder === 'requests'
                   ? 'Seus convites e solicitações aparecerão aqui.'
-                  : 'Toque no botão vermelho para falar com uma pessoa ou criar um grupo.'
+                  : 'Toque no botão vermelho para falar com uma pessoa, um grupo ou uma página.'
             }
             retry={
-              list.isError
+              listError
                 ? () => {
-                    void list.refetch()
+                    if (chatEnabled) void list.refetch()
+                    if (folder === 'active') void pageList.refetch()
                   }
                 : undefined
             }
@@ -241,10 +313,11 @@ function Inbox() {
         }
         ListFooterComponent={
           <ConversationLoadingMore
-            loading={list.isFetchingNextPage}
-            more={list.hasNextPage}
+            loading={fetchingMore}
+            more={hasMore}
             onMore={() => {
-              void list.fetchNextPage()
+              if (chatEnabled && list.hasNextPage) void list.fetchNextPage()
+              if (folder === 'active' && pageList.hasNextPage) void pageList.fetchNextPage()
             }}
           />
         }
@@ -298,12 +371,13 @@ export default function ConversationsScreen() {
   return (
     <Screen tabs>
       <View style={styles.header}>
+        <BrandMark />
         <Text accessibilityRole="header" style={styles.headerTitle}>
           Conversas
         </Text>
         <InboxMenu />
       </View>
-      <ConversationGate>
+      <ConversationGate allowWithoutChat>
         <Inbox />
       </ConversationGate>
     </Screen>
@@ -315,8 +389,9 @@ const styles = StyleSheet.create({
     minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 16,
+    paddingLeft: 12,
     paddingRight: 8,
+    gap: 12,
     backgroundColor: theme.colors.surface,
   },
   headerTitle: {

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { OrgType } from './useOrgMemberships'
 
@@ -40,6 +40,8 @@ export interface MyPageConversationRow {
   page: PageSummary
   status: PageConversationStatus
   unread: number
+  startedBy: 'CITIZEN' | 'STAFF'
+  accepted: boolean
   lastMessageAt: string
   lastText: string
   lastFrom: 'CITIZEN' | 'STAFF'
@@ -49,6 +51,8 @@ export interface StaffConversationRow {
   id: string
   citizen: CitizenSummary
   status: PageConversationStatus
+  startedBy: 'CITIZEN' | 'STAFF'
+  accepted: boolean
   unread: number
   lastMessageAt: string
   lastText: string
@@ -59,14 +63,31 @@ const base = '/page-inbox'
 
 // ── Cidadão ──────────────────────────────────────────────────────────────────
 
+/** Conversa do cidadão com esta página (null se ainda não escreveu) e o resumo da página. */
 export function usePageThread(orgType: OrgType, orgId: string, enabled: boolean) {
   return useQuery({
     queryKey: ['page-inbox', 'thread', orgType, orgId],
     queryFn: () =>
       api
-        .get<{ conversation: { id: string; status: PageConversationStatus } | null }>(`${base}/${orgType}/${orgId}/thread`)
-        .then((r) => r.data.conversation),
+        .get<{ conversation: { id: string; status: PageConversationStatus } | null; page: PageSummary }>(
+          `${base}/${orgType}/${orgId}/thread`,
+        )
+        .then((r) => r.data),
     enabled,
+    retry: false,
+  })
+}
+
+/** Conversas do cidadão com páginas, em páginas de 20, para a caixa unificada de /conversas. */
+export function useMyPageConversationList(enabled = true) {
+  return useInfiniteQuery({
+    queryKey: ['page-inbox', 'mine-list'],
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) =>
+      api.get<Paged<MyPageConversationRow>>(`${base}/mine`, { signal, params: { page: pageParam } }).then((r) => r.data),
+    getNextPageParam: (page) => (page.page * page.limit < page.total ? page.page + 1 : undefined),
+    enabled,
+    refetchInterval: 15_000,
     retry: false,
   })
 }
@@ -92,16 +113,43 @@ export function useMyPageConversations(enabled = true) {
   })
 }
 
+export function useMyPageUnread(enabled: boolean) {
+  return useQuery({
+    queryKey: ['page-inbox', 'mine', 'unread'],
+    queryFn: () => api.get<{ unread: number }>(`${base}/mine/unread`).then((r) => r.data.unread),
+    enabled,
+    refetchInterval: 30_000,
+    retry: false,
+  })
+}
+
 export function useMyPageConversation(id: string) {
   return useQuery({
     queryKey: ['page-inbox', 'mine', id],
     queryFn: () =>
       api
-        .get<{ id: string; page: PageSummary | null; status: PageConversationStatus; messages: PageMessageView[] }>(`${base}/mine/${id}`)
+        .get<{
+          id: string
+          page: PageSummary | null
+          status: PageConversationStatus
+          startedBy: 'CITIZEN' | 'STAFF'
+          accepted: boolean
+          messages: PageMessageView[]
+        }>(`${base}/mine/${id}`)
         .then((r) => r.data),
     enabled: !!id,
     refetchInterval: 15_000,
     retry: false,
+  })
+}
+
+/** O cidadão aceita ou recusa uma conversa que a página começou. */
+export function useRespondPageConversation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, accept }: { id: string; accept: boolean }) =>
+      api.post(`${base}/mine/${id}/respond`, { accept }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox'] }),
   })
 }
 
@@ -141,6 +189,8 @@ export interface StaffConversationView {
   id: string
   citizen: CitizenSummary
   status: PageConversationStatus
+  startedBy: 'CITIZEN' | 'STAFF'
+  accepted: boolean
   messages: PageMessageView[]
   readers: { userId: string; name: string; lastReadAt: string }[]
 }
@@ -159,6 +209,31 @@ export function useStaffConversation(orgType: OrgType, orgId: string, id: string
     enabled: !!id,
     refetchInterval: 15_000,
     retry: false,
+  })
+}
+
+/** Seguidores que a página pode chamar. */
+export function useStaffFollowers(orgType: OrgType, orgId: string, q: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['page-inbox', 'staff', orgType, orgId, 'followers', q],
+    queryFn: () =>
+      api
+        .get<{ items: CitizenSummary[] }>(`${base}/${orgType}/${orgId}/followers`, { params: q ? { q } : {} })
+        .then((r) => r.data.items),
+    enabled,
+    retry: false,
+  })
+}
+
+/** A página começa uma conversa com um seguidor (a pessoa precisa aceitar). */
+export function useStartAsStaff(orgType: OrgType, orgId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ citizenId, text }: { citizenId: string; text: string }) =>
+      api
+        .post<{ conversationId: string; created: boolean }>(`${base}/${orgType}/${orgId}/conversations`, { citizenId, text })
+        .then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
   })
 }
 

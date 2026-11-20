@@ -27,6 +27,8 @@ import {
   conversationMemberLabel,
   conversationTime,
   conversationUnreadLabel,
+  mergeInboxLists,
+  type ActiveContext,
   type ConversationMuteDuration,
   type ConversationPerson,
   type ConversationReportReason,
@@ -40,10 +42,21 @@ import {
   useConversationBlocks,
   useConversationCapabilities,
   useConversationContacts,
+  useConversationStartOptions,
   useConversationList,
   useConversationScope,
   useCreateConversationGroup,
 } from '../hooks/useConversations'
+import type { OrgType } from '../hooks/useOrgMemberships'
+import {
+  useMyPageConversationList,
+  useStaffConversations,
+  type MyPageConversationRow,
+  type PageConversationStatus,
+  type StaffConversationRow,
+} from '../hooks/usePageInbox'
+import { CitizenPagePane, StaffPagePane, StaffStartPane } from '../components/page-inbox/PageConversationViews'
+import { pageConversationPath } from '../components/page-inbox/PageMessageButton'
 import { useAuthStore } from '../store/auth.store'
 import { ChatPane } from '../components/conversations/ChatPane'
 import { ConversationSettingsView } from '../components/conversations/ConversationSettings'
@@ -634,7 +647,7 @@ function Portrait({ person, group }: { person?: ConversationPerson; group?: bool
     </Face>
   )
 }
-export function ConversationGate({ children }: PropsWithChildren) {
+export function ConversationGate({ children, allowWithoutChat = false }: PropsWithChildren<{ allowWithoutChat?: boolean }>) {
   const scope = useConversationScope()
   const capability = useConversationCapabilities()
   if (!scope.user)
@@ -660,6 +673,8 @@ export function ConversationGate({ children }: PropsWithChildren) {
       </Section>
     )
   if (capability.isPending) return <Section role="status">Carregando conversas…</Section>
+  // Conversas com páginas não dependem do chat cifrado: seguem abertas mesmo se ele estiver desligado.
+  if (allowWithoutChat && (capability.isError || !capability.data?.enabled)) return <>{children}</>
   if (capability.isError)
     return (
       <Failure
@@ -678,10 +693,159 @@ export function ConversationGate({ children }: PropsWithChildren) {
     )
   return <>{children}</>
 }
+/** Tipos de página aceitos no endereço `/conversas/pagina/:orgType/:orgId`. */
+const PAGE_TYPES: readonly OrgType[] = ['POLITICIAN', 'ENTITY', 'COMPANY']
+
+/**
+ * Caixa de mensagens unificada. O acesso decide o que aparece, sem misturar:
+ * perfil pessoal vê as conversas da pessoa (com pessoas, grupos e páginas);
+ * acessando como página, vê só as conversas da página.
+ */
 export function Conversations() {
+  const activeContext = useAuthStore((s) => s.activeContext)
+  return activeContext ? <PageContextInbox context={activeContext} /> : <PersonalConversations />
+}
+
+/** Caixa da página (político, entidade ou empresa), para quem está acessando como ela. */
+function PageContextInbox({ context }: { context: ActiveContext }) {
+  const location = useLocation()
+  const subpath = location.pathname.replace(/^\/conversas\/?/, '').replace(/\/+$/, '')
+  const orgType = context.type as OrgType
+  const canRead = context.permissions.includes('READ_MESSAGES')
+  const canReply = context.permissions.includes('REPLY_MESSAGES')
+  const create = subpath === 'nova' && canReply
+  const id = /^pagina\/[0-9a-f-]{36}$/i.test(subpath) ? subpath.slice('pagina/'.length) : undefined
+  const sub = create || !!id
+  return (
+    <>
+      <Navbar />
+      <Backdrop>
+        <Shell data-split-layout>
+          <Sidebar $hiddenOnMobile={sub}>
+            <Header>
+              <Link to="/" aria-label="Voltar">
+                <ArrowLeft size={20} />
+              </Link>
+              <h1 title={context.name}>Mensagens de {context.name}</h1>
+              {canReply && (
+                <Link to="/conversas/nova" aria-label="Nova conversa">
+                  <Plus size={20} weight="bold" />
+                </Link>
+              )}
+            </Header>
+            {canRead ? (
+              <StaffInbox orgType={orgType} orgId={context.id} activeId={id} />
+            ) : (
+              <Section>
+                <h2>Sem acesso às mensagens</h2>
+                <Muted>Peça a quem administra a página a permissão de ler mensagens.</Muted>
+              </Section>
+            )}
+          </Sidebar>
+          <Stage $hiddenOnMobile={!sub}>
+            {canRead && create ? (
+              <StaffStartPane orgType={orgType} orgId={context.id} />
+            ) : canRead && id ? (
+              <StaffPagePane key={id} orgType={orgType} orgId={context.id} id={id} canReply={canReply} />
+            ) : (
+              <EmptyStage>
+                <EmptyIcon>
+                  <ChatCircle size={36} />
+                </EmptyIcon>
+                <h2>Mensagens da página</h2>
+                <p>
+                  Aqui ficam só as conversas de {context.name}. Suas conversas pessoais aparecem quando você volta para o seu
+                  perfil no menu de contas.
+                </p>
+              </EmptyStage>
+            )}
+          </Stage>
+        </Shell>
+      </Backdrop>
+    </>
+  )
+}
+
+const STAFF_FILTERS: { label: string; value: PageConversationStatus | undefined }[] = [
+  { label: 'Abertas', value: 'OPEN' },
+  { label: 'Resolvidas', value: 'RESOLVED' },
+  { label: 'Bloqueadas', value: 'BLOCKED' },
+  { label: 'Todas', value: undefined },
+]
+
+/** Lista da caixa da página: filtro por situação, quem escreveu, última mensagem e não lidas. */
+function StaffInbox({ orgType, orgId, activeId }: { orgType: OrgType; orgId: string; activeId?: string }) {
+  const [filter, setFilter] = useState<PageConversationStatus | undefined>('OPEN')
+  const list = useStaffConversations(orgType, orgId, filter)
+  const items = list.data?.items ?? []
+  return (
+    <>
+      <TabRow role="tablist" aria-label="Situação das conversas">
+        {STAFF_FILTERS.map((f) => (
+          <button key={f.label} type="button" role="tab" aria-selected={filter === f.value} onClick={() => setFilter(f.value)}>
+            {f.label}
+          </button>
+        ))}
+      </TabRow>
+      {list.isError && <Failure error={list.error} retry={() => void list.refetch()} />}
+      {list.isPending ? (
+        <Section role="status">Carregando…</Section>
+      ) : (
+        !items.length &&
+        !list.isError && (
+          <Section>
+            <Muted>Nenhuma conversa aqui.</Muted>
+          </Section>
+        )
+      )}
+      {items.map((c) => (
+        <StaffInboxLine key={c.id} row={c} active={activeId === c.id} />
+      ))}
+    </>
+  )
+}
+
+function StaffInboxLine({ row, active }: { row: StaffConversationRow; active: boolean }) {
+  const unread = row.unread
+  const subtitle =
+    row.startedBy === 'STAFF' && !row.accepted
+      ? row.status === 'BLOCKED'
+        ? 'Recusou a conversa'
+        : 'Aguardando aceite'
+      : `${row.lastFrom === 'STAFF' ? 'Equipe: ' : ''}${row.lastText}`
+  return (
+    <ListItem data-active={active}>
+      <Row>
+        <Portrait person={{ id: row.citizen.id, name: row.citizen.name, username: row.citizen.username, avatarUrl: row.citizen.avatarUrl, verified: false }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Link
+            to={`/conversas/pagina/${row.id}`}
+            aria-label={unread > 0 ? `${row.citizen.name}, ${unread} ${unread === 1 ? 'mensagem não lida' : 'mensagens não lidas'}` : undefined}
+          >
+            <LineTop>
+              <strong>{row.citizen.name}</strong>
+              <Time $unread={unread > 0}>{conversationTime(row.lastMessageAt)}</Time>
+            </LineTop>
+            <LineBottom>
+              <Muted style={unread > 0 ? { color: 'inherit', fontWeight: 600 } : undefined}>{subtitle}</Muted>
+              {unread > 0 && <Badge aria-hidden="true">{conversationUnreadLabel(unread)}</Badge>}
+            </LineBottom>
+          </Link>
+        </div>
+      </Row>
+    </ListItem>
+  )
+}
+
+function PersonalConversations() {
   const scope = useConversationScope()
   const location = useLocation()
   const subpath = location.pathname.replace(/^\/conversas\/?/, '').replace(/\/+$/, '')
+  const pageParts = subpath.split('/')
+  const pageRoute =
+    pageParts.length === 3 && pageParts[0] === 'pagina' && PAGE_TYPES.includes(pageParts[1] as OrgType)
+      ? { orgType: pageParts[1] as OrgType, orgId: pageParts[2] }
+      : undefined
   const create = subpath === 'nova'
   const blocked = subpath === 'bloqueios'
   const devices = subpath === 'aparelhos'
@@ -692,10 +856,11 @@ export function Conversations() {
     subpath && !create && !blocked && !devices && !settings && !storage && !backup && !subpath.includes('/')
       ? subpath
       : undefined
-  const sub = id || create || blocked || devices || settings || storage || backup
+  const sub = id || create || blocked || devices || settings || storage || backup || !!pageRoute
   const [params] = useSearchParams()
   const requests = params.get('solicitacoes') === '1' && !sub
-  const pendingRequests = usePendingRequests()
+  const capability = useConversationCapabilities()
+  const pendingRequests = usePendingRequests(!!capability.data?.enabled)
   const deviceStatus = useChatDeviceStatus()
   const needsApproval = deviceStatus.data?.status === 'needs_approval'
   // Mantém a sessão cifrada aberta enquanto a pessoa navega em /conversas/* e
@@ -718,19 +883,21 @@ export function Conversations() {
             </Link>
             <h1>{requests ? 'Solicitações' : 'Conversas'}</h1>
             {!requests && <RequestsLink pending={pendingRequests} />}
-            <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
-              <GearSix size={20} />
-            </Link>
+            {capability.data?.enabled && (
+              <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
+                <GearSix size={20} />
+              </Link>
+            )}
             <Link to="/conversas/nova" aria-label="Nova conversa">
               <Plus size={20} weight="bold" />
             </Link>
           </Header>
-          <ConversationGate>
-            <ConversationInbox activeId={id} folder={requests ? 'requests' : 'active'} />
+          <ConversationGate allowWithoutChat>
+            <ConversationInbox activeId={id} activePage={pageRoute} folder={requests ? 'requests' : 'active'} />
           </ConversationGate>
         </Sidebar>
         <Stage $hiddenOnMobile={!sub}>
-          {sub && (
+          {sub && !pageRoute && (
             <Header>
               <Link to="/conversas" aria-label="Voltar às conversas">
                 <ArrowLeft size={20} />
@@ -752,8 +919,10 @@ export function Conversations() {
               </h1>
             </Header>
           )}
-          <ConversationGate>
-            {settings ? (
+          <ConversationGate allowWithoutChat={!!pageRoute || !sub}>
+            {pageRoute ? (
+              <CitizenPagePane key={`${pageRoute.orgType}:${pageRoute.orgId}`} orgType={pageRoute.orgType} orgId={pageRoute.orgId} />
+            ) : settings ? (
               <ConversationSettingsView />
             ) : devices ? (
               <ChatDevices />
@@ -792,10 +961,10 @@ export function Conversations() {
   )
 }
 /** Quantidade de pedidos esperando resposta, para o aviso no ícone de Solicitações. */
-function usePendingRequests(): number {
+function usePendingRequests(enabled: boolean): number {
   const scope = useConversationScope()
-  const list = useConversationList('requests')
-  return scope.enabled ? (list.data?.pages[0]?.total ?? 0) : 0
+  const list = useConversationList('requests', enabled)
+  return scope.enabled && enabled ? (list.data?.pages[0]?.total ?? 0) : 0
 }
 const PendingDot = styled.span`
   position: absolute;
@@ -828,18 +997,91 @@ function RequestsLink({ pending }: { pending: number }) {
     </Link>
   )
 }
-function ConversationInbox({ activeId, folder }: { activeId?: string; folder: 'active' | 'requests' }) {
-  const list = useConversationList(folder)
+/** Uma conversa com página na lista unificada do cidadão. */
+function PageInboxLine({ item }: { item: MyPageConversationRow }) {
+  const unread = item.unread
+  const pending = item.startedBy === 'STAFF' && !item.accepted
+  const subtitle = pending
+    ? 'Quer conversar com você'
+    : `${item.lastFrom === 'CITIZEN' ? 'Você: ' : ''}${item.lastText}`
+  return (
+    <Link
+      to={pageConversationPath(item.page.orgType, item.page.orgId)}
+      aria-label={
+        unread > 0
+          ? `${item.page.name}, ${unread} ${unread === 1 ? 'mensagem não lida' : 'mensagens não lidas'}`
+          : undefined
+      }
+    >
+      <LineTop>
+        <strong>{item.page.name}</strong>
+        <Time $unread={unread > 0}>{conversationTime(item.lastMessageAt)}</Time>
+      </LineTop>
+      <LineBottom>
+        <Muted style={unread > 0 ? { color: 'inherit', fontWeight: 600 } : undefined}>{subtitle}</Muted>
+        {unread > 0 && <Badge aria-hidden="true">{conversationUnreadLabel(unread)}</Badge>}
+      </LineBottom>
+    </Link>
+  )
+}
+
+type UnifiedInboxItem =
+  | { kind: 'chat'; sortAt: string; pinned: boolean; chat: ConversationSummary }
+  | { kind: 'page'; sortAt: string; pinned: false; page: MyPageConversationRow }
+
+function ConversationInbox({
+  activeId,
+  activePage,
+  folder,
+}: {
+  activeId?: string
+  activePage?: { orgType: OrgType; orgId: string }
+  folder: 'active' | 'requests'
+}) {
+  const capability = useConversationCapabilities()
+  const chatEnabled = !!capability.data?.enabled
+  const list = useConversationList(folder, chatEnabled)
+  const pageList = useMyPageConversationList(folder === 'active')
   const action = useConversationAction()
   const resetAction = action.reset
   useEffect(() => {
     resetAction()
   }, [folder, resetAction])
   const { user } = useConversationScope()
-  const items = list.data?.pages.flatMap((page) => page.items) || []
+  const chatItems: UnifiedInboxItem[] = (list.data?.pages.flatMap((page) => page.items) ?? []).map((chat) => ({
+    kind: 'chat',
+    sortAt: chat.lastMessage?.at ?? chat.updatedAt,
+    pinned: !!chat.pinnedAt,
+    chat,
+  }))
+  const pageItems: UnifiedInboxItem[] =
+    folder === 'active'
+      ? (pageList.data?.pages.flatMap((page) => page.items) ?? [])
+          .filter((p) => !(p.startedBy === 'STAFF' && !p.accepted && p.status === 'BLOCKED'))
+          .map((page) => ({
+            kind: 'page',
+            sortAt: page.lastMessageAt,
+            pinned: false,
+            page,
+          }))
+      : []
+  const items =
+    folder === 'active'
+      ? mergeInboxLists(
+          [
+            { items: chatItems, hasMore: chatEnabled && !!list.hasNextPage },
+            { items: pageItems, hasMore: !!pageList.hasNextPage },
+          ],
+          (i) => i.sortAt,
+          (i) => i.pinned,
+        )
+      : chatItems
+  const loading = (chatEnabled && list.isPending) || (folder === 'active' && pageList.isPending)
+  const hasMore = (chatEnabled && list.hasNextPage) || (folder === 'active' && pageList.hasNextPage)
+  const fetchingMore = list.isFetchingNextPage || pageList.isFetchingNextPage
   return (
     <>
-      {list.isError && (
+      {chatEnabled && list.isError && (
         <Failure
           error={list.error}
           retry={() => {
@@ -847,74 +1089,102 @@ function ConversationInbox({ activeId, folder }: { activeId?: string; folder: 'a
           }}
         />
       )}
+      {folder === 'active' && pageList.isError && (
+        <Failure
+          error={pageList.error}
+          retry={() => {
+            void pageList.refetch()
+          }}
+        />
+      )}
       {action.isError && <Failure error={action.error} />}
-      {list.isPending ? (
+      {loading && !items.length ? (
         <Section role="status">Carregando…</Section>
-      ) : !items.length && !list.isError ? (
+      ) : !items.length && !(chatEnabled && list.isError) && !(folder === 'active' && pageList.isError) ? (
         <Section>
           <h2>{folder === 'requests' ? 'Você está em dia' : 'Uma conversa pode aproximar'}</h2>
           <Muted>
             {folder === 'requests'
               ? 'Seus convites e solicitações aparecerão aqui.'
-              : 'Encontre uma pessoa ou crie um grupo para sua comunidade.'}
+              : 'Encontre uma pessoa, um grupo ou uma página da sua comunidade.'}
           </Muted>
           {folder === 'active' && <Link to="/conversas/nova">Começar uma conversa</Link>}
         </Section>
       ) : null}
-      {items.map((item) => (
-        <ListItem key={item.id} data-active={activeId === item.id}>
-          <Row>
-            <Portrait
-              group={item.kind === 'GROUP'}
-              person={item.members.find((m) => m.user.id !== user!.id)?.user}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {folder === 'active' ? (
-                <InboxLine item={item} userId={user!.id} />
-              ) : (
-                <>
-                  <strong>{conversationTitle(item, user!.id)}</strong>
-                  <Muted>
-                    {item.invitedBy?.name || 'Uma pessoa'}{' '}
-                    {item.kind === 'GROUP'
-                      ? 'convidou você para um grupo'
-                      : 'quer conversar com você'}
-                    .
-                  </Muted>
-                </>
-              )}
-            </div>
-          </Row>
-          {folder === 'requests' && (
-            <Buttons>
-              <Action
-                disabled={action.isPending}
-                onClick={() =>
-                  action.mutate({ path: `/${item.id}/respond`, body: { accept: true } })
-                }
-              >
-                Aceitar
-              </Action>
-              <Action
-                $secondary
-                disabled={action.isPending}
-                onClick={() =>
-                  action.mutate({ path: `/${item.id}/respond`, body: { accept: false } })
-                }
-              >
-                Recusar
-              </Action>
-            </Buttons>
-          )}
-        </ListItem>
-      ))}
-      {list.hasNextPage && (
+      {items.map((entry) => {
+        if (entry.kind === 'page') {
+          const p = entry.page
+          const active = activePage?.orgType === p.page.orgType && activePage?.orgId === p.page.orgId
+          return (
+            <ListItem key={`page:${p.id}`} data-active={active}>
+              <Row>
+                <Portrait
+                  person={{ id: p.page.orgId, name: p.page.name, username: p.page.username, avatarUrl: p.page.avatarUrl, verified: false }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <PageInboxLine item={p} />
+                </div>
+              </Row>
+            </ListItem>
+          )
+        }
+        const item = entry.chat
+        return (
+          <ListItem key={item.id} data-active={activeId === item.id}>
+            <Row>
+              <Portrait
+                group={item.kind === 'GROUP'}
+                person={item.members.find((m) => m.user.id !== user!.id)?.user}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {folder === 'active' ? (
+                  <InboxLine item={item} userId={user!.id} />
+                ) : (
+                  <>
+                    <strong>{conversationTitle(item, user!.id)}</strong>
+                    <Muted>
+                      {item.invitedBy?.name || 'Uma pessoa'}{' '}
+                      {item.kind === 'GROUP'
+                        ? 'convidou você para um grupo'
+                        : 'quer conversar com você'}
+                      .
+                    </Muted>
+                  </>
+                )}
+              </div>
+            </Row>
+            {folder === 'requests' && (
+              <Buttons>
+                <Action
+                  disabled={action.isPending}
+                  onClick={() =>
+                    action.mutate({ path: `/${item.id}/respond`, body: { accept: true } })
+                  }
+                >
+                  Aceitar
+                </Action>
+                <Action
+                  $secondary
+                  disabled={action.isPending}
+                  onClick={() =>
+                    action.mutate({ path: `/${item.id}/respond`, body: { accept: false } })
+                  }
+                >
+                  Recusar
+                </Action>
+              </Buttons>
+            )}
+          </ListItem>
+        )
+      })}
+      {hasMore && (
         <Section>
           <Action
             $secondary
-            disabled={list.isFetchingNextPage}
+            disabled={fetchingMore}
             onClick={() => {
-              void list.fetchNextPage()
+              if (chatEnabled && list.hasNextPage) void list.fetchNextPage()
+              if (folder === 'active' && pageList.hasNextPage) void pageList.fetchNextPage()
             }}
           >
             Carregar mais
@@ -1320,6 +1590,40 @@ function PersonPicker({
 }) {
   const [search, setSearch] = useState('')
   const contacts = useConversationContacts(search)
+  const navigate = useNavigate()
+  // Conversa individual: a tela começa por quem a pessoa segue (pessoas, seguidores e páginas).
+  const start = useConversationStartOptions(!!onPick)
+  const term = search.trim()
+  const typing = term.length >= 2
+  const match = (name: string, username: string | null) =>
+    !typing || name.toLowerCase().includes(term.toLowerCase()) || (username ?? '').toLowerCase().includes(term.replace(/^@/, '').toLowerCase())
+  const following = (start.data?.following ?? []).filter((p) => !exclude.includes(p.id) && match(p.name, p.username))
+  const followers = (start.data?.followers ?? []).filter((p) => !exclude.includes(p.id) && match(p.name, p.username))
+  const pages = (start.data?.pages ?? []).filter((p) => match(p.name, p.username))
+  const personRow = (person: ConversationPerson) => (
+    <ListItem key={person.id}>
+      <RowButton
+        role="button"
+        tabIndex={0}
+        aria-label={`Conversar com ${person.name}`}
+        onClick={() => onPick?.(person)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onPick?.(person)
+          }
+        }}
+      >
+        <Row>
+          <Portrait person={person} />
+          <div style={{ flex: 1 }}>
+            <strong>{person.name}</strong>
+            {person.username && <Muted>@{person.username}</Muted>}
+          </div>
+        </Row>
+      </RowButton>
+    </ListItem>
+  )
   return (
     <div>
       <VisuallyHidden htmlFor="conversation-person-search">Buscar pessoas</VisuallyHidden>
@@ -1358,7 +1662,52 @@ function PersonPicker({
           }}
         />
       )}
-      {search.trim().length < 2 && <Muted>Digite pelo menos 2 letras do nome ou do @usuário.</Muted>}
+      {onPick && following.length > 0 && (
+        <section aria-label="Quem você segue">
+          <Muted>Quem você segue</Muted>
+          {following.map(personRow)}
+        </section>
+      )}
+      {onPick && followers.length > 0 && (
+        <section aria-label="Seguidores">
+          <Muted>Seguidores</Muted>
+          {followers.map(personRow)}
+        </section>
+      )}
+      {onPick && pages.length > 0 && (
+        <section aria-label="Páginas que você segue">
+          <Muted>Páginas que você segue</Muted>
+          {pages.map((page) => (
+            <ListItem key={`${page.orgType}:${page.orgId}`}>
+              <RowButton
+                role="button"
+                tabIndex={0}
+                aria-label={`Enviar mensagem para a página ${page.name}`}
+                onClick={() => navigate(pageConversationPath(page.orgType, page.orgId))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    navigate(pageConversationPath(page.orgType, page.orgId))
+                  }
+                }}
+              >
+                <Row>
+                  <Portrait person={{ id: page.orgId, name: page.name, username: page.username, avatarUrl: page.avatarUrl, verified: false }} />
+                  <div style={{ flex: 1 }}>
+                    <strong>{page.name}</strong>
+                    {page.username && <Muted>@{page.username}</Muted>}
+                  </div>
+                </Row>
+              </RowButton>
+            </ListItem>
+          ))}
+        </section>
+      )}
+      {!typing && !onPick && <Muted>Digite pelo menos 2 letras do nome ou do @usuário.</Muted>}
+      {!typing && onPick && start.isSuccess && !following.length && !followers.length && !pages.length && (
+        <Muted>Você ainda não segue ninguém. Digite pelo menos 2 letras do nome ou do @usuário para buscar.</Muted>
+      )}
+      {typing && !!onPick && <Muted>Mais pessoas do Votz</Muted>}
       {contacts.data
         ?.filter((person) => !exclude.includes(person.id))
         .map((person) => {
