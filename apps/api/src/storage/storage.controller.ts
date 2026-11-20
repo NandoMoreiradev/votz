@@ -107,9 +107,25 @@ export class StorageController {
     return this.uploadImageToFolder(file, 'entities', 'Logo deve ser JPEG, PNG ou WebP')
   }
 
+  @Post('upload/cover')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 5, ttl: 60_000 }, long: { limit: 10, ttl: 3_600_000 } })
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiOperation({ summary: 'Upload de capa de perfil (imagem; ideal 1500x500)' })
+  async uploadCover(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() _user: { id: string },
+  ) {
+    return this.uploadImageToFolder(file, 'covers', 'A capa deve ser JPEG, PNG ou WebP')
+  }
+
   private async uploadImageToFolder(
     file: Express.Multer.File,
-    folder: 'avatars' | 'entities',
+    folder: 'avatars' | 'covers' | 'entities',
     invalidTypeMessage: string,
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado')

@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Flag,
   Heart,
+  LinkSimple,
   Megaphone,
   Quotes,
   ShareNetwork,
@@ -29,6 +30,7 @@ import { useIsFollowingTarget, useToggleFollowTarget } from '../../hooks/useFoll
 import { useAuthStore } from '../../store/auth.store'
 import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
+import { ConfirmDialog, OptionsMenu, copyLink, type MenuItem } from '../ui/OptionsMenu'
 import { socialRow } from '../ui/social'
 import { videoPosterUrl } from '../../lib/video-poster'
 
@@ -460,6 +462,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
   const { open: openMedia } = useMediaViewer()
 
   const [flagOpen, setFlagOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const toggleLike = useTogglePostLike()
   const toggleRepost = useTogglePostRepost()
@@ -482,6 +485,16 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
     !!user &&
     !!author.followTargetId &&
     (author.followTargetType !== 'USER' || user.id !== post.author.userId)
+
+  const menuItems: MenuItem[] = [
+    { key: 'link', label: 'Copiar link', icon: <LinkSimple size={18} />, onSelect: () => copyLink(`/publicacoes/${post.id}`) },
+    ...(!isOwner
+      ? [{ key: 'flag', label: 'Denunciar publicação', icon: <Flag size={18} />, onSelect: () => (user ? setFlagOpen(true) : navigate('/entrar')) }]
+      : []),
+    ...(isOwner || canModerate
+      ? [{ key: 'delete', label: 'Excluir publicação', icon: <Trash size={18} />, danger: true, onSelect: () => setConfirmDelete(true) }]
+      : []),
+  ]
 
   function handleShare() {
     const url = `${window.location.origin}/publicacoes/${post.id}`
@@ -544,6 +557,8 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
             )}
           </FollowMiniBtn>
         )}
+
+        <OptionsMenu label="Mais opções da publicação" items={menuItems} />
       </Header>
 
       {post.content && <BodyText $detail={detail}>{renderContentWithTopics(post.content)}</BodyText>}
@@ -722,28 +737,23 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
 
         {!detail && <Spacer />}
 
-        {user && !isOwner && (
-          <ActBtn type="button" onClick={() => setFlagOpen(true)} title="Sinalizar">
-            <Flag size={15} />
-          </ActBtn>
-        )}
-
-        {(isOwner || canModerate) && (
-          <ActBtn
-            $danger
-            type="button"
-            disabled={deletePost.isPending}
-            onClick={() => deletePost.mutate(post.id)}
-            title="Excluir publicação"
-          >
-            <Trash size={15} />
-          </ActBtn>
-        )}
-
         <ActBtn type="button" onClick={handleShare} title="Compartilhar">
           <ShareNetwork size={15} />
         </ActBtn>
       </ActionsBar>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir esta publicação?"
+          text="Ela some para todo mundo e não dá para desfazer."
+          confirmLabel="Excluir"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false)
+            deletePost.mutate(post.id, { onSuccess: () => { if (detail) navigate('/') } })
+          }}
+        />
+      )}
 
       <FlagContentModal
         isOpen={flagOpen}

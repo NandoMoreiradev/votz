@@ -39,16 +39,19 @@ export const socialTab = css<{ $active: boolean }>`
   &:focus-visible { outline: 2px solid ${({ theme }) => theme.colors.action}; outline-offset: -3px; }
 `
 
-export const socialCover = css`
+/** Faixa de capa do perfil. Com `$cover` mostra a imagem (ideal 1500×500, proporção 3:1); sem ela, o azul-noite do Votz. */
+export const socialCover = css<{ $cover?: string | null }>`
+  --cover-h: ${({ $cover }) => ($cover ? 'clamp(120px, 24vw, 200px)' : '112px')};
   position: relative;
   isolation: isolate;
-  padding-top: 132px;
+  padding-top: calc(var(--cover-h) + 20px);
   &::before {
     content: '';
     position: absolute;
     z-index: -1;
     inset: 0 0 auto;
-    height: 112px;
-    background: ${({ theme }) => theme.colors.primary};
+    height: var(--cover-h);
+    background: ${({ $cover, theme }) =>
+      $cover ? `${theme.colors.primary} url("${encodeURI($cover)}") center/cover no-repeat` : theme.colors.primary};
   }
 `

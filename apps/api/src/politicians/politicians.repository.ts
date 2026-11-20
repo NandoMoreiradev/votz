@@ -17,6 +17,7 @@ const POLITICIAN_PUBLIC_SELECT = {
   plan: true,
   mandatometer: true,
   avatarUrl: true,
+  coverUrl: true,
   website: true,
   createdAt: true,
   party: { select: { id: true, name: true, abbreviation: true, number: true, logoUrl: true } },
@@ -59,6 +60,10 @@ export class PoliticiansRepository {
       where: { id },
       select: POLITICIAN_PUBLIC_SELECT,
     })
+  }
+
+  countFollowers(politicianId: string) {
+    return this.prisma.userPoliticianFollower.count({ where: { politicianId } })
   }
 
   async findAll(params: {

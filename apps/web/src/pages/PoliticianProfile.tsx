@@ -3,19 +3,21 @@ import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { socialCover } from '../components/ui/social'
+import { FollowButton, FollowersCount } from '../components/profile/FollowBits'
+import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { usePolitician, usePoliticianReports } from '../hooks/usePoliticians'
 import { usePoliticianPropostas, PublicProposta } from '../hooks/usePropostas'
-import { useDebates, useFollowPolitician, useIsFollowingPolitician } from '../hooks/useDebates'
+import { useDebates } from '../hooks/useDebates'
 import { useAuthStore } from '../store/auth.store'
 import { useMyProfiles } from '../hooks/useAuth'
 import { Button } from '../components/ui/Button'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
+import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
-import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
 import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
@@ -66,7 +68,7 @@ const SideCol = styled.div`
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
-const HeaderCard = styled.div`
+const HeaderCard = styled.div<{ $cover?: string | null }>`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   padding: 28px;
@@ -551,7 +553,6 @@ export function PoliticianProfile() {
   const [statusFilter, setStatusFilter] = useState('')
   const [periodDays, setPeriodDays] = useState(0)
   const [activeTab, setActiveTab] = useState<'relatos' | 'propostas' | 'debates'>('relatos')
-  const [followingOverride, setFollowingOverride] = useState<boolean | null>(null)
   const [propostaPage, setPropostaPage] = useState(1)
   const [propostaStatusFilter, setPropostaStatusFilter] = useState('')
   const { user: currentUser, activeContext, sessionReady } = useAuthStore()
@@ -568,9 +569,8 @@ export function PoliticianProfile() {
 
   const canEdit = !!activeContext && activeContext.type === 'POLITICIAN' && activeContext.id === id
   const { data: debates } = useDebates({ politicianId: id! })
-  const followMutation = useFollowPolitician()
-  const { data: followStatus } = useIsFollowingPolitician(id!, !!currentUser && !canEdit)
-  const following = followingOverride ?? followStatus?.following ?? false
+  const [imageDialog, setImageDialog] = useState<ImageKind | null>(null)
+  const saveImage = useSaveProfileImage('politicians', id!, ['politician', id])
 
   const m = politician?.mandatometer
   const ignoredPct = m && m.total > 0 ? Math.round((m.open / m.total) * 100) : 0
@@ -598,6 +598,16 @@ export function PoliticianProfile() {
   return (
     <Page>
       <Navbar />
+      {imageDialog && politician && (
+        <ProfileImageDialog
+          kind={imageDialog}
+          title={imageDialog === 'cover' ? 'capa' : 'foto de perfil'}
+          currentUrl={imageDialog === 'cover' ? politician.coverUrl ?? null : politician.avatarUrl}
+          uploadPath={imageDialog === 'cover' ? COVER_UPLOAD : photoUploadPath('politicians')}
+          onSave={(url) => saveImage(imageDialog, url)}
+          onClose={() => setImageDialog(null)}
+        />
+      )}
       <Content>
         <BackLink to="/">← Início</BackLink>
 
@@ -614,13 +624,15 @@ export function PoliticianProfile() {
             <Skeleton style={{ height: 80 }} />
           </HeaderCard>
         ) : politician ? (
-          <HeaderCard>
+          <HeaderCard $cover={politician.coverUrl}>
+            {canEdit && <CoverEditButton onClick={() => setImageDialog('cover')} onPhoto={() => setImageDialog('photo')} />}
             <HeaderTop>
               <AvatarLink to={`/politico/${politician.id}`} $src={politician.avatarUrl ?? null}>
                 {!politician.avatarUrl && politician.name.charAt(0)}
               </AvatarLink>
               <Info>
                 <Name>{politician.name}</Name>
+                <FollowersCount count={politician.followersCount} />
                 <MetaRow>
                   <Tag $variant="office">{politician.office}</Tag>
                   <Tag $variant="party">{politician.party.abbreviation}</Tag>
@@ -706,23 +718,7 @@ export function PoliticianProfile() {
                       Reivindicar perfil
                     </ReportCta>
                   )}
-                  {currentUser && !canEdit && (
-                    <ReportCta
-                      to="#"
-                      onClick={async (e) => {
-                        e.preventDefault()
-                        const res = await followMutation.mutateAsync(politician.id)
-                        setFollowingOverride(res.following)
-                      }}
-                      style={{
-                        background: following ? 'transparent' : '#1A1A2E',
-                        color: following ? '#1A1A2E' : '#fff',
-                        border: '1.5px solid #1A1A2E',
-                      }}
-                    >
-                      {following ? '✓ Seguindo' : 'Seguir'}
-                    </ReportCta>
-                  )}
+                  {!canEdit && <FollowButton targetType="POLITICIAN" targetId={politician.id} />}
                 </CtaRow>
                 {!canEdit &&
                   profiles?.orgs.some((o) => o.type === 'POLITICIAN' && o.id === politician.id) && (
@@ -792,11 +788,11 @@ export function PoliticianProfile() {
         {politician && (
           <TwoCol>
             {/* Main */}
-              {currentUser && canEdit && <YoutubeChannelsPanel />}
             <MainCol>
               {currentUser && canEdit && (
                 <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
               )}
+              {currentUser && canEdit && <YoutubeChannelsPanel />}
 
               <div style={{ marginTop: currentUser ? 20 : 0 }}>
                 {/* Abas principais: Relatos / Propostas */}

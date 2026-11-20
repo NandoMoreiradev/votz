@@ -21,9 +21,10 @@ export interface SimilarReport {
 export type RecipientKind = 'ENTITY' | 'POLITICIAN' | 'COMPANY'
 export interface Recipient { type: RecipientKind; id: string; name: string }
 export type ReportSummary = Pick<Report, 'id' | 'title' | 'status' | 'city' | 'createdAt' | '_count'>
-export type ProfileKind = 'users' | 'politicians' | 'entities'
+export type ProfileKind = 'users' | 'politicians' | 'entities' | 'companies'
 export interface PublicProfile {
-  id: string; name?: string; legalName?: string; avatarUrl?: string | null
+  id: string; name?: string; legalName?: string; tradeName?: string; sector?: string; avatarUrl?: string | null
+  coverUrl?: string | null; followersCount?: number
   logoUrl?: string | null; bio?: string | null; description?: string | null
   office?: string; city?: string | null; state?: string | null; verified?: boolean
   votzScore?: number; reputation?: number
@@ -36,7 +37,6 @@ export interface ReportComment {
   author: { id: string; name: string; avatarUrl: string | null }
   _count: { replies: number }; replies?: ReportComment[]
 }
-export interface Session { user: User; accessToken: string; refreshToken: string }
 export type DebateStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED'
 export type StreamProvider = 'LIVEKIT' | 'YOUTUBE'
 export type ReactionType = 'APPLAUSE' | 'FIRE' | 'POSITIVE' | 'QUESTION' | 'DISAGREEMENT'
@@ -58,4 +58,5 @@ export interface DebateAuthor { id: string; name: string; avatarUrl: string | nu
 export interface DebateQuestion { id: string; text: string; upvotes: number; answered: boolean; createdAt: string; author: DebateAuthor }
 export interface DebateMessage { id: string; text: string; createdAt: string; author: DebateAuthor }
 export interface DebatePoll { id: string; question: string; active: boolean; options: { id: string; text: string; totalVotes: number }[] }
+export interface Session { user: User; accessToken: string; refreshToken: string }
 export type LoginResult = Session | { requiresMfa: true; mfaToken: string } | { requiresMfaSetup: true; mfaSetupToken: string }

@@ -10,3 +10,9 @@ export function relativeTime(value: string): string {
   if (minutes < 10080) return `${Math.floor(minutes / 1440)}d`
   return new Date(value).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })
 }
+
+export const SECTOR_LABELS: Record<string, string> = {
+  TELECOM: 'Telecom', SUPPLEMENTAL_HEALTH: 'Saúde suplementar', FINANCIAL: 'Financeiro',
+  ENERGY: 'Energia', TRANSPORTATION: 'Transporte', RETAIL: 'Varejo',
+  FOOD: 'Alimentação', CONDOMINIUM: 'Condomínio', OTHER: 'Outro setor',
+}

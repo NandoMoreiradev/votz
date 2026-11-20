@@ -10,6 +10,7 @@ import { socialCover, socialRow, socialTab } from '../components/ui/social'
 import { useUser, useUserReports } from '../hooks/useUser'
 import { usePostsFeed } from '../hooks/usePosts'
 import { useIsFollowingTarget, useToggleFollowTarget } from '../hooks/useFollow'
+import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { useAuthStore } from '../store/auth.store'
 import { UserType } from '@votz/shared-types'
 
@@ -42,7 +43,7 @@ const BackLink = styled(Link)`
 
 // ── Perfil ─────────────────────────────────────────────────────────────────
 
-const ProfileCard = styled.div`
+const ProfileCard = styled.div<{ $cover?: string | null }>`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   padding: 20px;
@@ -385,6 +386,8 @@ export function UserProfile() {
     if (postsData && postPage > postsData.meta.totalPages) setPostPage(Math.max(1, postsData.meta.totalPages))
   }, [postsData, postPage])
   const toggleFollow = useToggleFollowTarget('USER', id)
+  const [imageDialog, setImageDialog] = useState<ImageKind | null>(null)
+  const saveImage = useSaveProfileImage('users', id ?? '', ['user', id])
 
   const isOwnProfile = !!authUser && authUser.id === id
   const isFollowing = followState?.following ?? false
@@ -392,6 +395,16 @@ export function UserProfile() {
   return (
     <Page>
       <Navbar />
+      {imageDialog && user && (
+        <ProfileImageDialog
+          kind={imageDialog}
+          title={imageDialog === 'cover' ? 'capa' : 'foto de perfil'}
+          currentUrl={imageDialog === 'cover' ? user.coverUrl ?? null : user.avatarUrl}
+          uploadPath={imageDialog === 'cover' ? COVER_UPLOAD : photoUploadPath('users')}
+          onSave={(url) => saveImage(imageDialog, url)}
+          onClose={() => setImageDialog(null)}
+        />
+      )}
       <Content>
         <BackLink to="/">← Início</BackLink>
 
@@ -405,7 +418,8 @@ export function UserProfile() {
             </ProfileInfo>
           </ProfileCard>
         ) : user ? (
-          <ProfileCard>
+          <ProfileCard $cover={user.coverUrl}>
+            {isOwnProfile && <CoverEditButton onClick={() => setImageDialog('cover')} onPhoto={() => setImageDialog('photo')} />}
             <Avatar $src={user.avatarUrl}>
               {!user.avatarUrl && user.name.charAt(0).toUpperCase()}
             </Avatar>
@@ -443,6 +457,10 @@ export function UserProfile() {
               </ProfileTopRow>
               {user.bio && <Bio>{user.bio}</Bio>}
               <StatsRow>
+                <Stat>
+                  <StatValue>{(user.followersCount ?? 0).toLocaleString('pt-BR')}</StatValue>
+                  <StatLabel>{user.followersCount === 1 ? 'Seguidor' : 'Seguidores'}</StatLabel>
+                </Stat>
                 <Stat>
                   <StatValue>{user._count.reports}</StatValue>
                   <StatLabel>Relatos</StatLabel>

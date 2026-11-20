@@ -137,6 +137,12 @@ export class UpdateEntityDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   logoUrl?: string
 
+  @ApiPropertyOptional({ description: 'Capa do perfil (ideal 1500x500, proporção 3:1). Envie antes por POST /storage/upload/cover.' })
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
+  @MaxLength(500)
+  coverUrl?: string
+
   @ApiPropertyOptional({ type: SlaHoursDto })
   @IsOptional()
   @ValidateNested()

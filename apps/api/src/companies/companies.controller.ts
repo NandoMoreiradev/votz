@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { CompaniesService } from './companies.service'
 import { ListCompaniesDto } from './dto/list-companies.dto'
@@ -39,6 +39,22 @@ export class CompaniesController {
     @Query('status') status?: string,
   ) {
     return this.companiesService.findReports(id, Number(page), Math.min(Number(limit), 50), status)
+  }
+
+  @Post(':id/follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Seguir ou deixar de seguir uma empresa' })
+  follow(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.companiesService.followToggle(id, user.id)
+  }
+
+  @Get(':id/is-following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verifica se o usuário segue a empresa' })
+  isFollowing(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.companiesService.isFollowing(id, user.id)
   }
 
   @Patch(':id')

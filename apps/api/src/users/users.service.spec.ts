@@ -363,12 +363,33 @@ describe('UsersService', () => {
 
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: 'u2' },
-        select: { avatarUrl: true },
+        select: { avatarUrl: true, coverUrl: true },
       })
       expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: 'u2' } })
       expect(tx.accessLog.deleteMany).not.toHaveBeenCalled()
       expect(tx.accessLog.delete).not.toHaveBeenCalled()
       expect(storage.delete).toHaveBeenCalledWith('avatars/u2.png')
+    })
+  })
+
+  describe('updateProfile coverUrl validation', () => {
+    it('só aceita capa enviada pelo Votz (pasta covers) e repassa ao repositório', async () => {
+      repo.findById.mockResolvedValue({ id: 'u1' })
+
+      await expect(
+        service.updateProfile('u1', 'u1', { coverUrl: 'https://evil.example/capa.jpg' }),
+      ).rejects.toThrow(BadRequestException)
+      await expect(
+        service.updateProfile('u1', 'u1', { coverUrl: 'https://pub-r2.dev/avatars/capa.jpg' }),
+      ).rejects.toThrow(BadRequestException)
+      expect(repo.updateProfile).not.toHaveBeenCalled()
+
+      repo.updateProfile.mockResolvedValue({ id: 'u1', coverUrl: 'https://pub-r2.dev/covers/u1.png' })
+      await service.updateProfile('u1', 'u1', { coverUrl: 'https://pub-r2.dev/covers/u1.png' })
+      expect(repo.updateProfile).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ coverUrl: 'https://pub-r2.dev/covers/u1.png' }),
+      )
     })
   })
 

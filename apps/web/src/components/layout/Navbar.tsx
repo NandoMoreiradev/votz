@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown, ChatCircle } from '@phosphor-icons/react'
+import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass } from '@phosphor-icons/react'
 import { useConversationCapabilities } from '../../hooks/useConversations'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
@@ -740,6 +740,7 @@ export function Navbar() {
           </NavLinks>
 
           <Actions>
+            <BellBtn as={Link} to="/buscar" aria-label="Buscar no Votz" title="Buscar no Votz"><MagnifyingGlass size={21} aria-hidden="true" /></BellBtn>
             {user ? (
               <>
                 {activeContext && hasMultipleProfiles && (
@@ -841,6 +842,7 @@ export function Navbar() {
       {mobileOpen && (
         <MobileDrawer id="mobile-nav-drawer" ref={drawerRef} role="navigation" aria-label="Menu mobile">
           <MobileNavLink to="/" onClick={() => setMobileOpen(false)}>Explorar</MobileNavLink>
+          <MobileNavLink to="/buscar" onClick={() => setMobileOpen(false)}>Buscar</MobileNavLink>
           <MobileNavLink to="/mapa" onClick={() => setMobileOpen(false)}>Mapa</MobileNavLink>
           <MobileNavLink to="/entidades" onClick={() => setMobileOpen(false)}>Entidades</MobileNavLink>
           <MobileNavLink to="/politicos" onClick={() => setMobileOpen(false)}>Políticos</MobileNavLink>

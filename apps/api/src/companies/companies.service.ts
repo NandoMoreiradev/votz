@@ -23,12 +23,13 @@ export class CompaniesService {
   }
 
   async findById(id: string) {
-    const [company, stats] = await Promise.all([
+    const [company, stats, followersCount] = await Promise.all([
       this.repo.findById(id),
       this.repo.stats(id),
+      this.repo.countFollowers(id),
     ])
     if (!company) throw new NotFoundException('Company not found')
-    return { ...company, stats }
+    return { ...company, stats, followersCount }
   }
 
   async findReports(companyId: string, page: number, limit: number, status?: string) {
@@ -48,6 +49,27 @@ export class CompaniesService {
       this.storage.assertOwnStorageUrl(dto.logoUrl, 'entities')
     }
 
+    if (dto.coverUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.coverUrl, 'covers')
+    }
+
     return this.repo.update(id, dto)
+  }
+
+  async followToggle(companyId: string, userId: string) {
+    const company = await this.repo.findById(companyId)
+    if (!company) throw new NotFoundException('Company not found')
+    const existing = await this.repo.findFollow(userId, companyId)
+    if (existing) {
+      await this.repo.deleteFollow(existing.id)
+      return { following: false }
+    }
+    await this.repo.createFollow(userId, companyId)
+    return { following: true }
+  }
+
+  async isFollowing(companyId: string, userId: string) {
+    const existing = await this.repo.findFollow(userId, companyId)
+    return { following: !!existing }
   }
 }

@@ -10,6 +10,7 @@ const PUBLIC_USER_SELECT = {
   verified: true,
   reputation: true,
   avatarUrl: true,
+  coverUrl: true,
   bio: true,
   createdAt: true,
 } as const
@@ -72,20 +73,23 @@ export class UsersRepository {
   findWithPassword(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, name: true, type: true, password: true, avatarUrl: true },
+      select: { id: true, email: true, name: true, type: true, password: true, avatarUrl: true, coverUrl: true },
     })
   }
 
-  findByIdWithStats(id: string) {
-    return this.prisma.user.findUnique({
+  async findByIdWithStats(id: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         ...PUBLIC_USER_SELECT,
         _count: {
-          select: { reports: true, votes: true, comments: true },
+          select: { reports: true, votes: true, comments: true, followerUsers: true },
         },
       },
     })
+    if (!user) return null
+    const { followerUsers, ...counts } = user._count
+    return { ...user, _count: counts, followersCount: followerUsers }
   }
 
   async findMe(id: string) {
@@ -133,6 +137,7 @@ export class UsersRepository {
     username?: string
     bio?: string
     avatarUrl?: string
+    coverUrl?: string
     phone?: string
     zipCode?: string
     streetNumber?: string

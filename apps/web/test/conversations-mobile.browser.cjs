@@ -11,11 +11,11 @@ let browser
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
   await page.waitForURL(url => !url.pathname.includes('/entrar'))
   await page.goto('http://localhost:5173/conversas')
-  await page.getByRole('tab', { name: 'Solicitações', exact: true }).click()
+  await page.getByRole('link', { name: /^Solicitações de conversa/ }).click()
   const title = process.env.VOTZ_MOBILE_QA_GROUP || 'QA Mobile 20261118'
   const invitation = page.locator('div').filter({ has: page.getByText(title, { exact: true }) }).filter({ has: page.getByRole('button', { name: 'Aceitar', exact: true }) }).last()
   await invitation.getByRole('button', { name: 'Aceitar', exact: true }).click()
-  await page.getByRole('tab', { name: 'Conversas', exact: true }).click()
+  await page.getByRole('link', { name: 'Voltar às conversas', exact: true }).click()
   await page.getByRole('link').filter({ has: page.getByText(title, { exact: true }) }).click()
   await page.getByText('2 participantes', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Encerrar grupo', exact: true }).count(), 0)

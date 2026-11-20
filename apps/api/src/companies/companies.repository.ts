@@ -15,6 +15,7 @@ const COMPANY_PUBLIC_SELECT = {
   votzScore: true,
   slaHours: true,
   logoUrl: true,
+  coverUrl: true,
   website: true,
   createdAt: true,
   branches: {
@@ -87,6 +88,25 @@ export class CompaniesRepository {
       data,
       meta: { page: params.page, limit: params.limit, total, totalPages: Math.ceil(total / params.limit) },
     }
+  }
+
+  countFollowers(companyId: string) {
+    return this.prisma.userCompanyFollower.count({ where: { companyId } })
+  }
+
+  findFollow(userId: string, companyId: string) {
+    return this.prisma.userCompanyFollower.findUnique({
+      where: { userId_companyId: { userId, companyId } },
+      select: { id: true },
+    })
+  }
+
+  createFollow(userId: string, companyId: string) {
+    return this.prisma.userCompanyFollower.create({ data: { userId, companyId }, select: { id: true } })
+  }
+
+  deleteFollow(id: string) {
+    return this.prisma.userCompanyFollower.delete({ where: { id }, select: { id: true } })
   }
 
   update(id: string, data: Prisma.CompanyUpdateInput) {

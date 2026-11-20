@@ -3,14 +3,16 @@ import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Fire, HandsClapping, Megaphone, Newspaper, UsersThree } from '@phosphor-icons/react'
-import { Category, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
+import { Fire, Flag, HandsClapping, LinkSimple, Megaphone, Newspaper, UsersThree } from '@phosphor-icons/react'
+import { Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
+import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
+import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { socialRow, socialTab } from '../components/ui/social'
 import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useReports } from '../hooks/useReports'
@@ -908,6 +910,8 @@ function FeedCard({
 }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const authUser = useAuthStore((st) => st.user)
+  const [flagOpen, setFlagOpen] = useState(false)
   const { data: myVotes } = useMyVotes(report.id)
   const { open: openMedia } = useMediaViewer()
 
@@ -1028,6 +1032,15 @@ function FeedCard({
           </ReportAvatar>
           {!report.anonymous && report.author ? <Link onClick={(e) => e.stopPropagation()} to={`/perfil/${report.author.id}`}>{report.author.name}</Link> : <span>{report.anonymous ? 'Relato anônimo' : 'Cidadão'}</span>}
           <span>· {timeAgo(report.createdAt)}</span>
+          <OptionsMenu
+            label="Mais opções do relato"
+            items={[
+              { key: 'link', label: 'Copiar link', icon: <LinkSimple size={18} />, onSelect: () => copyLink(`/relatos/${report.id}`) },
+              ...(!(authUser && !report.anonymous && report.author?.id === authUser.id)
+                ? [{ key: 'flag', label: 'Denunciar relato', icon: <Flag size={18} />, onSelect: () => (authUser ? setFlagOpen(true) : navigate('/entrar')) }]
+                : []),
+            ]}
+          />
         </ReportAuthor>
         <CardMeta>
           {location.map((loc, i) => (
@@ -1099,6 +1112,12 @@ function FeedCard({
           </ActBtn>
         </Actions>
       </CardBody>
+      <FlagContentModal
+        isOpen={flagOpen}
+        targetType={FlagTargetType.REPORT}
+        targetId={report.id}
+        onClose={() => setFlagOpen(false)}
+      />
     </CardWrap>
   )
 }

@@ -56,10 +56,11 @@ export class PoliticiansService {
   }
 
   async findById(id: string) {
-    const [politician, mandatometer, monthlyVolume] = await Promise.all([
+    const [politician, mandatometer, monthlyVolume, followersCount] = await Promise.all([
       this.repo.findById(id),
       this.repo.mandatometerStats(id),
       this.repo.monthlyVolume(id),
+      this.repo.countFollowers(id),
     ])
     if (!politician) throw new NotFoundException('Politician not found')
 
@@ -78,7 +79,7 @@ export class PoliticiansService {
 
     const metrics = { responseRate, resolutionRate, contestationRate, trustBadge, classification }
 
-    return { ...politician, mandatometer, monthlyVolume, metrics }
+    return { ...politician, mandatometer, monthlyVolume, metrics, followersCount }
   }
 
   async findReports(politicianId: string, page: number, limit: number, status?: string, from?: string) {
@@ -97,6 +98,9 @@ export class PoliticiansService {
     }
     if (dto.avatarUrl !== undefined) {
       this.storage.assertOwnStorageUrl(dto.avatarUrl, 'avatars', { allowExternalImageHosts: true })
+    }
+    if (dto.coverUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.coverUrl, 'covers')
     }
     const data: Record<string, unknown> = { ...dto }
     if (dto.termStart) data.termStart = new Date(dto.termStart)

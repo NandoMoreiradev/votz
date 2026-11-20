@@ -29,6 +29,7 @@ const mockRepo = {
   findByIdFull: jest.fn(),
   stats: jest.fn(),
   monthlyVolume: jest.fn(),
+  countFollowers: jest.fn().mockResolvedValue(0),
   findReports: jest.fn(),
   update: jest.fn(),
 }
@@ -99,6 +100,14 @@ describe('EntitiesService', () => {
     expect(res.metrics.resolutionRate).toBe(70)
     expect(res.metrics.trustBadge).toBe(true)
     expect(res.metrics.classification).toBe('Entidade Comprometida')
+  })
+
+  it('inclui o número de seguidores da entidade', async () => {
+    mockRepo.findByIdFull.mockResolvedValue({ id: 'e1', legalName: 'Prefeitura' })
+    mockRepo.stats.mockResolvedValue({ total: 0, resolved: 0, byStatus: {} })
+    mockRepo.monthlyVolume.mockResolvedValue([])
+    mockRepo.countFollowers.mockResolvedValueOnce(42)
+    await expect(service.findById('e1')).resolves.toMatchObject({ followersCount: 42 })
   })
 
   it('throws NotFoundException when entity does not exist', async () => {

@@ -223,7 +223,7 @@ export class StorageService {
   async upload(
     buffer: Buffer,
     _claimedMimeType: string,
-    folder: 'reports' | 'avatars' | 'entities' | 'verification' | 'comments' | 'posts' | 'post-comments',
+    folder: 'reports' | 'avatars' | 'covers' | 'entities' | 'verification' | 'comments' | 'posts' | 'post-comments',
   ): Promise<UploadedFile> {
     const mimeType = detectMimeFromBuffer(buffer)
 

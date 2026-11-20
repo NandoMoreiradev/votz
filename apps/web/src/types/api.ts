@@ -149,6 +149,8 @@ export interface UserProfile {
   verified: boolean
   reputation: number
   avatarUrl: string | null
+  coverUrl?: string | null
+  followersCount?: number
   bio?: string
   createdAt: string
   _count: { reports: number; votes: number; comments: number }
@@ -211,6 +213,8 @@ export interface Entity {
   city: string | null
   state: string | null
   logoUrl: string | null
+  coverUrl?: string | null
+  followersCount?: number
   website: string | null
   createdAt: string
   stats?: {
@@ -260,6 +264,8 @@ export interface Politician {
   state: string
   city: string | null
   avatarUrl: string | null
+  coverUrl?: string | null
+  followersCount?: number
   website: string | null
   verified: boolean
   plan: PoliticianPlan
@@ -293,6 +299,8 @@ export interface Company {
   votzScore: number
   slaHours: number
   logoUrl: string | null
+  coverUrl?: string | null
+  followersCount?: number
   website: string | null
   createdAt: string
   branches: CompanyBranch[]
@@ -382,6 +390,9 @@ export interface DebateParticipant {
   role: ParticipantRole
   inviteStatus: InviteStatus
   createdAt: string
+  /** Live do próprio debatedor ("Assistir pelo canal de X"), se ele colocou. */
+  youtubeVideoId: string | null
+  youtubeChannelTitle: string | null
   politician: DebateParticipantPolitician
 }
 
@@ -390,9 +401,6 @@ export interface DebateQuestion {
   debateId: string
   text: string
   upvotes: number
-  /** Live do próprio debatedor ("Assistir pelo canal de X"), se ele colocou. */
-  youtubeVideoId: string | null
-  youtubeChannelTitle: string | null
   answered: boolean
   createdAt: string
   author: { id: string; name: string; avatarUrl: string | null }
@@ -447,14 +455,6 @@ export interface Debate {
   updatedAt: string
 }
 
-export interface DebatesResponse {
-  data: Debate[]
-  meta: { page: number; limit: number; total: number; totalPages: number }
-}
-
-// ==================== PUBLICAÇÕES & PAUTAS CÍVICAS ====================
-
-export type {
 export type StreamProvider = 'LIVEKIT' | 'YOUTUBE'
 
 export interface DebateHostEntity {
@@ -476,6 +476,14 @@ export interface YoutubeChannel {
   createdAt: string
 }
 
+export interface DebatesResponse {
+  data: Debate[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}
+
+// ==================== PUBLICAÇÕES & PAUTAS CÍVICAS ====================
+
+export type {
   CivicTopicSummaryDto,
   EmbeddedDebateDto,
   EmbeddedDebatePollDto,

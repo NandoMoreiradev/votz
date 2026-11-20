@@ -17,9 +17,10 @@ interface UseReportsParams {
   search?: string
   page?: number
   limit?: number
+  enabled?: boolean
 }
 
-export function useReports(params: UseReportsParams = {}) {
+export function useReports({ enabled = true, ...params }: UseReportsParams = {}) {
   return useQuery({
     queryKey: ['reports', params],
     queryFn: () =>
@@ -27,6 +28,7 @@ export function useReports(params: UseReportsParams = {}) {
         .get<ReportsResponse>('/reports', { params: { ...params, limit: params.limit ?? 20 } })
         .then((r) => r.data),
     staleTime: 30_000,
+    enabled,
   })
 }
 

@@ -8,13 +8,14 @@ import Repeat2 from 'lucide-react-native/icons/repeat-2'
 import Share2 from 'lucide-react-native/icons/share-2'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
 import type { PostDto, Report, ProfileKind } from '../lib/types'
-import { useAction } from '../hooks/use-content'
+import { useTogglePostLike, useTogglePostRepost } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
 import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
 import { Avatar, styles } from './ui'
 import { MediaCarousel } from './media-carousel'
+import { ContentMenu } from './content-menu'
 
 export const statusLabels: Record<string, string> = { OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento', RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado' }
 export function profileLink(author: PostDto['author']): { kind: ProfileKind; id: string } {
@@ -37,8 +38,8 @@ function Author({ name, username, verified, time, onPress }: { name: string; use
 }
 export function PostCard({ post, detail = false }: { post: PostDto; detail?: boolean }) {
   const user = useSession((s) => s.user)
-  const like = useAction(`/posts/${post.id}/like`, ['posts'])
-  const repost = useAction(`/posts/${post.id}/repost`, ['posts'])
+  const like = useTogglePostLike(post.id)
+  const repost = useTogglePostRepost(post.id)
   const target = profileLink(post.author)
   const name = post.author.orgName || post.author.name
   const open = () => router.push({ pathname: '/post/[id]', params: { id: post.id } })
@@ -56,15 +57,15 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
   </>
   const actions = <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
     <Action label={formatCount(post.commentsCount, 'resposta', 'respostas')} icon={<MessageCircle size={18} color={theme.colors.muted} />} count={post.commentsCount} onPress={() => router.push({ pathname: '/post/[id]', params: { id: post.id, reply: '1' } })} />
-    <Action label={post.repostedByMe ? 'Remover republicação' : 'Republicar'} icon={<Repeat2 size={19} color={post.repostedByMe ? theme.colors.positive : theme.colors.muted} />} count={post.repostsCount} disabled={repost.isPending} onPress={() => requireUser(() => repost.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível republicar', errorMessage(error)) }))} />
-    <Action label={`${post.likedByMe ? 'Descurtir' : 'Curtir'} · ${formatCount(post.likesCount, 'curtida', 'curtidas')}`} icon={<Heart size={19} color={post.likedByMe ? theme.colors.action : theme.colors.muted} fill={post.likedByMe ? theme.colors.action : 'transparent'} />} count={post.likesCount} active={post.likedByMe} disabled={like.isPending} onPress={() => requireUser(() => like.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível curtir', errorMessage(error)) }))} />
+    <Action label={post.repostedByMe ? 'Remover republicação' : 'Republicar'} icon={<Repeat2 size={19} color={post.repostedByMe ? theme.colors.positive : theme.colors.muted} />} count={post.repostsCount} onPress={() => requireUser(() => !repost.isPending && repost.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível republicar', errorMessage(error)) }))} />
+    <Action label={`${post.likedByMe ? 'Descurtir' : 'Curtir'} · ${formatCount(post.likesCount, 'curtida', 'curtidas')}`} icon={<Heart size={19} color={post.likedByMe ? theme.colors.action : theme.colors.muted} fill={post.likedByMe ? theme.colors.action : 'transparent'} />} count={post.likesCount} active={post.likedByMe} onPress={() => requireUser(() => !like.isPending && like.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível curtir', errorMessage(error)) }))} />
     <Action label="Compartilhar publicação" icon={<Share2 size={18} color={theme.colors.muted} />} onPress={() => { void Share.share({ message: `${name} no Votz\n\n${post.content}` }).catch(() => {}) }} />
   </View>
   return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
     {!detail && post.repost && <Pressable accessibilityRole="button" accessibilityLabel={`${post.repost.user.name} repostou. Ver perfil`} onPress={() => router.push({ pathname: '/profile/[kind]/[id]', params: { kind: 'users', id: post.repost!.user.id } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 50, marginBottom: 10 }}><Repeat2 size={14} color={theme.colors.muted} /><Text style={{ color: theme.colors.muted, fontSize: 12, flexShrink: 1 }}>{post.repost.user.name} repostou</Text></Pressable>}
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Ver perfil de ${name}`} onPress={openProfile}><Avatar name={name} uri={post.author.orgAvatarUrl || post.author.avatarUrl} size={40} /></Pressable>
-      <View style={{ flex: 1 }}><Author name={name} username={post.author.orgId ? null : post.author.username} verified={post.author.orgVerified || post.author.verified} time={post.createdAt} onPress={openProfile} />
+      <View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><Author name={name} username={post.author.orgId ? null : post.author.username} verified={post.author.orgVerified || post.author.verified} time={post.createdAt} onPress={openProfile} /></View><View style={{ marginRight: -8, marginVertical: -8 }}><ContentMenu kind="post" id={post.id} ownerId={post.author.userId} author={{ ...target, name }} text={post.content} /></View></View>
         {!detail && <><Pressable accessibilityRole="button" accessibilityLabel="Abrir publicação" onPress={open}>{body}</Pressable>{actions}</>}
       </View>
     </View>
@@ -84,7 +85,7 @@ export function ReportCard({ report, detail = false }: { report: Report; detail?
   return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: detail ? 16 : 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable disabled={!openProfile} onPress={openProfile} accessibilityRole={openProfile ? 'button' : undefined} accessibilityLabel={`Ver perfil de ${name}`}><Avatar name={name} uri={report.anonymous ? null : report.author?.avatarUrl} size={40} /></Pressable>
-      <View style={{ flex: 1 }}><Author name={name} time={report.createdAt} onPress={openProfile} />{!detail && <><Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato: ${report.title}`} onPress={open}>{body}</Pressable><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+      <View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><Author name={name} time={report.createdAt} onPress={openProfile} /></View><View style={{ marginRight: -8, marginVertical: -8 }}><ContentMenu kind="report" id={report.id} ownerId={report.anonymous ? null : report.author?.id} text={`${report.title}\n\n${report.description}`} /></View></View>{!detail && <><Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato: ${report.title}`} onPress={open}>{body}</Pressable><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
         <Action label={formatCount(report._count.votes, 'apoio', 'apoios')} icon={<ArrowUp size={19} color={theme.colors.muted} />} count={report._count.votes} onPress={open} />
         <Action label={formatCount(report._count.comments, 'comentário', 'comentários')} icon={<MessageCircle size={18} color={theme.colors.muted} />} count={report._count.comments} onPress={() => router.push({ pathname: '/report/[id]', params: { id: report.id, reply: '1' } })} />
         <Action label="Compartilhar relato" icon={<Share2 size={18} color={theme.colors.muted} />} onPress={() => { void Share.share({ message: `${report.title}\n\n${report.description}\n\nVotz` }).catch(() => {}) }} />

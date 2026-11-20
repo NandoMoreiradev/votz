@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import styled from 'styled-components'
-import { useParams, Link } from 'react-router-dom'
-import { HandsClapping, UsersThree, Flag } from '@phosphor-icons/react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { HandsClapping, UsersThree, Flag, LinkSimple } from '@phosphor-icons/react'
+import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
@@ -20,13 +21,13 @@ import { useMyProfiles } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { TimelineEvent } from '../types/api'
 import { uploadReportMedia } from '../lib/report-upload'
+import { TimelineEvent } from '../types/api'
 import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
 import { videoPosterUrl } from '../lib/video-poster'
-
 import { thumbUrl } from '../lib/image-thumb'
+
 const Page = styled.div`
   min-height: 100vh;
   background: ${({ theme }) => theme.colors.neutral};
@@ -118,7 +119,6 @@ const Location = styled.p`
   margin-bottom: 20px;
 `
 
-const MediaGallery = styled.div`
 /** Quadradinho da galeria: usa a miniatura e, se a foto for antiga (sem miniatura), a foto inteira. */
 function GalleryImage({ url }: { url: string }) {
   const thumb = thumbUrl(url)
@@ -126,6 +126,7 @@ function GalleryImage({ url }: { url: string }) {
   return <img src={src} alt="" loading="lazy" onError={() => src !== url && setSrc(url)} />
 }
 
+const MediaGallery = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
@@ -730,6 +731,7 @@ export function ReportDetail() {
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const [flagOpen, setFlagOpen] = useState(false)
+  const navigate = useNavigate()
   const disputeMutation = useDisputeReport(id!)
 
   const isActorType = activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY'
@@ -872,12 +874,15 @@ export function ReportDetail() {
               <Badges>
                 <CategoryBadge category={report.category} />
                 <StatusBadge status={report.status} />
-                {user && !(!report.anonymous && report.author?.id === user.id) && (
-                  <FlagReportBtn type="button" onClick={() => setFlagOpen(true)}>
-                    <Flag size={14} weight="bold" />
-                    Sinalizar
-                  </FlagReportBtn>
-                )}
+                <OptionsMenu
+                  label="Mais opções do relato"
+                  items={[
+                    { key: 'link', label: 'Copiar link', icon: <LinkSimple size={18} />, onSelect: () => copyLink(`/relatos/${report.id}`) },
+                    ...(!(user && !report.anonymous && report.author?.id === user.id)
+                      ? [{ key: 'flag', label: 'Denunciar relato', icon: <Flag size={18} />, onSelect: () => (user ? setFlagOpen(true) : navigate('/entrar')) }]
+                      : []),
+                  ]}
+                />
               </Badges>
 
               <FlagContentModal

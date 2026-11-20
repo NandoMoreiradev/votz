@@ -8,14 +8,16 @@ interface UseCompaniesParams {
   state?: string
   search?: string
   page?: number
+  enabled?: boolean
 }
 
-export function useCompanies(params: UseCompaniesParams = {}) {
+export function useCompanies({ enabled = true, ...params }: UseCompaniesParams = {}) {
   return useQuery({
     queryKey: ['companies', params],
     queryFn: () =>
       api.get<CompaniesResponse>('/companies', { params: { ...params, limit: 20 } }).then((r) => r.data),
     staleTime: 60_000,
+    enabled,
   })
 }
 

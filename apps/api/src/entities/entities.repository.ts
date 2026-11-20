@@ -16,6 +16,7 @@ const ENTITY_PUBLIC_SELECT = {
   city: true,
   state: true,
   logoUrl: true,
+  coverUrl: true,
   website: true,
   createdAt: true,
 } as const
@@ -55,6 +56,10 @@ export class EntitiesRepository {
       where: { id },
       select: ENTITY_PUBLIC_SELECT,
     })
+  }
+
+  countFollowers(entityId: string) {
+    return this.prisma.userEntityFollower.count({ where: { entityId } })
   }
 
   async findAll(params: {

@@ -413,26 +413,28 @@ function CommentComposer({
     const trimmed = content.trim()
     if (!attachedMedia && !trimmed) return
 
+    // Como o comentário já aparece na conversa, o campo limpa na hora e o texto volta se o envio falhar.
+    const sentMedia = attachedMedia
     createComment.mutate(
       {
         content: trimmed || undefined,
         parentId,
-        mediaType: attachedMedia ? attachedMedia.type : PostCommentMediaType.TEXT,
-        mediaUrl: attachedMedia?.url,
-        mediaKey: attachedMedia?.key,
+        mediaType: sentMedia ? sentMedia.type : PostCommentMediaType.TEXT,
+        mediaUrl: sentMedia?.url,
+        mediaKey: sentMedia?.key,
       },
       {
-        onSuccess: () => {
-          setContent('')
-          setAttachedMedia(null)
-          setShowGifPicker(false)
-          onDone?.()
-        },
         onError: () => {
+          setContent((current) => current || trimmed)
+          setAttachedMedia((current) => current ?? sentMedia)
           setErrorMsg('Não foi possível enviar seu comentário.')
         },
       },
     )
+    setContent('')
+    setAttachedMedia(null)
+    setShowGifPicker(false)
+    onDone?.()
   }
 
   if (voiceMode) {
@@ -520,12 +522,11 @@ function CommentComposer({
           <SubmitBtn
             type="submit"
             disabled={
-              createComment.isPending ||
               uploadMedia.isPending ||
               (!attachedMedia && content.trim().length === 0)
             }
           >
-            {createComment.isPending ? 'Enviando...' : parentId ? 'Responder' : 'Comentar'}
+            {parentId ? 'Responder' : 'Comentar'}
           </SubmitBtn>
         </ToolBar>
       </FormBox>

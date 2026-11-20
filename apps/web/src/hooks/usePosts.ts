@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PostCommentMediaType, PostKind } from '@votz/shared-types'
+import { PostCommentMediaType, PostKind, UserType } from '@votz/shared-types'
+import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
 import {
@@ -25,6 +26,36 @@ export interface UsePostsParams {
   page?: number
   limit?: number
   enabled?: boolean
+}
+
+/**
+ * Atualização otimista dos posts: muda o item em todas as listas e na tela do post antes de o servidor
+ * responder e devolve a função que desfaz, caso o servidor recuse.
+ */
+function patchPost(qc: QueryClient, postId: string, change: (post: PostDto) => PostDto): () => void {
+  const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })
+  const single = qc.getQueryData<PostDto>(['post', postId])
+  qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) =>
+    old && Array.isArray(old.data) ? { ...old, data: old.data.map((p) => (p.id === postId ? change(p) : p)) } : old,
+  )
+  qc.setQueryData<PostDto>(['post', postId], (old) => (old ? change(old) : old))
+  return () => {
+    lists.forEach(([key, data]) => qc.setQueryData(key, data))
+    qc.setQueryData(['post', postId], single)
+  }
+}
+
+/** Um post novo entra no topo das listas a que ele pertence, sem esperar a lista recarregar. */
+function feedAccepts(filters: Record<string, unknown>, post: PostDto): boolean {
+  if (typeof filters.page === 'number' && filters.page > 1) return false
+  if (filters.topic || filters.kind) return false
+  if (filters.hasPoll && !post.poll) return false
+  if (filters.authorUserId && filters.authorUserId !== post.author.userId) return false
+  if (filters.profileUserId && filters.profileUserId !== post.author.userId) return false
+  if (filters.authorOrgId && filters.authorOrgId !== post.author.orgId) return false
+  if (filters.authorType && filters.authorType !== (post.author.orgType ?? 'CITIZEN')) return false
+  if (filters.city || filters.state) return false
+  return true
 }
 
 export function usePostsFeed(params: UsePostsParams = {}) {
@@ -74,6 +105,12 @@ export function useCreatePost() {
       api.post<PostDto>('/posts', payload).then((r) => r.data),
     onSuccess: (created) => {
       qc.setQueryData<PostDto>(['post', created.id], created)
+      for (const [key, old] of qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })) {
+        const filters = key[1]
+        if (!old || !Array.isArray(old.data) || !filters || typeof filters !== 'object' || !feedAccepts(filters as Record<string, unknown>, created)) continue
+        if (old.data.some((p) => p.id === created.id)) continue
+        qc.setQueryData<PostsResponse>(key, { ...old, data: [created, ...old.data], meta: { ...old.meta, total: old.meta.total + 1 } })
+      }
       void qc.invalidateQueries({ queryKey: ['posts'] })
       qc.invalidateQueries({ queryKey: ['topics'] })
     },
@@ -84,6 +121,18 @@ export function useDeletePost() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (postId: string) => api.delete(`/posts/${postId}`).then((r) => r.data),
+    // Some da lista na hora; volta se o servidor recusar.
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['posts'] })
+      const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })
+      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) =>
+        old && Array.isArray(old.data) ? { ...old, data: old.data.filter((p) => p.id !== postId), meta: { ...old.meta, total: Math.max(0, old.meta.total - 1) } } : old,
+      )
+      return { lists }
+    },
+    onError: (_error, _postId, context) => {
+      context?.lists.forEach(([key, data]) => qc.setQueryData(key, data))
+    },
     onSuccess: (_data, postId) => {
       qc.invalidateQueries({ queryKey: ['posts'] })
       qc.invalidateQueries({ queryKey: ['post', postId] })
@@ -96,19 +145,18 @@ export function useTogglePostLike() {
   return useMutation({
     mutationFn: (postId: string) =>
       api.post<{ liked: boolean; likesCount: number }>(`/posts/${postId}/like`).then((r) => r.data),
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['posts'] })
+      const rollback = patchPost(qc, postId, (p) => ({
+        ...p,
+        likedByMe: !p.likedByMe,
+        likesCount: Math.max(0, p.likesCount + (p.likedByMe ? -1 : 1)),
+      }))
+      return { rollback }
+    },
+    onError: (_error, _postId, context) => context?.rollback(),
     onSuccess: (res, postId) => {
-      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          data: old.data.map((p) =>
-            p.id === postId ? { ...p, likedByMe: res.liked, likesCount: res.likesCount } : p,
-          ),
-        }
-      })
-      qc.setQueryData<PostDto>(['post', postId], (old) =>
-        old ? { ...old, likedByMe: res.liked, likesCount: res.likesCount } : old,
-      )
+      patchPost(qc, postId, (p) => ({ ...p, likedByMe: res.liked, likesCount: res.likesCount }))
     },
   })
 }
@@ -120,19 +168,18 @@ export function useTogglePostRepost() {
       api
         .post<{ reposted: boolean; repostsCount: number }>(`/posts/${postId}/repost`)
         .then((r) => r.data),
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['posts'] })
+      const rollback = patchPost(qc, postId, (p) => ({
+        ...p,
+        repostedByMe: !p.repostedByMe,
+        repostsCount: Math.max(0, p.repostsCount + (p.repostedByMe ? -1 : 1)),
+      }))
+      return { rollback }
+    },
+    onError: (_error, _postId, context) => context?.rollback(),
     onSuccess: (res, postId) => {
-      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          data: old.data.map((p) =>
-            p.id === postId ? { ...p, repostedByMe: res.reposted, repostsCount: res.repostsCount } : p,
-          ),
-        }
-      })
-      qc.setQueryData<PostDto>(['post', postId], (old) =>
-        old ? { ...old, repostedByMe: res.reposted, repostsCount: res.repostsCount } : old,
-      )
+      patchPost(qc, postId, (p) => ({ ...p, repostedByMe: res.reposted, repostsCount: res.repostsCount }))
       void qc.invalidateQueries({ queryKey: ['posts'] })
     },
   })
@@ -143,15 +190,27 @@ export function useVotePostPoll(postId: string) {
   return useMutation({
     mutationFn: (optionId: string) =>
       api.post<PostPollDto>(`/posts/${postId}/poll/vote`, { optionId }).then((r) => r.data),
+    // O voto aparece na hora; a apuração do servidor só confirma.
+    onMutate: async (optionId) => {
+      await qc.cancelQueries({ queryKey: ['posts'] })
+      const rollback = patchPost(qc, postId, (p) =>
+        p.poll
+          ? {
+              ...p,
+              poll: {
+                ...p.poll,
+                myVoteOptionId: optionId,
+                totalVotes: p.poll.totalVotes + 1,
+                options: p.poll.options.map((o) => (o.id === optionId ? { ...o, votesCount: o.votesCount + 1 } : o)),
+              },
+            }
+          : p,
+      )
+      return { rollback }
+    },
+    onError: (_error, _optionId, context) => context?.rollback(),
     onSuccess: (poll) => {
-      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) => {
-        if (!old) return old
-        return {
-          ...old,
-          data: old.data.map((p) => (p.id === postId ? { ...p, poll } : p)),
-        }
-      })
-      qc.setQueryData<PostDto>(['post', postId], (old) => (old ? { ...old, poll } : old))
+      patchPost(qc, postId, (p) => ({ ...p, poll }))
     },
   })
 }
@@ -203,24 +262,88 @@ export interface CreatePostCommentPayload {
 
 export function useCreatePostComment(postId: string) {
   const qc = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const activeContext = useAuthStore((s) => s.activeContext)
+  const key = ['post-comments', postId]
   return useMutation({
     mutationFn: (payload: CreatePostCommentPayload) =>
       api.post<PostCommentDto>(`/posts/${postId}/comments`, payload).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['post-comments', postId] })
+    // A resposta aparece na conversa no mesmo instante; se falhar, ela some.
+    onMutate: async (payload) => {
+      if (!user) return
+      await qc.cancelQueries({ queryKey: key })
+      const previous = qc.getQueryData<PostCommentDto[]>(key)
+      const now = new Date().toISOString()
+      const draft: PostCommentDto = {
+        id: `__opt__${Date.now()}`,
+        postId,
+        parentId: payload.parentId ?? null,
+        content: payload.content ?? '',
+        mediaType: payload.mediaType ?? PostCommentMediaType.TEXT,
+        mediaUrl: payload.mediaUrl ?? null,
+        mediaDuration: payload.mediaDuration ?? null,
+        transcript: null,
+        createdAt: now,
+        updatedAt: now,
+        _count: { replies: 0 },
+        author: {
+          userId: user.id,
+          name: user.name,
+          username: user.username ?? null,
+          avatarUrl: user.avatarUrl,
+          verified: user.verified,
+          userType: user.type as UserType,
+          orgType: activeContext?.type ?? null,
+          orgId: activeContext?.id ?? null,
+          orgName: activeContext?.name ?? null,
+          orgAvatarUrl: activeContext?.logoUrl ?? null,
+          orgVerified: false,
+          orgSubtitle: null,
+        },
+      }
+      qc.setQueryData<PostCommentDto[]>(key, (old = []) =>
+        draft.parentId
+          ? old.map((c) => (c.id === draft.parentId ? { ...c, replies: [...(c.replies ?? []), draft] } : c))
+          : [...old, draft],
+      )
+      const rollbackCount = patchPost(qc, postId, (p) => ({ ...p, commentsCount: p.commentsCount + 1 }))
+      return { previous, rollbackCount }
+    },
+    onError: (_error, _payload, context) => {
+      if (context) {
+        qc.setQueryData(key, context.previous)
+        context.rollbackCount()
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key })
       qc.invalidateQueries({ queryKey: ['post', postId] })
-      qc.invalidateQueries({ queryKey: ['posts'] })
     },
   })
 }
 
 export function useDeletePostComment(postId: string) {
   const qc = useQueryClient()
+  const key = ['post-comments', postId]
   return useMutation({
     mutationFn: (commentId: string) =>
       api.delete(`/posts/${postId}/comments/${commentId}`).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['post-comments', postId] })
+    // O comentário some na hora; volta se o servidor recusar.
+    onMutate: async (commentId) => {
+      await qc.cancelQueries({ queryKey: key })
+      const previous = qc.getQueryData<PostCommentDto[]>(key)
+      qc.setQueryData<PostCommentDto[]>(key, (old) =>
+        old
+          ?.filter((c) => c.id !== commentId)
+          .map((c) => (c.replies ? { ...c, replies: c.replies.filter((r) => r.id !== commentId) } : c)),
+      )
+      return { previous }
+    },
+    onError: (_error, _commentId, context) => {
+      qc.setQueryData(key, context?.previous)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key })
       qc.invalidateQueries({ queryKey: ['post', postId] })
       qc.invalidateQueries({ queryKey: ['posts'] })
     },

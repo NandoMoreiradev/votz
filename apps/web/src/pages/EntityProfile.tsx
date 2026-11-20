@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
 import { socialCover } from '../components/ui/social'
+import { FollowButton, FollowersCount } from '../components/profile/FollowBits'
+import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useEntity, useEntityReports } from '../hooks/useEntities'
@@ -11,14 +12,13 @@ import { useAuthStore } from '../store/auth.store'
 import { useMyProfiles } from '../hooks/useAuth'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
-import { VolumeChart } from '../components/profile/VolumeChart'
 import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
+import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
 import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
 import { EntityType, ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
-import { api } from '../lib/api'
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ const SideCol = styled.div`
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
-const HeaderCard = styled.div`
+const HeaderCard = styled.div<{ $cover?: string | null }>`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   padding: 28px;
@@ -564,8 +564,6 @@ export function EntityProfile() {
   const [periodDays, setPeriodDays] = useState(0)
   const { user: currentUser, activeContext, sessionReady } = useAuthStore()
   const { data: profiles } = useMyProfiles(!!currentUser && sessionReady)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const qc = useQueryClient()
 
   const { data: entity, isLoading } = useEntity(id!)
   const { data: reports, isLoading: loadingReports } = useEntityReports(
@@ -575,26 +573,8 @@ export function EntityProfile() {
   const isOwner = !!activeContext && activeContext.type === 'ENTITY' && activeContext.id === id
   const canConfigureSla = isOwner && (activeContext?.permissions?.includes('MANAGE_PROFILE') ?? false)
 
-  const logoMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const form = new FormData()
-      form.append('file', file)
-      const { data: upload } = await api.post<{ url: string }>('/storage/upload/entity-logo', form)
-      await api.patch(`/entities/${id}`, { logoUrl: upload.url })
-      return upload.url
-    },
-    onSuccess: (url) => {
-      qc.setQueryData(['entity', id], (old: typeof entity) =>
-        old ? { ...old, logoUrl: url } : old,
-      )
-    },
-  })
-
-  function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) logoMutation.mutate(file)
-    e.target.value = ''
-  }
+  const [imageDialog, setImageDialog] = useState<ImageKind | null>(null)
+  const saveImage = useSaveProfileImage('entities', id!, ['entity', id])
 
   const stats = entity?.stats
   const resolutionRate = stats && stats.total > 0
@@ -618,6 +598,17 @@ export function EntityProfile() {
   return (
     <Page>
       <Navbar />
+      {imageDialog && entity && (
+        <ProfileImageDialog
+          kind={imageDialog}
+          title={imageDialog === 'cover' ? 'capa' : 'logomarca'}
+          currentUrl={imageDialog === 'cover' ? entity.coverUrl ?? null : entity.logoUrl}
+          uploadPath={imageDialog === 'cover' ? COVER_UPLOAD : photoUploadPath('entities')}
+          round={false}
+          onSave={(url) => saveImage(imageDialog, url)}
+          onClose={() => setImageDialog(null)}
+        />
+      )}
       <Content>
         <BackLink to="/">← Início</BackLink>
 
@@ -634,31 +625,26 @@ export function EntityProfile() {
             <Skeleton style={{ height: 60 }} />
           </HeaderCard>
         ) : entity ? (
-          <HeaderCard>
+          <HeaderCard $cover={entity.coverUrl}>
+            {isOwner && <CoverEditButton onClick={() => setImageDialog('cover')} />}
             <HeaderTop>
               <LogoWrapper>
-                <Logo $src={logoMutation.isPending ? null : entity.logoUrl}>
-                  {!(logoMutation.isPending ? null : entity.logoUrl) && entity.legalName.charAt(0)}
+                <Logo $src={entity.logoUrl}>
+                  {!entity.logoUrl && entity.legalName.charAt(0)}
                 </Logo>
                 {isOwner && (
                   <LogoOverlay
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Alterar logomarca"
+                    onClick={() => setImageDialog('photo')}
+                    title="Alterar logomarca (ideal 400 × 400 px)"
                   >
-                    {logoMutation.isPending ? '...' : 'Alterar'}
+                    Alterar
                   </LogoOverlay>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  style={{ display: 'none' }}
-                  onChange={handleLogoFile}
-                />
               </LogoWrapper>
               <HeaderInfo>
                 <EntityName>{entity.legalName}</EntityName>
+                <FollowersCount count={entity.followersCount} />
                 <MetaRow>
                   <Tag>{ENTITY_TYPE_LABELS[entity.type] ?? entity.type}</Tag>
                   {entity.verified && <Tag $variant="verified">✓ Verificada</Tag>}
@@ -684,6 +670,7 @@ export function EntityProfile() {
                   <ReportCta to={`/novo?recipientType=ENTITY&recipientId=${entity.id}&recipientName=${encodeURIComponent(entity.legalName)}`}>
                     + Criar relato
                   </ReportCta>
+                  {!isOwner && <FollowButton targetType="ENTITY" targetId={entity.id} />}
                   {isOwner && (
                     <ReportCta
                       to={`/entidade/${entity.id}/editar`}
@@ -752,7 +739,6 @@ export function EntityProfile() {
               orgId={entity.id}
               showOwnerPanelLink={isOwner}
               canConfigureSla={canConfigureSla}
-              {currentUser && isOwner && <YoutubeChannelsPanel />}
             />
           </HeaderCard>
         ) : (
@@ -766,6 +752,7 @@ export function EntityProfile() {
               {currentUser && isOwner && (
                 <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
               )}
+              {currentUser && isOwner && <YoutubeChannelsPanel />}
 
               <div style={{ marginTop: currentUser ? 20 : 0 }}>
                 <SectionHeader>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, FlatList, Keyboard, Pressable, Text, TextInput, View } from 'react-native'
+import { FlatList, Keyboard, Pressable, Text, TextInput, View } from 'react-native'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +10,8 @@ import type { PostCommentDto } from '@votz/shared-types'
 import { Screen, Toolbar } from './screen'
 import { PostCard, ReportCard, profileLink } from './content-row'
 import { Avatar, Button, ErrorText, IconButton, State, styles } from './ui'
-import { useComment, useComments, useDetail } from '../hooks/use-content'
+import { useComment, useComments, useDetail, useSupportReport } from '../hooks/use-content'
+import { patchItem } from '../lib/optimistic'
 import { api, errorMessage, json } from '../lib/api'
 import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
@@ -42,7 +43,16 @@ function CommentRow({ comment, onReply, nested = false, parentId }: { comment: C
 function Poll({ post }: { post: PostDto }) {
   const client = useQueryClient()
   const user = useSession((s) => s.user)
-  const vote = useMutation({ mutationFn: (optionId: string) => api(`/posts/${post.id}/poll/vote`, json({ optionId })), onSuccess: async () => { await client.invalidateQueries({ queryKey: ['posts'] }) } })
+  const vote = useMutation({
+    mutationFn: (optionId: string) => api<NonNullable<PostDto['poll']>>(`/posts/${post.id}/poll/vote`, json({ optionId })),
+    // O voto aparece na hora; a apuração do servidor só confirma.
+    onMutate: async (optionId) => {
+      await client.cancelQueries({ queryKey: ['posts'] })
+      return { rollback: patchItem<PostDto>(client, ['posts'], post.id, (current) => current.poll ? { ...current, poll: { ...current.poll, myVoteOptionId: optionId, totalVotes: current.poll.totalVotes + 1, options: current.poll.options.map((option) => option.id === optionId ? { ...option, votesCount: option.votesCount + 1 } : option) } } : current) }
+    },
+    onError: (_error, _optionId, context) => context?.rollback(),
+    onSuccess: (poll) => { patchItem<PostDto>(client, ['posts'], post.id, (current) => ({ ...current, poll })) },
+  })
   if (!post.poll) return null
   const poll = post.poll
   const results = poll.expired || !!poll.myVoteOptionId
@@ -56,15 +66,11 @@ function Poll({ post }: { post: PostDto }) {
 }
 function ReportActions({ report }: { report: Report }) {
   const user = useSession((s) => s.user)
-  const client = useQueryClient()
   const votes = useQuery({ queryKey: ['report-votes', report.id, user?.id], queryFn: () => api<{ SUPPORT: boolean; ME_TOO: boolean }>(`/reports/${report.id}/votes/me`), enabled: !!user })
-  const support = useMutation({ mutationFn: () => api<{ voted: boolean }>(`/reports/${report.id}/votes`, json({ type: 'SUPPORT' })), onSuccess: async (result) => {
-    client.setQueryData(['report-votes', report.id, user?.id], { ...votes.data, SUPPORT: result.voted })
-    await Promise.all([client.invalidateQueries({ queryKey: ['reports'] }), client.invalidateQueries({ queryKey: ['profile-reports'] })])
-  } })
+  const support = useSupportReport(report.id, user?.id)
   const [memory, setMemory] = useState(false)
   return <View style={{ padding: 16, gap: 12, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}><Pressable accessibilityRole="button" accessibilityLabel={votes.data?.SUPPORT ? 'Retirar meu apoio' : 'Apoiar relato'} disabled={support.isPending || (!!user && (votes.isPending || votes.isError))} onPress={() => user ? support.mutate() : router.push('/login')} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, borderRadius: 20, paddingHorizontal: 14, backgroundColor: votes.data?.SUPPORT ? theme.colors.tint : theme.colors.soft }}><ArrowUp size={18} color={theme.colors.action} /><Text style={{ fontFamily: theme.fonts.medium, color: theme.colors.action }}>{support.isPending ? 'Atualizando…' : votes.data?.SUPPORT ? 'Apoiado' : 'Apoiar'}</Text></Pressable><Text style={{ color: theme.colors.muted, fontSize: 12 }}>{formatCount(report._count.votes, 'apoio', 'apoios')} · {formatCount(report._count.comments, 'comentário', 'comentários')}</Text></View>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}><Pressable accessibilityRole="button" accessibilityLabel={votes.data?.SUPPORT ? 'Retirar meu apoio' : 'Apoiar relato'} disabled={!!user && (votes.isPending || votes.isError)} onPress={() => user ? !support.isPending && support.mutate() : router.push('/login')} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, borderRadius: 20, paddingHorizontal: 14, backgroundColor: votes.data?.SUPPORT ? theme.colors.tint : theme.colors.soft }}><ArrowUp size={18} color={theme.colors.action} /><Text style={{ fontFamily: theme.fonts.medium, color: theme.colors.action }}>{votes.data?.SUPPORT ? 'Apoiado' : 'Apoiar'}</Text></Pressable><Text style={{ color: theme.colors.muted, fontSize: 12 }}>{formatCount(report._count.votes, 'apoio', 'apoios')} · {formatCount(report._count.comments, 'comentário', 'comentários')}</Text></View>
     <ErrorText message={support.isError ? errorMessage(support.error) : undefined} />
     {votes.isError && <Button secondary title="Consultar meu apoio" onPress={() => { void votes.refetch() }} />}
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: memory }} onPress={() => setMemory(!memory)} style={{ minHeight: 40, justifyContent: 'center' }}><Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: theme.colors.primary }}>{memory ? 'Ocultar memória do relato −' : 'Ver memória do relato +'}</Text></Pressable>
@@ -92,8 +98,8 @@ export function Conversation({ id, kind, focusReply }: { id: string; kind: 'post
       <View style={{ borderTopWidth: 0.5, borderTopColor: theme.colors.border, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6, backgroundColor: theme.colors.surface }}>
         {target && <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 42 }}><Text numberOfLines={1} style={{ flex: 1, color: theme.colors.muted, fontSize: 12 }}>Respondendo a {target.name}</Text><IconButton label="Cancelar resposta" onPress={() => setTarget(null)}><X size={16} color={theme.colors.muted} /></IconButton></View>}
         <ErrorText message={send.isError ? errorMessage(send.error) : undefined} />
-        {user ? <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}><View style={{ paddingBottom: 5 }}><Avatar name={user.name} uri={user.avatarUrl} size={30} /></View><TextInput ref={input} accessibilityLabel="Escrever resposta" placeholder={target ? `Responder a ${target.name}` : 'Escreva uma resposta…'} placeholderTextColor={theme.colors.muted} value={value} onChangeText={setValue} maxLength={2000} multiline editable={!send.isPending} underlineColorAndroid="transparent" style={{ flex: 1, minHeight: 40, maxHeight: 110, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, backgroundColor: theme.colors.soft, color: theme.colors.text, fontFamily: theme.fonts.body, fontSize: 14 }} />
-          <Pressable accessibilityRole="button" accessibilityLabel="Enviar resposta" disabled={!value.trim() || send.isPending} onPress={() => send.mutate({ content: value.trim(), ...(target ? { parentId: target.id } : {}) }, { onSuccess: () => { setValue(''); setTarget(null); Keyboard.dismiss() } })} style={{ width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.action, opacity: !value.trim() || send.isPending ? 0.4 : 1 }}>{send.isPending ? <ActivityIndicator color={theme.colors.surface} size="small" /> : <Send size={17} color={theme.colors.surface} />}</Pressable>
+        {user ? <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}><View style={{ paddingBottom: 5 }}><Avatar name={user.name} uri={user.avatarUrl} size={30} /></View><TextInput ref={input} accessibilityLabel="Escrever resposta" placeholder={target ? `Responder a ${target.name}` : 'Escreva uma resposta…'} placeholderTextColor={theme.colors.muted} value={value} onChangeText={setValue} maxLength={2000} multiline underlineColorAndroid="transparent" style={{ flex: 1, minHeight: 40, maxHeight: 110, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, backgroundColor: theme.colors.soft, color: theme.colors.text, fontFamily: theme.fonts.body, fontSize: 14 }} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Enviar resposta" disabled={!value.trim()} onPress={() => { const text = value.trim(), parent = target; setValue(''); setTarget(null); Keyboard.dismiss(); send.mutate({ content: text, ...(parent ? { parentId: parent.id } : {}) }, { onError: () => { setValue((current) => current || text); setTarget(parent) } }) }} style={{ width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.action, opacity: !value.trim() ? 0.4 : 1 }}><Send size={17} color={theme.colors.surface} /></Pressable>
         </View> : <Button title="Entre para responder" onPress={() => router.push('/login')} />}
       </View>
     </>}

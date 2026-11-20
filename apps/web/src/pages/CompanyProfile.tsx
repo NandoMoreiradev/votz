@@ -1,16 +1,16 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useCompany, useCompanyReports } from '../hooks/useCompanies'
+import { FollowButton, FollowersCount } from '../components/profile/FollowBits'
+import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { useAuthStore } from '../store/auth.store'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
-import { api } from '../lib/api'
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ const SideCol = styled.div`
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
-const HeaderCard = styled.div`
+const HeaderCard = styled.div<{ $cover?: string | null }>`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
@@ -510,33 +510,13 @@ export function CompanyProfile() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
   const { user: currentUser, activeContext } = useAuthStore()
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const canEdit = !!activeContext && activeContext.type === 'COMPANY' && activeContext.id === id
-  const qc = useQueryClient()
 
   const { data: company, isLoading } = useCompany(id!)
   const { data: reports, isLoading: loadingReports } = useCompanyReports(id!, page, statusFilter || undefined)
 
-  const logoMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const form = new FormData()
-      form.append('file', file)
-      const { data: upload } = await api.post<{ url: string }>('/storage/upload/entity-logo', form)
-      await api.patch(`/companies/${id}`, { logoUrl: upload.url })
-      return upload.url
-    },
-    onSuccess: (url) => {
-      qc.setQueryData(['company', id], (old: typeof company) =>
-        old ? { ...old, logoUrl: url } : old,
-      )
-    },
-  })
-
-  function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) logoMutation.mutate(file)
-    e.target.value = ''
-  }
+  const [imageDialog, setImageDialog] = useState<ImageKind | null>(null)
+  const saveImage = useSaveProfileImage('companies', id!, ['company', id])
 
   const stats = company?.stats
   const resolutionRate = stats && stats.total > 0
@@ -555,6 +535,17 @@ export function CompanyProfile() {
   return (
     <Page>
       <Navbar />
+      {imageDialog && company && (
+        <ProfileImageDialog
+          kind={imageDialog}
+          title={imageDialog === 'cover' ? 'capa' : 'logomarca'}
+          currentUrl={imageDialog === 'cover' ? company.coverUrl ?? null : company.logoUrl}
+          uploadPath={imageDialog === 'cover' ? COVER_UPLOAD : photoUploadPath('companies')}
+          round={false}
+          onSave={(url) => saveImage(imageDialog, url)}
+          onClose={() => setImageDialog(null)}
+        />
+      )}
       <Content>
         <BackLink to="/">← Início</BackLink>
 
@@ -570,32 +561,27 @@ export function CompanyProfile() {
             <Skeleton style={{ height: 60 }} />
           </HeaderCard>
         ) : company ? (
-          <HeaderCard>
+          <HeaderCard $cover={company.coverUrl}>
+            {canEdit && <CoverEditButton onClick={() => setImageDialog('cover')} />}
             <HeaderTop>
               <LogoWrapper>
-                <Logo $src={logoMutation.isPending ? null : company.logoUrl}>
-                  {!(logoMutation.isPending ? null : company.logoUrl) && company.tradeName.charAt(0)}
+                <Logo $src={company.logoUrl}>
+                  {!company.logoUrl && company.tradeName.charAt(0)}
                 </Logo>
-                {currentUser && (
+                {canEdit && (
                   <LogoOverlay
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Alterar logomarca"
+                    onClick={() => setImageDialog('photo')}
+                    title="Alterar logomarca (ideal 400 × 400 px)"
                   >
-                    {logoMutation.isPending ? '...' : 'Alterar'}
+                    Alterar
                   </LogoOverlay>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  style={{ display: 'none' }}
-                  onChange={handleLogoFile}
-                />
               </LogoWrapper>
 
               <HeaderInfo>
                 <CompanyName>{company.tradeName}</CompanyName>
+                <FollowersCount count={company.followersCount} />
                 {company.tradeName !== company.legalName && (
                   <TradeName>{company.legalName}</TradeName>
                 )}
@@ -617,6 +603,7 @@ export function CompanyProfile() {
                   <ReportCta to={`/novo?recipientType=COMPANY&recipientId=${company.id}&recipientName=${encodeURIComponent(company.tradeName)}`}>
                     + Criar relato
                   </ReportCta>
+                  {!canEdit && <FollowButton targetType="COMPANY" targetId={company.id} />}
                 </CtaRow>
               </HeaderInfo>
             </HeaderTop>

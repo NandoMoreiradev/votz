@@ -47,6 +47,9 @@ export class UsersService {
     if (dto.avatarUrl !== undefined) {
       this.storage.assertOwnStorageUrl(dto.avatarUrl, 'avatars')
     }
+    if (dto.coverUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.coverUrl, 'covers')
+    }
     if (dto.username !== undefined) {
       const existing = await this.prisma.user.findFirst({
         where: { username: dto.username, NOT: { id } },
@@ -61,6 +64,7 @@ export class UsersService {
       username: dto.username,
       bio: dto.bio,
       avatarUrl: dto.avatarUrl,
+      coverUrl: dto.coverUrl,
       phone: dto.phone,
       zipCode: dto.zipCode,
       streetNumber: dto.streetNumber,
@@ -149,7 +153,7 @@ export class UsersService {
       }
     }
 
-    await this.eraseUserData(userId, user.avatarUrl)
+    await this.eraseUserData(userId, user.avatarUrl, user.coverUrl)
 
     return { message: 'Conta encerrada com sucesso.' }
   }
@@ -158,15 +162,17 @@ export class UsersService {
    * Apaga/anonimiza dados pessoais do usuário no banco e limpa objetos no R2.
    * Reutilizado pelo encerramento voluntário e pela anonimização por inatividade (24 meses).
    */
-  async eraseUserData(userId: string, knownAvatarUrl?: string | null): Promise<void> {
+  async eraseUserData(userId: string, knownAvatarUrl?: string | null, knownCoverUrl?: string | null): Promise<void> {
     let avatarUrl = knownAvatarUrl
+    let coverUrl = knownCoverUrl
     if (avatarUrl === undefined) {
       const target = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { avatarUrl: true },
+        select: { avatarUrl: true, coverUrl: true },
       })
       if (!target) return
       avatarUrl = target.avatarUrl
+      coverUrl = target.coverUrl
     }
 
     // Collect verification document R2 keys and avatar R2 key before deleting requests
@@ -186,6 +192,8 @@ export class UsersService {
 
     const avatarKey = this.storage.extractKeyFromUrl?.(avatarUrl ?? null)
     if (avatarKey) r2Keys.push(avatarKey)
+    const coverKey = this.storage.extractKeyFromUrl?.(coverUrl ?? null)
+    if (coverKey) r2Keys.push(coverKey)
 
     // Database cleanup in interactive transaction (order matters for FK constraints)
     await this.prisma.$transaction(async (tx) => {

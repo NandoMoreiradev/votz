@@ -50,10 +50,11 @@ export class EntitiesService {
   }
 
   async findById(id: string) {
-    const [entity, stats, monthlyVolume] = await Promise.all([
+    const [entity, stats, monthlyVolume, followersCount] = await Promise.all([
       this.repo.findByIdFull(id),
       this.repo.stats(id),
       this.repo.monthlyVolume(id),
+      this.repo.countFollowers(id),
     ])
     if (!entity) throw new NotFoundException('Entity not found')
 
@@ -74,7 +75,7 @@ export class EntitiesService {
 
     const metrics = { responseRate, resolutionRate, contestationRate, trustBadge, classification }
 
-    return { ...entity, stats, monthlyVolume, metrics }
+    return { ...entity, stats, monthlyVolume, metrics, followersCount }
   }
 
   async findReports(entityId: string, page: number, limit: number, status?: string, from?: string) {
@@ -93,6 +94,9 @@ export class EntitiesService {
     }
     if (dto.logoUrl !== undefined) {
       this.storage.assertOwnStorageUrl(dto.logoUrl, 'entities')
+    }
+    if (dto.coverUrl !== undefined) {
+      this.storage.assertOwnStorageUrl(dto.coverUrl, 'covers')
     }
     if (
       dto.slaHours !== undefined ||

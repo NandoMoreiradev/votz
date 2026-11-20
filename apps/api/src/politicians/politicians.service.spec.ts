@@ -30,6 +30,7 @@ const mockRepo = {
   findById: jest.fn(),
   mandatometerStats: jest.fn(),
   monthlyVolume: jest.fn(),
+  countFollowers: jest.fn().mockResolvedValue(0),
   findReports: jest.fn(),
   update: jest.fn(),
   updateMandatometer: jest.fn(),
@@ -107,6 +108,14 @@ describe('PoliticiansService', () => {
       expect(res.metrics.resolutionRate).toBe(60)
       expect(res.metrics.trustBadge).toBe(true)
       expect(res.metrics.classification).toBe('Político Ativo')
+    })
+
+    it('inclui o número de seguidores do político', async () => {
+      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana' })
+      mockRepo.mandatometerStats.mockResolvedValue({ total: 0, resolved: 0, open: 0, byStatus: {} })
+      mockRepo.monthlyVolume.mockResolvedValue([])
+      mockRepo.countFollowers.mockResolvedValueOnce(7)
+      await expect(service.findById('p1')).resolves.toMatchObject({ followersCount: 7 })
     })
   })
 
