@@ -140,3 +140,41 @@ test('download automático de mídia respeita a rede', () => {
   assert.equal(shouldAutoDownload('WIFI_ONLY', 'UNKNOWN'), false)
   assert.equal(shouldAutoDownload('WIFI_ONLY', undefined), false)
 })
+
+test('carrossel: classifica anexos pelo link e respeita limite e ordem', async () => {
+  const { mediaKindOfUrl, carouselItems, pageIndex } = await import('../src/lib/media-kind.ts')
+  assert.equal(mediaKindOfUrl('http://x/a/b.JPEG'), 'image')
+  assert.equal(mediaKindOfUrl('http://x/a/b.mp4?token=1'), 'video')
+  assert.equal(mediaKindOfUrl('http://x/a/b.mov'), 'video')
+  assert.equal(mediaKindOfUrl('http://x/a/b.pdf#page=2'), 'pdf')
+  assert.equal(mediaKindOfUrl('http://x/a/semextensao'), 'image')
+  const urls = ['http://x/1.jpeg', 'ftp://x/2.jpeg', 'javascript:alert(1)', 'http://x/3.mp4', 'https://x/4.pdf', 'http://x/5.png']
+  assert.deepEqual(carouselItems(urls, 3).map((item) => item.kind), ['image', 'video', 'pdf'])
+  assert.equal(carouselItems(urls, 10).length, 4) // só http(s)
+  assert.deepEqual(carouselItems(null, 5), [])
+  assert.deepEqual(carouselItems(undefined, 5), [])
+  assert.equal(pageIndex(0, 300, 3), 0)
+  assert.equal(pageIndex(310, 300, 3), 1)
+  assert.equal(pageIndex(9999, 300, 3), 2)
+  assert.equal(pageIndex(-50, 300, 3), 0)
+  assert.equal(pageIndex(100, 0, 3), 0)
+})
+
+test('carrossel: proporção segue a primeira foto, com limites, sem cortar foto em pé', async () => {
+  const { mediaRatio, DEFAULT_MEDIA_RATIO } = await import('../src/lib/media-kind.ts')
+  assert.equal(mediaRatio(4000, 3000), 0.75) // foto deitada 4:3
+  assert.equal(mediaRatio(3000, 4000), 4 / 3) // foto em pé 3:4 cabe inteira
+  assert.equal(mediaRatio(1000, 3000), 1.35) // muito alta: limite (aparece inteira com faixas)
+  assert.equal(mediaRatio(3000, 500), 0.5625) // muito larga: limite 16:9
+  for (const bad of [[0, 10], [10, 0], [NaN, 10], [undefined, 10], [null, null], [-5, 10]]) assert.equal(mediaRatio(...bad), DEFAULT_MEDIA_RATIO)
+})
+
+test('capa do vídeo: link da capa fica ao lado do vídeo (mesmo nome base)', async () => {
+  const { posterUrlOf } = await import('../src/lib/media-kind.ts')
+  assert.equal(posterUrlOf('http://localhost:9000/votz-media/reports/abc-1.mp4'), 'http://localhost:9000/votz-media/reports/abc-1.poster.jpg')
+  assert.equal(posterUrlOf('https://cdn.votz.app/posts/x.MOV?v=2'), 'https://cdn.votz.app/posts/x.poster.jpg?v=2')
+  assert.equal(posterUrlOf('https://cdn.votz.app/posts/x.webm#t=1'), 'https://cdn.votz.app/posts/x.poster.jpg#t=1')
+  assert.equal(posterUrlOf('https://cdn.votz.app/reports/foto.jpeg'), null)
+  assert.equal(posterUrlOf('https://cdn.votz.app/reports/laudo.pdf'), null)
+  assert.equal(posterUrlOf('https://cdn.votz.app/reports/a.mp4.exe'), null)
+})

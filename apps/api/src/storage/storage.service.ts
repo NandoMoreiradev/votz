@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common'
+import { Injectable, BadRequestException, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import {
   S3Client,
@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomUUID } from 'crypto'
+import { generateVideoPoster, posterKeyFor } from './video-poster'
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -122,6 +123,7 @@ export interface UploadedFile {
 
 @Injectable()
 export class StorageService {
+  private readonly logger = new Logger(StorageService.name)
   private readonly client: S3Client
   private readonly bucket: string
   private readonly endpoint: string
@@ -242,6 +244,8 @@ export class StorageService {
       }),
     )
 
+    if (isVideo && !isPrivate) await this.storeVideoPoster(key, buffer, ext)
+
     return {
       key,
       url: `${this.publicBase}/${key}`,
@@ -312,10 +316,34 @@ export class StorageService {
     return null
   }
 
+  /**
+   * Gera a capa do vídeo (`<chave>.poster.jpg`, ao lado dele). A capa é um extra: se o ffmpeg faltar ou
+   * falhar, o vídeo já foi salvo e o envio segue; os apps mostram o primeiro quadro como antes.
+   */
+  private async storeVideoPoster(videoKey: string, video: Buffer, extension: string): Promise<void> {
+    const posterKey = posterKeyFor(videoKey)
+    if (!posterKey) return
+    try {
+      const poster = await generateVideoPoster(video, extension, {
+        onFailure: (reason) => this.logger.warn(`Sem capa para ${videoKey}: ${reason}`),
+      })
+      if (poster) await this.uploadBuffer(posterKey, poster, 'image/jpeg', false)
+    } catch (error) {
+      this.logger.warn(`Sem capa para ${videoKey}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     )
+    // A capa do vídeo some junto com ele (não existe nos vídeos antigos; apagar chave inexistente não dá erro).
+    const posterKey = posterKeyFor(key)
+    if (posterKey) {
+      await this.client
+        .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: posterKey }))
+        .catch((error) => this.logger.warn(`Não foi possível apagar a capa ${posterKey}: ${error instanceof Error ? error.message : String(error)}`))
+    }
   }
 
   /** Armazena bytes já cifrados de ponta a ponta (nunca inspeciona MIME nem gera URL pública). */

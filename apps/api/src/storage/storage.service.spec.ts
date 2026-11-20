@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common'
 import { S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { StorageService } from './storage.service'
+import { generateVideoPoster } from './video-poster'
 
 const sendMock = jest.fn().mockResolvedValue({})
 
@@ -12,6 +13,11 @@ jest.mock('@aws-sdk/client-s3', () => {
     S3Client: jest.fn(() => ({ send: sendMock })),
   }
 })
+
+jest.mock('./video-poster', () => ({
+  ...jest.requireActual('./video-poster'),
+  generateVideoPoster: jest.fn(),
+}))
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockResolvedValue('https://r2.signed.url/file'),
@@ -72,6 +78,73 @@ describe('StorageService', () => {
     await service.uploadJson('exports/u1.json', { ok: true })
     await service.delete('exports/u1.json')
     expect(sendMock).toHaveBeenCalledTimes(2)
+  })
+
+  describe('capa do vídeo', () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(32)])
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
+    const poster = generateVideoPoster as jest.Mock
+    const sentKeys = () => sendMock.mock.calls.map(([command]) => ({ name: command.constructor.name, key: command.input.Key, type: command.input.ContentType, cache: command.input.CacheControl }))
+
+    beforeEach(() => poster.mockReset())
+
+    it('salva a capa ao lado do vídeo, pública, quando o ffmpeg gera a imagem', async () => {
+      poster.mockResolvedValue(jpeg)
+      const res = await service.upload(mp4, 'video/mp4', 'reports')
+
+      expect(res.mimeType).toBe('video/mp4')
+      const sent = sentKeys()
+      expect(sent).toHaveLength(2)
+      expect(sent[0]).toMatchObject({ name: 'PutObjectCommand', key: res.key, type: 'video/mp4' })
+      expect(sent[1].key).toBe(res.key.replace(/\.mp4$/, '.poster.jpg'))
+      expect(sent[1].type).toBe('image/jpeg')
+      expect(sent[1].cache).toMatch(/^public/)
+      expect(poster).toHaveBeenCalledWith(mp4, 'mp4', expect.any(Object))
+    })
+
+    it('se a capa não puder ser gerada, o vídeo é salvo mesmo assim', async () => {
+      poster.mockResolvedValue(null)
+      const res = await service.upload(mp4, 'video/mp4', 'posts')
+      expect(sentKeys()).toHaveLength(1)
+      expect(res.key).toMatch(/^posts\/.+\.mp4$/)
+    })
+
+    it('se a geração da capa lançar erro, o envio do vídeo não falha', async () => {
+      poster.mockRejectedValue(new Error('ffmpeg quebrou'))
+      await expect(service.upload(mp4, 'video/mp4', 'reports')).resolves.toMatchObject({ mimeType: 'video/mp4' })
+      expect(sentKeys()).toHaveLength(1)
+    })
+
+    it('se salvar a capa falhar no storage, o envio do vídeo não falha', async () => {
+      poster.mockResolvedValue(jpeg)
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('R2 fora do ar'))
+      await expect(service.upload(mp4, 'video/mp4', 'reports')).resolves.toMatchObject({ mimeType: 'video/mp4' })
+    })
+
+    it('imagem não gera capa', async () => {
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+      await service.upload(png, 'image/png', 'reports')
+      expect(poster).not.toHaveBeenCalled()
+      expect(sentKeys()).toHaveLength(1)
+    })
+
+    it('apagar o vídeo apaga também a capa', async () => {
+      await service.delete('reports/abc.mp4')
+      expect(sentKeys().map((s) => [s.name, s.key])).toEqual([
+        ['DeleteObjectCommand', 'reports/abc.mp4'],
+        ['DeleteObjectCommand', 'reports/abc.poster.jpg'],
+      ])
+    })
+
+    it('apagar algo que não é vídeo apaga só o próprio arquivo', async () => {
+      await service.delete('reports/abc.jpeg')
+      expect(sentKeys()).toHaveLength(1)
+    })
+
+    it('falha ao apagar a capa não impede apagar o vídeo', async () => {
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('sem permissão'))
+      await expect(service.delete('reports/abc.mp4')).resolves.toBeUndefined()
+    })
   })
 
   describe('isOwnStorageUrl & ALLOWED_EXTERNAL_IMAGE_HOSTS (A4)', () => {

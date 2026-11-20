@@ -30,6 +30,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
 import { socialRow } from '../ui/social'
+import { videoPosterUrl } from '../../lib/video-poster'
 
 interface PostCardProps {
   post: PostDto
@@ -552,7 +553,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
           {post.media.map((url, idx) => (
             <MediaTile key={url} $single={post.media.length === 1}>
               {isVideoUrl(url) ? (
-                <video src={url} controls playsInline preload="metadata" />
+                <video src={url} poster={videoPosterUrl(url)} controls playsInline preload="metadata" />
               ) : (
                 <img
                   src={url}

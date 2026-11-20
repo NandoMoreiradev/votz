@@ -23,6 +23,7 @@ import { api } from '../lib/api'
 import { TimelineEvent } from '../types/api'
 import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
+import { videoPosterUrl } from '../lib/video-poster'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -921,7 +922,7 @@ export function ReportDetail() {
                       >
                         {isVideo ? (
                           <>
-                            <video src={url} muted playsInline preload="metadata" />
+                            <video src={url} poster={videoPosterUrl(url)} muted playsInline preload="metadata" />
                             <VideoPlayOverlay>▶</VideoPlayOverlay>
                           </>
                         ) : (

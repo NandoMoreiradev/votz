@@ -1,7 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { Alert, Linking, Modal, Pressable, Share, Text, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Image } from 'expo-image'
+import type { ReactNode } from 'react'
+import { Alert, Pressable, Share, Text, View } from 'react-native'
 import { router } from 'expo-router'
 import Heart from 'lucide-react-native/icons/heart'
 import MessageCircle from 'lucide-react-native/icons/message-circle'
@@ -9,50 +7,20 @@ import ArrowUp from 'lucide-react-native/icons/arrow-up'
 import Repeat2 from 'lucide-react-native/icons/repeat-2'
 import Share2 from 'lucide-react-native/icons/share-2'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
-import X from 'lucide-react-native/icons/x'
-import Video from 'lucide-react-native/icons/video'
-import FileText from 'lucide-react-native/icons/file-text'
 import type { PostDto, Report, ProfileKind } from '../lib/types'
 import { useAction } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
 import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
-import { Avatar, IconButton, styles } from './ui'
-import { VideoModal } from './video-modal'
+import { Avatar, styles } from './ui'
+import { MediaCarousel } from './media-carousel'
 
 export const statusLabels: Record<string, string> = { OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento', RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado' }
 export function profileLink(author: PostDto['author']): { kind: ProfileKind; id: string } {
   if (author.orgType === 'POLITICIAN' && author.orgId) return { kind: 'politicians', id: author.orgId }
   if (author.orgType === 'ENTITY' && author.orgId) return { kind: 'entities', id: author.orgId }
   return { kind: 'users', id: author.userId }
-}
-export function MediaGrid({ urls, detail = false }: { urls: string[]; detail?: boolean }) {
-  const [opened, setOpened] = useState<string | null>(null)
-  const [playing, setPlaying] = useState<string | null>(null)
-  const isFile = (url: string) => /\.(mp4|mov|webm|pdf)(\?|$)/i.test(url)
-  const images = urls.filter((url) => !isFile(url)).slice(0, detail ? 5 : 4)
-  const files = urls.filter((url) => isFile(url) && /^https?:\/\//i.test(url)).slice(0, detail ? 5 : 2)
-  if (!images.length && !files.length) return null
-  return <>
-    {files.length > 0 && <View style={{ gap: 6, marginTop: 10 }}>{files.map((url) => {
-      const pdf = /\.pdf(\?|$)/i.test(url)
-      return <Pressable key={url} accessibilityRole="link" accessibilityLabel={pdf ? 'Abrir PDF anexado' : 'Abrir vídeo anexado'} onPress={(event) => { event.stopPropagation(); if (!pdf) { setPlaying(url); return } void Linking.openURL(url).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.')) }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12 }}>
-        {pdf ? <FileText size={20} color={theme.colors.action} /> : <Video size={20} color={theme.colors.action} />}
-        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: theme.colors.primary }}>{pdf ? 'Abrir PDF anexado' : 'Assistir vídeo anexado'}</Text>
-      </Pressable>
-    })}</View>}
-    {images.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, borderRadius: 12, overflow: 'hidden', marginTop: 10 }}>{images.map((url, index) => <Pressable key={`${url}-${index}`} accessibilityRole="button" accessibilityLabel={`Ampliar imagem ${index + 1}`} onPress={(event) => { event.stopPropagation(); setOpened(url) }} style={{ width: images.length === 1 ? '100%' : '49.4%', aspectRatio: images.length === 1 ? 1.4 : 1 }}>
-      <Image source={url} recyclingKey={url} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-    </Pressable>)}</View>}
-    <VideoModal url={playing} onClose={() => setPlaying(null)} />
-    <Modal visible={!!opened} transparent animationType="fade" onRequestClose={() => setOpened(null)}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.primary }}>
-        <View style={{ alignItems: 'flex-end', paddingHorizontal: 16 }}><IconButton label="Fechar imagem" onPress={() => setOpened(null)}><X color={theme.colors.surface} size={24} /></IconButton></View>
-        <Image source={opened} style={{ flex: 1 }} contentFit="contain" accessibilityLabel="Imagem ampliada" />
-      </SafeAreaView>
-    </Modal>
-  </>
 }
 export function Action({ label, icon, count, onPress, active, disabled }: { label: string; icon: ReactNode; count?: number; onPress: () => void; active?: boolean; disabled?: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active, disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 40, minWidth: 42, opacity: pressed || disabled ? 0.5 : 1 })}>
@@ -78,7 +46,7 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
   const requireUser = (action: () => void) => user ? action() : router.push('/login')
   const body = <>
     {!!post.content && <Text numberOfLines={detail ? undefined : 7} style={[styles.text, detail && { fontSize: 18, lineHeight: 27 }]}>{post.content}</Text>}
-    <MediaGrid urls={post.media} detail={detail} />
+    <MediaCarousel urls={post.media} limit={4} />
     {post.mentionedReport && <Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato mencionado: ${post.mentionedReport.title}`} onPress={(event) => { event.stopPropagation(); router.push({ pathname: '/report/[id]', params: { id: post.mentionedReport!.id } }) }} style={{ borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12, marginTop: 10, gap: 4 }}>
       <Text style={{ fontSize: 11, color: theme.colors.action, fontFamily: theme.fonts.medium }}>RELATO · {statusLabels[post.mentionedReport.status]}</Text><Text style={[styles.text, { fontFamily: theme.fonts.medium }]}>{post.mentionedReport.title}</Text>
     </Pressable>}
@@ -111,7 +79,7 @@ export function ReportCard({ report, detail = false }: { report: Report; detail?
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 4 }}><Text style={{ fontSize: 10, fontFamily: theme.fonts.medium, color: theme.colors.action }}>RELATO</Text><Text style={{ fontSize: 11, color: report.status === 'RESOLVED' ? theme.colors.positive : theme.colors.muted }}>{statusLabels[report.status]}</Text>{!!report.city && <Text numberOfLines={1} style={{ fontSize: 11, color: theme.colors.muted, flexShrink: 1 }}>· {report.city}</Text>}</View>
     <Text style={{ fontFamily: theme.fonts.heading, fontSize: detail ? 23 : 17, lineHeight: detail ? 29 : 23, color: theme.colors.primary }}>{report.title}</Text>
     <Text numberOfLines={detail ? undefined : 3} style={[styles.text, { marginTop: 5 }]}>{report.description}</Text>
-    <MediaGrid urls={report.media} detail={detail} />
+    <MediaCarousel urls={report.media} limit={5} />
   </>
   return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: detail ? 16 : 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
     <View style={{ flexDirection: 'row', gap: 10 }}>
