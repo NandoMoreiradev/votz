@@ -235,6 +235,11 @@ enum DebateStatus {
   CANCELLED
 }
 
+enum StreamProvider {
+  LIVEKIT
+  YOUTUBE
+}
+
 enum ParticipantRole {
   MODERATOR
   DEBATER
@@ -268,6 +273,7 @@ model User {
   banned          Boolean   @default(false)
   reputation      Float     @default(0)
   avatarUrl       String?
+  coverUrl        String?   // capa do perfil (proporção 3:1, 1500x500)
   bio             String?
   phone           String?   // E.164, e.g. +5511999999999
   cpf             String?   // AES-256 encrypted
@@ -316,6 +322,7 @@ model User {
 
   politicianFollows    UserPoliticianFollower[]
   entityFollows        UserEntityFollower[]
+  companyFollows       UserCompanyFollower[]
   topicFollows         UserTopicFollower[]
   followingUsers       UserFollow[]             @relation("UserFollowing")
   followerUsers        UserFollow[]             @relation("UserFollowers")
@@ -342,6 +349,9 @@ model User {
   chatDevices              ChatDevice[]
   chatDeviceLinks          ChatDeviceLink[]
   chatPrivacy              ChatPrivacy?
+  chatStorage              ChatStorage?
+  chatKeyBackup            ChatKeyBackup?
+  chatHistoryTransfers     ChatHistoryTransfer[]
   chatReceipts             ChatReceipt[]
 
   @@map("users")
@@ -430,6 +440,16 @@ model ChatDeviceLink {
   @@map("chat_device_links")
 }
 
+// Espaço de mídia das conversas liberado para a pessoa. Sem linha = cota padrão (CHAT_MEDIA_QUOTA_MB).
+// Fica separado de ChatPrivacy de propósito: a pessoa edita a privacidade, mas não a própria cota.
+model ChatStorage {
+  userId    String   @id @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quotaMb   Int      @map("quota_mb")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("chat_storage")
+}
+
 model ChatPrivacy {
   userId                String    @id @map("user_id")
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -471,12 +491,44 @@ model ChatAttachment {
   uploaderId     String       @map("uploader_id")
   objectKey      String       @unique @map("object_key")
   sizeBytes      Int          @map("size_bytes")
+  // Tipo grosso (IMAGE, VIDEO, AUDIO, FILE) informado pelo app, só para a tela de armazenamento.
+  kind           String       @default("FILE")
   createdAt      DateTime     @default(now()) @map("created_at")
-  expiresAt      DateTime     @map("expires_at")
+  // Nulo = sem prazo: o limite é a cota de armazenamento de quem enviou (mais antigos saem primeiro).
+  expiresAt      DateTime?    @map("expires_at")
   deletedAt      DateTime?    @map("deleted_at")
   @@index([conversationId, createdAt])
   @@index([expiresAt, deletedAt])
+  @@index([uploaderId, deletedAt, createdAt])
   @@map("chat_attachments")
+}
+
+// Cópia cifrada de histórico na nuvem: o servidor guarda apenas o cofre opaco
+// produzido pelo SDK Matrix (PBKDF2 + AES-256-CTR + HMAC-SHA256) com a senha da pessoa.
+model ChatKeyBackup {
+  userId    String   @id @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vault     String   @db.Text
+  sizeBytes Int      @map("size_bytes")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("chat_key_backups")
+}
+
+// Transferência temporária de histórico entre aparelhos da mesma conta: uso único,
+// cifrada no aparelho remetente com código temporário que nunca vai ao servidor.
+model ChatHistoryTransfer {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromDeviceId String   @map("from_device_id")
+  vault        String   @db.Text
+  sizeBytes    Int      @map("size_bytes")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([userId, expiresAt])
+  @@map("chat_history_transfers")
 }
 
 model ConversationMember {
@@ -532,6 +584,35 @@ model ConversationOutbox {
   @@unique([conversationId, recipientUserId, revision])
   @@index([sentAt, nextAttemptAt])
   @@map("conversation_outbox")
+}
+
+// Cada arquivo enviado para relato (foto, vídeo, PDF). Serve para saber o que foi usado e apagar o que
+// ninguém anexou (attachedAt nulo depois do prazo). Arquivos de antes desta tabela não têm linha.
+// Sem relação com User de propósito: a limpeza do bucket não pode depender da conta continuar existindo.
+model ReportMedia {
+  id                String    @id @default(uuid())
+  key               String    @unique
+  uploaderId        String    @map("uploader_id")
+  // IMAGE, VIDEO, PDF ou AUDIO.
+  kind              String
+  mimeType          String    @map("mime_type")
+  sizeBytes         Int       @map("size_bytes")
+  // Tamanho do que a pessoa enviou, antes de o servidor reduzir a foto.
+  originalSizeBytes Int       @map("original_size_bytes")
+  width             Int?
+  height            Int?
+  hasThumb          Boolean   @default(false) @map("has_thumb")
+  durationMs        Int?      @map("duration_ms")
+  // UPLOADING: envio direto ao bucket ainda não confirmado (o arquivo está em pending/, a chave já está reservada).
+  // Conversão do vídeo para 1080p: NONE (não é vídeo), PENDING (na fila), DONE (convertido),
+  // SKIPPED (já estava bom ou a conversão não compensou) ou FAILED (ficou o original).
+  processing        String    @default("NONE")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  attachedAt        DateTime? @map("attached_at")
+  @@index([attachedAt, createdAt])
+  @@index([processing, createdAt])
+  @@index([uploaderId, createdAt])
+  @@map("report_media")
 }
 
 model Report {
@@ -655,8 +736,10 @@ model Entity {
   city            String?
   state           String?
   logoUrl         String?
+  coverUrl        String?   // capa do perfil (proporção 3:1, 1500x500)
   website         String?
   followers       UserEntityFollower[]
+  debatesHosted   Debate[]   @relation("DebatesHosted")
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -692,6 +775,7 @@ model Politician {
   state           String
   city            String?
   avatarUrl       String?
+  coverUrl        String?   // capa do perfil (proporção 3:1, 1500x500)
   website         String?
   verified             Boolean          @default(false)
   status               PoliticianStatus @default(ATIVO)
@@ -724,7 +808,9 @@ model Company {
   votzScore            Float         @default(0)
   slaHours  Int           @default(48)
   logoUrl   String?
+  coverUrl  String?   // capa do perfil (proporção 3:1, 1500x500)
   website   String?
+  followers UserCompanyFollower[]
   branches  Branch[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -982,8 +1068,18 @@ model Debate {
   viewerCount      Int          @default(0)
   chatCooldownSecs Int          @default(5)
 
-  creatorId        String
-  creator          Politician   @relation("DebatesCreated", fields: [creatorId], references: [id])
+  // Transmissão: debates antigos usam LiveKit; os novos nascem com YOUTUBE (live incorporada).
+  // O vídeo é externo: a Memória do Votz guarda só o registro do debate, não o vídeo.
+  streamProvider      StreamProvider @default(LIVEKIT)
+  youtubeVideoId      String?        @map("youtube_video_id")
+  youtubeChannelId    String?        @map("youtube_channel_id")
+  youtubeChannelTitle String?        @map("youtube_channel_title")
+
+  // Anfitrião: exatamente um dos dois (regra no service). Político por creatorId, entidade por hostEntityId.
+  creatorId        String?
+  creator          Politician?  @relation("DebatesCreated", fields: [creatorId], references: [id], onDelete: Restrict)
+  hostEntityId     String?      @map("host_entity_id")
+  hostEntity       Entity?      @relation("DebatesHosted", fields: [hostEntityId], references: [id], onDelete: Restrict)
 
   participants     DebateParticipant[]
   questions        DebateQuestion[]
@@ -1007,11 +1103,33 @@ model DebateParticipant {
   inviteStatus InviteStatus    @default(PENDING)
   createdAt    DateTime        @default(now())
 
+  // Live opcional do próprio debatedor ("Assistir pelo canal de X"). Só de canal verificado dele.
+  youtubeVideoId      String? @map("youtube_video_id")
+  youtubeChannelTitle String? @map("youtube_channel_title")
+
   debate       Debate     @relation(fields: [debateId], references: [id], onDelete: Cascade)
   politician   Politician @relation(fields: [politicianId], references: [id])
 
   @@unique([debateId, politicianId])
   @@map("debate_participants")
+}
+
+// Canal do YouTube de uma organização (político/equipe ou entidade). Só canal verificado
+// (código colado na descrição do canal) pode transmitir ou ser anexado a um debate.
+// Organização polimórfica, no mesmo padrão de OrgMembership (sem FK).
+model YoutubeChannel {
+  id               String    @id @default(cuid())
+  orgType          OrgType   @map("org_type")
+  orgId            String    @map("org_id")
+  channelId        String    @unique @map("channel_id")
+  title            String
+  verificationCode String    @map("verification_code")
+  verifiedAt       DateTime? @map("verified_at")
+  createdByUserId  String?   @map("created_by_user_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([orgType, orgId])
+  @@map("youtube_channels")
 }
 
 model DebateQuestion {
@@ -1786,6 +1904,19 @@ model UserEntityFollower {
 
   @@unique([userId, entityId])
   @@map("user_entity_followers")
+}
+
+model UserCompanyFollower {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  companyId String   @map("company_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@map("user_company_followers")
 }
 
 model UserTopicFollower {

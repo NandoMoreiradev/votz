@@ -8,6 +8,7 @@ import {
   Checks,
   Clock,
   Cloud,
+  Database,
   DeviceMobile,
   DownloadSimple,
   ImageSquare,
@@ -42,10 +43,12 @@ const Group = styled.section`
   h2 {
     margin: 0;
     padding: 16px 24px 8px;
-    font-size: 11.5px;
-    letter-spacing: 0.6px;
+    font-family: ${({ theme }) => theme.fonts.mono};
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: ${({ theme }) => theme.colors.action};
+    color: ${({ theme }) => theme.colors.muted};
   }
 `
 const Row = styled.div<{ $soon?: boolean }>`
@@ -333,6 +336,13 @@ export function ConversationSettingsView() {
 
       <Group>
         <h2>Aparelhos e segurança</h2>
+        <LinkRow to="/conversas/armazenamento">
+          <Lead icon={<Database size={20} />}>
+            <strong>Gerenciar armazenamento</strong>
+            <Help>Veja quanto espaço você usa e apague os arquivos que não quer mais guardar.</Help>
+          </Lead>
+          <CaretRight size={18} aria-hidden="true" />
+        </LinkRow>
         <LinkRow to="/conversas/aparelhos">
           <Lead icon={<DeviceMobile size={20} />}>
             <strong>Aparelhos conectados</strong>
@@ -347,13 +357,17 @@ export function ConversationSettingsView() {
           </Lead>
           <Switch id="cfg-security-alerts" type="checkbox" checked disabled readOnly />
         </Row>
-        <Row $soon>
+        <LinkRow to="/conversas/backup">
           <Lead icon={<Cloud size={20} />}>
-            <label htmlFor="cfg-key-backup">Backup protegido na nuvem</label>
-            <Help>Em breve</Help>
+            <strong>Backup protegido na nuvem</strong>
+            <Help>
+              {settings.keyBackupEnabled
+                ? 'Ativo · restaure ou transfira seu histórico entre aparelhos.'
+                : 'Guarde uma cópia protegida ou transfira seu histórico para outro aparelho.'}
+            </Help>
           </Lead>
-          <Switch id="cfg-key-backup" type="checkbox" checked={settings.keyBackupEnabled} disabled readOnly />
-        </Row>
+          <CaretRight size={18} aria-hidden="true" />
+        </LinkRow>
       </Group>
 
       {update.isError && (

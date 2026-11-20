@@ -210,6 +210,28 @@ export class WebChatCrypto implements ChatCrypto {
     const encrypted = new sdk.EncryptedAttachment(ciphertext, secret)
     return new Uint8Array(sdk.Attachment.decrypt(encrypted))
   }
+  async exportKeyVault(passphrase: string): Promise<string> {
+    const raw = await this.machine.exportRoomKeys(() => true)
+    return sdk.OlmMachine.encryptExportedRoomKeys(raw, passphrase, 100_000)
+  }
+  async importKeyVault(
+    vault: string,
+    passphrase: string,
+  ): Promise<{ offered: number; imported: number }> {
+    let raw: string
+    try {
+      raw = sdk.OlmMachine.decryptExportedRoomKeys(vault, passphrase)
+    } catch {
+      throw new Error(
+        'Não foi possível abrir o backup. Confira se a senha está correta.',
+      )
+    }
+    const result = await this.machine.importExportedRoomKeys(raw, () => {})
+    return {
+      offered: Number(result.totalCount),
+      imported: Number(result.importedCount),
+    }
+  }
   async verification(peer: ChatPeer): Promise<ChatVerification> {
     if (
       peer.deviceId &&

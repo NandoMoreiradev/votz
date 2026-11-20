@@ -1570,6 +1570,175 @@ export class ChatService {
       select: { id: true, objectKey: true },
     })
     for (const row of expired) await this.removeAttachment(row, now)
+    await this.db.chatHistoryTransfer
+      .deleteMany({ where: { expiresAt: { lte: now } } })
+      .catch(() => {})
     return expired.length
+  }
+
+  private assertVault(vault: string): number {
+    const trimmed = (vault || '').trim()
+    const bytes = Buffer.byteLength(trimmed, 'utf8')
+    if (
+      bytes < 40 ||
+      bytes > 5 * 1024 * 1024 ||
+      !trimmed.startsWith('-----BEGIN MEGOLM SESSION DATA-----') ||
+      !trimmed.endsWith('-----END MEGOLM SESSION DATA-----')
+    )
+      throw new BadRequestException('Formato de backup inválido.')
+    return bytes
+  }
+
+  /** Metadados leves do backup protegido na nuvem (sem baixar o conteúdo). */
+  async backupMeta(actor: ConversationActor, headers: DeviceHeaders) {
+    await this.device(actor, headers)
+    const row = await this.db.chatKeyBackup.findUnique({
+      where: { userId: actor.id },
+      select: { updatedAt: true, sizeBytes: true },
+    })
+    return row
+      ? {
+          exists: true,
+          updatedAt: row.updatedAt.toISOString(),
+          sizeBytes: row.sizeBytes,
+        }
+      : { exists: false, updatedAt: null, sizeBytes: 0 }
+  }
+
+  /** Baixa o cofre cifrado da nuvem para restauração local com a senha da pessoa. */
+  async downloadBackup(actor: ConversationActor, headers: DeviceHeaders) {
+    await this.device(actor, headers)
+    const row = await this.db.chatKeyBackup.findUnique({
+      where: { userId: actor.id },
+      select: { vault: true, updatedAt: true, sizeBytes: true },
+    })
+    if (!row)
+      throw new NotFoundException('Nenhum backup encontrado para esta conta.')
+    return {
+      vault: row.vault,
+      updatedAt: row.updatedAt.toISOString(),
+      sizeBytes: row.sizeBytes,
+    }
+  }
+
+  /** Salva ou atualiza o cofre cifrado na nuvem e marca keyBackupEnabled = true. */
+  async uploadBackup(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    vault: string,
+  ) {
+    await this.device(actor, headers)
+    const trimmed = vault.trim()
+    const sizeBytes = this.assertVault(trimmed)
+    const saved = await this.db.$transaction(async (tx) => {
+      const row = await tx.chatKeyBackup.upsert({
+        where: { userId: actor.id },
+        create: { userId: actor.id, vault: trimmed, sizeBytes },
+        update: { vault: trimmed, sizeBytes },
+        select: { updatedAt: true, sizeBytes: true },
+      })
+      await tx.chatPrivacy.upsert({
+        where: { userId: actor.id },
+        create: { userId: actor.id, keyBackupEnabled: true },
+        update: { keyBackupEnabled: true },
+      })
+      return row
+    })
+    return {
+      exists: true,
+      updatedAt: saved.updatedAt.toISOString(),
+      sizeBytes: saved.sizeBytes,
+    }
+  }
+
+  /** Remove o backup cifrado da nuvem e marca keyBackupEnabled = false. */
+  async deleteBackup(actor: ConversationActor, headers: DeviceHeaders) {
+    await this.device(actor, headers)
+    await this.db.$transaction(async (tx) => {
+      await tx.chatKeyBackup.deleteMany({ where: { userId: actor.id } })
+      await tx.chatPrivacy.upsert({
+        where: { userId: actor.id },
+        create: { userId: actor.id, keyBackupEnabled: false },
+        update: { keyBackupEnabled: false },
+      })
+    })
+    return { exists: false as const }
+  }
+
+  /** Verifica se há uma transferência temporária de histórico aguardando recebimento. */
+  async historyTransferMeta(actor: ConversationActor, headers: DeviceHeaders) {
+    await this.device(actor, headers)
+    const now = new Date()
+    const row = await this.db.chatHistoryTransfer.findFirst({
+      where: { userId: actor.id, expiresAt: { gt: now } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, fromDeviceId: true, expiresAt: true },
+    })
+    return row
+      ? {
+          available: true,
+          id: row.id,
+          fromDeviceId: row.fromDeviceId,
+          expiresAt: row.expiresAt.toISOString(),
+        }
+      : { available: false }
+  }
+
+  /** Publica uma transferência temporária (15 min, uso único) cifrada no aparelho remetente. */
+  async createHistoryTransfer(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    vault: string,
+  ) {
+    const current = await this.device(actor, headers)
+    const trimmed = vault.trim()
+    const sizeBytes = this.assertVault(trimmed)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+    const created = await this.db.$transaction(async (tx) => {
+      await tx.chatHistoryTransfer.deleteMany({ where: { userId: actor.id } })
+      return tx.chatHistoryTransfer.create({
+        data: {
+          userId: actor.id,
+          fromDeviceId: current.id,
+          vault: trimmed,
+          sizeBytes,
+          expiresAt,
+        },
+        select: { id: true, expiresAt: true, sizeBytes: true },
+      })
+    })
+    this.events.emitToUser(actor.id, 'chat:history-transfer', {
+      id: created.id,
+      fromDeviceId: current.id,
+      expiresAt: created.expiresAt.toISOString(),
+    })
+    return {
+      id: created.id,
+      expiresAt: created.expiresAt.toISOString(),
+      sizeBytes: created.sizeBytes,
+    }
+  }
+
+  /** Baixa e apaga imediatamente o pacote temporário de histórico. */
+  async consumeHistoryTransfer(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    transferId: string,
+  ) {
+    await this.device(actor, headers)
+    const now = new Date()
+    return this.db.$transaction(async (tx) => {
+      const row = await tx.chatHistoryTransfer.findUnique({
+        where: { id: transferId },
+      })
+      if (!row || row.userId !== actor.id)
+        throw new NotFoundException('Transferência não encontrada.')
+      await tx.chatHistoryTransfer.delete({ where: { id: row.id } })
+      if (row.expiresAt <= now)
+        throw new GoneException(
+          'A transferência expirou. Gere um novo código no outro aparelho.',
+        )
+      return { vault: row.vault, sizeBytes: row.sizeBytes }
+    })
   }
 }

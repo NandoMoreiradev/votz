@@ -67,6 +67,7 @@ import { useChatStorage, useDeleteChatStorage } from '../hooks/useChatStorage'
 import { closeWebChatSession } from '../lib/chat-session'
 import { Page, Panel } from '../components/conversations/layout'
 import { ConnectDeviceCard } from '../components/conversations/ConnectDeviceCard'
+import { ChatBackupPanel } from '../components/conversations/ChatBackupPanel'
 
 const PLATFORM: Record<string, string> = {
   android: 'Android',
@@ -686,11 +687,12 @@ export function Conversations() {
   const devices = subpath === 'aparelhos'
   const settings = subpath === 'configuracoes'
   const storage = subpath === 'armazenamento'
+  const backup = subpath === 'backup'
   const id =
-    subpath && !create && !blocked && !devices && !settings && !storage && !subpath.includes('/')
+    subpath && !create && !blocked && !devices && !settings && !storage && !backup && !subpath.includes('/')
       ? subpath
       : undefined
-  const sub = id || create || blocked || devices || settings || storage
+  const sub = id || create || blocked || devices || settings || storage || backup
   const [params] = useSearchParams()
   const requests = params.get('solicitacoes') === '1' && !sub
   const pendingRequests = usePendingRequests()
@@ -742,9 +744,11 @@ export function Conversations() {
                       ? 'Aparelhos conectados'
                       : storage
                         ? 'Gerenciar armazenamento'
-                        : settings
-                          ? 'Configurações de conversas'
-                          : 'Pessoas bloqueadas'}
+                        : backup
+                          ? 'Backup e histórico'
+                          : settings
+                            ? 'Configurações de conversas'
+                            : 'Pessoas bloqueadas'}
               </h1>
             </Header>
           )}
@@ -755,6 +759,8 @@ export function Conversations() {
               <ChatDevices />
             ) : storage ? (
               <ChatStorageManager />
+            ) : backup ? (
+              <ChatBackupPanel />
             ) : blocked ? (
               <BlockedPeople />
             ) : create ? (

@@ -122,6 +122,34 @@ export function openNativeChat(
 }
 
 export { forgetNativeChat }
+
+/**
+ * Abre o motor criptográfico nativo para operações pontuais fora de uma conversa
+ * (como criar/restaurar backup cifrado ou transferir histórico) e fecha ao final.
+ */
+export async function withNativeChatEngine<T>(
+  userId: string,
+  work: (engine: NativeChatCrypto, http: ChatHttp) => Promise<T>,
+): Promise<T> {
+  const storage = await nativeChatStorage(userId)
+  const http = await nativeChatDeviceHttp(userId)
+  if (previous) return work(previous.engine, http)
+  const matrixUserId = `@votz_${userId.replace(/-/g, '')}:votz.local`
+  const engine = await NativeChatCrypto.open(
+    {
+      userId: matrixUserId,
+      deviceId: storage.credentials.id,
+      storePath: storage.storePath,
+      storePassphrase: storage.passphrase,
+    },
+    storage.existing,
+  )
+  try {
+    return await work(engine, http)
+  } finally {
+    engine.close()
+  }
+}
 /**
  * Recomeçar do zero: confirma a senha da conta, desconecta todos os aparelhos
  * e apaga as credenciais locais. A próxima abertura vira o primeiro aparelho.

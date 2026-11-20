@@ -48,6 +48,9 @@ export function useSocket() {
     socket.on('chat:device-link-decided', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     })
+    socket.on('chat:history-transfer', () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    })
     socket.on('conversation:typing', (data: ConversationTypingEvent) => {
       recordTyping(data)
     })

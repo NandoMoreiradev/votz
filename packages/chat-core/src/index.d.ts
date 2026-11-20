@@ -232,6 +232,13 @@ export interface ChatCrypto {
         secret: string;
     }>;
     decryptAttachment?(ciphertext: Uint8Array, secret: string): Promise<Uint8Array>;
+    /** Exporta o histórico cifrado deste aparelho em um cofre protegido pela senha informada. */
+    exportKeyVault?(passphrase: string): Promise<string>;
+    /** Abre um cofre protegido com a senha e importa o histórico de conversas neste aparelho. */
+    importKeyVault?(vault: string, passphrase: string): Promise<{
+        offered: number;
+        imported: number;
+    }>;
     verification(peer: ChatPeer): Promise<ChatVerification>;
     verify(peer: ChatPeer, action: VerificationAction, http: ChatHttp): Promise<void>;
 }
@@ -446,6 +453,59 @@ export declare function chatDevicesApi(http: ChatHttp): {
     revoke: (deviceId: string) => Promise<{
         revoked: boolean;
         self: boolean;
+    }>;
+};
+export interface ChatBackupMeta {
+    exists: boolean;
+    updatedAt: string | null;
+    sizeBytes: number;
+}
+export interface ChatHistoryTransferMeta {
+    available: boolean;
+    id?: string;
+    fromDeviceId?: string;
+    expiresAt?: string;
+}
+export declare const CHAT_BACKUP_MIN_PASSWORD = 8;
+/** Formata código temporário de transferência (8 dígitos) em dois blocos de 4. */
+export declare function formatTransferCode(code: string): string;
+/** Textos de backup e transferência de histórico, sem jargão técnico. */
+export declare const CHAT_BACKUP_TEXT: {
+    title: string;
+    subtitle: string;
+    passwordHint: string;
+    saveAction: string;
+    updateAction: string;
+    restoreTitle: string;
+    restoreAction: string;
+    deleteAction: string;
+    transferTitle: string;
+    transferSubtitle: string;
+    sendTransferAction: string;
+    receiveTransferTitle: string;
+    receiveTransferAction: string;
+};
+/** API de backup protegido na nuvem e transferência temporária de histórico. */
+export declare function chatBackupApi(http: ChatHttp): {
+    meta: () => Promise<ChatBackupMeta>;
+    download: () => Promise<{
+        vault: string;
+        updatedAt: string;
+        sizeBytes: number;
+    }>;
+    upload: (vault: string) => Promise<ChatBackupMeta>;
+    remove: () => Promise<{
+        exists: false;
+    }>;
+    transferMeta: () => Promise<ChatHistoryTransferMeta>;
+    createTransfer: (vault: string) => Promise<{
+        id: string;
+        expiresAt: string;
+        sizeBytes: number;
+    }>;
+    consumeTransfer: (id: string) => Promise<{
+        vault: string;
+        sizeBytes: number;
     }>;
 };
 /** Espaço de arquivos das conversas da pessoa (a API devolve no envio e na lista). */

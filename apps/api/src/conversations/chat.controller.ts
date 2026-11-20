@@ -24,6 +24,7 @@ import { ConversationActor } from './conversations.service'
 import { CHAT_MEDIA_MAX_BYTES, ChatService } from './chat.service'
 import {
   ChatPushTokenDto,
+  ChatKeyVaultDto,
   ChatTypingDto,
   ApproveChatDeviceCodeDto,
   DecideChatDeviceLinkDto,
@@ -226,6 +227,48 @@ export class ChatController {
   @Throttle({ long: { limit: 60, ttl: 60000 } })
   storage(@Req() req: Request, @Query() query: ChatStorageListQueryDto) {
     return this.service.listMedia(req.user, this.device(req), query)
+  }
+  @Get('chat/backup/meta')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  backupMeta(@Req() req: Request) {
+    return this.service.backupMeta(req.user, this.device(req))
+  }
+  @Get('chat/backup')
+  @Throttle({ long: { limit: 20, ttl: 60000 } })
+  downloadBackup(@Req() req: Request) {
+    return this.service.downloadBackup(req.user, this.device(req))
+  }
+  @Put('chat/backup')
+  @Throttle({ long: { limit: 10, ttl: 60000 } })
+  uploadBackup(@Req() req: Request, @Body() body: ChatKeyVaultDto) {
+    return this.service.uploadBackup(req.user, this.device(req), body.vault)
+  }
+  @Delete('chat/backup')
+  @Throttle({ long: { limit: 10, ttl: 60000 } })
+  deleteBackup(@Req() req: Request) {
+    return this.service.deleteBackup(req.user, this.device(req))
+  }
+  @Get('chat/history-transfer')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  historyTransferMeta(@Req() req: Request) {
+    return this.service.historyTransferMeta(req.user, this.device(req))
+  }
+  @Post('chat/history-transfer')
+  @Throttle({ long: { limit: 10, ttl: 60000 } })
+  createHistoryTransfer(@Req() req: Request, @Body() body: ChatKeyVaultDto) {
+    return this.service.createHistoryTransfer(
+      req.user,
+      this.device(req),
+      body.vault,
+    )
+  }
+  @Post('chat/history-transfer/:id/consume')
+  @Throttle({ long: { limit: 20, ttl: 60000 } })
+  consumeHistoryTransfer(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.consumeHistoryTransfer(req.user, this.device(req), id)
   }
   @Delete('chat/storage')
   @Throttle({ long: { limit: 20, ttl: 60000 } })

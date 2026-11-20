@@ -74,6 +74,20 @@ function fixture(extraConfig: Record<string, string> = {}) {
   }> = []
   const blobs = new Map<string, Buffer>()
   // Espaço extra liberado pelo admin (ChatStorage); sem entrada vale a cota padrão.
+  const backups = new Map<
+    string,
+    { userId: string; vault: string; sizeBytes: number; updatedAt: Date }
+  >()
+  const transfers: Array<{
+    id: string
+    userId: string
+    fromDeviceId: string
+    vault: string
+    sizeBytes: number
+    expiresAt: Date
+    createdAt: Date
+  }> = []
+  const privacyState = { readReceiptsEnabled: false, keyBackupEnabled: false }
   const storageQuotas = new Map<string, { quotaMb: number }>()
   const storage = {
     uploadEncryptedBlob: jest.fn(async (key: string, data: Buffer) => {
@@ -200,7 +214,61 @@ function fixture(extraConfig: Record<string, string> = {}) {
       updateMany: jest.fn(async () => ({ count: 0 })),
     },
     chatPrivacy: {
-      findUnique: jest.fn(async () => ({ readReceiptsEnabled: false })),
+      findUnique: jest.fn(async () => privacyState),
+      upsert: jest.fn(async ({ update, create }) => {
+        Object.assign(privacyState, create, update)
+        return privacyState
+      }),
+    },
+    chatKeyBackup: {
+      findUnique: jest.fn(async ({ where }) => backups.get(where.userId) ?? null),
+      upsert: jest.fn(async ({ where, create, update }) => {
+        const row = {
+          userId: where.userId,
+          vault: update.vault ?? create.vault,
+          sizeBytes: update.sizeBytes ?? create.sizeBytes,
+          updatedAt: new Date(),
+        }
+        backups.set(where.userId, row)
+        return row
+      }),
+      deleteMany: jest.fn(async ({ where }) => {
+        const existed = backups.delete(where.userId)
+        return { count: existed ? 1 : 0 }
+      }),
+    },
+    chatHistoryTransfer: {
+      findFirst: jest.fn(async ({ where }) =>
+        transfers
+          .filter(
+            (row) =>
+              row.userId === where.userId &&
+              (!where.expiresAt?.gt || row.expiresAt > where.expiresAt.gt),
+          )
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ??
+        null,
+      ),
+      findUnique: jest.fn(async ({ where }) =>
+        transfers.find((row) => row.id === where.id) ?? null,
+      ),
+      create: jest.fn(async ({ data }) => {
+        const row = { id: randomUUID(), createdAt: new Date(), ...data }
+        transfers.push(row)
+        return row
+      }),
+      delete: jest.fn(async ({ where }) => {
+        const idx = transfers.findIndex((row) => row.id === where.id)
+        if (idx >= 0) transfers.splice(idx, 1)
+      }),
+      deleteMany: jest.fn(async ({ where }) => {
+        for (let i = transfers.length - 1; i >= 0; i--) {
+          if (where.userId && transfers[i].userId === where.userId)
+            transfers.splice(i, 1)
+          else if (where.expiresAt?.lte && transfers[i].expiresAt <= where.expiresAt.lte)
+            transfers.splice(i, 1)
+        }
+        return { count: 1 }
+      }),
     },
     conversationMember: {
       updateMany: jest.fn(async ({ where, data }) => {
@@ -1245,5 +1313,73 @@ describe('ChatService: vínculo intuitivo (status, código de 6 dígitos/QR e av
     // Segundo aparelho conclui ativação normalmente.
     const ready = await f.service.enroll(alice, second)
     expect(ready.status).toBe('ready')
+  })
+})
+
+describe('ChatService: backup protegido na nuvem e transferência temporária de histórico', () => {
+  const VALID_VAULT =
+    '-----BEGIN MEGOLM SESSION DATA-----\nYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=\n-----END MEGOLM SESSION DATA-----'
+
+  it('salva, consulta, baixa e apaga o backup cifrado e recusa formato inválido', async () => {
+    const f = fixture()
+    const dev = f.input()
+    await f.service.enroll(alice, dev)
+
+    await expect(f.service.backupMeta(alice, f.headers(dev.id))).resolves.toEqual({
+      exists: false,
+      updatedAt: null,
+      sizeBytes: 0,
+    })
+    await expect(
+      f.service.uploadBackup(alice, f.headers(dev.id), 'texto-em-claro-invalido'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+
+    const saved = await f.service.uploadBackup(alice, f.headers(dev.id), VALID_VAULT)
+    expect(saved.exists).toBe(true)
+    expect(saved.sizeBytes).toBeGreaterThan(40)
+
+    const downloaded = await f.service.downloadBackup(alice, f.headers(dev.id))
+    expect(downloaded.vault).toBe(VALID_VAULT)
+
+    await expect(f.service.deleteBackup(alice, f.headers(dev.id))).resolves.toEqual({
+      exists: false,
+    })
+    await expect(
+      f.service.downloadBackup(alice, f.headers(dev.id)),
+    ).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it('cria transferência temporária de uso único, emite aviso e apaga após consumo', async () => {
+    const f = fixture()
+    const dev1 = f.input()
+    await f.service.enroll(alice, dev1)
+
+    f.emit.mockClear()
+    const created = await f.service.createHistoryTransfer(
+      alice,
+      f.headers(dev1.id),
+      VALID_VAULT,
+    )
+    expect(f.emit).toHaveBeenCalledWith(
+      alice.id,
+      'chat:history-transfer',
+      expect.objectContaining({ id: created.id, fromDeviceId: dev1.id }),
+    )
+
+    const meta = await f.service.historyTransferMeta(alice, f.headers(dev1.id))
+    expect(meta.available).toBe(true)
+    expect(meta.id).toBe(created.id)
+
+    const consumed = await f.service.consumeHistoryTransfer(
+      alice,
+      f.headers(dev1.id),
+      created.id,
+    )
+    expect(consumed.vault).toBe(VALID_VAULT)
+
+    // Uso único: segunda tentativa retorna 404.
+    await expect(
+      f.service.consumeHistoryTransfer(alice, f.headers(dev1.id), created.id),
+    ).rejects.toBeInstanceOf(NotFoundException)
   })
 })

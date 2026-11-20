@@ -104,3 +104,9 @@ export class ChatTypingDto {
   @IsBoolean()
   typing!: boolean
 }
+export class ChatKeyVaultDto {
+  @IsString()
+  @MinLength(40)
+  @MaxLength(5 * 1024 * 1024)
+  vault!: string
+}

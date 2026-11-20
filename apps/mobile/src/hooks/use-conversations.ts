@@ -174,6 +174,7 @@ export function ConversationsLive() {
     socket.on('conversation:changed', invalidate)
     socket.on('chat:device-link', invalidate)
     socket.on('chat:device-link-decided', invalidate)
+    socket.on('chat:history-transfer', invalidate)
     socket.on('conversation:typing', (data: ConversationTypingEvent) => {
       recordTyping(data)
     })

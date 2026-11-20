@@ -461,6 +461,13 @@ export interface ChatCrypto {
     ciphertext: Uint8Array,
     secret: string,
   ): Promise<Uint8Array>
+  /** Exporta o histórico cifrado deste aparelho em um cofre protegido pela senha informada. */
+  exportKeyVault?(passphrase: string): Promise<string>
+  /** Abre um cofre protegido com a senha e importa o histórico de conversas neste aparelho. */
+  importKeyVault?(
+    vault: string,
+    passphrase: string,
+  ): Promise<{ offered: number; imported: number }>
   verification(peer: ChatPeer): Promise<ChatVerification>
   verify(
     peer: ChatPeer,
@@ -1036,6 +1043,68 @@ export function chatDevicesApi(http: ChatHttp) {
   }
 }
 
+export interface ChatBackupMeta {
+  exists: boolean
+  updatedAt: string | null
+  sizeBytes: number
+}
+export interface ChatHistoryTransferMeta {
+  available: boolean
+  id?: string
+  fromDeviceId?: string
+  expiresAt?: string
+}
+export const CHAT_BACKUP_MIN_PASSWORD = 8
+/** Formata código temporário de transferência (8 dígitos) em dois blocos de 4. */
+export function formatTransferCode(code: string): string {
+  const digits = code.replace(/\D/g, '')
+  return digits.length === 8 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : code
+}
+/** Textos de backup e transferência de histórico, sem jargão técnico. */
+export const CHAT_BACKUP_TEXT = {
+  title: 'Backup protegido na nuvem',
+  subtitle:
+    'Guarde uma cópia protegida do seu histórico para recuperar conversas ao entrar no computador ou trocar de celular.',
+  passwordHint:
+    'Escolha uma senha de pelo menos 8 caracteres. O Votz não guarda essa senha e não consegue recuperá-la se você esquecer.',
+  saveAction: 'Salvar backup agora',
+  updateAction: 'Atualizar backup',
+  restoreTitle: 'Restaurar histórico neste aparelho',
+  restoreAction: 'Restaurar histórico',
+  deleteAction: 'Apagar backup da nuvem',
+  transferTitle: 'Transferir histórico para outro aparelho',
+  transferSubtitle:
+    'Envie seu histórico direto para outro aparelho conectado usando um código temporário que vale por 15 minutos e é apagado assim que recebido.',
+  sendTransferAction: 'Gerar código de transferência',
+  receiveTransferTitle: 'Receber histórico de outro aparelho',
+  receiveTransferAction: 'Receber histórico',
+}
+/** API de backup protegido na nuvem e transferência temporária de histórico. */
+export function chatBackupApi(http: ChatHttp) {
+  return {
+    meta: () => http<ChatBackupMeta>('/chat/backup/meta'),
+    download: () =>
+      http<{ vault: string; updatedAt: string; sizeBytes: number }>(
+        '/chat/backup',
+      ),
+    upload: (vault: string) =>
+      http<ChatBackupMeta>('/chat/backup', 'PUT', { vault }),
+    remove: () => http<{ exists: false }>('/chat/backup', 'DELETE'),
+    transferMeta: () =>
+      http<ChatHistoryTransferMeta>('/chat/history-transfer'),
+    createTransfer: (vault: string) =>
+      http<{ id: string; expiresAt: string; sizeBytes: number }>(
+        '/chat/history-transfer',
+        'POST',
+        { vault },
+      ),
+    consumeTransfer: (id: string) =>
+      http<{ vault: string; sizeBytes: number }>(
+        `/chat/history-transfer/${encodeURIComponent(id)}/consume`,
+        'POST',
+      ),
+  }
+}
 /** Espaço de arquivos das conversas da pessoa (a API devolve no envio e na lista). */
 export interface ChatStorageUsage {
   usedBytes: number

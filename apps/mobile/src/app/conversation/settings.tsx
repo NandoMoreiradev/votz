@@ -7,6 +7,7 @@ import CheckCheck from 'lucide-react-native/icons/check-check'
 import Clock from 'lucide-react-native/icons/clock'
 import Cloud from 'lucide-react-native/icons/cloud'
 import Download from 'lucide-react-native/icons/download'
+import HardDrive from 'lucide-react-native/icons/hard-drive'
 import Image from 'lucide-react-native/icons/image'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import Smartphone from 'lucide-react-native/icons/smartphone'
@@ -204,6 +205,13 @@ function SettingsContent() {
 
         <SettingsSection title="Aparelhos e segurança">
           <SettingsRow
+            icon={<HardDrive size={ICON} color={muted} />}
+            title="Gerenciar armazenamento"
+            subtitle="Veja quanto espaço você usa e apague os arquivos que não quer mais guardar."
+            chevron
+            onPress={() => router.push('/conversation/storage')}
+          />
+          <SettingsRow
             icon={<Smartphone size={ICON} color={muted} />}
             title="Aparelhos conectados"
             chevron
@@ -226,7 +234,13 @@ function SettingsContent() {
           <SettingsRow
             icon={<Cloud size={ICON} color={muted} />}
             title="Backup protegido na nuvem"
-            soon
+            subtitle={
+              settings.keyBackupEnabled
+                ? 'Ativo · restaure ou transfira seu histórico entre aparelhos.'
+                : 'Desligado · guarde uma cópia protegida ou transfira o histórico.'
+            }
+            chevron
+            onPress={() => router.push('/conversation/backup')}
           />
         </SettingsSection>
       </ScrollView>

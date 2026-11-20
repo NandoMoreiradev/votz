@@ -19,6 +19,9 @@ const {
   formatLinkCode,
   formatDeviceLinkQr,
   parseDeviceLinkQr,
+  formatTransferCode,
+  CHAT_BACKUP_TEXT,
+  chatBackupApi,
 } = require('../src/index.js')
 
 const PEER_PRINT = 'peer-key:public-signing-key'
@@ -1170,5 +1173,35 @@ test('device link QR and 6-digit code helpers format, parse and call the approva
   assert.deepEqual(calls, [
     ['GET', '/chat/devices/status', undefined],
     ['POST', '/chat/device-links/approve-code', { code: '482910', linkId: id }],
+  ])
+})
+
+test('backup and history transfer helpers use plain language and call the right routes', async () => {
+  assert.equal(formatTransferCode('12345678'), '1234 5678')
+  const letters = 'a-zà-ú'
+  const technical = new RegExp('(^|[^' + letters + '])(chaves?|dispositivos?|ativar|ativacao|ativação|megolm|olm|matrix|sas)([^' + letters + ']|$)', 'i')
+  for (const text of Object.values(CHAT_BACKUP_TEXT))
+    assert.doesNotMatch(text, technical, `technical wording: ${text}`)
+
+  const calls = []
+  const backup = chatBackupApi(async (path, method = 'GET', body) => {
+    calls.push([method, path, body])
+    return {}
+  })
+  await backup.meta()
+  await backup.upload('-----BEGIN MEGOLM SESSION DATA-----\nabc\n-----END MEGOLM SESSION DATA-----')
+  await backup.download()
+  await backup.remove()
+  await backup.transferMeta()
+  await backup.createTransfer('-----BEGIN MEGOLM SESSION DATA-----\nabc\n-----END MEGOLM SESSION DATA-----')
+  await backup.consumeTransfer('t1')
+  assert.deepEqual(calls.map(([m, p]) => `${m} ${p}`), [
+    'GET /chat/backup/meta',
+    'PUT /chat/backup',
+    'GET /chat/backup',
+    'DELETE /chat/backup',
+    'GET /chat/history-transfer',
+    'POST /chat/history-transfer',
+    'POST /chat/history-transfer/t1/consume',
   ])
 })

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChatClient = exports.STORAGE_KIND_LABEL = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.ChatClient = exports.STORAGE_KIND_LABEL = exports.CHAT_BACKUP_TEXT = exports.CHAT_BACKUP_MIN_PASSWORD = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
 exports.extractVotzCard = extractVotzCard;
 exports.mediaKindFromMime = mediaKindFromMime;
 exports.mediaKindLabel = mediaKindLabel;
@@ -17,6 +17,8 @@ exports.formatLinkCode = formatLinkCode;
 exports.formatDeviceLinkQr = formatDeviceLinkQr;
 exports.parseDeviceLinkQr = parseDeviceLinkQr;
 exports.chatDevicesApi = chatDevicesApi;
+exports.formatTransferCode = formatTransferCode;
+exports.chatBackupApi = chatBackupApi;
 exports.chatStorageApi = chatStorageApi;
 exports.formatStorageSize = formatStorageSize;
 exports.chatStorageView = chatStorageView;
@@ -664,6 +666,40 @@ function chatDevicesApi(http) {
             ...(linkId ? { linkId } : {}),
         }),
         revoke: (deviceId) => http(`/chat/devices/${encodeURIComponent(deviceId)}`, 'DELETE'),
+    };
+}
+exports.CHAT_BACKUP_MIN_PASSWORD = 8;
+/** Formata código temporário de transferência (8 dígitos) em dois blocos de 4. */
+function formatTransferCode(code) {
+    const digits = code.replace(/\D/g, '');
+    return digits.length === 8 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : code;
+}
+/** Textos de backup e transferência de histórico, sem jargão técnico. */
+exports.CHAT_BACKUP_TEXT = {
+    title: 'Backup protegido na nuvem',
+    subtitle: 'Guarde uma cópia protegida do seu histórico para recuperar conversas ao entrar no computador ou trocar de celular.',
+    passwordHint: 'Escolha uma senha de pelo menos 8 caracteres. O Votz não guarda essa senha e não consegue recuperá-la se você esquecer.',
+    saveAction: 'Salvar backup agora',
+    updateAction: 'Atualizar backup',
+    restoreTitle: 'Restaurar histórico neste aparelho',
+    restoreAction: 'Restaurar histórico',
+    deleteAction: 'Apagar backup da nuvem',
+    transferTitle: 'Transferir histórico para outro aparelho',
+    transferSubtitle: 'Envie seu histórico direto para outro aparelho conectado usando um código temporário que vale por 15 minutos e é apagado assim que recebido.',
+    sendTransferAction: 'Gerar código de transferência',
+    receiveTransferTitle: 'Receber histórico de outro aparelho',
+    receiveTransferAction: 'Receber histórico',
+};
+/** API de backup protegido na nuvem e transferência temporária de histórico. */
+function chatBackupApi(http) {
+    return {
+        meta: () => http('/chat/backup/meta'),
+        download: () => http('/chat/backup'),
+        upload: (vault) => http('/chat/backup', 'PUT', { vault }),
+        remove: () => http('/chat/backup', 'DELETE'),
+        transferMeta: () => http('/chat/history-transfer'),
+        createTransfer: (vault) => http('/chat/history-transfer', 'POST', { vault }),
+        consumeTransfer: (id) => http(`/chat/history-transfer/${encodeURIComponent(id)}/consume`, 'POST'),
     };
 }
 /**

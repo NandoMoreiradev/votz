@@ -234,6 +234,21 @@ export class NativeChatCrypto implements ChatCrypto {
   async decryptAttachment(ciphertext: Uint8Array, secret: string) {
     return this.module.decryptAttachment(ciphertext, secret)
   }
+  async exportKeyVault(passphrase: string): Promise<string> {
+    return this.module.createKeyVault(passphrase)
+  }
+  async importKeyVault(
+    vault: string,
+    passphrase: string,
+  ): Promise<{ offered: number; imported: number }> {
+    try {
+      return await this.module.openKeyVault(vault, passphrase)
+    } catch {
+      throw new Error(
+        'Não foi possível abrir o backup. Confira se a senha está correta.',
+      )
+    }
+  }
   private flow(peer: ChatPeer) {
     return this.flows.get(`${peer.matrixUserId}:${peer.deviceId}`)
   }
