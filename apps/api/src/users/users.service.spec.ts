@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import * as bcrypt from 'bcrypt'
-import { UserType } from '@prisma/client'
+import { Prisma, UserType } from '@prisma/client'
 import { TERMS_VERSION, PRIVACY_VERSION } from '@votz/shared-types'
 import { UsersService } from './users.service'
 
@@ -92,6 +92,22 @@ describe('UsersService', () => {
       const res = await service.updateProfile('u1', 'u1', { name: 'Ana Silva', city: 'SP' } as any)
       expect(repo.updateProfile).toHaveBeenCalledWith('u1', expect.objectContaining({ name: 'Ana Silva', city: 'SP' }))
       expect(res.name).toBe('Ana Silva')
+    })
+
+    it('rejects a username already used by another account', async () => {
+      repo.findById.mockResolvedValue({ id: 'u1' })
+      prisma.user = { findFirst: jest.fn().mockResolvedValue({ id: 'u2' }) }
+      await expect(service.updateProfile('u1', 'u1', { username: 'joao_mario' } as any)).rejects.toThrow(ConflictException)
+      expect(repo.updateProfile).not.toHaveBeenCalled()
+    })
+
+    it('turns the database unique error (two requests at once) into a conflict', async () => {
+      repo.findById.mockResolvedValue({ id: 'u1' })
+      prisma.user = { findFirst: jest.fn().mockResolvedValue(null) }
+      repo.updateProfile.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'test' }),
+      )
+      await expect(service.updateProfile('u1', 'u1', { username: 'joao_mario' } as any)).rejects.toThrow(ConflictException)
     })
   })
 

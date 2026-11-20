@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import styled from 'styled-components'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useConversationAction, useConversationCapabilities } from '../hooks/useConversations'
 import { Navbar } from '../components/layout/Navbar'
 import { InviteVotzModal } from '../components/ui/InviteVotzModal'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
@@ -363,9 +364,20 @@ const USER_TYPE_LABELS: Record<UserType, string> = {
 
 // ── Componente ─────────────────────────────────────────────────────────────
 
+function apiErrorMessage(error: unknown) {
+  const text = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
+  return Array.isArray(text)
+    ? text.join('. ')
+    : text || 'Não foi possível enviar o pedido. Tente de novo.'
+}
+
 export function UserProfile() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { user: authUser } = useAuthStore()
+  const capabilities = useConversationCapabilities()
+  const startChat = useConversationAction()
+  const messagingEnabled = !!capabilities.data?.messagingEnabled
   const [tab, setTab] = useState<'publicacoes' | 'relatos'>('publicacoes')
   const [page, setPage] = useState(1)
   const [postPage, setPostPage] = useState(1)
@@ -445,16 +457,39 @@ export function UserProfile() {
                     </FollowBtn>
                   </div>
                 ) : authUser ? (
-                  <FollowBtn
-                    type="button"
-                    $following={isFollowing}
-                    disabled={toggleFollow.isPending}
-                    onClick={() => toggleFollow.mutate()}
-                  >
-                    {isFollowing ? 'Seguindo' : '+ Seguir'}
-                  </FollowBtn>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {messagingEnabled && (
+                      <FollowBtn
+                        type="button"
+                        $following={false}
+                        disabled={startChat.isPending}
+                        onClick={() => {
+                          if (!id) return
+                          startChat.mutate(
+                            { path: '/direct', body: { targetUserId: id } },
+                            { onSuccess: (conversation) => navigate(`/conversas/${conversation.id}`) },
+                          )
+                        }}
+                      >
+                        Enviar mensagem
+                      </FollowBtn>
+                    )}
+                    <FollowBtn
+                      type="button"
+                      $following={isFollowing}
+                      disabled={toggleFollow.isPending}
+                      onClick={() => toggleFollow.mutate()}
+                    >
+                      {isFollowing ? 'Seguindo' : '+ Seguir'}
+                    </FollowBtn>
+                  </div>
                 ) : null}
               </ProfileTopRow>
+              {startChat.isError && (
+                <p role="alert" style={{ margin: '8px 0 0', fontSize: 13 }}>
+                  {apiErrorMessage(startChat.error)}
+                </p>
+              )}
               {user.bio && <Bio>{user.bio}</Bio>}
               <StatsRow>
                 <Stat>

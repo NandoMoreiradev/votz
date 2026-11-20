@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException,
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import * as bcrypt from 'bcrypt'
-import { UserType } from '@prisma/client'
+import { Prisma, UserType } from '@prisma/client'
 import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
@@ -59,6 +59,18 @@ export class UsersService {
         throw new ConflictException('Este nome de usuário já está em uso')
       }
     }
+    try {
+      return await this.saveProfile(id, dto)
+    } catch (err) {
+      // Dois pedidos ao mesmo tempo pelo mesmo nome: o banco barra o segundo.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('Este nome de usuário já está em uso')
+      }
+      throw err
+    }
+  }
+
+  private saveProfile(id: string, dto: UpdateProfileDto) {
     return this.repo.updateProfile(id, {
       name: dto.name,
       username: dto.username,

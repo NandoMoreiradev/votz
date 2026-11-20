@@ -29,9 +29,13 @@ export function Screen({ children, tabs = false }: PropsWithChildren<{ tabs?: bo
 export function Brand() {
   return <Image source={require('../../assets/votz-logo.svg')} style={{ width: 105, height: 30 }} contentFit="contain" accessibilityLabel="Votz" />
 }
+/** Só o V do Votz: ocupa o lugar do botão voltar nas telas de aba, que não têm para onde voltar. */
+export function BrandMark() {
+  return <Image source={require('../../assets/votz-mark.svg')} style={{ width: 30, height: 30 }} contentFit="contain" accessibilityLabel="Votz" />
+}
 export function Toolbar({ title, back, left, right, brand }: { title?: string; back?: boolean; left?: ReactNode; right?: ReactNode; brand?: boolean }) {
   return <View style={{ height: 52, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surface, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
-    <View style={{ minWidth: 36 }}>{left || (back && <IconButton label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}><ArrowLeft size={23} color={theme.colors.primary} /></IconButton>)}</View>
+    <View style={{ minWidth: 36 }}>{left || (back ? <IconButton label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}><ArrowLeft size={23} color={theme.colors.primary} /></IconButton> : !brand && <BrandMark />)}</View>
     <View style={{ flex: 1, alignItems: brand ? 'center' : 'flex-start' }}>{brand ? <Brand /> : <Text numberOfLines={1} style={{ fontFamily: theme.fonts.heading, fontSize: 19, color: theme.colors.primary }}>{title}</Text>}</View>
     <View style={{ minWidth: 36, alignItems: 'flex-end' }}>{right}</View>
   </View>

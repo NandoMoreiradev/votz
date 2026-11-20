@@ -12,6 +12,7 @@ import { Screen, Toolbar } from '../components/screen'
 import { PostCard, statusLabels } from '../components/content-row'
 import { FloatingCompose } from '../components/floating-compose'
 import { useDetail, useFollowing, useProfilePosts, useProfileReports, useToggleFollow } from '../hooks/use-content'
+import { useConversationAction, useConversationCapabilities } from '../hooks/use-conversations'
 import { errorMessage } from '../lib/api'
 import { SECTOR_LABELS, formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
@@ -27,6 +28,10 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
   const reports = useProfileReports(kind, id)
   const following = useFollowing(kind, id, !!user && !own)
   const toggle = useToggleFollow(kind, id)
+  // Mensagem só para cidadãos com conta: político, entidade e empresa ainda não recebem conversa.
+  const capabilities = useConversationCapabilities()
+  const startChat = useConversationAction()
+  const canMessage = kind === 'users' && !own && !!user && !!capabilities.data?.messagingEnabled
   const logout = useMutation({ mutationFn: () => useSession.getState().logout() })
   const [tab, setTab] = useState<'posts' | 'reports'>(company ? 'reports' : 'posts')
   const name = profile.data?.name || profile.data?.tradeName || profile.data?.legalName || user?.name || 'Perfil'
@@ -38,7 +43,7 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
       ? <Image source={profileData.coverUrl} recyclingKey={profileData.coverUrl} accessibilityLabel="Capa do perfil" style={{ width: '100%', aspectRatio: 3, backgroundColor: theme.colors.primary }} contentFit="cover" />
       : <View style={{ height: 92, backgroundColor: theme.colors.primary, overflow: 'hidden' }}><View style={{ width: '35%', height: 3, backgroundColor: theme.colors.action, position: 'absolute', bottom: 0 }} /><Image source={require('../../assets/votz-foreground.png')} style={{ position: 'absolute', right: 6, top: -30, width: 180, height: 180, opacity: 0.22 }} contentFit="contain" /></View>}
     <View style={{ paddingHorizontal: 16, paddingBottom: 18 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ marginTop: -36, borderWidth: 4, borderColor: theme.colors.surface, borderRadius: 44, backgroundColor: theme.colors.surface }}><Avatar name={name} uri={profileData.avatarUrl || profileData.logoUrl} size={72} /></View><View style={{ paddingTop: 12, flexDirection: 'row', gap: 8 }}>{kind !== 'users' && <Button title="Relatar" secondary onPress={() => user ? router.push({ pathname: '/compose', params: { kind: 'reports', recipientType: kind === 'politicians' ? 'POLITICIAN' : kind === 'companies' ? 'COMPANY' : 'ENTITY', recipientId: id, recipientName: name } }) : router.push('/login')} />}{own ? <Button title="Editar perfil" secondary onPress={() => router.push('/edit-profile')} /> : <Button title={following.data?.following ? 'Seguindo' : 'Seguir'} secondary={!!following.data?.following} loading={toggle.isPending || following.isLoading} disabled={!!user && following.isError} onPress={() => user ? toggle.mutate() : router.push('/login')} />}</View></View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ marginTop: -36, borderWidth: 4, borderColor: theme.colors.surface, borderRadius: 44, backgroundColor: theme.colors.surface }}><Avatar name={name} uri={profileData.avatarUrl || profileData.logoUrl} size={72} /></View><View style={{ paddingTop: 12, flexDirection: 'row', gap: 8 }}>{kind !== 'users' && <Button title="Relatar" secondary onPress={() => user ? router.push({ pathname: '/compose', params: { kind: 'reports', recipientType: kind === 'politicians' ? 'POLITICIAN' : kind === 'companies' ? 'COMPANY' : 'ENTITY', recipientId: id, recipientName: name } }) : router.push('/login')} />}{canMessage && <Button title="Mensagem" secondary loading={startChat.isPending} onPress={() => startChat.mutate({ path: '/direct', body: { targetUserId: id } }, { onSuccess: (conversation) => router.push({ pathname: '/conversation/[id]', params: { id: conversation.id } }), onError: (error) => Alert.alert('Não foi possível enviar o pedido', errorMessage(error)) })} />}{own ? <Button title="Editar perfil" secondary onPress={() => router.push('/edit-profile')} /> : <Button title={following.data?.following ? 'Seguindo' : 'Seguir'} secondary={!!following.data?.following} loading={toggle.isPending || following.isLoading} disabled={!!user && following.isError} onPress={() => user ? toggle.mutate() : router.push('/login')} />}</View></View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}><Text style={{ fontFamily: theme.fonts.heading, fontSize: 22, lineHeight: 28, color: theme.colors.primary, flexShrink: 1 }}>{name}</Text>{profileData.verified && <BadgeCheck size={18} color={theme.colors.action} />}</View>
       {!!profileData.username && <Text style={{ color: theme.colors.muted, fontSize: 13, marginTop: 2 }}>@{profileData.username}</Text>}
       {company && !!profileData.sector && <Text style={{ color: theme.colors.action, fontFamily: theme.fonts.medium, fontSize: 13, marginTop: 6 }}>{SECTOR_LABELS[profileData.sector] ?? profileData.sector}</Text>}
