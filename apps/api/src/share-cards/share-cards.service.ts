@@ -503,7 +503,7 @@ export class ShareCardsService {
         'refresh-politician-cards',
         { politicianId },
         {
-          jobId: `refresh-cards:${politicianId}:${toSaoPauloDateString(new Date())}`,
+          jobId: `refresh-cards-${politicianId}-${toSaoPauloDateString(new Date())}`,
           removeOnComplete: 50,
           removeOnFail: 20,
         },

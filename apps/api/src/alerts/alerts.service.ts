@@ -40,7 +40,7 @@ export class AlertsService {
       'check-surto',
       { category, city, state } satisfies AlertsJob,
       {
-        jobId: `surto:${category}:${city.toLowerCase()}`,
+        jobId: `surto-${category}-${city.toLowerCase()}`,
         removeOnComplete: 50,
         removeOnFail: 20,
         attempts: 3,

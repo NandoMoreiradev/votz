@@ -280,7 +280,7 @@ export class AlertRulesService {
       'evaluate-report-rules',
       { reportId },
       {
-        jobId: `rules:report:${reportId}`,
+        jobId: `rules-report-${reportId}`,
         removeOnComplete: 50,
         removeOnFail: 20,
         attempts: 3,
@@ -294,7 +294,7 @@ export class AlertRulesService {
       'evaluate-rules-sweep',
       {},
       {
-        jobId: 'rules:periodic-sweep',
+        jobId: 'rules-periodic-sweep',
         removeOnComplete: 10,
         removeOnFail: 10,
         attempts: 2,

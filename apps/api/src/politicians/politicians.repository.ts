@@ -6,6 +6,7 @@ import { VoteType } from '@votz/shared-types'
 const POLITICIAN_PUBLIC_SELECT = {
   id: true,
   name: true,
+  username: true,
   office: true,
   status: true,
   termStart: true,

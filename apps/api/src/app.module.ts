@@ -18,6 +18,8 @@ import { PoliticiansModule } from './politicians/politicians.module'
 import { PartiesModule } from './parties/parties.module'
 import { RegistrationRequestsModule } from './registration-requests/registration-requests.module'
 import { OrgMembershipsModule } from './org-memberships/org-memberships.module'
+import { HandlesModule } from './handles/handles.module'
+import { PageInboxModule } from './page-inbox/page-inbox.module'
 import { VotesModule } from './votes/votes.module'
 import { CommentsModule } from './comments/comments.module'
 import { NotificationsModule } from './notifications/notifications.module'
@@ -123,6 +125,8 @@ import { SecurityModule } from './common/security/security.module'
     PartiesModule,
     RegistrationRequestsModule,
     OrgMembershipsModule,
+    HandlesModule,
+    PageInboxModule,
     VotesModule,
     CommentsModule,
     NotificationsModule,

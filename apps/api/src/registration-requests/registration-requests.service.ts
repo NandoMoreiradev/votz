@@ -33,8 +33,15 @@ const DEFAULT_ROLES = {
     OrgPermission.MANAGE_PROFILE,
     OrgPermission.VIEW_ANALYTICS,
     OrgPermission.EXPORT_DATA,
+    OrgPermission.READ_MESSAGES,
+    OrgPermission.REPLY_MESSAGES,
   ],
-  AGENT: [OrgPermission.RESPOND_REPORTS, OrgPermission.VIEW_ANALYTICS],
+  AGENT: [
+    OrgPermission.RESPOND_REPORTS,
+    OrgPermission.VIEW_ANALYTICS,
+    OrgPermission.READ_MESSAGES,
+    OrgPermission.REPLY_MESSAGES,
+  ],
   VIEWER: [OrgPermission.VIEW_ANALYTICS],
 } as const
 

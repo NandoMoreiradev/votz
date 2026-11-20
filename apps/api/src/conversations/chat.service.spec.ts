@@ -1181,7 +1181,7 @@ describe('ChatService: push discreto por aparelho (Etapa 2B)', () => {
     expect(f.pushQueue.add).toHaveBeenCalledWith(
       'discrete-push',
       { conversationId: 'c1', recipientUserIds: [bob.id], eventId: '$p1' },
-      expect.objectContaining({ jobId: 'push:c1:$p1' }),
+      expect.objectContaining({ jobId: 'push-c1-$p1' }),
     )
 
     // Revogar aparelho limpa imediatamente o pushToken.

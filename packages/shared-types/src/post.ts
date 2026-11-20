@@ -118,6 +118,8 @@ export interface PostDto {
   repost?: PostRepostInfo | null
   canCommentWithAudio: boolean
   hotScore: number
+  /** Só no "Para você": por que este item apareceu fora do círculo da pessoa (ex.: "Em alta na sua cidade"). O texto vem do servidor. */
+  feedReason?: string | null
   createdAt: string
   updatedAt: string
   author: PostAuthorInfo
@@ -153,4 +155,20 @@ export interface GifSearchItem {
   gifUrl: string
   width: number | null
   height: number | null
+}
+
+/** Perfil sugerido no cartão "Quem seguir na sua cidade" (quem segue poucas contas). */
+export interface FeedSuggestedProfile {
+  kind: 'politicians' | 'entities'
+  id: string
+  name: string
+  username: string | null
+  avatarUrl: string | null
+  verified: boolean
+  /** Cargo/partido do político ou tipo da entidade, em texto simples. */
+  subtitle: string | null
+}
+export interface FeedSuggestions {
+  title: string
+  profiles: FeedSuggestedProfile[]
 }

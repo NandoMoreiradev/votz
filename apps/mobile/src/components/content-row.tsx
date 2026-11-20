@@ -7,6 +7,7 @@ import ArrowUp from 'lucide-react-native/icons/arrow-up'
 import Repeat2 from 'lucide-react-native/icons/repeat-2'
 import Share2 from 'lucide-react-native/icons/share-2'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
+import Flame from 'lucide-react-native/icons/flame'
 import type { PostDto, Report, ProfileKind } from '../lib/types'
 import { useTogglePostLike, useTogglePostRepost } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
@@ -36,6 +37,8 @@ function Author({ name, username, verified, time, onPress }: { name: string; use
     <Text style={{ color: theme.colors.muted, fontSize: 12 }}>· {relativeTime(time)}</Text>
   </Pressable>
 }
+// Cada item do feed é um cartão: fundo branco, bordas finas e um respiro entre um e outro (o fundo do feed é cinza claro). Na tela de detalhe não vira cartão.
+const cardShell = { backgroundColor: theme.colors.surface, borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: theme.colors.border } as const
 export function PostCard({ post, detail = false }: { post: PostDto; detail?: boolean }) {
   const user = useSession((s) => s.user)
   const like = useTogglePostLike(post.id)
@@ -61,7 +64,8 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
     <Action label={`${post.likedByMe ? 'Descurtir' : 'Curtir'} · ${formatCount(post.likesCount, 'curtida', 'curtidas')}`} icon={<Heart size={19} color={post.likedByMe ? theme.colors.action : theme.colors.muted} fill={post.likedByMe ? theme.colors.action : 'transparent'} />} count={post.likesCount} active={post.likedByMe} onPress={() => requireUser(() => !like.isPending && like.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível curtir', errorMessage(error)) }))} />
     <Action label="Compartilhar publicação" icon={<Share2 size={18} color={theme.colors.muted} />} onPress={() => { void Share.share({ message: `${name} no Votz\n\n${post.content}` }).catch(() => {}) }} />
   </View>
-  return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
+  return <View style={[{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }, detail ? { borderBottomWidth: 0.5, borderBottomColor: theme.colors.border } : cardShell]}>
+    {!detail && !!post.feedReason && <View accessibilityLabel={post.feedReason} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 50, marginBottom: 8 }}><Flame size={14} color={theme.colors.muted} /><Text style={{ color: theme.colors.muted, fontSize: 12, fontFamily: theme.fonts.medium }}>{post.feedReason}</Text></View>}
     {!detail && post.repost && <Pressable accessibilityRole="button" accessibilityLabel={`${post.repost.user.name} repostou. Ver perfil`} onPress={() => router.push({ pathname: '/profile/[kind]/[id]', params: { kind: 'users', id: post.repost!.user.id } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 50, marginBottom: 10 }}><Repeat2 size={14} color={theme.colors.muted} /><Text style={{ color: theme.colors.muted, fontSize: 12, flexShrink: 1 }}>{post.repost.user.name} repostou</Text></Pressable>}
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Ver perfil de ${name}`} onPress={openProfile}><Avatar name={name} uri={post.author.orgAvatarUrl || post.author.avatarUrl} size={40} /></Pressable>
@@ -82,7 +86,7 @@ export function ReportCard({ report, detail = false }: { report: Report; detail?
     <Text numberOfLines={detail ? undefined : 3} style={[styles.text, { marginTop: 5 }]}>{report.description}</Text>
     <MediaCarousel urls={report.media} limit={5} />
   </>
-  return <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: detail ? 16 : 4, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
+  return <View style={[{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: detail ? 16 : 4 }, detail ? { borderBottomWidth: 0.5, borderBottomColor: theme.colors.border } : cardShell]}>
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable disabled={!openProfile} onPress={openProfile} accessibilityRole={openProfile ? 'button' : undefined} accessibilityLabel={`Ver perfil de ${name}`}><Avatar name={name} uri={report.anonymous ? null : report.author?.avatarUrl} size={40} /></Pressable>
       <View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><Author name={name} time={report.createdAt} onPress={openProfile} /></View><View style={{ marginRight: -8, marginVertical: -8 }}><ContentMenu kind="report" id={report.id} ownerId={report.anonymous ? null : report.author?.id} text={`${report.title}\n\n${report.description}`} /></View></View>{!detail && <><Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato: ${report.title}`} onPress={open}>{body}</Pressable><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>

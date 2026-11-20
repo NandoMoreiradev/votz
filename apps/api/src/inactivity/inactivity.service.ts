@@ -40,7 +40,7 @@ export class InactivityService {
     await this.queue.add(
       'process-inactivity',
       {},
-      { jobId: 'inactivity:daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: 'inactivity-daily', removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

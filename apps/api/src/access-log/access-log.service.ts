@@ -53,7 +53,7 @@ export class AccessLogService {
     await this.queue.add(
       'purge-expired',
       {},
-      { jobId: 'access-log:daily-purge', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: 'access-log-daily-purge', removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

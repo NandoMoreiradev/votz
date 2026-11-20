@@ -469,7 +469,7 @@ export class AccountabilityService {
       'render-pdf',
       { reportId: report.id, notifyManagers },
       {
-        jobId: `accountability:${report.id}`,
+        jobId: `accountability-${report.id}`,
         removeOnComplete: 50,
         removeOnFail: 20,
         attempts: 3,

@@ -8,7 +8,7 @@ import {
   Optional,
 } from '@nestjs/common'
 import { OrgType, PostCommentMediaType, PostKind } from '@prisma/client'
-import { UserType } from '@votz/shared-types'
+import { FeedSuggestedProfile, UserType } from '@votz/shared-types'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { ActingUser, resolveOptionalActingOrg } from '../auth/acting-org'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
@@ -27,6 +27,7 @@ import {
   rerankCandidatesForViewer,
 } from './feed-ranking.service'
 import { PostsRepository, ViewerIdentity } from './posts.repository'
+import { FOR_YOU_MIX, hasFewFollows, mixForYouFeed } from './feed-mix'
 
 function toCityKey(city?: string | null): string | null {
   if (!city) return null
@@ -248,20 +249,41 @@ export class PostsService {
     })
 
     let ordered = posts
+    const reasons = new Map<string, string>()
+    let suggestions: { title: string; profiles: FeedSuggestedProfile[] } | null = null
     if (sort === 'for_you' && viewerContext) {
       const rankable = posts.map((p) => ({
         ...p,
         topicIds: p.topics.map((t) => t.topic.id),
       }))
-      const reranked = rerankCandidatesForViewer(rankable, viewerContext)
       const skip = (page - 1) * limit
-      ordered = reranked.slice(skip, skip + limit)
+      if (viewerContext.userId) {
+        // Mistura equilibrada (seguidos, da cidade, descoberta): toda a regra fica em feed-mix.ts.
+        const flagged = await this.repo.findPostIdsWithOpenFlags(posts.map((p) => p.id))
+        const mixed = mixForYouFeed(
+          rankable.map((p) => ({ ...p, authorTrusted: (p.authorUser.verified || p.authorUser.emailVerified) && !flagged.has(p.id) })),
+          viewerContext,
+        )
+        ordered = mixed.slice(skip, skip + limit).map((item) => {
+          if (item.reason) reasons.set(item.post.id, item.reason)
+          return item.post
+        })
+        if (page === 1 && hasFewFollows(viewerContext)) {
+          const profiles = await this.repo.findSuggestedProfiles(viewerContext)
+          if (profiles.length > 0) suggestions = { title: viewerContext.city ? 'Quem seguir na sua cidade' : 'Quem seguir no seu estado', profiles }
+        }
+      } else {
+        ordered = rerankCandidatesForViewer(rankable, viewerContext).slice(skip, skip + limit)
+      }
     }
 
     const hydrated = await this.repo.hydratePosts(ordered, this.buildViewerIdentity(user))
 
     return {
-      data: hydrated.map((post) => ({ ...post, repost: reposts?.[post.id] ?? null })),
+      suggestions,
+      /** Posição (a partir de 0) em que o cartão de sugestões entra na lista. */
+      suggestionsAfter: FOR_YOU_MIX.SUGGESTIONS_AFTER,
+      data: hydrated.map((post) => ({ ...post, repost: reposts?.[post.id] ?? null, ...(reasons.has(post.id) ? { feedReason: reasons.get(post.id) } : {}) })),
       meta: {
         page,
         limit,

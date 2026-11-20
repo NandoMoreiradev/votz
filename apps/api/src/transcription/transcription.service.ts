@@ -17,7 +17,7 @@ export class TranscriptionService {
 
   async enqueue(job: TranscriptionJob) {
     return this.queue.add('transcribe', job, {
-      jobId: `transcribe:${job.commentId}`,
+      jobId: `transcribe-${job.commentId}`,
       removeOnComplete: 100,
       removeOnFail: 50,
       attempts: 3,

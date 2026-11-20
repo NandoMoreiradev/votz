@@ -6,6 +6,7 @@ import { EntityType, ReportStatus, VoteType } from '@votz/shared-types'
 const ENTITY_PUBLIC_SELECT = {
   id: true,
   legalName: true,
+  username: true,
   cnpj: true,
   type: true,
   verified: true,

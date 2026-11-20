@@ -7,6 +7,7 @@ const COMPANY_PUBLIC_SELECT = {
   id: true,
   legalName: true,
   tradeName: true,
+  username: true,
   cnpj: true,
   sector: true,
   size: true,

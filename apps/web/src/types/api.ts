@@ -501,12 +501,17 @@ export type {
 
 import type {
   CivicTopicSummaryDto,
+  FeedSuggestions,
   GifSearchItem,
   PostDto,
 } from '@votz/shared-types'
 
 export interface PostsResponse {
   data: PostDto[]
+  /** "Para você" para quem segue poucas contas: cartão de políticos e entidades da cidade (só na página 1). */
+  suggestions?: FeedSuggestions | null
+  /** O cartão entra depois deste número de itens. */
+  suggestionsAfter?: number
   meta: {
     page: number
     limit: number

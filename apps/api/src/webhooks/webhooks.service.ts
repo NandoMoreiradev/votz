@@ -328,7 +328,7 @@ export class WebhooksService {
         'deliver',
         { deliveryId: delivery.id, payload } satisfies WebhookDeliveryJob,
         {
-          jobId: `webhook:${delivery.id}`,
+          jobId: `webhook-${delivery.id}`,
           attempts: WEBHOOK_DELIVERY_ATTEMPTS,
           backoff: { type: 'exponential', delay: 5_000 },
           removeOnComplete: 50,

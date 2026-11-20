@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ComponentRef, type PropsWithChildren, type ReactNode } from 'react'
-import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewProps } from 'react-native'
+import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View, type ScrollViewProps } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Image } from 'expo-image'
 import ArrowLeft from 'lucide-react-native/icons/arrow-left'
+import ChevronDown from 'lucide-react-native/icons/chevron-down'
 import { IconButton, styles } from './ui'
 import { theme } from '../theme'
 import { RevealInput, type InputHandle } from './keyboard-context'
@@ -33,10 +34,11 @@ export function Brand() {
 export function BrandMark() {
   return <Image source={require('../../assets/votz-mark.svg')} style={{ width: 30, height: 30 }} contentFit="contain" accessibilityLabel="Votz" />
 }
-export function Toolbar({ title, back, left, right, brand }: { title?: string; back?: boolean; left?: ReactNode; right?: ReactNode; brand?: boolean }) {
+/** `onBrandPress` faz do logo um botão com seta (como o Instagram): usado para abrir o menu de qual feed ver. */
+export function Toolbar({ title, back, left, right, brand, onBrandPress, brandLabel }: { title?: string; back?: boolean; left?: ReactNode; right?: ReactNode; brand?: boolean; onBrandPress?: () => void; brandLabel?: string }) {
   return <View style={{ height: 52, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surface, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
     <View style={{ minWidth: 36 }}>{left || (back ? <IconButton label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}><ArrowLeft size={23} color={theme.colors.primary} /></IconButton> : !brand && <BrandMark />)}</View>
-    <View style={{ flex: 1, alignItems: brand ? 'center' : 'flex-start' }}>{brand ? <Brand /> : <Text numberOfLines={1} style={{ fontFamily: theme.fonts.heading, fontSize: 19, color: theme.colors.primary }}>{title}</Text>}</View>
+    <View style={{ flex: 1, alignItems: brand ? 'center' : 'flex-start' }}>{brand ? (onBrandPress ? <Pressable accessibilityRole="button" accessibilityLabel={brandLabel || 'Escolher o que ver'} onPress={onBrandPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 }}><Brand /><ChevronDown size={18} color={theme.colors.primary} /></Pressable> : <Brand />) : <Text numberOfLines={1} style={{ fontFamily: theme.fonts.heading, fontSize: 19, color: theme.colors.primary }}>{title}</Text>}</View>
     <View style={{ minWidth: 36, alignItems: 'flex-end' }}>{right}</View>
   </View>
 }

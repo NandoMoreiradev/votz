@@ -33,7 +33,7 @@ describe('PressureService', () => {
     expect(mockQueue.add).toHaveBeenCalledWith(
       'recalculate-single',
       { reportId: 'r1' },
-      expect.objectContaining({ jobId: 'single:r1' }),
+      expect.objectContaining({ jobId: 'single-r1' }),
     )
   })
 

@@ -59,6 +59,7 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /entities/:id',
   'GET /entities/:id/reports',
   'GET /entities/cities',
+  'GET /handles/:username',
   'GET /health',
   'GET /imprensa/entidades-ranking',
   'GET /imprensa/relatos-destaque',

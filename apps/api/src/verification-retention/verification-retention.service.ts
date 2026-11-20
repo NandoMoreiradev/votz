@@ -42,7 +42,7 @@ export class VerificationRetentionService {
     await this.queue.add(
       'purge-expired-documents',
       {},
-      { jobId: 'verification-retention:daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: 'verification-retention-daily', removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

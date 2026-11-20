@@ -130,6 +130,8 @@ export interface PostDto {
     repost?: PostRepostInfo | null;
     canCommentWithAudio: boolean;
     hotScore: number;
+    /** Só no "Para você": por que este item apareceu fora do círculo da pessoa (ex.: "Em alta na sua cidade"). O texto vem do servidor. */
+    feedReason?: string | null;
     createdAt: string;
     updatedAt: string;
     author: PostAuthorInfo;
@@ -170,4 +172,16 @@ export interface GifSearchItem {
     width: number | null;
     height: number | null;
 }
-//# sourceMappingURL=post.d.ts.map
+//# sourceMappingURL=post.d.ts.mapexport interface FeedSuggestedProfile {
+    kind: 'politicians' | 'entities';
+    id: string;
+    name: string;
+    username: string | null;
+    avatarUrl: string | null;
+    verified: boolean;
+    subtitle: string | null;
+}
+export interface FeedSuggestions {
+    title: string;
+    profiles: FeedSuggestedProfile[];
+}

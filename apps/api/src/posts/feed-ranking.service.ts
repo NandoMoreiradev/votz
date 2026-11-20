@@ -29,6 +29,8 @@ export interface PostRankingSignals {
 
 export interface ViewerRankingContext {
   userId?: string
+  /** Nome da cidade como a pessoa cadastrou (usado para sugerir perfis da cidade). */
+  city?: string | null
   cityKey?: string | null
   state?: string | null
   followedUserIds: Set<string>
@@ -166,7 +168,7 @@ export class FeedRankingService {
         'recalculate-post',
         { postId },
         {
-          jobId: `post:${postId}`,
+          jobId: `post-${postId}`,
           removeOnComplete: 200,
           removeOnFail: 50,
           attempts: 3,

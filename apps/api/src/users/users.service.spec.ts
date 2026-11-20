@@ -14,6 +14,7 @@ describe('UsersService', () => {
   let prisma: any
   let storage: any
   let lgpdQueue: any
+  let handles: any
 
   beforeEach(() => {
     repo = {
@@ -43,7 +44,8 @@ describe('UsersService', () => {
       add: jest.fn().mockResolvedValue({ id: 'job-1' }),
     }
 
-    service = new UsersService(repo, prisma, storage, lgpdQueue)
+    handles = { assertAvailable: jest.fn().mockResolvedValue(undefined) }
+    service = new UsersService(repo, prisma, storage, lgpdQueue, handles)
   })
 
   afterEach(() => jest.restoreAllMocks())
@@ -96,14 +98,14 @@ describe('UsersService', () => {
 
     it('rejects a username already used by another account', async () => {
       repo.findById.mockResolvedValue({ id: 'u1' })
-      prisma.user = { findFirst: jest.fn().mockResolvedValue({ id: 'u2' }) }
+      handles.assertAvailable.mockRejectedValue(new ConflictException('em uso'))
       await expect(service.updateProfile('u1', 'u1', { username: 'joao_mario' } as any)).rejects.toThrow(ConflictException)
+      expect(handles.assertAvailable).toHaveBeenCalledWith('joao_mario', { kind: 'USER', id: 'u1' })
       expect(repo.updateProfile).not.toHaveBeenCalled()
     })
 
     it('turns the database unique error (two requests at once) into a conflict', async () => {
       repo.findById.mockResolvedValue({ id: 'u1' })
-      prisma.user = { findFirst: jest.fn().mockResolvedValue(null) }
       repo.updateProfile.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'test' }),
       )

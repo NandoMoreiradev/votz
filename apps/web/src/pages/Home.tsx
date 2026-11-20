@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Fire, Flag, HandsClapping, LinkSimple, Megaphone, Newspaper, UsersThree } from '@phosphor-icons/react'
+import { Fire, Flag, HandsClapping, LinkSimple, UsersThree } from '@phosphor-icons/react'
 import { Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
@@ -11,6 +11,7 @@ import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
+import { SuggestedProfilesCard } from '../components/posts/SuggestedProfilesCard'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { socialRow, socialTab } from '../components/ui/social'
@@ -1147,19 +1148,6 @@ function resolveInitialTab(params: URLSearchParams): 'publicacoes' | 'relatos' {
   return 'relatos'
 }
 
-const FeedModeWrap = styled.div`
-  display: inline-flex;
-  align-items: center;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-`
-
-const FeedModeBtn = styled.button<{ $active: boolean }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  ${socialTab}
-`
-
 const AlgoTabs = styled.div`
   display: flex;
   align-items: center;
@@ -1299,33 +1287,11 @@ export function Home() {
 
   return (
     <Page>
-      <Navbar />
+      <Navbar feedMenu={{ value: feedTab, onChange: switchFeedTab }} />
 
       {/* ── Subheader ── */}
       <Subheader>
         <SubInner>
-          <FeedModeWrap role="tablist" aria-label="Alternar tipo de feed">
-            <FeedModeBtn
-              type="button"
-              role="tab"
-              aria-selected={feedTab === 'publicacoes'}
-              $active={feedTab === 'publicacoes'}
-              onClick={() => switchFeedTab('publicacoes')}
-            >
-              <Newspaper size={16} weight="duotone" />
-              Publicações
-            </FeedModeBtn>
-            <FeedModeBtn
-              type="button"
-              role="tab"
-              aria-selected={feedTab === 'relatos'}
-              $active={feedTab === 'relatos'}
-              onClick={() => switchFeedTab('relatos')}
-            >
-              <Megaphone size={16} weight="duotone" />
-              Relatos
-            </FeedModeBtn>
-          </FeedModeWrap>
 
           <SubTitleRow>
             <SubTitle>
@@ -1560,16 +1526,20 @@ export function Home() {
                 </EmptyState>
               )}
 
-              {(postsData?.data ?? []).map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  isNew={post.id === recentPostId}
-                  onQuote={(p) => {
-                    setQuoteTarget(p)
-                    window.scrollTo({ top: 0, behavior: 'smooth' })
-                  }}
-                />
+              {(postsData?.data ?? []).map((post, index) => (
+                <Fragment key={post.id}>
+                  <PostCard
+                    post={post}
+                    isNew={post.id === recentPostId}
+                    onQuote={(p) => {
+                      setQuoteTarget(p)
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                  />
+                  {postsData?.suggestions && index + 1 === Math.min(postsData.suggestionsAfter ?? 3, postsData.data.length) && (
+                    <SuggestedProfilesCard suggestions={postsData.suggestions} />
+                  )}
+                </Fragment>
               ))}
             </Feed>
           </FeedSection>

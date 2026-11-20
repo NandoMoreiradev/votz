@@ -11,7 +11,7 @@ describe('TranscriptionService', () => {
       'transcribe',
       { commentId: 'c1', mediaKey: 'comments/a.webm' },
       expect.objectContaining({
-        jobId: 'transcribe:c1',
+        jobId: 'transcribe-c1',
         attempts: 3,
         backoff: { type: 'exponential', delay: 5_000 },
       }),

@@ -1,19 +1,23 @@
 import { Injectable } from '@nestjs/common'
 import {
+  FlagStatus,
+  FlagTargetType,
   ModerationActionType,
   OrgType,
   PostCommentMediaType,
   PostKind,
   Prisma,
 } from '@prisma/client'
-import { PostAuthorInfo, PostCommentDto, PostDto, PostRepostInfo, UserType } from '@votz/shared-types'
+import { FeedSuggestedProfile, PostAuthorInfo, PostCommentDto, PostDto, PostRepostInfo, UserType } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { ViewerRankingContext } from './feed-ranking.service'
 import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
 
+const FOR_YOU_EXTRA_CANDIDATES = 60
+
 const POST_INCLUDE = {
   authorUser: {
-    select: { id: true, name: true, username: true, avatarUrl: true, verified: true, type: true },
+    select: { id: true, name: true, username: true, avatarUrl: true, verified: true, emailVerified: true, type: true },
   },
   poll: {
     include: {
@@ -218,16 +222,32 @@ export class PostsRepository {
     }
 
     if (params.sort === 'for_you') {
-      const [candidates, total] = await Promise.all([
+      const viewer = params.viewerContext
+      // Além das mais quentes, traz as mais novas de quem a pessoa segue e da cidade/estado dela:
+      // sem isso, post bom de gente próxima mas pouco curtido ficaria fora da mistura.
+      const circleOr: Prisma.PostWhereInput[] = []
+      if (viewer?.followedUserIds.size) circleOr.push({ authorUserId: { in: [...viewer.followedUserIds] } })
+      if (viewer?.followedPoliticianIds.size) circleOr.push({ authorOrgType: OrgType.POLITICIAN, authorOrgId: { in: [...viewer.followedPoliticianIds] } })
+      if (viewer?.followedEntityIds.size) circleOr.push({ authorOrgType: OrgType.ENTITY, authorOrgId: { in: [...viewer.followedEntityIds] } })
+      const localOr: Prisma.PostWhereInput[] = []
+      if (viewer?.cityKey) localOr.push({ cityKey: viewer.cityKey })
+      else if (viewer?.state) localOr.push({ state: viewer.state })
+      const extra = (or: Prisma.PostWhereInput[]) => or.length
+        ? this.prisma.post.findMany({ where: { AND: [where, { OR: or }] }, include: POST_INCLUDE, orderBy: [{ createdAt: 'desc' }], take: FOR_YOU_EXTRA_CANDIDATES })
+        : Promise.resolve([])
+      const [hot, circle, local, total] = await Promise.all([
         this.prisma.post.findMany({
           where,
           include: POST_INCLUDE,
           orderBy: [{ hotScore: 'desc' }, { createdAt: 'desc' }],
           take: 150,
         }),
+        extra(circleOr),
+        extra(localOr),
         this.prisma.post.count({ where }),
       ])
-      return { posts: candidates, total }
+      const byId = new Map([...hot, ...circle, ...local].map((post) => [post.id, post]))
+      return { posts: [...byId.values()], total }
     }
 
     const skip = (params.page - 1) * params.limit
@@ -269,6 +289,46 @@ export class PostsRepository {
       total: counts[0]?.total ?? 0,
       reposts: Object.fromEntries(reposts.map(({ postId, createdAt, ...repost }) => [postId, { ...repost, createdAt: createdAt.toISOString() }])),
     }
+  }
+
+  /** Ids de publicações com denúncia aberta: conteúdo assim não entra como descoberta. */
+  async findPostIdsWithOpenFlags(postIds: string[]): Promise<Set<string>> {
+    if (postIds.length === 0) return new Set()
+    const rows = await this.prisma.contentFlag.findMany({
+      where: { targetType: FlagTargetType.POST, targetId: { in: postIds }, status: FlagStatus.OPEN },
+      select: { targetId: true },
+      distinct: ['targetId'],
+    })
+    return new Set(rows.map((row) => row.targetId))
+  }
+
+  /** Políticos e entidades da cidade (ou do estado, se a cidade não tiver) que a pessoa ainda não segue. */
+  async findSuggestedProfiles(viewer: ViewerRankingContext, perKind = 3): Promise<FeedSuggestedProfile[]> {
+    if (!viewer.city && !viewer.state) return []
+    const place = (cityOnly: boolean) => (cityOnly && viewer.city ? { city: { equals: viewer.city, mode: 'insensitive' as const } } : viewer.state ? { state: viewer.state } : {})
+    const load = async (cityOnly: boolean) => {
+      const [politicians, entities] = await Promise.all([
+        this.prisma.politician.findMany({
+          where: { status: 'ATIVO', id: { notIn: [...viewer.followedPoliticianIds] }, ...place(cityOnly) },
+          select: { id: true, name: true, username: true, avatarUrl: true, verified: true, office: true, party: { select: { abbreviation: true } } },
+          orderBy: [{ verified: 'desc' }, { followers: { _count: 'desc' } }],
+          take: perKind,
+        }),
+        this.prisma.entity.findMany({
+          where: { id: { notIn: [...viewer.followedEntityIds] }, ...place(cityOnly) },
+          select: { id: true, legalName: true, username: true, logoUrl: true, verified: true, type: true },
+          orderBy: [{ verified: 'desc' }, { followers: { _count: 'desc' } }],
+          take: perKind,
+        }),
+      ])
+      return { politicians, entities }
+    }
+    let found = await load(true)
+    if (found.politicians.length + found.entities.length === 0 && viewer.state) found = await load(false)
+    return [
+      ...found.politicians.map((p): FeedSuggestedProfile => ({ kind: 'politicians', id: p.id, name: p.name, username: p.username, avatarUrl: p.avatarUrl, verified: p.verified, subtitle: [p.office, p.party?.abbreviation].filter(Boolean).join(' · ') || null })),
+      ...found.entities.map((e): FeedSuggestedProfile => ({ kind: 'entities', id: e.id, name: e.legalName, username: e.username, avatarUrl: e.logoUrl, verified: e.verified, subtitle: null })),
+    ]
   }
 
   async getViewerContext(userId?: string): Promise<ViewerRankingContext> {
@@ -314,6 +374,7 @@ export class PostsRepository {
 
     return {
       userId,
+      city: user?.city ?? null,
       cityKey,
       state: user?.state ?? null,
       followedUserIds: new Set(userFollows.map((f) => f.followingId)),

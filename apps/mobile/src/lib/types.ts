@@ -1,9 +1,12 @@
-import type { Category, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
+import type { Category, FeedSuggestions, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
 
 export type { PostDto }
 export type User = AuthenticatedUser
 export interface Page<T> {
   data: T[]
+  /** "Para você" de quem segue poucas contas: cartão de perfis da cidade (só na página 1). */
+  suggestions?: FeedSuggestions | null
+  suggestionsAfter?: number
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
 export interface Report {

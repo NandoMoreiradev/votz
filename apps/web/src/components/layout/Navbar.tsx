@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass } from '@phosphor-icons/react'
+import { Bell, List, X, CaretDown, ChatCircle, EnvelopeSimple, MagnifyingGlass, Check } from '@phosphor-icons/react'
 import { useConversationCapabilities } from '../../hooks/useConversations'
 import { Button } from '../ui/Button'
 import { ProfileSelectModal } from '../ui/ProfileSelectModal'
@@ -62,6 +62,70 @@ const Logo = styled(Link)`
 
   span {
     color: ${({ theme }) => theme.colors.action};
+  }
+`
+
+const LogoMenuWrap = styled.div`
+  position: relative;
+  flex-shrink: 0;
+`
+
+const LogoMenuBtn = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  color: ${({ theme }) => theme.colors.white};
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+`
+
+const LogoMenu = styled.div`
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  min-width: 240px;
+  overflow: hidden;
+  z-index: 200;
+`
+
+const LogoMenuItem = styled.button<{ $active: boolean }>`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: ${({ theme, $active }) => ($active ? theme.colors.action : theme.colors.text)};
+
+  small {
+    display: block;
+    font-family: ${({ theme }) => theme.fonts.body};
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
@@ -578,7 +642,10 @@ const MobileDrawerAction = styled.button<{ $danger?: boolean }>`
   }
 `
 
-export function Navbar() {
+export type FeedMenuKind = 'publicacoes' | 'relatos'
+
+/** `feedMenu` faz do logo um menu (como o Instagram) para escolher entre Publicações e Relatos. Só a Home usa. */
+export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChange: (value: FeedMenuKind) => void } } = {}) {
   const conversations = useConversationCapabilities()
   const { user, activeContext, logout, sessionReady } = useAuthStore()
   const navigate = useNavigate()
@@ -588,6 +655,8 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const [feedMenuOpen, setFeedMenuOpen] = useState(false)
+  const feedMenuRef = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const orgMenuRef = useRef<HTMLDivElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -608,6 +677,22 @@ export function Navbar() {
     setOpen(false)
     setOrgMenuOpen(false)
   }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!feedMenuOpen) return
+    function close(e: MouseEvent) {
+      if (feedMenuRef.current && !feedMenuRef.current.contains(e.target as Node)) setFeedMenuOpen(false)
+    }
+    function escape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setFeedMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [feedMenuOpen])
 
   useEffect(() => {
     function close(e: MouseEvent) {
@@ -682,9 +767,44 @@ export function Navbar() {
     <>
       <Nav>
         <Inner>
-          <Logo to="/">
-            <LogoImg src={logoSrc} alt="Votz" />
-          </Logo>
+          {feedMenu ? (
+            <LogoMenuWrap ref={feedMenuRef}>
+              <LogoMenuBtn
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={feedMenuOpen}
+                aria-label="Votz. Escolher o que ver"
+                onClick={() => setFeedMenuOpen((v) => !v)}
+              >
+                <LogoImg src={logoSrc} alt="" />
+                <CaretDown size={16} weight="bold" />
+              </LogoMenuBtn>
+              {feedMenuOpen && (
+                <LogoMenu role="menu">
+                  {([
+                    ['publicacoes', 'Publicações', 'Conversa da comunidade'],
+                    ['relatos', 'Relatos', 'Problemas registrados na cidade'],
+                  ] as const).map(([value, label, hint]) => (
+                    <LogoMenuItem
+                      key={value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={feedMenu.value === value}
+                      $active={feedMenu.value === value}
+                      onClick={() => { feedMenu.onChange(value); setFeedMenuOpen(false) }}
+                    >
+                      <span>{label}<small>{hint}</small></span>
+                      {feedMenu.value === value && <Check size={18} weight="bold" />}
+                    </LogoMenuItem>
+                  ))}
+                </LogoMenu>
+              )}
+            </LogoMenuWrap>
+          ) : (
+            <Logo to="/">
+              <LogoImg src={logoSrc} alt="Votz" />
+            </Logo>
+          )}
 
           <NavLinks>
             <NavLink to="/">Explorar</NavLink>
@@ -760,6 +880,7 @@ export function Navbar() {
                 </ReportButton>
                 <NotificationsPanel />
                 {conversations.data?.enabled && <BellBtn as={Link} to="/conversas" aria-label="Conversas" title="Conversas"><ChatCircle size={23} aria-hidden="true" /></BellBtn>}
+                <BellBtn as={Link} to="/mensagens" aria-label="Mensagens para páginas" title="Mensagens para páginas"><EnvelopeSimple size={23} aria-hidden="true" /></BellBtn>
                 <AvatarWrapper ref={wrapperRef}>
                   <Avatar
                     $src={user.avatarUrl}

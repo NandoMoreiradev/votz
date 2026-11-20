@@ -15,6 +15,11 @@ import { useMyProfiles } from '../hooks/useAuth'
 import { Button } from '../components/ui/Button'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
+import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
+import { PageChatPanel } from '../components/page-inbox/PageChatPanel'
+import { PageInboxPanel } from '../components/page-inbox/PageInboxPanel'
+import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
+import { HandleLine } from '../components/page-inbox/PageInboxUi'
 import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
@@ -632,6 +637,7 @@ export function PoliticianProfile() {
               </AvatarLink>
               <Info>
                 <Name>{politician.name}</Name>
+                <HandleLine username={(politician as { username?: string | null }).username} />
                 <FollowersCount count={politician.followersCount} />
                 <MetaRow>
                   <Tag $variant="office">{politician.office}</Tag>
@@ -719,6 +725,7 @@ export function PoliticianProfile() {
                     </ReportCta>
                   )}
                   {!canEdit && <FollowButton targetType="POLITICIAN" targetId={politician.id} />}
+                  {!canEdit && currentUser && <PageMessageButton />}
                 </CtaRow>
                 {!canEdit &&
                   profiles?.orgs.some((o) => o.type === 'POLITICIAN' && o.id === politician.id) && (
@@ -789,8 +796,15 @@ export function PoliticianProfile() {
           <TwoCol>
             {/* Main */}
             <MainCol>
+              {currentUser && !canEdit && <PageChatPanel orgType="POLITICIAN" orgId={politician.id} pageName={politician.name} />}
               {currentUser && canEdit && (
-                <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
+                <>
+                  <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
+                <PageInboxPanel orgType="POLITICIAN" orgId={politician.id} permissions={activeContext?.permissions ?? []} />
+                {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
+                  <PageHandlePanel orgType="POLITICIAN" orgId={politician.id} current={(politician as { username?: string | null }).username} />
+                )}
+                </>
               )}
               {currentUser && canEdit && <YoutubeChannelsPanel />}
 

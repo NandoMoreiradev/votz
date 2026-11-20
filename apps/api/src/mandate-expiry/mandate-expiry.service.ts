@@ -32,7 +32,7 @@ export class MandateExpiryService {
     await this.queue.add(
       'process-expired',
       {},
-      { jobId: 'mandate-expiry:daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: 'mandate-expiry-daily', removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

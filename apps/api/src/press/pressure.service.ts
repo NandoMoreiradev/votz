@@ -70,7 +70,7 @@ export class PressureService {
       'recalculate-single',
       { reportId },
       {
-        jobId: `single:${reportId}`,
+        jobId: `single-${reportId}`,
         removeOnComplete: 200,
         removeOnFail: 50,
         attempts: 3,

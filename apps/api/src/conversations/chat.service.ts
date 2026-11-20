@@ -1150,7 +1150,7 @@ export class ChatService {
             eventId: pushEventId,
           },
           {
-            jobId: `push:${id}:${pushEventId}`,
+            jobId: `push-${id}-${pushEventId}`,
             removeOnComplete: true,
             removeOnFail: 100,
             attempts: 3,

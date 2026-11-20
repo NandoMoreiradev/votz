@@ -6,6 +6,7 @@ import { Prisma, UserType } from '@prisma/client'
 import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
+import { HandlesService } from '../handles/handles.service'
 import { UsersRepository } from './users.repository'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { AcceptConsentDto } from './dto/accept-consent.dto'
@@ -20,6 +21,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     @InjectQueue(LGPD_QUEUE) private readonly lgpdQueue: Queue,
+    private readonly handles: HandlesService,
   ) {}
 
   async findById(id: string) {
@@ -51,13 +53,8 @@ export class UsersService {
       this.storage.assertOwnStorageUrl(dto.coverUrl, 'covers')
     }
     if (dto.username !== undefined) {
-      const existing = await this.prisma.user.findFirst({
-        where: { username: dto.username, NOT: { id } },
-        select: { id: true },
-      })
-      if (existing) {
-        throw new ConflictException('Este nome de usuário já está em uso')
-      }
+      // Nome único em todo o Votz: cidadão, político, entidade e empresa.
+      await this.handles.assertAvailable(dto.username, { kind: 'USER', id })
     }
     try {
       return await this.saveProfile(id, dto)

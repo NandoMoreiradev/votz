@@ -10,6 +10,7 @@ import { api, refreshSession } from './lib/api'
 import { getToken } from './lib/token'
 import { useAuthStore } from './store/auth.store'
 import { Home } from './pages/Home'
+import { PageMessagesList } from './pages/PageMessages'
 import { ReportDetail } from './pages/ReportDetail'
 import { CreateReport } from './pages/CreateReport'
 import { Login } from './pages/Login'
@@ -113,6 +114,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/publicacoes/:id" element={<PostDetail />} />
+              <Route path="/mensagens" element={<PageMessagesList />} />
               <Route path="/conversas/*" element={<ConversationsRoute />} />
               <Route path="/pautas/:slug" element={<PautaDetail />} />
               <Route path="/relatos/:id" element={<ReportDetail />} />

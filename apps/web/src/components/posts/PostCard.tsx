@@ -6,6 +6,7 @@ import {
   Broadcast,
   ChatCircle,
   CheckCircle,
+  Fire,
   Flag,
   Heart,
   LinkSimple,
@@ -151,6 +152,16 @@ const AuthorName = styled(Link)`
   font-size: ${({ theme }) => theme.fontSizes.md};
   color: ${({ theme }) => theme.colors.text};
   &:hover { text-decoration: underline; }
+`
+
+const ReasonTag = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.muted};
 `
 
 const RolePill = styled.span`
@@ -507,6 +518,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
 
   return (
     <Card $advocacy={post.kind === PostKind.ADVOCACY} $isNew={isNew} $detail={detail} aria-label={detail ? 'Publicação' : undefined}>
+      {!detail && post.feedReason && <ReasonTag><Fire size={14} weight="fill" /><span>{post.feedReason}</span></ReasonTag>}
       {!detail && post.repost && <RepostContext to={`/perfil/${post.repost.user.id}`}><ArrowsClockwise size={14} /><span>{post.repost.user.name} repostou</span></RepostContext>}
       {post.kind === PostKind.ADVOCACY && (
         <AdvocacyTag>

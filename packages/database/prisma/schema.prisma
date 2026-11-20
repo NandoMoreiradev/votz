@@ -139,6 +139,19 @@ enum OrgPermission {
   EXPORT_DATA
   MANAGE_BRANCHES
   MANAGE_BILLING
+  READ_MESSAGES
+  REPLY_MESSAGES
+}
+
+enum PageConversationStatus {
+  OPEN
+  RESOLVED
+  BLOCKED
+}
+
+enum PageMessageSender {
+  CITIZEN
+  STAFF
 }
 
 enum MembershipStatus {
@@ -344,6 +357,9 @@ model User {
   conversationMembers      ConversationMember[] @relation("ConversationParticipant")
   conversationInvitations  ConversationMember[] @relation("ConversationInviter")
   conversationBlocksSent   ConversationBlock[] @relation("ConversationBlocker")
+  pageConversations        PageConversation[]  @relation("PageConversationCitizen")
+  pageMessagesSent         PageMessage[]       @relation("PageMessageSender")
+  pageConversationReads    PageConversationRead[]
   conversationBlocksReceived ConversationBlock[] @relation("ConversationBlocked")
   conversationDeliveries   ConversationOutbox[]
   chatDevices              ChatDevice[]
@@ -722,6 +738,7 @@ model Entity {
   id              String     @id @default(uuid())
   createdByUserId String?    // auditoria — não determina ownership (ver OrgMembership)
   legalName       String
+  username        String?    @unique  // @ da página; único em todo o Votz (ver HandlesService)
   cnpj            String?    @unique  // opcional para entidades importadas via IBGE
   ibgeCode        String?    @unique  // código IBGE do município — identifica prefeituras importadas
   type            EntityType
@@ -765,7 +782,8 @@ model Politician {
   id              String   @id @default(uuid())
   createdByUserId String?  // auditoria — não determina ownership (ver OrgMembership)
   name            String   @default("") // nome completo do político
-  cpf             String?  @unique // AES-256 em app layer — chave de deduplicação
+  username        String?  @unique // @ da página; único em todo o Votz (ver HandlesService)
+  cpf            String?  @unique // AES-256 em app layer — chave de deduplicação
   tseId           String?  @unique // código oficial TSE (futuro: DivulgaCand)
   partyId         String
   party           Party    @relation(fields: [partyId], references: [id])
@@ -799,6 +817,7 @@ model Company {
   id        String        @id @default(uuid())
   legalName String
   tradeName String
+  username  String?       @unique // @ da página; único em todo o Votz (ver HandlesService)
   cnpj      String        @unique
   sector    CompanySector
   size      CompanySize
@@ -1981,4 +2000,57 @@ model PlatformSuggestionVote {
 
   @@unique([suggestionId, userId])
   @@map("platform_suggestion_votes")
+}
+
+// ── Mensagens para páginas (político, entidade, empresa) ─────────────────────
+// Caixa de entrada da página: um cidadão fala com a EQUIPE, não com uma pessoa.
+// Texto cifrado no banco (AES-256-GCM, chave do servidor), NÃO é ponta a ponta:
+// a equipe com READ_MESSAGES lê, com REPLY_MESSAGES responde. Decisão do dono (20/11/2026).
+model PageConversation {
+  id            String                 @id @default(uuid())
+  orgType       OrgType                @map("org_type")
+  orgId         String                 @map("org_id")
+  citizenId     String                 @map("citizen_id")
+  citizen       User                   @relation("PageConversationCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
+  status        PageConversationStatus @default(OPEN)
+  lastMessageAt DateTime               @default(now()) @map("last_message_at")
+  lastSender    PageMessageSender      @default(CITIZEN) @map("last_sender")
+  staffUnread   Int                    @default(0) @map("staff_unread")
+  citizenUnread Int                    @default(0) @map("citizen_unread")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  messages      PageMessage[]
+  reads         PageConversationRead[]
+
+  @@unique([orgType, orgId, citizenId])
+  @@index([orgType, orgId, status, lastMessageAt])
+  @@index([citizenId, lastMessageAt])
+  @@map("page_conversations")
+}
+
+model PageMessage {
+  id             String            @id @default(uuid())
+  conversationId String            @map("conversation_id")
+  conversation   PageConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String            @map("sender_id")
+  sender         User              @relation("PageMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderKind     PageMessageSender @map("sender_kind")
+  bodyEnc        String            @map("body_enc")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@map("page_messages")
+}
+
+// Auditoria: quem da equipe abriu cada conversa e quando foi a última vez.
+model PageConversationRead {
+  id             String           @id @default(uuid())
+  conversationId String           @map("conversation_id")
+  conversation   PageConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String           @map("user_id")
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstReadAt    DateTime         @default(now()) @map("first_read_at")
+  lastReadAt     DateTime         @default(now()) @map("last_read_at")
+
+  @@unique([conversationId, userId])
+  @@map("page_conversation_reads")
 }

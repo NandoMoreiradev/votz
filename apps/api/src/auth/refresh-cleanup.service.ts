@@ -20,7 +20,7 @@ export class RefreshCleanupService {
     await this.queue.add(
       'purge-expired-tokens',
       {},
-      { jobId: 'refresh-cleanup:daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: 'refresh-cleanup-daily', removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 
