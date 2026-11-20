@@ -30,7 +30,7 @@
     "@nestjs/swagger": "^7.4.0",
     "@nestjs/terminus": "^10.2.3",
     "@nestjs/throttler": "^6.2.1",
-    "@nestjs/websockets": "^10.4.22",
+    "@nestjs/websockets": "^12.5.0",
     "@prisma/client": "^5.19.1",
     "@resvg/resvg-js": "^2.6.2",
     "@socket.io/redis-adapter": "^8.3.0",
