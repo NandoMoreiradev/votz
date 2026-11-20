@@ -102,7 +102,7 @@ export default function ComposeScreen() {
           const started = Date.now()
           let uploaded: { url: string }
           try {
-            uploaded = await uploadFile<{ url: string }>(`/storage/upload/${isReport ? 'report-media' : 'post-media'}`, { uri: item.uri, mimeType: item.mimeType }, uploadTimeoutMs(item.kind))
+            uploaded = await uploadFile<{ url: string }>(`/storage/upload/${isReport ? 'report-media' : 'post-media'}`, { uri: item.uri, mimeType: item.mimeType }, { timeoutMs: uploadTimeoutMs(item.kind) })
           } catch (error) {
             console.warn('[envio] falhou', JSON.stringify({ tipo: item.kind, arquivo: item.name, mime: item.mimeType, bytes: item.size, uri: item.uri.slice(0, 60), ms: Date.now() - started, erro: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }))
             throw new UploadError(label, error)

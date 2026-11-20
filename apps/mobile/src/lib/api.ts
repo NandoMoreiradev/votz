@@ -111,25 +111,42 @@ export async function api<T>(path: string, options: ApiOptions = {}, authenticat
     return send()
   }
 }
+export interface UploadOptions {
+  /** Tempo máximo do envio (padrão 60 s). */
+  timeoutMs?: number
+  /** Cabeçalhos extras (ex.: credenciais do aparelho do chat). */
+  headers?: Record<string, string>
+  /** Cancela o envio em andamento. */
+  signal?: AbortSignal
+}
+
 /**
  * Envia um arquivo local (multipart) direto do disco, em streaming.
  * No Expo 58 o `fetch` global não aceita o anexo `{ uri, name, type }` do React Native (erro
  * "Unsupported FormDataPart implementation") e, com Blob, leria o vídeo inteiro para a memória.
  */
-export async function uploadFile<T>(path: string, file: { uri: string; mimeType: string }, timeoutMs = 60_000): Promise<T> {
+export async function uploadFile<T>(path: string, file: { uri: string; mimeType: string }, options: UploadOptions = {}): Promise<T> {
+  const { timeoutMs = 60_000, headers = {}, signal } = options
+  const aborted = () => Object.assign(new Error('Envio cancelado'), { name: 'AbortError' })
   const send = async () => {
+    if (signal?.aborted) throw aborted()
     if (accessToken && tokenExpiresAt && tokenExpiresAt <= Date.now() + 5_000) await refreshSession()
     const task = FileSystem.createUploadTask(`${API_URL}${path}`, file.uri, {
       httpMethod: 'POST', uploadType: FileSystem.FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: file.mimeType,
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...headers },
     })
-    const timer = setTimeout(() => { void task.cancelAsync() }, timeoutMs)
+    const cancel = () => { void task.cancelAsync() }
+    const timer = setTimeout(cancel, timeoutMs)
+    signal?.addEventListener('abort', cancel, { once: true })
     try {
       const result = await task.uploadAsync()
-      // Cancelado pelo tempo limite: o upload nativo devolve vazio.
-      if (!result) throw Object.assign(new Error('Tempo esgotado'), { name: 'AbortError' })
+      // Cancelado (tempo limite ou pedido do chamador): o upload nativo devolve vazio.
+      if (!result) throw signal?.aborted ? aborted() : Object.assign(new Error('Tempo esgotado'), { name: 'AbortError' })
       return result
-    } finally { clearTimeout(timer) }
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', cancel)
+    }
   }
   let result = await send()
   if (result.status === 401) { await refreshSession(); result = await send() }

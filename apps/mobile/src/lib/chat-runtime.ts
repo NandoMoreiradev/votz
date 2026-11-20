@@ -7,7 +7,7 @@ import {
 } from '@votz/chat-core'
 import { Platform } from 'react-native'
 import { uuid } from 'expo-modules-core'
-import { API_URL, api, ApiError, conversationSocketToken, json } from './api'
+import { API_URL, api, ApiError, conversationSocketToken, json, uploadFile } from './api'
 import { useSession } from './session'
 import { NativeChatCrypto } from './chat-crypto'
 import { clearChatPushToken, registerChatPushToken } from './chat-push'
@@ -131,7 +131,11 @@ export async function resetNativeChat(userId: string, password: string) {
   await forgetNativeChat(userId)
 }
 
-/** Sobe bytes já cifrados de ponta a ponta (nunca envia mídia em claro). */
+/**
+ * Sobe bytes já cifrados de ponta a ponta (nunca envia mídia em claro). Os bytes vão para um arquivo
+ * temporário e saem dele em streaming (uploadFile): o fetch global do Expo 58 não aceita o anexo
+ * { uri, name, type } e, com Blob, carregaria tudo na memória.
+ */
 export async function uploadNativeChatMedia(
   userId: string,
   conversationId: string,
@@ -140,36 +144,22 @@ export async function uploadNativeChatMedia(
 ): Promise<{ id: string }> {
   const { File, Paths } = await import('expo-file-system')
   const storage = await nativeChatStorage(userId)
-  const token = await conversationSocketToken()
   const temp = new File(Paths.cache, `votz-enc-${uuid.v4()}.bin`)
   try {
     temp.write(ciphertext)
-    const form = new FormData()
-    form.append('file', {
-      uri: temp.uri,
-      name: 'encrypted.bin',
-      type: 'application/octet-stream',
-    } as unknown as Blob)
-    const response = await fetch(
-      `${API_URL}/conversations/${conversationId}/chat/media`,
+    // O token de acesso é renovado pelo uploadFile (e refeito em 401); a API usa o aparelho do chat para autorizar.
+    return await uploadFile<{ id: string }>(
+      `/conversations/${conversationId}/chat/media`,
+      { uri: temp.uri, mimeType: 'application/octet-stream' },
       {
-        method: 'POST',
+        timeoutMs: 5 * 60_000,
+        signal,
         headers: {
-          Authorization: `Bearer ${token}`,
           'x-votz-chat-device': storage.credentials.id,
           'x-votz-chat-secret': storage.credentials.secret,
         },
-        body: form,
-        signal,
       },
     )
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok)
-      throw new ApiError(
-        (data as { message?: string }).message || 'Não foi possível enviar o arquivo.',
-        response.status,
-      )
-    return data as { id: string }
   } finally {
     try {
       if (temp.exists) temp.delete()

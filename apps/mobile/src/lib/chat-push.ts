@@ -43,7 +43,8 @@ export async function registerChatPushToken(userId: string): Promise<void> {
       await notifications.setNotificationChannelAsync('chat-messages', {
         name: 'Conversas',
         importance: notifications.AndroidImportance?.HIGH ?? 4,
-        sound: 'default',
+        // Sem o campo "sound" o Android usa o som padrão de notificação. Passar 'default' faz o
+        // expo-notifications procurar um arquivo de som chamado "default" (que não existe) e reclamar.
       })
     }
     const existing = await notifications.getPermissionsAsync()
