@@ -66,6 +66,29 @@ export function useEndDebate(id: string) {
   })
 }
 
+/** Anfitrião define ou troca o link da live do YouTube. */
+export function useSetDebateStream(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (url: string) => api.put<Debate>(`/debates/${id}/stream`, { url }).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.setQueryData(['debate', id], data)
+    },
+  })
+}
+
+/** Debatedor confirmado coloca (ou tira, com null) o link da própria live. */
+export function useSetParticipantStream(debateId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ politicianId, url }: { politicianId: string; url: string | null }) =>
+      api.put<Debate>(`/debates/${debateId}/participants/${politicianId}/stream`, { url }).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.setQueryData(['debate', debateId], data)
+    },
+  })
+}
+
 export function useRespondInvite(debateId: string) {
   const qc = useQueryClient()
   return useMutation({

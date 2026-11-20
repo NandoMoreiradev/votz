@@ -37,4 +37,25 @@ export interface ReportComment {
   _count: { replies: number }; replies?: ReportComment[]
 }
 export interface Session { user: User; accessToken: string; refreshToken: string }
+export type DebateStatus = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED'
+export type StreamProvider = 'LIVEKIT' | 'YOUTUBE'
+export type ReactionType = 'APPLAUSE' | 'FIRE' | 'POSITIVE' | 'QUESTION' | 'DISAGREEMENT'
+export interface DebatePolitician { id: string; name: string; avatarUrl: string | null; office: string; party: { abbreviation: string } }
+export interface DebateParticipant {
+  id: string; politicianId: string; role: 'MODERATOR' | 'DEBATER'; inviteStatus: 'PENDING' | 'CONFIRMED' | 'DECLINED'
+  /** Live do próprio debatedor ("Assistir pelo canal de X"), se ele colocou. */
+  youtubeVideoId: string | null; youtubeChannelTitle: string | null
+  politician: DebatePolitician
+}
+export interface Debate {
+  id: string; title: string; description: string | null; scheduledFor: string; status: DebateStatus
+  streamProvider: StreamProvider; youtubeVideoId: string | null; youtubeChannelTitle: string | null
+  /** Anfitrião: político em `creator` ou entidade em `hostEntity` (um dos dois). */
+  creator: DebatePolitician | null; hostEntity: { id: string; legalName: string; logoUrl: string | null } | null
+  viewerCount: number; chatCooldownSecs: number; participants: DebateParticipant[]
+}
+export interface DebateAuthor { id: string; name: string; avatarUrl: string | null }
+export interface DebateQuestion { id: string; text: string; upvotes: number; answered: boolean; createdAt: string; author: DebateAuthor }
+export interface DebateMessage { id: string; text: string; createdAt: string; author: DebateAuthor }
+export interface DebatePoll { id: string; question: string; active: boolean; options: { id: string; text: string; totalVotes: number }[] }
 export type LoginResult = Session | { requiresMfa: true; mfaToken: string } | { requiresMfaSetup: true; mfaSetupToken: string }

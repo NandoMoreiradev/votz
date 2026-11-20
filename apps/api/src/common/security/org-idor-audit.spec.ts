@@ -26,6 +26,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { DebatesController } from '../../debates/debates.controller'
 import { DebatesRepository } from '../../debates/debates.repository'
 import { DEBATES_QUEUE, DebatesService } from '../../debates/debates.service'
+import { YoutubeChannelsService } from '../../youtube/youtube-channels.service'
 import { OrgMembershipsController } from '../../org-memberships/org-memberships.controller'
 import { OrgPermissionGuard } from '../../org-memberships/org-memberships.guard'
 import { OrgMembershipsRepository } from '../../org-memberships/org-memberships.repository'
@@ -45,6 +46,9 @@ const ROLE_B_ID = '44444444-4444-4444-8444-444444444444'
 const PROPOSTA_B_ID = '55555555-5555-4555-8555-555555555555'
 const PROPOSTA_MISSING_ID = '66666666-6666-4666-8666-666666666666'
 const DEBATE_B_ID = '77777777-7777-4777-8777-777777777777'
+const DEBATE_A_ID = '88888888-8888-4888-8888-888888888888'
+const DEBATE_ENTITY_ID = '99999999-9999-4999-8999-999999999999'
+const ENTITY_X_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 describe('Cross-tenant & Organization Authorization IDOR audit', () => {
   let app: INestApplication
@@ -52,6 +56,7 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
   let orgMembershipRepo: any
   let propostasRepo: any
   let debatesRepo: any
+  let youtubeChannels: any
   let orgMembershipsService: any
   let subscricoesService: any
   let regReqService: any
@@ -136,14 +141,26 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
       addTimeline: jest.fn().mockResolvedValue({}),
     }
 
+    const debateFixture = (over: Record<string, unknown>) => ({
+      status: 'SCHEDULED', streamProvider: 'YOUTUBE', creatorId: null, hostEntityId: null, participants: [], ...over,
+    })
     debatesRepo = {
       findById: jest.fn(async (id: string) => {
-        if (id === DEBATE_B_ID) return { id: DEBATE_B_ID, creatorId: ORG_B_ID, status: 'SCHEDULED' }
+        if (id === DEBATE_B_ID) return debateFixture({ id: DEBATE_B_ID, creatorId: ORG_B_ID })
+        if (id === DEBATE_A_ID) return debateFixture({ id: DEBATE_A_ID, creatorId: ORG_A_ID })
+        if (id === DEBATE_ENTITY_ID) return debateFixture({ id: DEBATE_ENTITY_ID, hostEntityId: ENTITY_X_ID })
         return null
       }),
       update: jest.fn().mockResolvedValue({}),
+      updateParticipantStream: jest.fn().mockResolvedValue({}),
+      createPoll: jest.fn().mockResolvedValue({ id: 'poll-1' }),
       findParticipant: jest.fn().mockResolvedValue(null),
       isParticipant: jest.fn().mockResolvedValue(false),
+    }
+    youtubeChannels = {
+      resolveVerifiedStream: jest.fn().mockResolvedValue({
+        videoId: 'dQw4w9WgXcQ', channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa', channelTitle: 'Canal',
+      }),
     }
 
     const moduleRef = await Test.createTestingModule({
@@ -167,6 +184,7 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
         { provide: RegistrationRequestsService, useValue: regReqService },
         { provide: PropostasRepository, useValue: propostasRepo },
         { provide: DebatesRepository, useValue: debatesRepo },
+        { provide: YoutubeChannelsService, useValue: youtubeChannels },
         { provide: ConfigService, useValue: { get: jest.fn(), getOrThrow: jest.fn() } },
         { provide: getQueueToken(DEBATES_QUEUE), useValue: { add: jest.fn() } },
       ],
@@ -333,5 +351,35 @@ describe('Cross-tenant & Organization Authorization IDOR audit', () => {
     expect(crossEnd.status).toBe(403)
     expect(crossRespond.status).toBe(403)
     expect(debatesRepo.update).not.toHaveBeenCalled()
+  })
+
+  it('debates (YouTube): only the host changes the live link, and only a debater changes their own', async () => {
+    const link = { url: 'https://youtu.be/dQw4w9WgXcQ' }
+
+    // controle positivo: o dono do debate consegue (garante que os 403 abaixo não são "tudo bloqueado")
+    const own = await requestAs('PUT', `/debates/${DEBATE_A_ID}/stream`, link)
+    expect(own.status).toBe(200)
+    expect(debatesRepo.update).toHaveBeenCalledTimes(1)
+    debatesRepo.update.mockClear()
+    youtubeChannels.resolveVerifiedStream.mockClear()
+
+    // político A no debate do político B
+    expect((await requestAs('PUT', `/debates/${DEBATE_B_ID}/stream`, link)).status).toBe(403)
+    // político A mexendo no link do debatedor B (qualquer debate)
+    expect((await requestAs('PUT', `/debates/${DEBATE_B_ID}/participants/${ORG_B_ID}/stream`, link)).status).toBe(403)
+    expect((await requestAs('PUT', `/debates/${DEBATE_A_ID}/participants/${ORG_B_ID}/stream`, link)).status).toBe(403)
+    // debate cujo anfitrião é uma entidade: um político nunca é o anfitrião
+    expect((await requestAs('PUT', `/debates/${DEBATE_ENTITY_ID}/stream`, link)).status).toBe(403)
+    expect((await requestAs('POST', `/debates/${DEBATE_ENTITY_ID}/start`)).status).toBe(403)
+    expect((await requestAs('POST', `/debates/${DEBATE_ENTITY_ID}/end`)).status).toBe(403)
+    expect((await requestAs('PATCH', `/debates/${DEBATE_ENTITY_ID}`, { title: 'Título alterado indevidamente' })).status).toBe(403)
+    // e um político que não é debatedor não cria enquete no debate da entidade
+    expect((await requestAs('POST', `/debates/${DEBATE_ENTITY_ID}/polls`, { question: 'Aprova?', options: ['Sim', 'Não'] })).status).toBe(403)
+
+    // nada disso chegou a consultar o YouTube nem a gravar
+    expect(youtubeChannels.resolveVerifiedStream).not.toHaveBeenCalled()
+    expect(debatesRepo.update).not.toHaveBeenCalled()
+    expect(debatesRepo.updateParticipantStream).not.toHaveBeenCalled()
+    expect(debatesRepo.createPoll).not.toHaveBeenCalled()
   })
 })

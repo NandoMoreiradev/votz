@@ -390,6 +390,9 @@ export interface DebateQuestion {
   debateId: string
   text: string
   upvotes: number
+  /** Live do próprio debatedor ("Assistir pelo canal de X"), se ele colocou. */
+  youtubeVideoId: string | null
+  youtubeChannelTitle: string | null
   answered: boolean
   createdAt: string
   author: { id: string; name: string; avatarUrl: string | null }
@@ -429,8 +432,16 @@ export interface Debate {
   recordingUrl: string | null
   viewerCount: number
   chatCooldownSecs: number
-  creatorId: string
-  creator: DebateParticipantPolitician
+  /** Como o debate é transmitido. Debates antigos usam LIVEKIT; os novos, a live do YouTube. */
+  streamProvider: StreamProvider
+  youtubeVideoId: string | null
+  youtubeChannelId: string | null
+  youtubeChannelTitle: string | null
+  /** Anfitrião: um dos dois vem preenchido. Político em `creator`, entidade em `hostEntity`. */
+  creatorId: string | null
+  creator: DebateParticipantPolitician | null
+  hostEntityId: string | null
+  hostEntity: DebateHostEntity | null
   participants: DebateParticipant[]
   createdAt: string
   updatedAt: string
@@ -444,6 +455,27 @@ export interface DebatesResponse {
 // ==================== PUBLICAÇÕES & PAUTAS CÍVICAS ====================
 
 export type {
+export type StreamProvider = 'LIVEKIT' | 'YOUTUBE'
+
+export interface DebateHostEntity {
+  id: string
+  legalName: string
+  logoUrl: string | null
+  type: string
+}
+
+export interface YoutubeChannel {
+  id: string
+  orgType: 'POLITICIAN' | 'ENTITY' | 'COMPANY'
+  orgId: string
+  channelId: string
+  title: string
+  /** Código para colar na descrição do canal. */
+  verificationCode: string
+  verifiedAt: string | null
+  createdAt: string
+}
+
   CivicTopicSummaryDto,
   EmbeddedDebateDto,
   EmbeddedDebatePollDto,
@@ -504,7 +536,9 @@ export interface TopicDetailResponse {
     status: string
     scheduledFor: string
     viewerCount: number
-    creator: { id: string; name: string; avatarUrl: string | null }
+    /** Político anfitrião. Nulo quando quem organiza é uma entidade (veja `hostEntity`). */
+    creator: { id: string; name: string; avatarUrl: string | null } | null
+    hostEntity: { id: string; legalName: string; logoUrl: string | null } | null
   }>
   topCities: Array<{ name: string; count: number }>
   following: boolean

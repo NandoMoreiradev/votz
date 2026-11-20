@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { getToken } from '../lib/token'
 import { useDebateStore } from '../store/debate.store'
-import { DebateMessage, DebatePoll, DebateQuestion, ReactionType } from '../types/api'
+import { Debate, DebateMessage, DebatePoll, DebateQuestion, ReactionType } from '../types/api'
 
 function getWsBase(): string {
   const apiUrl = import.meta.env.VITE_API_URL as string | undefined
@@ -57,6 +57,11 @@ export function useDebateSocket(debateId: string) {
 
     socket.on('debate:poll-result', (poll: DebatePoll) => {
       store.updatePollResult(poll)
+    })
+
+    // Link da live (do anfitrião ou de um debatedor) mudou: o debate completo vem junto.
+    socket.on('debate:stream-change', ({ debate }: { debate: Debate }) => {
+      if (debate) store.setDebate(debate)
     })
 
     socket.on('debate:status-change', ({ status }: { status: string }) => {

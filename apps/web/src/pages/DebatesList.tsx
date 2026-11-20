@@ -371,12 +371,19 @@ function DebateCardItem({ debate }: { debate: Debate }) {
 
 // ── Create Debate Modal ─────────────────────────────────────────────────────
 
-function CreateDebateModal({ onClose }: { onClose: () => void }) {
+const ErrorText = styled.p`
+  color: ${({ theme }) => theme.colors.action};
+  font-size: 0.875rem;
+  margin-bottom: 8px;
+`
+
+function CreateDebateModal({ onClose, hostedByEntity }: { onClose: () => void; hostedByEntity: boolean }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [scheduledFor, setScheduledFor] = useState('')
   const [inviteSearch, setInviteSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [error, setError] = useState('')
 
   const { data: politicians } = usePoliticians({ search: inviteSearch || undefined, enabled: inviteSearch.length > 1 })
   const createDebate = useCreateDebate()
@@ -384,10 +391,19 @@ function CreateDebateModal({ onClose }: { onClose: () => void }) {
   const toggle = (id: string) =>
     setSelectedIds((ids) => ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id])
 
+  // Entidade organiza mas não debate: precisa de pelo menos um político convidado.
+  const missingInvites = hostedByEntity && selectedIds.length === 0
+
   const submit = async () => {
-    if (!title || !scheduledFor) return
-    await createDebate.mutateAsync({ title, description, scheduledFor, invites: selectedIds })
-    onClose()
+    if (!title || !scheduledFor || missingInvites) return
+    setError('')
+    try {
+      await createDebate.mutateAsync({ title, description, scheduledFor, invites: selectedIds })
+      onClose()
+    } catch (e) {
+      const message = (e as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
+      setError((Array.isArray(message) ? message[0] : message) ?? 'Não deu para criar o debate agora. Tente de novo.')
+    }
   }
 
   return (
@@ -411,7 +427,7 @@ function CreateDebateModal({ onClose }: { onClose: () => void }) {
         </Field>
 
         <Field>
-          <Label>Convidar políticos</Label>
+          <Label>Convidar políticos{hostedByEntity ? ' *' : ''}</Label>
           <Input
             value={inviteSearch}
             onChange={(e) => setInviteSearch(e.target.value)}
@@ -433,9 +449,11 @@ function CreateDebateModal({ onClose }: { onClose: () => void }) {
           )}
         </Field>
 
+        {error && <ErrorText>{error}</ErrorText>}
+
         <ModalActions>
           <BtnSecondary onClick={onClose}>Cancelar</BtnSecondary>
-          <BtnPrimary onClick={submit} disabled={!title || !scheduledFor || createDebate.isPending}>
+          <BtnPrimary onClick={submit} disabled={!title || !scheduledFor || missingInvites || createDebate.isPending}>
             {createDebate.isPending ? 'Criando...' : 'Criar Debate'}
           </BtnPrimary>
         </ModalActions>
@@ -452,7 +470,8 @@ export default function DebatesList() {
   const [tab, setTab] = useState<TabKey>('LIVE')
   const [showModal, setShowModal] = useState(false)
   const activeContext = useAuthStore((s) => s.activeContext)
-  const isPolitician = activeContext?.type === 'POLITICIAN'
+  // Político (e equipe) ou entidade podem agendar. A API confere a permissão de verdade.
+  const canHost = activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY'
 
   const liveQ = useDebates({ status: 'LIVE' })
   const scheduledQ = useDebates({ status: 'SCHEDULED', upcoming: true })
@@ -470,7 +489,7 @@ export default function DebatesList() {
             <Title>Debates ao Vivo</Title>
             <Subtitle>Acompanhe e participe de debates entre políticos em tempo real</Subtitle>
           </TitleGroup>
-          {isPolitician && (
+          {canHost && (
             <NewDebateBtn onClick={() => setShowModal(true)}>+ Agendar Debate</NewDebateBtn>
           )}
         </PageHeader>
@@ -511,7 +530,9 @@ export default function DebatesList() {
         )}
       </Content>
 
-      {showModal && <CreateDebateModal onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <CreateDebateModal onClose={() => setShowModal(false)} hostedByEntity={activeContext?.type === 'ENTITY'} />
+      )}
     </Page>
   )
 }

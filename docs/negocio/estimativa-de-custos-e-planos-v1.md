@@ -195,7 +195,7 @@ O foco inicial são políticos e entidades. Empresas ficam para depois; quando v
 | 5 | Aceita **preço por porte** (cargo e população)? | Você |
 | 6 | Quanto tempo você pode dedicar a **vendas e suporte**? | Você |
 | 7 | **Meta dos primeiros 12 meses**: sugestão de partida é "cobrir o custo fixo e 10 organizações pagantes" | Você |
-| 8 | Qual é o **custo real** do LiveKit (gravação e transmissão) em 1 debate típico? | Teste prático |
+| 8 | Qual é o **custo real** do LiveKit (gravação e transmissão) em 1 debate típico? | Teste prático. **Em 20/11/2026 a pergunta deixou de valer para os debates novos:** eles passam por uma live do YouTube incorporada, então o Votz **não paga gravação, transmissão (HLS) nem banda por espectador**. O LiveKit continua só nos debates antigos e nas chamadas de Conversas. O custo novo é a cota da YouTube Data API (gratuita no uso previsto: cada link colado ou canal verificado gasta 1 unidade, de 10.000 por dia) |
 
 ### Pergunta registrada em 18/11/2026: quanto custam chamadas de voz e vídeo nas Conversas?
 

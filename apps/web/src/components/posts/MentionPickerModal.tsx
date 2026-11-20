@@ -273,7 +273,7 @@ export function MentionPickerModal({ isOpen, onClose, onSelect }: MentionPickerM
                 >
                   <ItemTitle>{d.title}</ItemTitle>
                   <ItemSub>
-                    {d.status} · por {d.creator.name}
+                    {d.status} · por {d.creator?.name ?? d.hostEntity?.legalName ?? 'Votz'}
                   </ItemSub>
                 </ItemBtn>
               ))}

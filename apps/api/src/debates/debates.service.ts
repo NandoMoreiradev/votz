@@ -10,7 +10,15 @@ import {
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { ConfigService } from '@nestjs/config'
-import { DebateStatus, InviteStatus, OrgPermission, ParticipantRole, ReactionType } from '@prisma/client'
+import {
+  DebateStatus,
+  InviteStatus,
+  OrgPermission,
+  OrgType,
+  ParticipantRole,
+  ReactionType,
+  StreamProvider,
+} from '@prisma/client'
 import {
   AccessToken,
   EgressClient,
@@ -20,6 +28,7 @@ import {
 } from 'livekit-server-sdk'
 import { PrismaService } from '../prisma/prisma.service'
 import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
+import { YoutubeChannelsService } from '../youtube/youtube-channels.service'
 import { DebatesRepository } from './debates.repository'
 import { DebatesGateway } from './debates.gateway'
 import { CreateDebateDto } from './dto/create-debate.dto'
@@ -47,29 +56,40 @@ export class DebatesService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @InjectQueue(DEBATES_QUEUE) private readonly queue: Queue,
+    private readonly youtube: YoutubeChannelsService,
     @Optional() private readonly gateway: DebatesGateway,
   ) {}
 
+  /** Político (e equipe) ou entidade podem ser anfitriões. */
   async create(user: ActingUser, dto: CreateDebateDto) {
     const acting = await requireActingOrg(
       this.prisma,
       user,
-      'POLITICIAN',
+      ['POLITICIAN', 'ENTITY'],
       OrgPermission.MANAGE_PROFILE,
     )
 
-    const creatorId = acting.orgId
+    const invites = [...new Set(dto.invites)]
+    const hostedByEntity = acting.orgType === 'ENTITY'
+    if (hostedByEntity && invites.length === 0) {
+      throw new BadRequestException('Convide pelo menos um político para o debate.')
+    }
+
     const debate = await this.repo.create({
       title: dto.title,
       description: dto.description,
       scheduledFor: new Date(dto.scheduledFor),
-      creatorId,
+      streamProvider: dto.streamProvider ?? StreamProvider.YOUTUBE,
+      ...(hostedByEntity ? { hostEntityId: acting.orgId } : { creatorId: acting.orgId }),
     })
 
-    await this.repo.createParticipant(debate.id, creatorId, ParticipantRole.MODERATOR, InviteStatus.CONFIRMED)
+    // O político anfitrião já entra confirmado. Entidade anfitriã organiza, mas não debate.
+    if (!hostedByEntity) {
+      await this.repo.createParticipant(debate.id, acting.orgId, ParticipantRole.MODERATOR, InviteStatus.CONFIRMED)
+    }
 
-    for (const politicianId of dto.invites) {
-      if (politicianId === creatorId) continue
+    for (const politicianId of invites) {
+      if (!hostedByEntity && politicianId === acting.orgId) continue
       await this.repo.createParticipant(debate.id, politicianId, ParticipantRole.DEBATER, InviteStatus.PENDING)
     }
 
@@ -102,7 +122,7 @@ export class DebatesService {
   }
 
   async update(id: string, user: ActingUser, dto: UpdateDebateDto) {
-    await this.assertCreator(id, user)
+    await this.assertHost(id, user)
     const data: Record<string, unknown> = {}
     if (dto.title !== undefined) data.title = dto.title
     if (dto.description !== undefined) data.description = dto.description
@@ -136,11 +156,32 @@ export class DebatesService {
   async start(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    await this.assertCreatorById(debate, user)
+    await this.assertHostOf(debate, user)
     if (debate.status !== DebateStatus.SCHEDULED) {
       throw new BadRequestException('Debate não está no status SCHEDULED')
     }
 
+    let extra: Record<string, unknown> = {}
+    if (debate.streamProvider === StreamProvider.YOUTUBE) {
+      // A live roda no YouTube: o Votz não cria sala nem grava nada.
+      if (!debate.youtubeVideoId) {
+        throw new BadRequestException('Cole o link da live do YouTube antes de iniciar o debate.')
+      }
+    } else {
+      extra = await this.startLivekit(debateId)
+    }
+
+    await this.repo.updateStatus(debateId, DebateStatus.LIVE, extra)
+    this.gateway?.emitStatusChange(debateId, DebateStatus.LIVE)
+
+    const participantIds = debate.participants.map((p) => p.politicianId)
+    await this.queue.add('debate:live', { type: 'debate:live', debateId, title: debate.title, participantIds })
+
+    return this.repo.findById(debateId)
+  }
+
+  /** Cria a sala do LiveKit e liga o HLS Egress (debates antigos). Devolve os campos a gravar no debate. */
+  private async startLivekit(debateId: string): Promise<Record<string, unknown>> {
     const roomName = `debate-${debateId}`
     const roomService = new RoomServiceClient(this.livekitUrl, this.apiKey, this.apiSecret)
     await roomService.createRoom({ name: roomName, maxParticipants: 2000 })
@@ -186,24 +227,17 @@ export class DebatesService {
       this.logger.log('R2 not configured — citizens will connect as LiveKit subscribers')
     }
 
-    await this.repo.updateStatus(debateId, DebateStatus.LIVE, {
+    return {
       livekitRoomName: roomName,
       ...(hlsUrl && { hlsUrl }),
       ...(egressId && { egressId }),
-    })
-
-    this.gateway?.emitStatusChange(debateId, DebateStatus.LIVE)
-
-    const participantIds = debate.participants.map((p) => p.politicianId)
-    await this.queue.add('debate:live', { type: 'debate:live', debateId, title: debate.title, participantIds })
-
-    return this.repo.findById(debateId)
+    }
   }
 
   async end(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    await this.assertCreatorById(debate, user)
+    await this.assertHostOf(debate, user)
     if (debate.status !== DebateStatus.LIVE) {
       throw new BadRequestException('Debate não está ao vivo')
     }
@@ -231,6 +265,9 @@ export class DebatesService {
   async getLivekitToken(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
+    if (debate.streamProvider === StreamProvider.YOUTUBE) {
+      throw new BadRequestException('Este debate é transmitido pelo YouTube.')
+    }
     if (!debate.livekitRoomName) throw new BadRequestException('Debate ainda não foi iniciado')
 
     // Politicians who are confirmed participants (acting in their active context) can publish
@@ -248,6 +285,57 @@ export class DebatesService {
       canSubscribe: true,
     })
     return { token: await token.toJwt(), canPublish }
+  }
+
+  /** Anfitrião troca o link da live. O canal do vídeo precisa estar verificado para o anfitrião. */
+  async setStream(debateId: string, user: ActingUser, url: string) {
+    const debate = await this.assertExists(debateId)
+    await this.assertHostOf(debate, user)
+    this.assertYoutubeDebateOpen(debate)
+
+    const host = this.hostOf(debate)
+    const stream = await this.youtube.resolveVerifiedStream(url, host.orgType, host.orgId)
+
+    await this.repo.update(debateId, {
+      youtubeVideoId: stream.videoId,
+      youtubeChannelId: stream.channelId,
+      youtubeChannelTitle: stream.channelTitle,
+    })
+
+    const updated = await this.repo.findById(debateId)
+    this.gateway?.emitStreamChange(debateId, updated)
+    return updated
+  }
+
+  /** Debatedor confirmado coloca (ou tira, com url vazia) o link da própria live. */
+  async setParticipantStream(debateId: string, politicianId: string, user: ActingUser, url?: string | null) {
+    const debate = await this.assertExists(debateId)
+    await requireActingOrg(this.prisma, user, 'POLITICIAN', OrgPermission.MANAGE_PROFILE, {
+      expectedOrgId: politicianId,
+    })
+    this.assertYoutubeDebateOpen(debate)
+
+    const participant = await this.repo.findParticipant(debateId, politicianId)
+    if (!participant || participant.inviteStatus !== InviteStatus.CONFIRMED) {
+      throw new ForbiddenException('Confirme sua presença no debate antes de colocar o seu link.')
+    }
+
+    if (!url) {
+      await this.repo.updateParticipantStream(debateId, politicianId, {
+        youtubeVideoId: null,
+        youtubeChannelTitle: null,
+      })
+    } else {
+      const stream = await this.youtube.resolveVerifiedStream(url, OrgType.POLITICIAN, politicianId)
+      await this.repo.updateParticipantStream(debateId, politicianId, {
+        youtubeVideoId: stream.videoId,
+        youtubeChannelTitle: stream.channelTitle,
+      })
+    }
+
+    const updated = await this.repo.findById(debateId)
+    this.gateway?.emitStreamChange(debateId, updated)
+    return updated
   }
 
   findMessages(debateId: string) {
@@ -278,11 +366,18 @@ export class DebatesService {
     const acting = await requireActingOrg(
       this.prisma,
       user,
-      'POLITICIAN',
+      ['POLITICIAN', 'ENTITY'],
       OrgPermission.RESPOND_REPORTS,
     )
-    const isParticipant = await this.repo.isParticipant(debateId, acting.orgId)
-    if (!isParticipant) throw new ForbiddenException('Apenas participantes podem criar enquetes')
+    // Político: precisa ser debatedor confirmado. Entidade: precisa ser a anfitriã do debate.
+    let allowed: boolean
+    if (acting.orgType === 'ENTITY') {
+      const debate = await this.assertExists(debateId)
+      allowed = debate.hostEntityId === acting.orgId
+    } else {
+      allowed = await this.repo.isParticipant(debateId, acting.orgId)
+    }
+    if (!allowed) throw new ForbiddenException('Apenas participantes podem criar enquetes')
 
     const poll = await this.repo.createPoll(debateId, dto.question, dto.options)
     this.gateway?.emitNewPoll(debateId, poll)
@@ -312,19 +407,35 @@ export class DebatesService {
     return exists
   }
 
-  private async assertCreator(debateId: string, user: ActingUser) {
+  private async assertHost(debateId: string, user: ActingUser) {
     const debate = await this.repo.findById(debateId)
     if (!debate) throw new NotFoundException('Debate not found')
-    return this.assertCreatorById(debate, user)
+    return this.assertHostOf(debate, user)
   }
 
-  private async assertCreatorById(debate: { creatorId: string }, user: ActingUser) {
-    await requireActingOrg(
-      this.prisma,
-      user,
-      'POLITICIAN',
-      OrgPermission.MANAGE_PROFILE,
-      { expectedOrgId: debate.creatorId },
-    )
+  /** Quem organiza o debate: o político (`creatorId`) ou a entidade (`hostEntityId`). Sempre um dos dois. */
+  private hostOf(debate: { creatorId?: string | null; hostEntityId?: string | null }) {
+    if (debate.hostEntityId) return { orgType: OrgType.ENTITY, orgId: debate.hostEntityId }
+    if (debate.creatorId) return { orgType: OrgType.POLITICIAN, orgId: debate.creatorId }
+    throw new BadRequestException('Debate sem anfitrião.')
+  }
+
+  private async assertHostOf(
+    debate: { creatorId?: string | null; hostEntityId?: string | null },
+    user: ActingUser,
+  ) {
+    const host = this.hostOf(debate)
+    await requireActingOrg(this.prisma, user, host.orgType, OrgPermission.MANAGE_PROFILE, {
+      expectedOrgId: host.orgId,
+    })
+  }
+
+  private assertYoutubeDebateOpen(debate: { streamProvider?: StreamProvider; status: DebateStatus }) {
+    if (debate.streamProvider !== StreamProvider.YOUTUBE) {
+      throw new BadRequestException('Este debate usa outra forma de transmissão.')
+    }
+    if (debate.status === DebateStatus.ENDED || debate.status === DebateStatus.CANCELLED) {
+      throw new BadRequestException('Este debate já terminou.')
+    }
   }
 }

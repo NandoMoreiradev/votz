@@ -4,6 +4,7 @@ import { router } from 'expo-router'
 import Search from 'lucide-react-native/icons/search'
 import X from 'lucide-react-native/icons/x'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
+import Radio from 'lucide-react-native/icons/radio'
 import { Avatar, IconButton, State, TabStrip } from '../components/ui'
 import { Screen, Toolbar } from '../components/screen'
 import { useDirectory } from '../hooks/use-content'
@@ -16,7 +17,7 @@ export default function ExploreScreen() {
   const [debounced, setDebounced] = useState('')
   useEffect(() => { const timer = setTimeout(() => setDebounced(search.trim()), 300); return () => clearTimeout(timer) }, [search])
   const list = useDirectory(kind, debounced)
-  return <Screen tabs><Toolbar title="Explorar" />
+  return <Screen tabs><Toolbar title="Explorar" right={<IconButton label="Debates ao vivo" onPress={() => router.push('/debates')}><Radio size={22} color={theme.colors.action} /></IconButton>} />
     <View style={{ marginHorizontal: 16, marginVertical: 10, borderRadius: 22, paddingLeft: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.soft }}><Search size={18} color={theme.colors.muted} /><TextInput accessibilityLabel="Buscar perfis" placeholder="Buscar no Votz" placeholderTextColor={theme.colors.muted} value={search} onChangeText={setSearch} returnKeyType="search" style={{ flex: 1, minHeight: 42, paddingHorizontal: 10, fontFamily: theme.fonts.body, color: theme.colors.text, fontSize: 14 }} />{!!search && <IconButton label="Limpar busca" onPress={() => setSearch('')}><X size={17} color={theme.colors.muted} /></IconButton>}</View>
     <TabStrip tabs={[{ value: 'politicians', label: 'Políticos' }, { value: 'entities', label: 'Entidades' }]} value={kind} onChange={setKind} />
     <FlatList data={list.data?.pages.flatMap((page) => page.data) ?? []} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 20 }}

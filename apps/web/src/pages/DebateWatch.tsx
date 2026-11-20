@@ -24,7 +24,10 @@ import {
   useSubmitQuestion,
   useUpvoteQuestion,
   useVotePoll,
+  useSetDebateStream,
+  useSetParticipantStream,
 } from '../hooks/useDebates'
+import { YoutubePlayer } from '../components/debates/YoutubePlayer'
 import { useDebateSocket } from '../hooks/useDebateSocket'
 import { useDebateStore } from '../store/debate.store'
 import { useAuthStore } from '../store/auth.store'
@@ -184,6 +187,77 @@ const SmallAvatar = styled.div<{ $url?: string | null }>`
   border-radius: 50%;
   background: ${({ $url, theme }) => $url ? `url(${$url}) center/cover` : theme.colors.primary};
   flex-shrink: 0;
+`
+
+const HostLine = styled.p`
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.55);
+  margin-bottom: 8px;
+`
+
+const StreamNote = styled.p`
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.4);
+  margin-top: 8px;
+  line-height: 1.4;
+`
+
+const WatchBtn = styled.button<{ $active?: boolean }>`
+  padding: 2px 10px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.action : 'rgba(255,255,255,0.25)')};
+  background: ${({ $active, theme }) => ($active ? theme.colors.action : 'transparent')};
+  color: ${({ theme }) => theme.colors.white};
+  font-size: 0.75rem;
+  cursor: pointer;
+`
+
+const ProfileLink = styled(Link)`
+  color: inherit;
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+`
+
+// ── Link da live (anfitrião e debatedores) ──────────────────────────────────
+
+const StreamBar = styled.div`
+  padding: 10px 20px 12px;
+  background: ${({ theme }) => theme.colors.primary};
+  border-top: 1px solid rgba(255,255,255,0.12);
+`
+
+const StreamBarLabel = styled.p`
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 6px;
+`
+
+const StreamForm = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+`
+
+const StreamInput = styled.input`
+  flex: 1;
+  min-width: 220px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: rgba(255,255,255,0.06);
+  color: ${({ theme }) => theme.colors.white};
+  font-size: 0.875rem;
+  outline: none;
+  &:focus { border-color: rgba(255,255,255,0.45); }
+  &::placeholder { color: rgba(255,255,255,0.35); }
+`
+
+const StreamError = styled.p`
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.action};
 `
 
 // ── Actions for creator ─────────────────────────────────────────────────────
@@ -588,16 +662,23 @@ export default function DebateWatch() {
   const [chatText, setChatText] = useState('')
   const [qaText, setQaText] = useState('')
   const [votedPolls, setVotedPolls] = useState<Record<string, string>>({}) // pollId → optionId
+  const [watchParticipantId, setWatchParticipantId] = useState<string | null>(null) // null = transmissão principal
+  const [streamUrl, setStreamUrl] = useState('')
+  const [ownStreamUrl, setOwnStreamUrl] = useState('')
+  const [streamError, setStreamError] = useState('')
 
   const isParticipant = debate?.participants.some(
     (p) => p.politicianId === activeContext?.id && p.inviteStatus === 'CONFIRMED'
   ) ?? false
 
-  const isCreator = debate?.creatorId === activeContext?.id
+  // Anfitrião: o político (creatorId) ou a entidade (hostEntityId) que organiza o debate.
+  const isCreator =
+    !!activeContext && (debate?.creatorId === activeContext.id || debate?.hostEntityId === activeContext.id)
   const isLive = (store.debate ?? debate)?.status === 'LIVE'
+  const isYoutube = (store.debate ?? debate)?.streamProvider === 'YOUTUBE'
 
-  // All authenticated users get a LiveKit token when LIVE (citizens as subscribers)
-  const { data: livekitData } = useDebateLivekitToken(id!, !!user && isLive)
+  // Só debates antigos (LiveKit) usam token; os do YouTube não passam por aqui.
+  const { data: livekitData } = useDebateLivekitToken(id!, !!user && isLive && !isYoutube)
   const { data: questionsData } = useDebateQuestions(id!, isLive)
   const { data: initialMessages } = useDebateMessages(id!)
   const { data: activePollData } = useDebateActivePoll(id!)
@@ -607,6 +688,8 @@ export default function DebateWatch() {
   const submitQuestion = useSubmitQuestion(id!)
   const upvoteQuestion = useUpvoteQuestion(id!)
   const votePoll = useVotePoll(id!)
+  const setStream = useSetDebateStream(id!)
+  const setOwnStream = useSetParticipantStream(id!)
 
   const { sendReaction, sendMessage } = useDebateSocket(id!)
 
@@ -614,6 +697,13 @@ export default function DebateWatch() {
     if (debate) store.setDebate(debate)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debate?.id, debate?.status])
+
+  // Link da live (do anfitrião ou de um debatedor) mudou: traz o debate novo para a tela.
+  const streamKey = JSON.stringify([debate?.youtubeVideoId, debate?.participants.map((p) => p.youtubeVideoId)])
+  useEffect(() => {
+    if (debate) store.setDebate(debate)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamKey])
 
   useEffect(() => {
     if (questionsData) store.setQuestions(questionsData)
@@ -655,6 +745,32 @@ export default function DebateWatch() {
     await votePoll.mutateAsync({ pollId, optionId })
   }
 
+  function streamErrorMessage(err: unknown) {
+    const message = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
+    return (Array.isArray(message) ? message[0] : message) ?? 'Não deu para salvar o link agora. Tente de novo.'
+  }
+
+  function handleSaveStream() {
+    if (!streamUrl.trim()) return
+    setStreamError('')
+    setStream.mutate(streamUrl.trim(), {
+      onSuccess: () => setStreamUrl(''),
+      onError: (e) => setStreamError(streamErrorMessage(e)),
+    })
+  }
+
+  function handleSaveOwnStream(url: string | null) {
+    if (!activeContext) return
+    setStreamError('')
+    setOwnStream.mutate(
+      { politicianId: activeContext.id, url },
+      {
+        onSuccess: () => setOwnStreamUrl(''),
+        onError: (e) => setStreamError(streamErrorMessage(e)),
+      },
+    )
+  }
+
   if (isLoading || !currentDebate) {
     return (
       <Page>
@@ -669,6 +785,23 @@ export default function DebateWatch() {
   const hlsUrl = currentDebate.hlsUrl
   const recordingUrl = currentDebate.recordingUrl
 
+  // YouTube: o vídeo principal é do canal anfitrião; um debatedor pode ter o dele.
+  const watchingParticipant = currentDebate.participants.find(
+    (p) => p.id === watchParticipantId && p.youtubeVideoId,
+  )
+  const activeVideoId = watchingParticipant?.youtubeVideoId ?? currentDebate.youtubeVideoId
+  const activeChannelTitle = watchingParticipant
+    ? watchingParticipant.youtubeChannelTitle
+    : currentDebate.youtubeChannelTitle
+  const hasParticipantStreams = currentDebate.participants.some(
+    (p) => p.inviteStatus === 'CONFIRMED' && p.youtubeVideoId,
+  )
+  const hostName = currentDebate.creator?.name ?? currentDebate.hostEntity?.legalName ?? 'Votz'
+  const streamEditable = currentDebate.status === 'SCHEDULED' || currentDebate.status === 'LIVE'
+  const myParticipant = currentDebate.participants.find(
+    (p) => p.politicianId === activeContext?.id && p.inviteStatus === 'CONFIRMED',
+  )
+
   return (
     <Page>
       <Navbar />
@@ -676,7 +809,22 @@ export default function DebateWatch() {
         {/* ── Main column ─────────────────────────────────────────────────── */}
         <Main>
           <VideoArea>
-            {currentDebate.status === 'LIVE' && livekitData?.token && !hlsUrl ? (
+            {isYoutube ? (
+              currentDebate.status === 'SCHEDULED' ? (
+                <DebateCountdown scheduledFor={currentDebate.scheduledFor} />
+              ) : (currentDebate.status === 'LIVE' || currentDebate.status === 'ENDED') && activeVideoId ? (
+                <YoutubePlayer
+                  key={activeVideoId}
+                  videoId={activeVideoId}
+                  channelTitle={activeChannelTitle}
+                  title={currentDebate.title}
+                />
+              ) : (
+                <EndedPlaceholder>
+                  <p>{currentDebate.status === 'CANCELLED' ? 'Debate cancelado' : 'Debate encerrado'}</p>
+                </EndedPlaceholder>
+              )
+            ) : currentDebate.status === 'LIVE' && livekitData?.token && !hlsUrl ? (
               // LiveKit: participants publish, citizens subscribe-only
               <LiveKitRoom
                 token={livekitData.token}
@@ -716,25 +864,112 @@ export default function DebateWatch() {
 
           <DebateInfoBar>
             <DebateTitle>{currentDebate.title}</DebateTitle>
+            <HostLine>
+              Organizado por {hostName}
+              {isYoutube && currentDebate.youtubeChannelTitle
+                ? ` · transmissão pelo canal ${currentDebate.youtubeChannelTitle}`
+                : ''}
+            </HostLine>
             <ParticipantRow>
+              {isYoutube && hasParticipantStreams && (
+                <WatchBtn $active={!watchingParticipant} onClick={() => setWatchParticipantId(null)}>
+                  Transmissão principal
+                </WatchBtn>
+              )}
               {currentDebate.participants
                 .filter((p) => p.inviteStatus === 'CONFIRMED')
                 .map((p) => (
                   <ParticipantChip key={p.id}>
                     <SmallAvatar $url={p.politician.avatarUrl} />
-                    {p.politician.name}
+                    <ProfileLink to={`/politico/${p.politicianId}`}>{p.politician.name}</ProfileLink>
                     <span style={{ color: 'rgba(255,255,255,0.35)' }}>
                       · {p.politician.party.abbreviation}
                     </span>
+                    {isYoutube && p.youtubeVideoId && (
+                      <WatchBtn
+                        $active={watchingParticipant?.id === p.id}
+                        onClick={() => setWatchParticipantId(p.id)}
+                      >
+                        Assistir pelo canal de {p.youtubeChannelTitle ?? p.politician.name}
+                      </WatchBtn>
+                    )}
                   </ParticipantChip>
                 ))}
             </ParticipantRow>
+            {isYoutube && (
+              <StreamNote>
+                Vídeo hospedado no YouTube. O Votz guarda o registro do debate (quem participou, perguntas, enquetes e
+                resultado), mas não controla o vídeo, que pode sair do ar.
+              </StreamNote>
+            )}
           </DebateInfoBar>
+
+          {isCreator && isYoutube && streamEditable && (
+            <StreamBar>
+              <StreamBarLabel>
+                {currentDebate.youtubeVideoId
+                  ? 'Live do YouTube definida. Cole outro link para trocar.'
+                  : 'Cole o link da live do YouTube para poder iniciar o debate.'}
+              </StreamBarLabel>
+              <StreamForm>
+                <StreamInput
+                  value={streamUrl}
+                  onChange={(e) => setStreamUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveStream()}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  maxLength={300}
+                />
+                <ActionBtn onClick={handleSaveStream} disabled={!streamUrl.trim() || setStream.isPending}>
+                  {setStream.isPending ? 'Conferindo...' : 'Salvar link'}
+                </ActionBtn>
+              </StreamForm>
+              <StreamNote>
+                A live precisa ser de um canal verificado e ter “Permitir incorporação” ligado.
+                Verifique o canal no perfil, em “Canais do YouTube”.
+              </StreamNote>
+              {streamError && <StreamError>{streamError}</StreamError>}
+            </StreamBar>
+          )}
+
+          {isParticipant && !isCreator && isYoutube && streamEditable && myParticipant && (
+            <StreamBar>
+              <StreamBarLabel>
+                {myParticipant.youtubeVideoId
+                  ? `Seu link está no ar (${myParticipant.youtubeChannelTitle ?? 'seu canal'}).`
+                  : 'Você tem uma live no seu canal? Cole o link para o público assistir por lá também (opcional).'}
+              </StreamBarLabel>
+              <StreamForm>
+                <StreamInput
+                  value={ownStreamUrl}
+                  onChange={(e) => setOwnStreamUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && ownStreamUrl.trim() && handleSaveOwnStream(ownStreamUrl.trim())}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  maxLength={300}
+                />
+                <ActionBtn
+                  onClick={() => handleSaveOwnStream(ownStreamUrl.trim())}
+                  disabled={!ownStreamUrl.trim() || setOwnStream.isPending}
+                >
+                  {setOwnStream.isPending ? 'Conferindo...' : 'Salvar meu link'}
+                </ActionBtn>
+                {myParticipant.youtubeVideoId && (
+                  <ActionBtn $variant="danger" onClick={() => handleSaveOwnStream(null)} disabled={setOwnStream.isPending}>
+                    Tirar meu link
+                  </ActionBtn>
+                )}
+              </StreamForm>
+              {streamError && <StreamError>{streamError}</StreamError>}
+            </StreamBar>
+          )}
 
           {isCreator && (
             <CreatorActions>
               {currentDebate.status === 'SCHEDULED' && (
-                <ActionBtn onClick={() => startDebate.mutate()} disabled={startDebate.isPending}>
+                <ActionBtn
+                  onClick={() => startDebate.mutate()}
+                  disabled={startDebate.isPending || (isYoutube && !currentDebate.youtubeVideoId)}
+                  title={isYoutube && !currentDebate.youtubeVideoId ? 'Cole o link da live antes de iniciar' : undefined}
+                >
                   {startDebate.isPending ? 'Iniciando...' : '▶ Iniciar ao vivo'}
                 </ActionBtn>
               )}
@@ -743,12 +978,6 @@ export default function DebateWatch() {
                   {endDebate.isPending ? 'Encerrando...' : '■ Encerrar debate'}
                 </ActionBtn>
               )}
-              <Link
-                to={`/debates/${id}/edit`}
-                style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8125rem', alignSelf: 'center', marginLeft: 'auto' }}
-              >
-                Editar
-              </Link>
             </CreatorActions>
           )}
         </Main>

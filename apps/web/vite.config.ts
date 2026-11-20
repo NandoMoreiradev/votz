@@ -42,7 +42,7 @@ export default defineConfig({
     },
     headers: {
       'Content-Security-Policy':
-        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' http://localhost:3000 ws://localhost:3000 https://api.maptiler.com https://*.livekit.cloud wss://*.livekit.cloud https://brasilapi.com.br; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' http://localhost:3000 ws://localhost:3000 https://api.maptiler.com https://*.livekit.cloud wss://*.livekit.cloud https://brasilapi.com.br; worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(self)',

@@ -50,6 +50,8 @@ services:
         sync: false            # Ex: https://votz-web.onrender.com
       - key: APP_URL
         sync: false            # Mesmo que FRONTEND_URL
+      - key: YOUTUBE_API_KEY
+        sync: false            # Chave da YouTube Data API v3 (só leitura pública). Debates ao vivo
       - key: API_PORT
         value: "10000"         # Render usa porta 10000 por padrão
 
@@ -72,7 +74,7 @@ services:
       # - Mapas / IBGE / CNPJ / CEP: https://api.maptiler.com e https://brasilapi.com.br
       - path: /*
         name: Content-Security-Policy
-        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://votz-api.onrender.com wss://votz-api.onrender.com https://api.maptiler.com https://*.livekit.cloud wss://*.livekit.cloud https://brasilapi.com.br; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://votz-api.onrender.com wss://votz-api.onrender.com https://api.maptiler.com https://*.livekit.cloud wss://*.livekit.cloud https://brasilapi.com.br; worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
       - path: /*
         name: X-Content-Type-Options
         value: nosniff

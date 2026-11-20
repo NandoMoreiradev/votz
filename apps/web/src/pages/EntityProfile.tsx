@@ -12,6 +12,7 @@ import { useMyProfiles } from '../hooks/useAuth'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { VolumeChart } from '../components/profile/VolumeChart'
+import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
 import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
@@ -751,6 +752,7 @@ export function EntityProfile() {
               orgId={entity.id}
               showOwnerPanelLink={isOwner}
               canConfigureSla={canConfigureSla}
+              {currentUser && isOwner && <YoutubeChannelsPanel />}
             />
           </HeaderCard>
         ) : (

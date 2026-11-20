@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { StreamProvider } from '@prisma/client'
 import {
   IsArray,
   IsDateString,
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
@@ -30,4 +32,13 @@ export class CreateDebateDto {
   @IsArray()
   @IsUUID('4', { each: true })
   invites: string[]
+
+  @ApiPropertyOptional({
+    enum: StreamProvider,
+    default: StreamProvider.YOUTUBE,
+    description: 'Como o debate é transmitido. Novos debates usam a live do YouTube.',
+  })
+  @IsOptional()
+  @IsEnum(StreamProvider)
+  streamProvider?: StreamProvider
 }

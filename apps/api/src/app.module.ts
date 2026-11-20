@@ -41,6 +41,7 @@ import { TranscriptionModule } from './transcription/transcription.module'
 import { SubscricoesModule } from './subscricoes/subscricoes.module'
 import { MandateExpiryModule } from './mandate-expiry/mandate-expiry.module'
 import { DebatesModule } from './debates/debates.module'
+import { YoutubeModule } from './youtube/youtube.module'
 import { AccessLogModule } from './access-log/access-log.module'
 import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
 import { InactivityModule } from './inactivity/inactivity.module'
@@ -144,6 +145,7 @@ import { SecurityModule } from './common/security/security.module'
     SubscricoesModule,
     MandateExpiryModule,
     DebatesModule,
+    YoutubeModule,
     AccessLogModule,
     VerificationRetentionModule,
     InactivityModule,

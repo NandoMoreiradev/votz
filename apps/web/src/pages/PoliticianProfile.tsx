@@ -15,6 +15,7 @@ import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { TeamPanel } from '../components/org/TeamPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
+import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
 import { PublicTransparencyCard } from '../components/analytics/PublicTransparencyCard'
@@ -791,6 +792,7 @@ export function PoliticianProfile() {
         {politician && (
           <TwoCol>
             {/* Main */}
+              {currentUser && canEdit && <YoutubeChannelsPanel />}
             <MainCol>
               {currentUser && canEdit && (
                 <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />

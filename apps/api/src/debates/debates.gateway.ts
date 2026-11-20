@@ -194,6 +194,11 @@ export class DebatesGateway
     this.server.to(`debate:${debateId}`).emit('debate:status-change', { status })
   }
 
+  /** Link da live (ou o de um debatedor) mudou: quem está na sala atualiza o player. */
+  emitStreamChange(debateId: string, debate: unknown) {
+    this.server.to(`debate:${debateId}`).emit('debate:stream-change', { debate })
+  }
+
   emitNewQuestion(debateId: string, question: unknown) {
     this.server.to(`debate:${debateId}`).emit('debate:new-question', { question })
   }

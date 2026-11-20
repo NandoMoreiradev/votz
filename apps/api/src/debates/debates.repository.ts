@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { DebateStatus, InviteStatus, ParticipantRole, ReactionType } from '@prisma/client'
+import { DebateStatus, InviteStatus, ParticipantRole, ReactionType, StreamProvider } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
 const PARTICIPANT_SELECT = {
@@ -8,6 +8,8 @@ const PARTICIPANT_SELECT = {
   role: true,
   inviteStatus: true,
   createdAt: true,
+  youtubeVideoId: true,
+  youtubeChannelTitle: true,
   politician: {
     select: { id: true, name: true, avatarUrl: true, office: true, party: { select: { abbreviation: true } } },
   },
@@ -25,11 +27,19 @@ const DEBATE_SELECT = {
   egressId: true,
   viewerCount: true,
   chatCooldownSecs: true,
+  streamProvider: true,
+  youtubeVideoId: true,
+  youtubeChannelId: true,
+  youtubeChannelTitle: true,
   creatorId: true,
+  hostEntityId: true,
   createdAt: true,
   updatedAt: true,
   creator: {
     select: { id: true, name: true, avatarUrl: true, office: true, party: { select: { abbreviation: true } } },
+  },
+  hostEntity: {
+    select: { id: true, legalName: true, logoUrl: true, type: true },
   },
   participants: { select: PARTICIPANT_SELECT },
 } as const
@@ -65,11 +75,14 @@ const POLL_SELECT = {
 export class DebatesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Exatamente um anfitrião: `creatorId` (político) ou `hostEntityId` (entidade). */
   create(data: {
     title: string
     description?: string
     scheduledFor: Date
-    creatorId: string
+    streamProvider: StreamProvider
+    creatorId?: string
+    hostEntityId?: string
   }) {
     return this.prisma.debate.create({ data, select: DEBATE_SELECT })
   }
@@ -116,6 +129,17 @@ export class DebatesRepository {
 
   findParticipant(debateId: string, politicianId: string) {
     return this.prisma.debateParticipant.findUnique({ where: { debateId_politicianId: { debateId, politicianId } } })
+  }
+
+  updateParticipantStream(
+    debateId: string,
+    politicianId: string,
+    data: { youtubeVideoId: string | null; youtubeChannelTitle: string | null },
+  ) {
+    return this.prisma.debateParticipant.update({
+      where: { debateId_politicianId: { debateId, politicianId } },
+      data,
+    })
   }
 
   updateParticipantInvite(debateId: string, politicianId: string, inviteStatus: InviteStatus) {

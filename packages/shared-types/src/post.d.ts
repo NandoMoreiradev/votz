@@ -51,11 +51,17 @@ export interface EmbeddedDebateDto {
     status: string;
     scheduledFor: string;
     viewerCount: number;
+    /** Político anfitrião. Nulo quando quem organiza o debate é uma entidade (veja `hostEntity`). */
     creator: {
         id: string;
         name: string;
         avatarUrl: string | null;
-    };
+    } | null;
+    hostEntity: {
+        id: string;
+        legalName: string;
+        logoUrl: string | null;
+    } | null;
 }
 export interface EmbeddedPropostaDto {
     id: string;

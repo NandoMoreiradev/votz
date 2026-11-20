@@ -16,6 +16,8 @@ Estado em 15/11/2026, depois dos briefs 3A, 3A.1 e 3B. O código está corrigido
   Sem isso, os segredos antigos continuam em texto puro (o login com MFA funciona nos dois formatos).
 - [ ] **Redis em produção.** O limite de requisições passa a ser compartilhado via `REDIS_URL`. Sem Redis ele cai para memória por instância (não derruba a API).
 - [ ] **Chave da MapTiler restrita por domínio** no painel da MapTiler (a chave vai no front).
+- [ ] **Debates pelo YouTube: `YOUTUBE_API_KEY` na API.** Crie a chave no Google Cloud só com a **YouTube Data API v3** e **restrita por API** (ela fica no servidor, nunca no front). Sem ela, os debates com YouTube respondem "ainda não está ligado" e ninguém consegue verificar canal.
+- [ ] **CSP com `frame-src https://www.youtube-nocookie.com`** no `votz-web` (já está no `render.yaml` e no `vite.config.ts`). Sem isso o navegador bloqueia o player. Se o domínio da CSP for trocado, mantenha o `frame-src`.
 
 ## 1b. Decisões de hospedagem ao configurar a produção
 
@@ -49,7 +51,8 @@ A política de exceções está em `docs/security/audit-allowlist.md` e o CI (`.
 
 - [ ] Mapa: abrir `/mapa`, clicar num pino (o popup agora é montado com `textContent`) e conferir que não há erro de CSP no console.
 - [ ] Login com Google do começo ao fim (agora sem token na URL).
-- [ ] Debate ao vivo (LiveKit) e comentário em áudio (microfone).
+- [ ] Debate ao vivo (LiveKit, só os antigos) e comentário em áudio (microfone).
+- [ ] Debate pelo YouTube: registrar canal, colar o código na descrição, verificar; colar o link de uma live agendada; abrir o debate sem clicar em "Assistir" e conferir na aba **Network** que **nenhuma** requisição vai ao Google; depois do clique, o player abre. Tentar link de canal não verificado, vídeo sem "Permitir incorporação" e vídeo comum: todos devem ser recusados.
 - [ ] Cadastro, login, recarregar a página 10 vezes seguidas sem ser deslogado, e abrir duas abas ao mesmo tempo.
 - [ ] Fluxo de contratar um plano (com permissão e sem permissão na organização).
 - [ ] Sinalizar um comentário e removê-lo pelo painel de moderação.

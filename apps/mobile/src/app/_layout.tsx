@@ -48,6 +48,8 @@ export default function RootLayout() {
       <Stack.Screen name="post/[id]" options={{ title: 'Publicação' }} />
       <Stack.Screen name="report/[id]" options={{ title: 'Relato' }} />
       <Stack.Screen name="profile/[kind]/[id]" options={{ title: 'Perfil público' }} />
+      <Stack.Screen name="debates" options={{ title: 'Debates' }} />
+      <Stack.Screen name="debate/[id]" options={{ title: 'Debate' }} />
     </Stack>
   </QueryClientProvider></SafeAreaProvider>
 }

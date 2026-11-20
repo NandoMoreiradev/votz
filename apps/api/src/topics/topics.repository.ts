@@ -198,6 +198,7 @@ export class TopicsRepository {
               scheduledFor: true,
               viewerCount: true,
               creator: { select: { id: true, name: true, avatarUrl: true } },
+              hostEntity: { select: { id: true, legalName: true, logoUrl: true } },
             },
           },
         },

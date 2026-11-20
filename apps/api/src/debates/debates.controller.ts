@@ -5,10 +5,13 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
+import { SetParticipantStreamDto, SetStreamDto } from './dto/set-stream.dto'
 import { DebatesService } from './debates.service'
 import { CreateDebateDto } from './dto/create-debate.dto'
 import { ListDebatesDto } from './dto/list-debates.dto'
@@ -73,10 +76,34 @@ export class DebatesController {
     return this.service.respondInvite(debateId, politicianId, accept, user)
   }
 
+  @Put(':id/stream')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Anfitrião define o link da live do YouTube (canal precisa estar verificado)' })
+  setStream(@Param('id') id: string, @Body() dto: SetStreamDto, @CurrentUser() user: ActingUser) {
+    return this.service.setStream(id, user, dto.url)
+  }
+
+  @Put(':id/participants/:politicianId/stream')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Debatedor confirmado coloca ou tira o link da própria live' })
+  @ApiParam({ name: 'politicianId', description: 'ID do político debatedor' })
+  setParticipantStream(
+    @Param('id') id: string,
+    @Param('politicianId') politicianId: string,
+    @Body() dto: SetParticipantStreamDto,
+    @CurrentUser() user: ActingUser,
+  ) {
+    return this.service.setParticipantStream(id, politicianId, user, dto.url)
+  }
+
   @Post(':id/start')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Iniciar debate ao vivo — cria sala LiveKit e inicia HLS Egress' })
+  @ApiOperation({ summary: 'Iniciar debate ao vivo — YouTube exige link definido; LiveKit cria sala e HLS Egress' })
   start(@Param('id') id: string, @CurrentUser() user: ActingUser) {
     return this.service.start(id, user)
   }

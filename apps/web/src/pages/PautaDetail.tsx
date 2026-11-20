@@ -293,7 +293,7 @@ export function PautaDetail() {
                         <SideCard key={d.id} as={Link as any} to={`/debates/${d.id}`} style={{ display: 'block' }}>
                           <div style={{ fontWeight: 700, marginBottom: 4 }}>{d.title}</div>
                           <div style={{ fontSize: '0.8125rem', color: '#6B7280' }}>
-                            {d.status} · por {d.creator.name}
+                            {d.status} · por {d.creator?.name ?? d.hostEntity?.legalName ?? 'Votz'}
                           </div>
                         </SideCard>
                       ))

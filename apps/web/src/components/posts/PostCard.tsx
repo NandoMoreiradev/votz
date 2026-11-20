@@ -623,7 +623,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
           </EmbedKicker>
           <EmbedTitle>{post.mentionedDebate.title}</EmbedTitle>
           <EmbedSub>
-            Por {post.mentionedDebate.creator.name} ·{' '}
+            Por {post.mentionedDebate.creator?.name ?? post.mentionedDebate.hostEntity?.legalName ?? 'Votz'} ·{' '}
             {new Date(post.mentionedDebate.scheduledFor).toLocaleDateString('pt-BR')}
           </EmbedSub>
         </EmbedCard>

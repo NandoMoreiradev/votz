@@ -29,6 +29,7 @@ Os textos legais (Termos, Privacidade, Cookies, Diretrizes) estão em `apps/web/
 
 - **Provedor SMTP em produção:** a tabela de suboperadores diz "a definir". Informe o provedor real (o `.env.example` sugere Gmail).
 - **Regiões:** Neon, Redis e LiveKit estão como "Exterior". Se souber a região de cada um, detalhe.
+- **Google / YouTube (debates ao vivo, incluído em 20/11/2026):** os debates novos passam por uma live do YouTube incorporada na página. O que o código já faz: o player **só carrega depois do clique** em "Assistir" (web e app), usa o domínio `youtube-nocookie.com` e, no app, abre sem cookies guardados. Mesmo assim o YouTube (Google) pode coletar dados do aparelho a partir daí. **Falta, e depende de você e do advogado:** (1) incluir **Google/YouTube** na tabela de "Com quem compartilhamos" da Política de Privacidade (transferência internacional, art. 33), com a explicação de que o vídeo só é carregado depois do clique; (2) trocar a `PRIVACY_VERSION` junto com esse texto (isso pede novo aceite de todos); (3) a API do YouTube só lê dados **públicos** (vídeo e canal) com chave, sem login Google e sem dados de usuário do Votz. Nada do usuário do Votz vai ao Google pela API.
 - **E-mail institucional:** o contato do encarregado é o e-mail pessoal provisório (`LEGAL_ENTITY.email` em `apps/web/src/legal/types.ts`). Crie um endereço do domínio (ex.: `privacidade@…`) e troque em um lugar só.
 - **Encarregado (DPO):** designar formalmente uma pessoa e divulgar o nome, conforme a ANPD.
 - **MapTiler:** restringir a chave por domínio.

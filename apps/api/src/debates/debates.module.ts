@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { PrismaModule } from '../prisma/prisma.module'
 import { NotificationsModule } from '../notifications/notifications.module'
+import { YoutubeModule } from '../youtube/youtube.module'
 import { DEBATES_QUEUE } from './debates.service'
 import { DebatesService } from './debates.service'
 import { DebatesRepository } from './debates.repository'
@@ -15,6 +16,7 @@ import { DebatesProcessor } from './debates.processor'
   imports: [
     PrismaModule,
     NotificationsModule,
+    YoutubeModule,
     BullModule.registerQueue({ name: DEBATES_QUEUE }),
     JwtModule.registerAsync({
       inject: [ConfigService],
