@@ -283,6 +283,10 @@ export interface ChatViewMessage {
     canReact: boolean;
     time: string;
     meta: string;
+    /** Estado da própria mensagem por extenso ("Entregue", "Lida"); serve a leitores de tela e dicas. */
+    statusLabel: string | null;
+    /** Mensagem que este aparelho não consegue abrir: as telas mostram em tom discreto. */
+    unreadable: boolean;
     dayKey: string;
     dayDivider: string | null;
     isFirstInGroup: boolean;
@@ -299,6 +303,8 @@ export interface ChatViewReadReceipts {
 }
 export interface ChatView {
     canWrite: boolean;
+    /** Pode digitar: enquanto a conversa ainda prepara, o texto já pode ser escrito (só o envio espera). */
+    canType: boolean;
     placeholder: string;
     /** Faixa fixa no topo da conversa. */
     banner: string;
@@ -359,6 +365,19 @@ export interface ChatPreview {
     text: string;
 }
 /**
+ * Últimas mensagens abertas de cada conversa recente, para a conversa aparecer
+ * na hora ao voltar a ela, enquanto a sincronização termina por trás.
+ *
+ * Só na memória do aplicativo, como a prévia: nunca vai ao disco nem ao
+ * servidor, e some junto com ela (`chatPreviews.clear()`: segundo plano, sair da
+ * conta ou trocar de usuário).
+ */
+export declare const chatTranscripts: {
+    get: (conversationId: string) => ChatMessage[] | undefined;
+    set(conversationId: string, messages: ChatMessage[]): void;
+    clear(): void;
+};
+/**
  * Prévia (texto da última mensagem) para a lista de conversas.
  *
  * Só na memória do aplicativo: nunca vai ao disco nem ao servidor. Quem usa
@@ -405,6 +424,11 @@ export declare function enrollDevice(enroll: () => Promise<ChatEnrollment>, opti
     intervalMs?: number;
     sleep?: (ms: number) => Promise<void>;
 }): Promise<ChatSession>;
+/**
+ * Estado para desenhar a conversa antes mesmo de o cliente existir: só as
+ * últimas mensagens abertas (se houver), sem poder escrever ainda.
+ */
+export declare function chatSeedState(conversationId: string): ChatState | null;
 export declare class ChatClient {
     private readonly conversationId;
     private readonly session;
@@ -422,6 +446,8 @@ export declare class ChatClient {
     private cursor;
     private events;
     private messages;
+    /** Mensagens já abertas (só memória): evita decifrar tudo de novo a cada ciclo. */
+    private decoded;
     private timer;
     private refreshAt;
     private receipts;
@@ -464,9 +490,12 @@ export declare class ChatClient {
     private receiptSummaries;
     private refresh;
     private poll;
+    /** Confere o aparelho remetente e abre uma mensagem cifrada. */
+    private decodeEvent;
     private refreshMessages;
     verification(action: VerificationAction): Promise<void>;
     send(text: string, options?: ChatSendOptions): Promise<void>;
+    private sendNow;
     /** Alterna uma reação de emoji cifrada de ponta a ponta em uma mensagem. */
     react(targetEventId: string, emoji: string): Promise<void>;
     /**

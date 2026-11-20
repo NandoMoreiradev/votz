@@ -1,7 +1,11 @@
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import Monitor from 'lucide-react-native/icons/monitor'
+import ShieldCheck from 'lucide-react-native/icons/shield-check'
+import Smartphone from 'lucide-react-native/icons/smartphone'
 import { deviceRequestText, type ChatDeviceInfo, type ChatDeviceLink } from '@votz/chat-core'
 import { ConversationGate } from '../../components/conversation-ui'
 import { Screen, Toolbar } from '../../components/screen'
+import { SettingsRow } from '../../components/settings-ui'
 import { Button, ErrorText, Label, State } from '../../components/ui'
 import { useChatDeviceAction, useChatDevices } from '../../hooks/use-chat-devices'
 import { ApiError, errorMessage } from '../../lib/api'
@@ -28,15 +32,21 @@ function PendingLink({
   const request = deviceRequestText(link)
   return (
     <View style={styles.card} accessibilityRole="alert">
-      <Text style={styles.title}>{request.title}</Text>
+      <View style={styles.cardHead}>
+        <View style={styles.cardIcon}>
+          <ShieldCheck size={20} color={theme.colors.action} />
+        </View>
+        <Text style={styles.cardTitle}>{request.title}</Text>
+      </View>
       <Label muted>{request.text}</Label>
-      <Button title={request.allow} disabled={busy} onPress={() => onDecide(true)} />
-      <Button
-        title={request.deny}
-        secondary
-        disabled={busy}
-        onPress={() => onDecide(false)}
-      />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button title={request.allow} disabled={busy} onPress={() => onDecide(true)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button title={request.deny} secondary disabled={busy} onPress={() => onDecide(false)} />
+        </View>
+      </View>
     </View>
   )
 }
@@ -49,24 +59,31 @@ function DeviceRow({
   busy: boolean
   onRevoke: () => void
 }) {
+  const label = device.current ? 'Sair' : 'Desconectar'
   return (
-    <View style={styles.row}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={styles.title}>
-          {name(device)}
-          {device.current ? ' · Este aparelho' : ''}
-        </Text>
-        <Label muted>
-          Conectado em {new Date(device.createdAt).toLocaleDateString('pt-BR')}
-        </Label>
-      </View>
-      <Button
-        title={device.current ? 'Sair' : 'Desconectar'}
-        secondary
-        disabled={busy}
-        onPress={onRevoke}
-      />
-    </View>
+    <SettingsRow
+      icon={
+        device.platform === 'web' ? (
+          <Monitor size={20} color={theme.colors.primary} />
+        ) : (
+          <Smartphone size={20} color={theme.colors.primary} />
+        )
+      }
+      title={name(device)}
+      subtitle={`${device.current ? 'Este aparelho · ' : ''}Conectado em ${new Date(device.createdAt).toLocaleDateString('pt-BR')}`}
+      right={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label} ${name(device)}`}
+          disabled={busy}
+          hitSlop={10}
+          onPress={onRevoke}
+          style={{ opacity: busy ? 0.4 : 1 }}
+        >
+          <Text style={styles.revoke}>{label}</Text>
+        </Pressable>
+      }
+    />
   )
 }
 function Devices() {
@@ -174,23 +191,32 @@ export default function ChatDevicesScreen() {
 const styles = StyleSheet.create({
   card: {
     padding: 16,
-    gap: 10,
-    borderWidth: 0.5,
-    borderColor: theme.colors.border,
+    gap: 12,
     borderRadius: 16,
+    backgroundColor: theme.colors.tint,
   },
-  row: {
+  cardHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: theme.colors.border,
   },
-  title: {
+  cardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surface,
+  },
+  cardTitle: {
+    flex: 1,
     fontSize: 16,
     fontFamily: theme.fonts.medium,
     color: theme.colors.text,
+  },
+  revoke: {
+    fontSize: 14,
+    fontFamily: theme.fonts.medium,
+    color: theme.colors.action,
   },
 })

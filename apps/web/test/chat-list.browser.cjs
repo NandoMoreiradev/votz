@@ -48,7 +48,7 @@ const ready = (page) =>
 const composerReady = (page) =>
   page.waitForFunction(() => {
     const field = document.querySelector('textarea[aria-label="Mensagem"]')
-    return !!field && !field.disabled
+    return !!field && !field.disabled && field.placeholder === 'Mensagem'
   }, undefined, { timeout: 45000 })
 async function send(page, text) {
   await page.getByLabel('Mensagem', { exact: true }).fill(text)
@@ -92,7 +92,7 @@ const backToList = async (page) => {
   // 1) A escreve; B está com a conversa aberta: lê, e depois volta para a lista.
   const first = `Olá da lista ${run.slice(0, 8)}`
   await send(a, first)
-  await b.getByText(first, { exact: true }).waitFor()
+  await b.getByLabel('Mensagens', { exact: true }).getByText(first, { exact: true }).waitFor()
   await b.waitForTimeout(2500) // a mensagem fica visível por 500 ms e o "visto" é enviado
   await backToList(b)
   const bRow = row(b)
@@ -108,7 +108,7 @@ const backToList = async (page) => {
   await composerReady(a)
   const second = `Segunda da lista ${run.slice(0, 8)}`
   await send(a, second)
-  await a.getByText(second, { exact: true }).waitFor()
+  await a.getByLabel('Mensagens', { exact: true }).getByText(second, { exact: true }).waitFor()
   await b.waitForFunction(
     (id) => /1 mensagem não lida/.test(document.querySelector(`a[href="/conversas/${id}"]`)?.getAttribute('aria-label') || ''),
     conversationId,
@@ -129,7 +129,7 @@ const backToList = async (page) => {
   b.on('request', countEnroll)
   await row(b).click()
   await composerReady(b)
-  await b.getByText(second, { exact: true }).waitFor()
+  await b.getByLabel('Mensagens', { exact: true }).getByText(second, { exact: true }).waitFor()
   b.off('request', countEnroll)
   assert.equal(enrollCalls, 0, 'Reopening a conversation inside /conversas reuses the live web crypto session')
   await b.waitForTimeout(2500)

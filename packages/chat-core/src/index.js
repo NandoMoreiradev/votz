@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChatClient = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.ChatClient = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
 exports.extractVotzCard = extractVotzCard;
 exports.mediaKindFromMime = mediaKindFromMime;
 exports.mediaKindLabel = mediaKindLabel;
@@ -15,6 +15,7 @@ exports.chatView = chatView;
 exports.deviceRequestText = deviceRequestText;
 exports.chatDevicesApi = chatDevicesApi;
 exports.enrollDevice = enrollDevice;
+exports.chatSeedState = chatSeedState;
 exports.CHAT_MEDIA_LIMITS = {
     image: 10 * 1024 * 1024,
     audio: 25 * 1024 * 1024,
@@ -225,7 +226,7 @@ function messagePlaceholder(status) {
 function composerPlaceholder(state) {
     if (state.peerStatus === 'ready')
         return state.room?.canSend
-            ? 'Escreva uma mensagem…'
+            ? 'Mensagem'
             : 'Esta interação está bloqueada.';
     if (state.peerStatus === 'blocked')
         return 'Confira o aviso de segurança para conversar';
@@ -280,6 +281,7 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
     if (!state)
         return {
             canWrite: false,
+            canType: true,
             placeholder: 'Preparando a conversa…',
             banner,
             preparing: true,
@@ -434,6 +436,8 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
                 canWrite,
             time,
             meta: own ? `${time} · ${statusText}` : time,
+            statusLabel: own ? statusText : null,
+            unreadable: message.text === null && !message.attachment,
             dayKey,
             dayDivider,
             isFirstInGroup,
@@ -459,6 +463,7 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
                 : null;
     return {
         canWrite,
+        canType: canWrite || !state.ready,
         placeholder: composerPlaceholder(state),
         banner,
         preparing: !state.ready && !state.room,
@@ -519,6 +524,38 @@ exports.RESET_WARNING = {
     action: 'Redefinir',
 };
 const previews = new Map();
+const transcripts = new Map();
+const TRANSCRIPT_CONVERSATIONS = 8;
+const TRANSCRIPT_MESSAGES = 80;
+/**
+ * Últimas mensagens abertas de cada conversa recente, para a conversa aparecer
+ * na hora ao voltar a ela, enquanto a sincronização termina por trás.
+ *
+ * Só na memória do aplicativo, como a prévia: nunca vai ao disco nem ao
+ * servidor, e some junto com ela (`chatPreviews.clear()`: segundo plano, sair da
+ * conta ou trocar de usuário).
+ */
+exports.chatTranscripts = {
+    get: (conversationId) => transcripts.get(conversationId),
+    set(conversationId, messages) {
+        const merged = new Map((transcripts.get(conversationId) ?? []).map((m) => [m.id, m]));
+        for (const m of messages)
+            if (!m.id.startsWith('pending:'))
+                merged.set(m.id, m);
+        if (!merged.size)
+            return;
+        const kept = [...merged.values()]
+            .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+            .slice(-TRANSCRIPT_MESSAGES);
+        transcripts.delete(conversationId); // mais recente por último
+        transcripts.set(conversationId, kept);
+        while (transcripts.size > TRANSCRIPT_CONVERSATIONS)
+            transcripts.delete(transcripts.keys().next().value);
+    },
+    clear() {
+        transcripts.clear();
+    },
+};
 const previewListeners = new Set();
 /**
  * Prévia (texto da última mensagem) para a lista de conversas.
@@ -538,6 +575,7 @@ exports.chatPreviews = {
             listener();
     },
     clear() {
+        transcripts.clear();
         if (!previews.size)
             return;
         previews.clear();
@@ -604,6 +642,43 @@ async function enrollDevice(enroll, options) {
         await sleep(options.intervalMs ?? 4000);
     }
 }
+/** Executa o trabalho em paralelo, no máximo `limit` por vez. */
+async function runLimited(items, limit, work) {
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length)
+            await work(items[next++]);
+    });
+    await Promise.all(workers);
+}
+function emptyChatState() {
+    return {
+        ready: false,
+        connected: false,
+        messages: [],
+        room: null,
+        verification: { state: 'none' },
+        error: null,
+        historyCursor: null,
+        loadingHistory: false,
+        readReceiptsEnabled: false,
+        peerTrusted: false,
+        peerStatus: 'none',
+        reactivate: false,
+        notices: [],
+        deviceLinks: [],
+    };
+}
+/**
+ * Estado para desenhar a conversa antes mesmo de o cliente existir: só as
+ * últimas mensagens abertas (se houver), sem poder escrever ainda.
+ */
+function chatSeedState(conversationId) {
+    const seed = exports.chatTranscripts.get(conversationId);
+    return seed?.length ? { ...emptyChatState(), messages: seed } : null;
+}
+/** Tamanho da página do histórico no servidor (`limit` de `GET /:id/chat/messages`). */
+const HISTORY_PAGE_SIZE = 30;
 class ChatClient {
     conversationId;
     session;
@@ -621,28 +696,15 @@ class ChatClient {
     cursor;
     events = new Map();
     messages = new Map();
+    /** Mensagens já abertas (só memória): evita decifrar tudo de novo a cada ciclo. */
+    decoded = new Map();
     timer;
     refreshAt = 0;
     receipts = [];
     acknowledged = [];
     visible = new Set();
     received = new Map();
-    snapshot = {
-        ready: false,
-        connected: false,
-        messages: [],
-        room: null,
-        verification: { state: 'none' },
-        error: null,
-        historyCursor: null,
-        loadingHistory: false,
-        readReceiptsEnabled: false,
-        peerTrusted: false,
-        peerStatus: 'none',
-        reactivate: false,
-        notices: [],
-        deviceLinks: [],
-    };
+    snapshot = emptyChatState();
     constructor(conversationId, session, crypto, http, storage, newId) {
         this.conversationId = conversationId;
         this.session = session;
@@ -650,6 +712,13 @@ class ChatClient {
         this.http = http;
         this.storage = storage;
         this.newId = newId;
+        // Volta a uma conversa recente: já nasce com as últimas mensagens abertas.
+        const seed = exports.chatTranscripts.get(conversationId);
+        if (seed?.length) {
+            for (const message of seed)
+                this.messages.set(message.id, message);
+            this.snapshot = { ...this.snapshot, messages: seed };
+        }
     }
     subscribe(listener) {
         this.listeners.add(listener);
@@ -866,6 +935,8 @@ class ChatClient {
                 text: previewText.replace(/\s+/g, ' ').trim().slice(0, 140),
             });
         }
+        if (this.active)
+            exports.chatTranscripts.set(this.conversationId, messages);
         this.update({ messages });
     }
     seenAt = 0;
@@ -901,15 +972,21 @@ class ChatClient {
             await this.serial(async () => {
                 if (!this.active)
                     return;
-                const privacy = await this.http('/chat/privacy');
+                // Em paralelo: o histórico (se a sala ainda não existe o servidor devolve
+                // vazio e a leitura é refeita abaixo), a preferência de leitura e a sala.
+                const early = this.http(`/${this.conversationId}/chat/messages`).catch(() => null);
+                const [privacy] = await Promise.all([
+                    this.http('/chat/privacy'),
+                    this.refresh(false),
+                ]);
                 this.update({
                     readReceiptsEnabled: privacy.readReceiptsEnabled === true,
                 });
-                await this.refresh();
+                void this.refreshDeviceLinks(); // informativo: não segura a abertura
                 if (!this.active)
                     return;
                 await this.crypto.pump(this.http);
-                await this.readHistory();
+                await this.readHistory(undefined, await early);
                 // Restore only ciphertext; recover the local preview from the encrypted SDK store.
                 for (const item of this.pending.filter((item) => item.conversationId === this.conversationId)) {
                     this.events.set(`pending:${item.txnId}`, {
@@ -945,6 +1022,7 @@ class ChatClient {
         this.listeners.clear();
         this.events.clear();
         this.messages.clear();
+        this.decoded.clear();
         this.visible.clear();
         this.received.clear();
         this.receiptSummaries.clear();
@@ -1042,6 +1120,27 @@ class ChatClient {
                 void this.poll();
             }, this.snapshot.connected ? 100 : 3000);
     }
+    /** Confere o aparelho remetente e abre uma mensagem cifrada. */
+    async decodeEvent(room, job) {
+        const keys = await this.crypto.identity(job.event.sender, job.deviceId);
+        if (job.event.content.sender_key !== keys.curve25519)
+            throw new Error('Sender device mismatch');
+        // Local queue identifiers are UI identifiers, not Matrix event IDs.
+        // The SDK validates the latter even for a not-yet-sent envelope.
+        const decoded = await this.crypto.decrypt(room.roomId, job.id.startsWith('pending:')
+            ? { ...job.event, event_id: `$votz_pending_${job.txn}` }
+            : job.event);
+        if (typeof decoded === 'string')
+            return { text: decoded, card: extractVotzCard(decoded) };
+        return {
+            text: decoded.text,
+            attachment: decoded.attachment,
+            replyTo: decoded.replyTo,
+            forwarded: decoded.forwarded,
+            card: decoded.card,
+            reaction: decoded.reaction,
+        };
+    }
     async refreshMessages() {
         const room = this.snapshot.room;
         if (!room)
@@ -1053,6 +1152,7 @@ class ChatClient {
             : { state: 'none' };
         this.update({ verification });
         const reactionEvents = [];
+        const jobs = [];
         for (const [id, event] of this.events) {
             if (event.type !== 'm.room.encrypted' ||
                 event.content?.algorithm !== 'm.megolm.v1.aes-sha2')
@@ -1085,6 +1185,30 @@ class ChatClient {
                     this.devicesOf(senderPeer).includes(deviceId);
             const trusted = (own && deviceId === this.session.deviceId) ||
                 (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`));
+            jobs.push({ id, event, own, senderPeer, deviceId, txn, listed, trusted });
+        }
+        // Fase 2: abre em paralelo (até 6 por vez) só o que ainda não foi aberto.
+        const opened = new Map();
+        await runLimited(jobs.filter((job) => job.trusted && job.deviceId && !this.decoded.has(job.id)), 6, async (job) => {
+            try {
+                const value = await this.decodeEvent(room, job);
+                opened.set(job.id, value);
+                // Mensagens de verdade ficam no cache; as locais ainda sem id do servidor, não.
+                if (!job.id.startsWith('pending:'))
+                    this.decoded.set(job.id, value);
+            }
+            catch {
+                /* Never render unauthenticated or malformed plaintext. */
+            }
+        });
+        if (!this.active)
+            return;
+        // Fase 3: monta as mensagens, em ordem.
+        for (const job of jobs) {
+            const { id, event, own, senderPeer, deviceId, txn, listed, trusted } = job;
+            // A mensagem local já foi confirmada pelo servidor nesta mesma passada.
+            if (id.startsWith('pending:') && !this.events.has(id))
+                continue;
             let text = null;
             let attachment;
             let replyTo;
@@ -1096,37 +1220,19 @@ class ChatClient {
                 : trusted
                     ? 'unavailable'
                     : 'unverified';
-            if (trusted && deviceId) {
-                try {
-                    const keys = await this.crypto.identity(event.sender, deviceId);
-                    if (event.content.sender_key !== keys.curve25519)
-                        throw new Error('Sender device mismatch');
-                    // Local queue identifiers are UI identifiers, not Matrix event IDs.
-                    // The SDK validates the latter even for a not-yet-sent envelope.
-                    const decoded = await this.crypto.decrypt(room.roomId, id.startsWith('pending:')
-                        ? { ...event, event_id: `$votz_pending_${txn}` }
-                        : event);
-                    if (typeof decoded === 'string') {
-                        text = decoded;
-                        card = extractVotzCard(decoded);
-                    }
-                    else {
-                        text = decoded.text;
-                        attachment = decoded.attachment;
-                        replyTo = decoded.replyTo;
-                        forwarded = decoded.forwarded;
-                        card = decoded.card;
-                        reaction = decoded.reaction;
-                    }
-                    status = id.startsWith('pending:')
-                        ? this.pending.find((item) => item.txnId === txn)?.failed
-                            ? 'failed'
-                            : 'pending'
-                        : this.received.get(id) || 'sent';
-                }
-                catch {
-                    /* Never render unauthenticated or malformed plaintext. */
-                }
+            const decoded = trusted && deviceId ? (this.decoded.get(id) ?? opened.get(id)) : undefined;
+            if (decoded) {
+                text = decoded.text;
+                attachment = decoded.attachment;
+                replyTo = decoded.replyTo;
+                forwarded = decoded.forwarded;
+                card = decoded.card;
+                reaction = decoded.reaction;
+                status = id.startsWith('pending:')
+                    ? this.pending.find((item) => item.txnId === txn)?.failed
+                        ? 'failed'
+                        : 'pending'
+                    : this.received.get(id) || 'sent';
             }
             if (!this.active)
                 return;
@@ -1224,6 +1330,36 @@ class ChatClient {
             throw new Error('A mensagem deve ter entre 1 e 4.000 caracteres.');
         if (this.pending.length >= 100)
             throw new Error('Aguarde o envio das mensagens pendentes antes de continuar.');
+        const txnId = this.newId();
+        const createdAt = Date.now();
+        const localId = `pending:${txnId}`;
+        const card = options.card ?? extractVotzCard(text);
+        // Aparece na hora, antes de qualquer rede ou criptografia: o relógio da
+        // bolha cobre o resto. Se o envio for recusado, a bolha some e o texto volta.
+        this.messages.set(localId, {
+            id: localId,
+            txnId,
+            text,
+            ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+            ...(options.forwarded ? { forwarded: true } : {}),
+            ...(card ? { card } : {}),
+            sender: 'self',
+            createdAt,
+            status: 'pending',
+        });
+        this.render();
+        try {
+            return await this.sendNow(text, options, txnId, createdAt, card);
+        }
+        catch (error) {
+            if (!this.pending.some((item) => item.txnId === txnId)) {
+                this.messages.delete(localId);
+                this.render();
+            }
+            throw error;
+        }
+    }
+    sendNow(text, options, txnId, createdAt, card) {
         return this.serial(async () => {
             // A lista de aparelhos é relida a cada envio, sem cache: um aparelho
             // aprovado há instantes só recebe a chave da sala se entrar na
@@ -1249,7 +1385,6 @@ class ChatClient {
                 this.session.matrixUserId,
             ]);
             await this.crypto.pump(this.http);
-            const card = options.card ?? extractVotzCard(text);
             const payload = options.replyTo || options.forwarded || card
                 ? {
                     msgtype: 'm.text',
@@ -1261,12 +1396,12 @@ class ChatClient {
                 : text;
             const content = await this.crypto.encrypt(room.roomId, payload);
             const item = {
-                txnId: this.newId(),
+                txnId,
                 conversationId: this.conversationId,
                 roomId: room.roomId,
                 revision: room.revision,
                 content,
-                createdAt: Date.now(),
+                createdAt,
             };
             const next = [...this.pending, item];
             await this.storage.save(this.transport(next));
@@ -1453,13 +1588,16 @@ class ChatClient {
         }
         this.render();
     }
-    async readHistory(from) {
-        const history = await this.http(`/${this.conversationId}/chat/messages${from ? `?from=${encodeURIComponent(from)}` : ''}`);
+    async readHistory(from, prefetched) {
+        const history = prefetched ??
+            (await this.http(`/${this.conversationId}/chat/messages${from ? `?from=${encodeURIComponent(from)}` : ''}`));
         for (const event of history.chunk || [])
             if (typeof event.event_id === 'string')
                 this.events.set(event.event_id, event);
         this.update({
-            historyCursor: typeof history.end === 'string' && history.chunk?.length
+            // Só oferece "mensagens anteriores" quando a página veio cheia: o servidor devolve o
+            // marcador da próxima página mesmo no começo da conversa.
+            historyCursor: typeof history.end === 'string' && (history.chunk?.length ?? 0) >= HISTORY_PAGE_SIZE
                 ? history.end
                 : null,
         });

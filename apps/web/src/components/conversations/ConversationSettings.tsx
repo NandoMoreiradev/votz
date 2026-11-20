@@ -1,5 +1,24 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
+import { Page } from './layout'
+import {
+  Bell,
+  CaretRight,
+  Checks,
+  Clock,
+  Cloud,
+  DeviceMobile,
+  DownloadSimple,
+  ImageSquare,
+  Prohibit,
+  ShieldCheck,
+  SpeakerHigh,
+  TextAa,
+  UserPlus,
+  Users,
+  Vibrate,
+} from '@phosphor-icons/react'
 import {
   DEFAULT_CONVERSATION_SETTINGS,
   type ConversationAudience,
@@ -15,41 +34,122 @@ import {
 } from '../../hooks/useConversations'
 
 const Group = styled.section`
-  padding: 20px 16px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  display: grid;
-  gap: 14px;
+  padding: 4px 0 8px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 12px;
+  overflow: hidden;
   h2 {
     margin: 0;
-    font-size: 16px;
+    padding: 16px 24px 8px;
+    font-size: 11.5px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: ${({ theme }) => theme.colors.action};
+  }
+`
+const Row = styled.div<{ $soon?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 10px 24px;
+  opacity: ${({ $soon }) => ($soon ? 0.55 : 1)};
+`
+const LinkRow = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 10px 24px;
+  color: inherit;
+  text-decoration: none;
+  &:hover {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+`
+const IconBox = styled.span`
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: ${({ theme }) => theme.colors.neutral};
+  color: ${({ theme }) => theme.colors.primary};
+`
+const Texts = styled.div`
+  flex: 1;
+  min-width: 0;
+  label,
+  strong {
+    display: block;
+    font-weight: 400;
+    font-size: 15px;
     color: ${({ theme }) => theme.colors.text};
   }
 `
-const Row = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-`
 const Help = styled.p`
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: ${({ theme }) => theme.colors.muted};
+`
+const Note = styled.p`
+  margin: 0;
+  padding: 8px 24px 12px;
+  font-size: 12.5px;
   color: ${({ theme }) => theme.colors.muted};
 `
 const Select = styled.select`
   min-height: 40px;
+  max-width: 48%;
   padding: 6px 12px;
-  border-radius: 12px;
+  border-radius: 10px;
+  font-size: 14px;
   border: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ theme }) => theme.colors.white};
   color: ${({ theme }) => theme.colors.text};
   font: inherit;
 `
-const NavLink = styled(Link)`
-  color: ${({ theme }) => theme.colors.action};
-  font-weight: 600;
-  text-decoration: none;
+// Chave liga/desliga desenhada em cima do campo de marcar, que continua sendo o controle de verdade.
+const Switch = styled.input`
+  appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: 13px;
+  background: ${({ theme }) => theme.colors.border};
+  cursor: pointer;
+  transition: background 0.15s;
+  &::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: ${({ theme }) => theme.colors.white};
+    box-shadow: 0 1px 2px rgba(13, 13, 13, 0.3);
+    transition: transform 0.15s;
+  }
+  &:checked {
+    background: ${({ theme }) => theme.colors.action};
+  }
+  &:checked::after {
+    transform: translateX(18px);
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.primary};
+    outline-offset: 2px;
+  }
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
 `
 const Status = styled.p`
   margin: 0;
@@ -57,6 +157,15 @@ const Status = styled.p`
   font-size: 14px;
   color: ${({ theme }) => theme.colors.muted};
 `
+
+function Lead({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <>
+      <IconBox aria-hidden="true">{icon}</IconBox>
+      <Texts>{children}</Texts>
+    </>
+  )
+}
 
 export function ConversationSettingsView() {
   const query = useConversationSettings()
@@ -71,19 +180,17 @@ export function ConversationSettingsView() {
   if (query.isError) return <Status role="alert">Não foi possível carregar suas configurações agora.</Status>
 
   return (
-    <div>
+    <Page>
       <Group>
         <h2>Privacidade</h2>
         <Row>
-          <div>
-            <label htmlFor="cfg-read-receipts">
-              <strong>Confirmação de leitura</strong>
-            </label>
+          <Lead icon={<Checks size={20} />}>
+            <label htmlFor="cfg-read-receipts">Confirmação de leitura</label>
             <Help>
               Mostra quando você leu uma mensagem. Se desativado, você também não vê quando outras pessoas leram.
             </Help>
-          </div>
-          <input
+          </Lead>
+          <Switch
             id="cfg-read-receipts"
             type="checkbox"
             checked={settings.readReceiptsEnabled}
@@ -92,14 +199,12 @@ export function ConversationSettingsView() {
           />
         </Row>
         <Row>
-          <div>
-            <label htmlFor="cfg-last-seen">
-              <strong>Visto por último</strong>
-            </label>
+          <Lead icon={<Clock size={20} />}>
+            <label htmlFor="cfg-last-seen">Visto por último</label>
             <Help>
               Recíproco: ao escolher "Ninguém", você também não vê o visto por último de outras pessoas.
             </Help>
-          </div>
+          </Lead>
           <Select
             id="cfg-last-seen"
             value={settings.lastSeenVisibility}
@@ -112,11 +217,9 @@ export function ConversationSettingsView() {
           </Select>
         </Row>
         <Row>
-          <div>
-            <label htmlFor="cfg-group-invite">
-              <strong>Quem pode me adicionar a grupos</strong>
-            </label>
-          </div>
+          <Lead icon={<Users size={20} />}>
+            <label htmlFor="cfg-group-invite">Quem pode me adicionar a grupos</label>
+          </Lead>
           <Select
             id="cfg-group-invite"
             value={settings.groupInvitePolicy}
@@ -129,11 +232,9 @@ export function ConversationSettingsView() {
           </Select>
         </Row>
         <Row>
-          <div>
-            <label htmlFor="cfg-direct-request">
-              <strong>Quem pode me enviar solicitações</strong>
-            </label>
-          </div>
+          <Lead icon={<UserPlus size={20} />}>
+            <label htmlFor="cfg-direct-request">Quem pode me enviar solicitações</label>
+          </Lead>
           <Select
             id="cfg-direct-request"
             value={settings.directRequestPolicy}
@@ -144,118 +245,51 @@ export function ConversationSettingsView() {
             <option value="NOBODY">Ninguém</option>
           </Select>
         </Row>
-        <Row>
-          <div>
+        <LinkRow to="/conversas/bloqueios">
+          <Lead icon={<Prohibit size={20} />}>
             <strong>Pessoas bloqueadas</strong>
             <Help>Gerencie contas que não podem enviar mensagens para você.</Help>
-          </div>
-          <NavLink to="/conversas/bloqueios">Ver bloqueadas</NavLink>
-        </Row>
+          </Lead>
+          <CaretRight size={18} aria-hidden="true" />
+        </LinkRow>
       </Group>
 
       <Group>
-        <h2>Notificações</h2>
+        <h2>Conversas</h2>
         <Row>
-          <div>
-            <label htmlFor="cfg-notify-sound">
-              <strong>Som nas notificações</strong>
-            </label>
-          </div>
-          <input
-            id="cfg-notify-sound"
-            type="checkbox"
-            checked={settings.notifySound}
+          <Lead icon={<TextAa size={20} />}>
+            <label htmlFor="cfg-font-scale">Tamanho da fonte nas conversas</label>
+          </Lead>
+          <Select
+            id="cfg-font-scale"
+            value={settings.fontScale}
             disabled={update.isPending}
-            onChange={(e) => save({ notifySound: e.target.checked })}
-          />
+            onChange={(e) => save({ fontScale: e.target.value as ConversationFontScale })}
+          >
+            <option value="SMALL">Pequena</option>
+            <option value="MEDIUM">Padrão</option>
+            <option value="LARGE">Grande</option>
+          </Select>
         </Row>
         <Row>
-          <div>
-            <label htmlFor="cfg-notify-vibration">
-              <strong>Vibração</strong>
-            </label>
-          </div>
-          <input
-            id="cfg-notify-vibration"
-            type="checkbox"
-            checked={settings.notifyVibration}
+          <Lead icon={<ImageSquare size={20} />}>
+            <label htmlFor="cfg-wallpaper">Papel de parede das conversas</label>
+          </Lead>
+          <Select
+            id="cfg-wallpaper"
+            value={settings.wallpaper}
             disabled={update.isPending}
-            onChange={(e) => save({ notifyVibration: e.target.checked })}
-          />
+            onChange={(e) => save({ wallpaper: e.target.value as ConversationWallpaper })}
+          >
+            <option value="DEFAULT">Padrão</option>
+            <option value="SOFT">Suave</option>
+            <option value="PLAIN">Liso</option>
+          </Select>
         </Row>
         <Row>
-          <div>
-            <label htmlFor="cfg-notify-preview">
-              <strong>Mostrar aviso detalhado</strong>
-            </label>
-            <Help>
-              Por privacidade, notificações nunca exibem o texto das mensagens — apenas que há uma nova mensagem.
-            </Help>
-          </div>
-          <input
-            id="cfg-notify-preview"
-            type="checkbox"
-            checked={settings.notifyPreview}
-            disabled={update.isPending}
-            onChange={(e) => save({ notifyPreview: e.target.checked })}
-          />
-        </Row>
-        <Help>
-          Para silenciar uma conversa ou grupo específico, abra os Detalhes dentro da conversa.
-        </Help>
-      </Group>
-
-      <Group>
-        <h2>Aparelhos e segurança</h2>
-        <Row>
-          <div>
-            <strong>Aparelhos conectados</strong>
-            <Help>Veja onde sua conta está conectada e desconecte aparelhos antigos.</Help>
-          </div>
-          <NavLink to="/conversas/aparelhos">Gerenciar aparelhos</NavLink>
-        </Row>
-        <Row>
-          <div>
-            <label htmlFor="cfg-security-alerts">
-              <strong>Alertas de segurança</strong>
-            </label>
-            <Help>Avisa dentro da conversa quando um contato muda de aparelho.</Help>
-          </div>
-          <input
-            id="cfg-security-alerts"
-            type="checkbox"
-            checked={settings.securityAlertsEnabled}
-            disabled={update.isPending}
-            onChange={(e) => save({ securityAlertsEnabled: e.target.checked })}
-          />
-        </Row>
-        <Row>
-          <div>
-            <label htmlFor="cfg-key-backup">
-              <strong>Backup protegido na nuvem (opcional)</strong>
-            </label>
-            <Help>
-              Desativado por padrão. Mantém suas conversas apenas nos seus aparelhos quando desligado.
-            </Help>
-          </div>
-          <input
-            id="cfg-key-backup"
-            type="checkbox"
-            checked={settings.keyBackupEnabled}
-            disabled={update.isPending}
-            onChange={(e) => save({ keyBackupEnabled: e.target.checked })}
-          />
-        </Row>
-      </Group>
-
-      <Group>
-        <h2>Mídia e aparência</h2>
-        <Row>
-          <div>
-            <label htmlFor="cfg-media-download">
-              <strong>Download automático de mídia</strong>
-            </label>
-          </div>
+          <Lead icon={<DownloadSimple size={20} />}>
+            <label htmlFor="cfg-media-download">Download automático de mídia</label>
+          </Lead>
           <Select
             id="cfg-media-download"
             value={settings.mediaAutoDownload}
@@ -269,45 +303,62 @@ export function ConversationSettingsView() {
             <option value="NEVER">Nunca (baixar manualmente)</option>
           </Select>
         </Row>
-        <Row>
-          <div>
-            <label htmlFor="cfg-font-scale">
-              <strong>Tamanho da fonte nas conversas</strong>
-            </label>
-          </div>
-          <Select
-            id="cfg-font-scale"
-            value={settings.fontScale}
-            disabled={update.isPending}
-            onChange={(e) => save({ fontScale: e.target.value as ConversationFontScale })}
-          >
-            <option value="SMALL">Pequena</option>
-            <option value="MEDIUM">Padrão</option>
-            <option value="LARGE">Grande</option>
-          </Select>
+      </Group>
+
+      <Group>
+        <h2>Notificações</h2>
+        <Row $soon>
+          <Lead icon={<SpeakerHigh size={20} />}>
+            <label htmlFor="cfg-notify-sound">Som nas notificações</label>
+            <Help>Em breve</Help>
+          </Lead>
+          <Switch id="cfg-notify-sound" type="checkbox" checked={settings.notifySound} disabled readOnly />
         </Row>
+        <Row $soon>
+          <Lead icon={<Vibrate size={20} />}>
+            <label htmlFor="cfg-notify-vibration">Vibração</label>
+            <Help>Em breve</Help>
+          </Lead>
+          <Switch id="cfg-notify-vibration" type="checkbox" checked={settings.notifyVibration} disabled readOnly />
+        </Row>
+        <Row $soon>
+          <Lead icon={<Bell size={20} />}>
+            <label htmlFor="cfg-notify-preview">Mostrar aviso detalhado</label>
+            <Help>Em breve</Help>
+          </Lead>
+          <Switch id="cfg-notify-preview" type="checkbox" checked={settings.notifyPreview} disabled readOnly />
+        </Row>
+        <Note>Para silenciar uma conversa ou grupo específico, abra os Detalhes dentro da conversa.</Note>
+      </Group>
+
+      <Group>
+        <h2>Aparelhos e segurança</h2>
+        <LinkRow to="/conversas/aparelhos">
+          <Lead icon={<DeviceMobile size={20} />}>
+            <strong>Aparelhos conectados</strong>
+            <Help>Veja onde sua conta está conectada e desconecte aparelhos antigos.</Help>
+          </Lead>
+          <CaretRight size={18} aria-hidden="true" />
+        </LinkRow>
         <Row>
-          <div>
-            <label htmlFor="cfg-wallpaper">
-              <strong>Papel de parede das conversas</strong>
-            </label>
-          </div>
-          <Select
-            id="cfg-wallpaper"
-            value={settings.wallpaper}
-            disabled={update.isPending}
-            onChange={(e) => save({ wallpaper: e.target.value as ConversationWallpaper })}
-          >
-            <option value="DEFAULT">Padrão</option>
-            <option value="SOFT">Suave</option>
-            <option value="PLAIN">Liso</option>
-          </Select>
+          <Lead icon={<ShieldCheck size={20} />}>
+            <label htmlFor="cfg-security-alerts">Alertas de segurança</label>
+            <Help>Sempre ligados: avisam na conversa quando um contato muda de aparelho.</Help>
+          </Lead>
+          <Switch id="cfg-security-alerts" type="checkbox" checked disabled readOnly />
+        </Row>
+        <Row $soon>
+          <Lead icon={<Cloud size={20} />}>
+            <label htmlFor="cfg-key-backup">Backup protegido na nuvem</label>
+            <Help>Em breve</Help>
+          </Lead>
+          <Switch id="cfg-key-backup" type="checkbox" checked={settings.keyBackupEnabled} disabled readOnly />
         </Row>
       </Group>
 
       {update.isError && (
         <Status role="alert">Não foi possível salvar a alteração. Tente novamente.</Status>
       )}
-    </div>
+    </Page>
   )
 }

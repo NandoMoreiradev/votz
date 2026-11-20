@@ -52,7 +52,7 @@ const composerReady = (page) =>
   page.waitForFunction(
     () => {
       const field = document.querySelector('textarea[aria-label="Mensagem"]')
-      return !!field && !field.disabled
+      return !!field && !field.disabled && field.placeholder === 'Mensagem'
     },
     undefined,
     { timeout: 45000 },

@@ -1,31 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   FlatList,
   Pressable,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native'
 import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
+import { useNetworkState } from 'expo-network'
 import { router, useFocusEffect } from 'expo-router'
 import AlertCircle from 'lucide-react-native/icons/circle-alert'
 import Camera from 'lucide-react-native/icons/camera'
 import Check from 'lucide-react-native/icons/check'
 import CheckCheck from 'lucide-react-native/icons/check-check'
 import Clock from 'lucide-react-native/icons/clock'
+import Copy from 'lucide-react-native/icons/copy'
+import Forward from 'lucide-react-native/icons/forward'
+import Mic from 'lucide-react-native/icons/mic'
 import Paperclip from 'lucide-react-native/icons/paperclip'
-import Search from 'lucide-react-native/icons/search'
+import Reply from 'lucide-react-native/icons/reply'
 import Send from 'lucide-react-native/icons/send'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import {
   DEFAULT_CONVERSATION_SETTINGS,
   conversationFontSize,
+  conversationHeaderStatus,
   conversationTitle,
-  conversationTypingLabel,
   type ConversationSummary,
 } from '@votz/shared-types'
 import {
@@ -34,6 +38,7 @@ import {
   QUICK_REACTIONS,
   RESET_WARNING,
   chatError,
+  chatSeedState,
   chatView,
   mediaKindFromMime,
   type ChatClient,
@@ -57,11 +62,15 @@ import {
 import { api, ApiError } from '../lib/api'
 import { useTypingUsers } from '../lib/chat-typing'
 import { useSession } from '../lib/session'
+import { ChatHeader } from './chat-header'
+import { MessageMenu, type MenuAction, type MenuAnchor } from './chat-sheet'
+import { copyText } from '../lib/clipboard'
+import { shouldAutoDownload } from '../lib/network-policy'
 import { Button, ErrorText, Field, Heading, Label } from './ui'
 import { theme } from '../theme'
-import { Toolbar } from './screen'
 
 const viewability = { itemVisiblePercentThreshold: 60, minimumViewTime: 500 }
+const NBSP = ' '
 /** Texto encaminhado em memória entre telas de conversa (nunca gravado em disco). */
 let pendingForward: { targetId: string; text: string } | null = null
 
@@ -88,11 +97,14 @@ function NativeAttachmentView({
   userId,
   conversationId,
   runtime,
+  autoDownload,
 }: {
   attachment: ChatViewAttachment
   userId: string
   conversationId: string
   runtime: ChatClient | null
+  /** Baixar a foto sozinha (configuração "Download automático de mídia"). */
+  autoDownload: boolean
 }) {
   const [dataUri, setDataUri] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -125,8 +137,8 @@ function NativeAttachmentView({
   }, [runtime, loading, dataUri, userId, conversationId, attachment])
 
   useEffect(() => {
-    if (attachment.kind === 'image') void load()
-  }, [attachment.id, attachment.kind, load])
+    if (attachment.kind === 'image' && autoDownload) void load()
+  }, [attachment.id, attachment.kind, autoDownload, load])
 
   return (
     <View style={styles.mediaBox}>
@@ -158,6 +170,203 @@ function NativeAttachmentView({
   )
 }
 
+interface BubbleProps {
+  item: ChatViewMessage
+  fontSize: number
+  userId: string
+  conversationId: string
+  runtime: ChatClient | null
+  autoDownload: boolean
+  busy: boolean
+  registerRef: (id: string, node: ComponentRef<typeof View> | null) => void
+  onMenu: (item: ChatViewMessage) => void
+  onReact: (id: string, emoji: string) => void
+  onRetry: (txnId: string) => void
+}
+
+/** Só o que muda o desenho de uma bolha: o resto do estado da conversa não a redesenha. */
+function bubbleKey(item: ChatViewMessage) {
+  return [
+    item.id,
+    item.body,
+    item.time,
+    item.deliveryIcon,
+    item.statusLabel,
+    item.isFirstInGroup,
+    item.dayDivider,
+    item.canReact,
+    item.retryTxnId,
+    item.canRetry,
+    item.senderName,
+    item.unreadable,
+    item.attachment?.id,
+    item.reactions.map((r) => `${r.emoji}${r.count}${r.mine ? 'm' : ''}`).join(','),
+  ].join('|')
+}
+
+const MessageBubble = memo(
+  function MessageBubble({
+    item,
+    fontSize,
+    userId,
+    conversationId,
+    runtime,
+    autoDownload,
+    busy,
+    registerRef,
+    onMenu,
+    onReact,
+    onRetry,
+  }: BubbleProps) {
+    // Mensagem só de texto: a hora fica no canto, na última linha, como no WhatsApp.
+    const inlineMeta =
+      !!item.body &&
+      !item.unreadable &&
+      !item.attachment &&
+      !item.card &&
+      !item.retryTxnId &&
+      item.reactions.length === 0
+    const meta = (
+      <View
+        accessible
+        accessibilityLabel={[item.time, item.statusLabel].filter(Boolean).join('. ')}
+        style={[styles.metaRow, inlineMeta && styles.metaInline]}
+      >
+        <Text style={styles.time}>{item.time}</Text>
+        {item.deliveryIcon === 'clock' && <Clock size={12} color={theme.colors.muted} />}
+        {item.deliveryIcon === 'check' && <Check size={13} color={theme.colors.muted} />}
+        {item.deliveryIcon === 'checks' && (
+          <CheckCheck size={14} color={theme.colors.muted} />
+        )}
+        {item.deliveryIcon === 'checks-read' && (
+          <CheckCheck size={14} color={theme.colors.positive} />
+        )}
+        {item.deliveryIcon === 'alert' && (
+          <AlertCircle size={12} color={theme.colors.action} />
+        )}
+      </View>
+    )
+    return (
+      <View>
+        {item.dayDivider && (
+          <View style={styles.dayChip}>
+            <Text style={styles.dayChipText}>{item.dayDivider}</Text>
+          </View>
+        )}
+        <Pressable
+          ref={(node) => registerRef(item.id, node)}
+          onLongPress={item.canReact ? () => onMenu(item) : undefined}
+          delayLongPress={280}
+          accessibilityHint={
+            item.canReact
+              ? 'Segure para reagir, responder, encaminhar ou copiar.'
+              : undefined
+          }
+          style={[
+            styles.bubble,
+            item.own ? styles.own : styles.peer,
+            item.isFirstInGroup && (item.own ? styles.ownFirst : styles.peerFirst),
+          ]}
+        >
+          {item.isFirstInGroup && (
+            <View pointerEvents="none" style={item.own ? styles.tailOwn : styles.tailPeer} />
+          )}
+          {item.senderName && <Text style={styles.sender}>{item.senderName}</Text>}
+          {item.forwarded && <Text style={styles.forwarded}>Encaminhada</Text>}
+          {item.replyTo && (
+            <View style={styles.quote}>
+              <Text style={styles.small} numberOfLines={2}>
+                {item.replyTo.senderName ? `${item.replyTo.senderName}: ` : ''}
+                {item.replyTo.excerpt}
+              </Text>
+            </View>
+          )}
+          {item.attachment && (
+            <NativeAttachmentView
+              attachment={item.attachment}
+              userId={userId}
+              conversationId={conversationId}
+              runtime={runtime}
+              autoDownload={autoDownload}
+            />
+          )}
+          {!!item.body && (
+            <Text
+              style={[
+                styles.message,
+                { fontSize, lineHeight: Math.round(fontSize * 1.4) },
+                item.unreadable && styles.unreadable,
+              ]}
+            >
+              {item.body}
+              {/* Espaço invisível no fim do texto: reserva o canto da hora e quebra junto com ele. */}
+              {inlineMeta && (
+                <Text style={styles.metaSpacer}>
+                  {item.own ? NBSP.repeat(19) : NBSP.repeat(11)}
+                </Text>
+              )}
+            </Text>
+          )}
+          {item.card && (
+            <Pressable
+              accessibilityRole="button"
+              style={styles.cardLink}
+              onPress={() =>
+                router.push({
+                  pathname: item.card!.kind === 'post' ? '/post/[id]' : '/report/[id]',
+                  params: { id: item.card!.id },
+                })
+              }
+            >
+              <Text style={styles.sender}>
+                {item.card.label}
+                {item.card.title ? ` · ${item.card.title}` : ''}
+              </Text>
+            </Pressable>
+          )}
+          {item.reactions.length > 0 && (
+            <View style={styles.reactionRow}>
+              {item.reactions.map((r) => (
+                <Pressable
+                  key={r.emoji}
+                  accessibilityRole="button"
+                  style={[styles.pill, r.mine && styles.pillMine]}
+                  onPress={() => onReact(item.id, r.emoji)}
+                >
+                  <Text style={styles.small}>
+                    {r.emoji} {r.count}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {meta}
+          {item.retryTxnId && (
+            <Button
+              title={item.retryLabel}
+              secondary
+              disabled={!item.canRetry || busy}
+              onPress={() => onRetry(item.retryTxnId!)}
+            />
+          )}
+        </Pressable>
+      </View>
+    )
+  },
+  (prev, next) =>
+    prev.fontSize === next.fontSize &&
+    prev.userId === next.userId &&
+    prev.conversationId === next.conversationId &&
+    prev.runtime === next.runtime &&
+    prev.autoDownload === next.autoDownload &&
+    prev.registerRef === next.registerRef &&
+    prev.onMenu === next.onMenu &&
+    prev.onReact === next.onReact &&
+    prev.onRetry === next.onRetry &&
+    (!next.item.retryTxnId || prev.busy === next.busy) &&
+    bubbleKey(prev.item) === bubbleKey(next.item),
+)
+
 /**
  * A conversa abre sozinha: as chaves são criadas e guardadas no cofre do
  * aparelho sem a pessoa fazer nada. Só aparece uma tela de espera quando é
@@ -172,13 +381,14 @@ export function ChatPane({
   const conversations = useConversationList('active')
   const settingsQuery = useConversationSettings()
   const chatSettings = settingsQuery.data ?? DEFAULT_CONVERSATION_SETTINGS
+  const network = useNetworkState()
   const bubbleFontSize = conversationFontSize(chatSettings.fontScale)
   const listBackground =
     chatSettings.wallpaper === 'SOFT'
       ? theme.colors.soft
       : chatSettings.wallpaper === 'PLAIN'
         ? theme.colors.surface
-        : theme.colors.background
+        : theme.colors.chatBackground
   const title = conversationTitle(conversation, userId)
   const [focused, setFocused] = useState(false)
   const [foreground, setForeground] = useState(
@@ -227,7 +437,8 @@ export function ChatPane({
   }, [conversation.id])
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
-  const [reactMenuId, setReactMenuId] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ message: ChatViewMessage; anchor: MenuAnchor } | null>(null)
+  const bubbleRefs = useRef<Record<string, ComponentRef<typeof View> | null>>({})
   const [pending, setPending] = useState<{ code: string } | null>(null)
   const [showVerify, setShowVerify] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -315,7 +526,18 @@ export function ChatPane({
   useEffect(() => {
     if (state?.reactivate) startOver()
   }, [state?.reactivate, startOver])
-  const view = chatView(state, title, undefined, showSearch ? search : '')
+  // Voltando a uma conversa recente, as últimas mensagens aparecem na hora, da memória.
+  const seed = useMemo(
+    () => (state ? null : chatSeedState(conversation.id)),
+    [state, conversation.id],
+  )
+  const shown = state ?? seed
+  const view = useMemo(
+    () => chatView(shown, title, undefined, showSearch ? search : ''),
+    [shown, title, showSearch, search],
+  )
+  const listData = useMemo(() => [...view.messages].reverse(), [view.messages])
+  const headerStatus = conversationHeaderStatus(conversation, typingNames)
   const forwardTargets = (
     conversations.data?.pages.flatMap((page) => page.items) ?? []
   ).filter((item) => item.id !== conversation.id && !item.archivedAt)
@@ -351,32 +573,106 @@ export function ChatPane({
     }
   }
   async function send() {
-    if (!runtime || busy || !draft.trim()) return
-    setBusy(true)
+    if (!runtime || !draft.trim()) return
+    // Como no WhatsApp: o campo esvazia na hora e a bolha aparece; o envio segue por trás.
+    // Só se for recusado o texto volta para o campo. Sem travar o campo: dá para mandar várias seguidas.
+    const text = draft
+    const replying = replyTo
+    const forwarding = forwardedDraft
+    setDraft('')
+    setReplyTo(null)
+    setForwardedDraft(false)
     setError('')
+    emitTyping(false)
     try {
-      await runtime.send(draft, {
-        ...(replyTo ? { replyTo } : {}),
-        ...(forwardedDraft ? { forwarded: true } : {}),
+      await runtime.send(text, {
+        ...(replying ? { replyTo: replying } : {}),
+        ...(forwarding ? { forwarded: true } : {}),
       })
-      setDraft('')
-      setReplyTo(null)
-      setForwardedDraft(false)
-      emitTyping(false)
     } catch (failure) {
+      setDraft((current) => current || text)
+      setReplyTo((current) => current ?? replying)
+      setForwardedDraft((current) => current || forwarding)
       setError((failure as Error).message || chatError(failure))
-    } finally {
-      setBusy(false)
     }
   }
   async function react(messageId: string, emoji: string) {
     if (!runtime || busy) return
-    setReactMenuId(null)
+    setMenu(null)
     try {
       await runtime.react(messageId, emoji)
     } catch (failure) {
       setError((failure as Error).message || chatError(failure))
     }
+  }
+  /** Abre o menu junto da mensagem tocada: mede onde ela está na tela. */
+  function openMenu(message: ChatViewMessage) {
+    bubbleRefs.current[message.id]?.measureInWindow((x, y, width, height) => {
+      setMenu({ message, anchor: { x, y, width, height, own: message.own } })
+    })
+  }
+  function retry(txnId: string) {
+    void runtime?.retry(txnId).catch((failure) => setError(chatError(failure)))
+  }
+  // Sempre a versão mais recente das funções, com identidade estável para as bolhas.
+  const live = useRef({ openMenu, react, retry })
+  useEffect(() => {
+    live.current = { openMenu, react, retry }
+  })
+  const registerRef = useCallback(
+    (id: string, node: ComponentRef<typeof View> | null) => {
+      bubbleRefs.current[id] = node
+    },
+    [],
+  )
+  const onMenu = useCallback((message: ChatViewMessage) => live.current.openMenu(message), [])
+  const onReact = useCallback(
+    (id: string, emoji: string) => void live.current.react(id, emoji),
+    [],
+  )
+  const onRetry = useCallback((txnId: string) => live.current.retry(txnId), [])
+  function messageActions(message: ChatViewMessage): MenuAction[] {
+    const actions: MenuAction[] = [
+      {
+        label: 'Responder',
+        icon: <Reply size={21} color={theme.colors.muted} />,
+        onPress: () => {
+          setReplyTo({
+            eventId: message.id,
+            senderName: message.own ? 'Você' : (message.senderName ?? title),
+            excerpt: message.body || message.attachment?.kindLabel || 'Mensagem',
+          })
+          setMenu(null)
+        },
+      },
+    ]
+    if (message.body && !message.unreadable) {
+      actions.push(
+        {
+          label: 'Encaminhar',
+          icon: <Forward size={21} color={theme.colors.muted} />,
+          onPress: () => {
+            setForwardingText(message.body)
+            setMenu(null)
+          },
+        },
+        {
+          label: 'Copiar texto',
+          icon: <Copy size={21} color={theme.colors.muted} />,
+          onPress: () => {
+            setMenu(null)
+            void copyText(message.body).then((copied) => {
+              if (!copied)
+                Alert.alert(
+                  'Copiar texto',
+                  'Copiar o texto chega na próxima atualização do aplicativo.',
+                )
+            })
+          },
+        },
+      )
+    }
+    return actions
   }
   async function attachMedia(fromCamera = false) {
     if (!runtime || busy) return
@@ -432,34 +728,33 @@ export function ChatPane({
   }
   return (
     <View style={{ flex: 1 }}>
-      <Toolbar
-        back
+      <ChatHeader
         title={title}
-        right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Buscar na conversa"
-              onPress={() => {
-                setShowSearch((value) => !value)
-                setSearch('')
-              }}
-            >
-              <Search size={20} color={theme.colors.primary} />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Detalhes da conversa"
-              onPress={() =>
-                router.push({
-                  pathname: '/conversation/[id]',
-                  params: { id: conversation.id, details: '1' },
-                })
+        group={conversation.kind === 'GROUP'}
+        person={conversation.members.find((m) => m.user.id !== userId)?.user}
+        status={headerStatus.text}
+        typing={headerStatus.typing}
+        onSearch={() => {
+          setShowSearch((value) => !value)
+          setSearch('')
+        }}
+        onDetails={() =>
+          router.push({
+            pathname: '/conversation/[id]',
+            params: { id: conversation.id, details: '1' },
+          })
+        }
+        receipts={
+          state
+            ? {
+                label: view.readReceipts.label,
+                enabled: view.readReceipts.enabled,
+                disabled: busy || view.readReceipts.disabled,
+                onToggle: () => {
+                  void toggleReceipts()
+                },
               }
-            >
-              <Label muted>Detalhes</Label>
-            </Pressable>
-          </View>
+            : undefined
         }
       />
       {showSearch && (
@@ -565,32 +860,20 @@ export function ChatPane({
           )}
           <ErrorText message={error} />
         </View>
-      ) : !state ? (
-        <View style={styles.card}>
-          {error ? (
-            <>
-              <Label>{error}</Label>
-              <Button title="Tentar de novo" onPress={restart} />
-            </>
-          ) : (
-            <>
-              <ActivityIndicator color={theme.colors.action} />
-              <Label muted>Preparando a conversa…</Label>
-            </>
-          )}
-        </View>
+      ) : !shown ? (
+        error ? (
+          <View style={styles.card}>
+            <Label>{error}</Label>
+            <Button title="Tentar de novo" onPress={restart} />
+          </View>
+        ) : (
+          <View style={[styles.loading, { backgroundColor: listBackground }]}>
+            <ActivityIndicator color={theme.colors.action} />
+            <Text style={styles.empty}>Preparando a conversa…</Text>
+          </View>
+        )
       ) : (
         <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Confirmar identidade, opcional"
-            disabled={!view.canVerify}
-            onPress={() => setShowVerify((value) => !value)}
-            style={styles.status}
-          >
-            <ShieldCheck size={17} color={theme.colors.muted} />
-            <Text style={styles.small}>{view.banner}</Text>
-          </Pressable>
           {view.deviceRequests.map((request) => (
             <View key={request.id} style={styles.card}>
               <Text style={styles.name}>{request.title}</Text>
@@ -674,236 +957,83 @@ export function ChatPane({
               )}
             </View>
           )}
-          {(error || state.error) && (
+          {(error || shown.error) && (
             <View style={{ paddingHorizontal: 16 }}>
-              <ErrorText message={error || state.error || undefined} />
+              <ErrorText message={error || shown.error || undefined} />
             </View>
           )}
           <FlatList
             viewabilityConfig={viewability}
             onViewableItemsChanged={onVisible}
             style={{ flex: 1, backgroundColor: listBackground }}
-            data={[...view.messages].reverse()}
+            data={listData}
             inverted
             keyExtractor={(message) => message.id}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ padding: 16, gap: 8 }}
+            contentContainerStyle={styles.history}
             initialNumToRender={20}
             windowSize={7}
             renderItem={({ item }) => (
-              <View>
-                {item.dayDivider && (
-                  <View style={styles.dayChip}>
-                    <Text style={styles.dayChipText}>{item.dayDivider}</Text>
-                  </View>
-                )}
-                <View
-                  style={[
-                    styles.bubble,
-                    item.own ? styles.own : styles.peer,
-                    item.isFirstInGroup && (item.own ? styles.ownFirst : styles.peerFirst),
-                  ]}
-                >
-                {item.senderName && (
-                  <Text style={styles.sender}>{item.senderName}</Text>
-                )}
-                {item.forwarded && (
-                  <Text style={styles.forwarded}>Encaminhada</Text>
-                )}
-                {item.replyTo && (
-                  <View style={styles.quote}>
-                    <Text style={styles.small} numberOfLines={2}>
-                      {item.replyTo.senderName
-                        ? `${item.replyTo.senderName}: `
-                        : ''}
-                      {item.replyTo.excerpt}
-                    </Text>
-                  </View>
-                )}
-                {item.attachment && (
-                  <NativeAttachmentView
-                    attachment={item.attachment}
-                    userId={userId}
-                    conversationId={conversation.id}
-                    runtime={runtime}
-                  />
-                )}
-                {!!item.body && (
-                  <Text
-                    selectable
-                    style={[
-                      styles.message,
-                      { fontSize: bubbleFontSize, lineHeight: Math.round(bubbleFontSize * 1.45) },
-                    ]}
-                  >
-                    {item.body}
-                  </Text>
-                )}
-                {item.card && (
-                  <Pressable
-                    accessibilityRole="button"
-                    style={styles.cardLink}
-                    onPress={() =>
-                      router.push({
-                        pathname:
-                          item.card!.kind === 'post'
-                            ? '/post/[id]'
-                            : '/report/[id]',
-                        params: { id: item.card!.id },
-                      })
-                    }
-                  >
-                    <Text style={styles.sender}>
-                      {item.card.label}
-                      {item.card.title ? ` · ${item.card.title}` : ''}
-                    </Text>
-                  </Pressable>
-                )}
-                {item.reactions.length > 0 && (
-                  <View style={styles.reactionRow}>
-                    {item.reactions.map((r) => (
-                      <Pressable
-                        key={r.emoji}
-                        accessibilityRole="button"
-                        style={[styles.pill, r.mine && styles.pillMine]}
-                        onPress={() => {
-                          void react(item.id, r.emoji)
-                        }}
-                      >
-                        <Text style={styles.small}>
-                          {r.emoji} {r.count}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-                {item.canReact && (
-                  <View style={styles.bubbleTools}>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() =>
-                        setReplyTo({
-                          eventId: item.id,
-                          senderName: item.own
-                            ? 'Você'
-                            : (item.senderName ?? title),
-                          excerpt:
-                            item.body ||
-                            item.attachment?.kindLabel ||
-                            'Mensagem',
-                        })
-                      }
-                    >
-                      <Text style={styles.toolText}>Responder</Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() =>
-                        setReactMenuId((id) => (id === item.id ? null : item.id))
-                      }
-                    >
-                      <Text style={styles.toolText}>Reagir</Text>
-                    </Pressable>
-                    {!!item.body && (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setForwardingText(item.body)}
-                      >
-                        <Text style={styles.toolText}>Encaminhar</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                )}
-                {reactMenuId === item.id && (
-                  <View style={styles.reactionRow}>
-                    {QUICK_REACTIONS.map((emoji) => (
-                      <Pressable
-                        key={emoji}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Reagir com ${emoji}`}
-                        style={styles.pill}
-                        onPress={() => {
-                          void react(item.id, emoji)
-                        }}
-                      >
-                        <Text>{emoji}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-                <View style={styles.metaRow}>
-                  <Text style={styles.time}>{item.meta}</Text>
-                  {item.deliveryIcon === 'clock' && (
-                    <Clock size={12} color={theme.colors.muted} />
-                  )}
-                  {item.deliveryIcon === 'check' && (
-                    <Check size={12} color={theme.colors.muted} />
-                  )}
-                  {item.deliveryIcon === 'checks' && (
-                    <CheckCheck size={13} color={theme.colors.muted} />
-                  )}
-                  {item.deliveryIcon === 'checks-read' && (
-                    <CheckCheck size={13} color={theme.colors.positive} />
-                  )}
-                  {item.deliveryIcon === 'alert' && (
-                    <AlertCircle size={12} color={theme.colors.action} />
-                  )}
-                </View>
-                {item.retryTxnId && (
-                  <Button
-                    title={item.retryLabel}
-                    secondary
-                    disabled={!item.canRetry || busy}
-                    onPress={() => {
-                      void runtime
-                        ?.retry(item.retryTxnId!)
-                        .catch((failure) => setError(chatError(failure)))
-                    }}
-                  />
-                )}
-                </View>
-              </View>
+              <MessageBubble
+                item={item}
+                fontSize={bubbleFontSize}
+                userId={userId}
+                conversationId={conversation.id}
+                runtime={runtime}
+                autoDownload={shouldAutoDownload(chatSettings.mediaAutoDownload, network.type)}
+                busy={busy}
+                registerRef={registerRef}
+                onMenu={onMenu}
+                onReact={onReact}
+                onRetry={onRetry}
+              />
             )}
             ListEmptyComponent={
               view.emptyText ? (
-                <View style={{ transform: [{ scaleY: -1 }], padding: 20 }}>
-                  <Label muted>{view.emptyText}</Label>
+                <View style={{ padding: 24 }}>
+                  <Text style={styles.empty}>{view.emptyText}</Text>
                 </View>
               ) : undefined
             }
             ListFooterComponent={
-              view.canLoadOlder ? (
-                <Button
-                  title={view.olderLabel}
-                  secondary
-                  loading={state.loadingHistory}
-                  onPress={() => {
-                    void runtime
-                      ?.older()
-                      .catch((failure) => setError(chatError(failure)))
-                  }}
-                />
-              ) : undefined
+              <View>
+                {view.canLoadOlder ? (
+                  <Button
+                    title={view.olderLabel}
+                    secondary
+                    loading={shown.loadingHistory}
+                    onPress={() => {
+                      void runtime
+                        ?.older()
+                        .catch((failure) => setError(chatError(failure)))
+                    }}
+                  />
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Confirmar identidade, opcional"
+                    disabled={!view.canVerify}
+                    onPress={() => setShowVerify((value) => !value)}
+                    style={styles.banner}
+                  >
+                    <Text style={styles.bannerText}>
+                      <ShieldCheck size={12} color={theme.colors.muted} />
+                      {` ${view.banner}`}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
             }
           />
-          <View style={styles.status}>
-            <Text style={styles.small}>{view.readReceipts.label}</Text>
-            <Switch
-              accessibilityLabel={view.readReceipts.label}
-              value={view.readReceipts.enabled}
-              disabled={busy || view.readReceipts.disabled}
-              onValueChange={() => {
-                void toggleReceipts()
-              }}
-            />
-          </View>
-          {typingNames.length > 0 && (
-            <View style={styles.status}>
-              <Text style={styles.small}>
-                {conversationTypingLabel(typingNames)}
-              </Text>
-            </View>
-          )}
+          <MessageMenu
+            anchor={menu?.anchor ?? null}
+            onClose={() => setMenu(null)}
+            reactions={QUICK_REACTIONS}
+            onReact={(emoji) => {
+              if (menu) void react(menu.message.id, emoji)
+            }}
+            actions={menu ? messageActions(menu.message) : []}
+          />
           {(replyTo || forwardedDraft) && (
             <View style={styles.notice}>
               <Text style={[styles.small, { flex: 1 }]} numberOfLines={1}>
@@ -934,58 +1064,73 @@ export function ChatPane({
             </View>
           )}
           <View style={styles.composer}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Anexar foto ou vídeo"
-              disabled={!view.canWrite || busy}
-              onPress={() => {
-                void attachMedia(false)
-              }}
-              style={[styles.attach, (!view.canWrite || busy) && { opacity: 0.4 }]}
-            >
-              <Paperclip size={20} color={theme.colors.primary} />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Tirar foto"
-              disabled={!view.canWrite || busy}
-              onPress={() => {
-                void attachMedia(true)
-              }}
-              style={[styles.attach, (!view.canWrite || busy) && { opacity: 0.4 }]}
-            >
-              <Camera size={20} color={theme.colors.primary} />
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <Field
-                accessibilityLabel="Mensagem"
-                bare
-                multiline
-                maxLength={4000}
-                value={draft}
-                onChangeText={(value) => {
-                  setDraft(value)
-                  emitTyping(value.trim().length > 0)
+            <View style={styles.inputWrap}>
+              <View style={{ flex: 1 }}>
+                <Field
+                  accessibilityLabel="Mensagem"
+                  bare
+                  multiline
+                  maxLength={4000}
+                  value={draft}
+                  onChangeText={(value) => {
+                    setDraft(value)
+                    emitTyping(value.trim().length > 0)
+                  }}
+                  onBlur={() => emitTyping(false)}
+                  editable={view.canType}
+                  placeholder={view.placeholder}
+                  style={styles.field}
+                />
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Anexar foto ou vídeo"
+                disabled={!view.canWrite || busy}
+                onPress={() => {
+                  void attachMedia(false)
                 }}
-                onBlur={() => emitTyping(false)}
-                editable={view.canWrite}
-                placeholder={view.placeholder}
-                style={styles.field}
-              />
+                style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
+              >
+                <Paperclip size={21} color={theme.colors.muted} />
+              </Pressable>
+              {!draft.trim() && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Tirar foto"
+                  disabled={!view.canWrite || busy}
+                  onPress={() => {
+                    void attachMedia(true)
+                  }}
+                  style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
+                >
+                  <Camera size={21} color={theme.colors.muted} />
+                </Pressable>
+              )}
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Enviar mensagem"
-              disabled={!view.canWrite || busy || !draft.trim()}
+              accessibilityLabel={
+                draft.trim() ? 'Enviar mensagem' : 'Gravar mensagem de voz'
+              }
+              disabled={!view.canWrite || (!!draft.trim() && busy)}
               onPress={() => {
-                void send()
+                if (draft.trim()) void send()
+                else
+                  Alert.alert(
+                    'Mensagem de voz',
+                    'A gravação de voz chega em breve no celular.',
+                  )
               }}
               style={[
                 styles.send,
-                (!view.canWrite || !draft.trim() || busy) && { opacity: 0.4 },
+                (!view.canWrite || (!!draft.trim() && busy)) && { opacity: 0.4 },
               ]}
             >
-              <Send size={21} color={theme.colors.surface} />
+              {draft.trim() ? (
+                <Send size={21} color={theme.colors.surface} />
+              ) : (
+                <Mic size={22} color={theme.colors.surface} />
+              )}
             </Pressable>
           </View>
         </>
@@ -994,35 +1139,103 @@ export function ChatPane({
   )
 }
 const styles = StyleSheet.create({
+  history: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 2,
+  },
   dayChip: {
     alignSelf: 'center',
     paddingHorizontal: 12,
     paddingVertical: 4,
-    marginVertical: 6,
+    marginVertical: 8,
     borderRadius: 999,
     backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    elevation: 1,
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
   },
   dayChipText: {
     fontSize: 12,
     fontFamily: theme.fonts.medium,
     color: theme.colors.muted,
   },
+  banner: {
+    alignSelf: 'center',
+    maxWidth: '92%',
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surface,
+  },
+  metaSpacer: {
+    fontSize: 12,
+    color: 'transparent',
+  },
+  bannerText: {
+    fontFamily: theme.fonts.body,
+    fontSize: 11,
+    lineHeight: 15,
+    color: theme.colors.muted,
+    textAlign: 'center',
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  empty: {
+    fontFamily: theme.fonts.body,
+    fontSize: 14,
+    color: theme.colors.muted,
+    textAlign: 'center',
+  },
   ownFirst: {
-    borderTopRightRadius: 4,
-    marginTop: 6,
+    borderTopRightRadius: 0,
+    marginTop: 8,
   },
   peerFirst: {
-    borderTopLeftRadius: 4,
-    marginTop: 6,
+    borderTopLeftRadius: 0,
+    marginTop: 8,
+  },
+  tailOwn: {
+    position: 'absolute',
+    top: 0,
+    right: -7,
+    width: 0,
+    height: 0,
+    borderTopWidth: 10,
+    borderLeftWidth: 8,
+    borderTopColor: theme.colors.bubbleOwn,
+    borderLeftColor: 'transparent',
+  },
+  tailPeer: {
+    position: 'absolute',
+    top: 0,
+    left: -7,
+    width: 0,
+    height: 0,
+    borderTopWidth: 10,
+    borderRightWidth: 8,
+    borderTopColor: theme.colors.bubblePeer,
+    borderRightColor: 'transparent',
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-    marginTop: 4,
+    alignSelf: 'flex-end',
+    gap: 3,
+    marginTop: 2,
+  },
+  metaInline: {
+    position: 'absolute',
+    right: 10,
+    bottom: 6,
+    marginTop: 0,
   },
   name: {
     fontSize: 16,
@@ -1041,20 +1254,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     marginTop: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: theme.colors.soft,
-  },
-  status: {
-    flexDirection: 'row',
-    gap: 7,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: theme.colors.soft,
-    alignItems: 'center',
   },
   link: {
     fontSize: 13,
@@ -1075,21 +1280,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   bubble: {
-    maxWidth: '85%',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 5,
+    maxWidth: '82%',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
+    gap: 3,
+    elevation: 1,
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    shadowOffset: { width: 0, height: 1 },
   },
   own: {
     alignSelf: 'flex-end',
-    backgroundColor: theme.colors.tint,
-    borderBottomRightRadius: 4,
+    backgroundColor: theme.colors.bubbleOwn,
   },
   peer: {
     alignSelf: 'flex-start',
-    backgroundColor: theme.colors.soft,
-    borderBottomLeftRadius: 4,
+    backgroundColor: theme.colors.bubblePeer,
   },
   sender: {
     fontFamily: theme.fonts.heading,
@@ -1099,36 +1308,49 @@ const styles = StyleSheet.create({
   message: {
     fontFamily: theme.fonts.body,
     fontSize: 16,
-    lineHeight: 23,
+    lineHeight: 22,
     color: theme.colors.text,
+  },
+  unreadable: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: 'italic',
+    color: theme.colors.muted,
   },
   time: {
     color: theme.colors.muted,
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: theme.fonts.body,
     textAlign: 'right',
   },
   composer: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     alignItems: 'flex-end',
-    padding: 12,
-    borderTopWidth: 0.5,
-    borderTopColor: theme.colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: theme.colors.chatBackground,
+  },
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    minHeight: 46,
+    borderRadius: 24,
+    paddingRight: 6,
+    backgroundColor: theme.colors.surface,
   },
   field: {
-    borderRadius: 20,
-    backgroundColor: theme.colors.soft,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minHeight: 44,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 46,
     maxHeight: 130,
+    fontSize: 16,
   },
-  attach: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.soft,
+  inlineIcon: {
+    width: 40,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1138,7 +1360,7 @@ const styles = StyleSheet.create({
   mediaImage: {
     width: 220,
     height: 180,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: theme.colors.soft,
   },
   mediaCard: {
@@ -1174,7 +1396,7 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.colors.action,
     paddingLeft: 8,
     paddingVertical: 4,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'rgba(26,26,46,0.06)',
     borderRadius: 6,
   },
   cardLink: {
@@ -1189,7 +1411,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
+    marginTop: 2,
   },
   pill: {
     borderWidth: 1,
@@ -1197,26 +1419,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
   },
   pillMine: {
     borderColor: theme.colors.action,
   },
-  bubbleTools: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 4,
-  },
-  toolText: {
-    fontFamily: theme.fonts.body,
-    fontSize: 12,
-    color: theme.colors.muted,
-  },
   send: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: theme.colors.action,
     justifyContent: 'center',
     alignItems: 'center',

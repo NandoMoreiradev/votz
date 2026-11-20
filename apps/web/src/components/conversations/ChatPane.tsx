@@ -1,13 +1,17 @@
-import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import {
   ArrowBendUpLeft,
   ArrowLeft,
   Camera,
+  CaretDown,
   Check,
   Checks,
   Clock,
+  Copy as CopyIcon,
+  DotsThreeVertical,
+  Info,
   LockKey,
   MagnifyingGlass,
   Microphone,
@@ -26,6 +30,7 @@ import {
   QUICK_REACTIONS,
   RESET_WARNING,
   chatError,
+  chatSeedState,
   chatView,
   mediaKindFromMime,
   type ChatDeliveryIcon,
@@ -38,10 +43,8 @@ import {
 import {
   DEFAULT_CONVERSATION_SETTINGS,
   conversationFontSize,
-  conversationMemberLabel,
-  conversationTime,
+  conversationHeaderStatus,
   conversationTitle,
-  conversationTypingLabel,
   type ConversationSummary,
   type ConversationWallpaper,
 } from '@votz/shared-types'
@@ -67,15 +70,18 @@ const Box = styled.section`
   height: calc(100dvh - 56px);
   min-height: 0;
   overflow: hidden;
+  @media (min-width: 960px) {
+    height: 100%;
+  }
   background: ${({ theme }) => theme.colors.white};
 `
 const Header = styled.header`
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  min-height: 60px;
-  padding: 6px 14px;
-  gap: 10px;
+  min-height: 64px;
+  padding: 0 16px;
+  gap: 12px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ theme }) => theme.colors.white};
   h1 {
@@ -102,7 +108,7 @@ const HeaderIdentity = styled.div`
   gap: 2px;
 `
 const HeaderStatus = styled.span<{ $active?: boolean }>`
-  font-size: 12px;
+  font-size: 12.5px;
   color: ${({ theme, $active }) => ($active ? theme.colors.positive : theme.colors.muted)};
   overflow: hidden;
   text-overflow: ellipsis;
@@ -112,8 +118,8 @@ const HeaderStatus = styled.span<{ $active?: boolean }>`
   gap: 4px;
 `
 const ChatAvatar = styled.span`
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   flex-shrink: 0;
   overflow: hidden;
@@ -131,28 +137,31 @@ const ChatAvatar = styled.span`
 `
 const DayChip = styled.div`
   align-self: center;
-  padding: 4px 12px;
-  margin: 8px 0 4px;
+  padding: 5px 14px;
+  margin: 16px 0 8px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
   color: ${({ theme }) => theme.colors.muted};
   background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
+  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.1);
 `
 const EmptyHint = styled.p`
   text-align: center;
   color: ${({ theme }) => theme.colors.muted};
 `
+// A hora fica no canto da última linha (flutua à direita); se não couber, desce para a linha de baixo.
 const MetaRow = styled.small`
+  float: right;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  width: 100%;
+  gap: 3px;
+  margin: 8px 0 -3px 12px;
   font-size: 11px;
+  line-height: 1;
   color: ${({ theme }) => theme.colors.muted};
-  margin-top: 5px;
+  white-space: nowrap;
+  user-select: none;
 `
 const CheckRead = styled.span`
   display: inline-flex;
@@ -212,10 +221,10 @@ const Status = styled.div`
 `
 const History = styled.div<{ $wallpaper?: ConversationWallpaper }>`
   flex: 1;
-  padding: 20px;
+  padding: 24px clamp(16px, 6%, 112px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -224,34 +233,34 @@ const History = styled.div<{ $wallpaper?: ConversationWallpaper }>`
       ? theme.colors.neutral
       : $wallpaper === 'PLAIN'
         ? theme.colors.white
-        : theme.colors.surfaceHover};
+        : theme.colors.chatBackground};
 `
-const Bubble = styled.div<{ $own: boolean; $fontSize?: number; $first?: boolean }>`
+const Bubble = styled.div<{
+  $own: boolean
+  $fontSize?: number
+  $first?: boolean
+  $unreadable?: boolean
+  $tools?: boolean
+}>`
   position: relative;
+  display: flow-root;
   flex-shrink: 0;
   align-self: ${({ $own }) => ($own ? 'flex-end' : 'flex-start')};
-  max-width: min(85%, 530px);
-  padding: 10px 14px;
-  margin-top: ${({ $first }) => ($first ? '6px' : '0')};
+  max-width: min(78%, 640px);
+  padding: 8px 12px;
+  margin-top: ${({ $first }) => ($first ? '14px' : '0')};
   border-radius: ${({ $own, $first }) =>
-    $first
-      ? $own
-        ? '16px 4px 16px 16px'
-        : '4px 16px 16px 16px'
-      : '16px'};
-  border: 1px solid
-    ${({ theme, $own }) =>
-      $own
-        ? `color-mix(in srgb, ${theme.colors.action} 18%, ${theme.colors.border})`
-        : theme.colors.border};
+    $first ? ($own ? '12px 0 12px 12px' : '0 12px 12px 12px') : '12px'};
   background: ${({ theme, $own }) =>
-    $own
-      ? `color-mix(in srgb, ${theme.colors.action} 9%, ${theme.colors.white})`
-      : theme.colors.white};
-  font-size: ${({ $fontSize }) => ($fontSize ? `${$fontSize}px` : '15px')};
+    $own ? theme.colors.bubbleOwn : theme.colors.bubblePeer};
+  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.14);
+  color: ${({ theme, $unreadable }) => ($unreadable ? theme.colors.muted : theme.colors.text)};
+  font-size: ${({ $fontSize, $unreadable }) =>
+    $unreadable ? '13px' : $fontSize ? `${$fontSize}px` : '15px'};
+  font-style: ${({ $unreadable }) => ($unreadable ? 'italic' : 'normal')};
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.5;
+  line-height: 1.4;
   ${({ $first, $own, theme }) =>
     $first
       ? `
@@ -259,55 +268,247 @@ const Bubble = styled.div<{ $own: boolean; $fontSize?: number; $first?: boolean 
       content: '';
       position: absolute;
       top: 0;
-      ${$own ? 'right: -6px;' : 'left: -6px;'}
-      width: 10px;
+      ${$own ? 'right: -8px;' : 'left: -8px;'}
+      width: 8px;
       height: 10px;
-      background: ${
-        $own
-          ? `color-mix(in srgb, ${theme.colors.action} 9%, ${theme.colors.white})`
-          : theme.colors.white
-      };
+      background: ${$own ? theme.colors.bubbleOwn : theme.colors.bubblePeer};
       clip-path: ${$own ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)'};
     }
   `
       : ''}
+  ${({ $tools }) =>
+    $tools
+      ? `
+    @media (hover: none) {
+      padding-right: 32px;
+    }
+  `
+      : ''}
+  &:hover > [data-bubble-menu],
+  &:focus-within > [data-bubble-menu] {
+    opacity: 1;
+  }
   strong {
     display: block;
     font-size: 12px;
     color: ${({ theme }) => theme.colors.primary};
-    margin-bottom: 3px;
+    margin-bottom: 2px;
   }
-  small {
-    display: block;
-    text-align: right;
-    font-size: 11px;
-    color: ${({ theme }) => theme.colors.muted};
-    margin-top: 5px;
+`
+const BubbleMenuButton = styled.button`
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: ${({ theme }) => theme.colors.muted};
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+  &:focus-visible {
+    opacity: 1;
   }
+  @media (hover: none) {
+    opacity: 0.75;
+  }
+`
+const MenuBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+`
+const MenuPanel = styled.div<{ $align: 'left' | 'right' }>`
+  position: absolute;
+  top: 100%;
+  ${({ $align }) => ($align === 'right' ? 'right: 0;' : 'left: 0;')}
+  z-index: 20;
+  min-width: 224px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 12px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.white};
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: 14.5px;
+  font-style: normal;
+  font-weight: 400;
+  white-space: normal;
+  text-align: left;
+  button,
+  a,
+  label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  button:hover,
+  a:hover,
+  label:hover {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+  input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: ${({ theme }) => theme.colors.action};
+  }
+`
+const MenuReactions = styled.div`
+  display: flex;
+  justify-content: space-around;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 24px;
+  background: ${({ theme }) => theme.colors.neutral};
+  button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 22px;
+    line-height: 1;
+  }
+  button:hover {
+    background: ${({ theme }) => theme.colors.white};
+  }
+`
+const HeaderMenuWrap = styled.div`
+  position: relative;
+  flex-shrink: 0;
+`
+const IconButton = styled.button`
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: ${({ theme }) => theme.colors.primary};
+  cursor: pointer;
+  &:hover {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+`
+const Banner = styled.div`
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 92%;
+  margin: 4px 0 12px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: ${({ theme }) => theme.colors.white};
+  box-shadow: 0 1px 1px rgba(13, 13, 13, 0.1);
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+  svg {
+    flex-shrink: 0;
+  }
+`
+const VisuallyHidden = styled.span`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 `
 const Composer = styled.form`
   flex-shrink: 0;
-  background: ${({ theme }) => theme.colors.white};
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.chatBackground};
   padding: 12px 16px;
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-end;
-  textarea {
-    flex: 1;
-    min-width: 0;
-    resize: vertical;
-    max-height: 150px;
-    min-height: 44px;
-    border: 1px solid ${({ theme }) => theme.colors.border};
-    border-radius: 20px;
-    padding: 10px 14px;
-    font: inherit;
-    box-sizing: border-box;
-  }
   button {
     display: grid;
     place-items: center;
+  }
+`
+const InputPill = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  min-height: 46px;
+  padding-right: 6px;
+  border-radius: 24px;
+  background: ${({ theme }) => theme.colors.white};
+  textarea {
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    max-height: 150px;
+    min-height: 46px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    padding: 13px 18px;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.3;
+    box-sizing: border-box;
+  }
+  &:focus-within {
+    box-shadow: 0 0 0 2px ${({ theme }) => theme.colors.action};
+  }
+`
+const InlineIcon = styled.button`
+  width: 40px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+`
+const RoundButton = styled.button`
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.action};
+  color: ${({ theme }) => theme.colors.white};
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 `
 const Actions = styled.div`
@@ -399,23 +600,6 @@ const Pill = styled.button<{ $mine?: boolean }>`
   font-size: 12px;
   cursor: pointer;
 `
-const BubbleTools = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-  button {
-    border: 0;
-    background: transparent;
-    color: ${({ theme }) => theme.colors.muted};
-    font-size: 12px;
-    padding: 2px 4px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-  }
-`
 const SearchBar = styled.div`
   display: flex;
   align-items: center;
@@ -443,17 +627,20 @@ function AttachmentView({
   conversationId,
   client,
   session,
+  auto,
 }: {
   attachment: ChatViewAttachment
   conversationId: string
   client: ChatClient | null
   session: WebChatSession | null
+  /** Baixar sozinho (configuração "Download automático de mídia"). */
+  auto: boolean
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState('')
   const urlRef = useRef<string | null>(null)
-  const autoLoad = attachment.kind === 'image' || attachment.kind === 'audio'
+  const autoLoad = auto && (attachment.kind === 'image' || attachment.kind === 'audio')
 
   async function load(triggerDownload = false) {
     if (!client || !session || loading) return
@@ -599,7 +786,19 @@ export function ChatPane({
   }, [conversation.id])
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
-  const [reactMenuId, setReactMenuId] = useState<string | null>(null)
+  const [menuMessageId, setMenuMessageId] = useState<string | null>(null)
+  const [headerMenu, setHeaderMenu] = useState(false)
+  // Esc fecha os menus (cabeçalho e mensagem).
+  useEffect(() => {
+    if (!headerMenu && !menuMessageId) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setHeaderMenu(false)
+      setMenuMessageId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [headerMenu, menuMessageId])
   const [pending, setPending] = useState<{ code: string } | null>(null)
   const [showVerify, setShowVerify] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -866,27 +1065,32 @@ export function ChatPane({
   }
   async function send(event: FormEvent) {
     event.preventDefault()
-    if (!client.current || busy || !draft.trim()) return
-    setBusy(true)
+    if (!client.current || !draft.trim()) return
+    // Como no WhatsApp: o campo esvazia na hora e a bolha aparece; o envio segue por trás.
+    // Só se for recusado o texto volta para o campo. O campo não trava: dá para mandar várias seguidas.
+    const text = draft
+    const replying = replyTo
+    const forwarding = forwardedDraft
+    setDraft('')
+    setReplyTo(null)
+    setForwardedDraft(false)
     setError('')
+    emitTyping(false)
     try {
-      await client.current.send(draft, {
-        ...(replyTo ? { replyTo } : {}),
-        ...(forwardedDraft ? { forwarded: true } : {}),
+      await client.current.send(text, {
+        ...(replying ? { replyTo: replying } : {}),
+        ...(forwarding ? { forwarded: true } : {}),
       })
-      setDraft('')
-      setReplyTo(null)
-      setForwardedDraft(false)
-      emitTyping(false)
     } catch (failure) {
+      setDraft((current) => current || text)
+      setReplyTo((current) => current ?? replying)
+      setForwardedDraft((current) => current || forwarding)
       setError((failure as Error).message || chatError(failure))
-    } finally {
-      setBusy(false)
     }
   }
   async function react(messageId: string, emoji: string) {
     if (!client.current || busy) return
-    setReactMenuId(null)
+    setMenuMessageId(null)
     try {
       await client.current.react(messageId, emoji)
     } catch (failure) {
@@ -995,14 +1199,12 @@ export function ChatPane({
     }
   }
   const otherPerson = conversation.members.find((m) => m.user.id !== userId)?.user
-  const headerSubtitle =
-    typingNames.length > 0
-      ? conversationTypingLabel(typingNames)
-      : conversation.kind === 'GROUP'
-        ? conversationMemberLabel(conversation.memberCount)
-        : conversation.peerLastSeenAt
-          ? `Visto por último ${conversationTime(conversation.peerLastSeenAt)}`
-          : 'Protegida de ponta a ponta'
+  const headerStatus = conversationHeaderStatus(conversation, typingNames)
+  // "Somente no Wi-Fi": sem informação de rede no navegador, só deixa de baixar se ele diz que é celular.
+  const autoMedia =
+    chatSettings.mediaAutoDownload === 'ALWAYS' ||
+    (chatSettings.mediaAutoDownload === 'WIFI_ONLY' &&
+      (navigator as { connection?: { type?: string } }).connection?.type !== 'cellular')
   const renderDeliveryIcon = (icon: ChatDeliveryIcon | null) => {
     if (!icon) return null
     if (icon === 'clock') return <Clock size={13} aria-hidden="true" />
@@ -1020,7 +1222,16 @@ export function ChatPane({
       </CheckAlert>
     )
   }
-  const view = chatView(state, title, undefined, showSearch ? search : '')
+  // Voltando a uma conversa recente, as últimas mensagens aparecem na hora, da memória.
+  const seed = useMemo(
+    () => (state ? null : chatSeedState(conversation.id)),
+    [state, conversation.id],
+  )
+  const shown = state ?? seed
+  const view = useMemo(
+    () => chatView(shown, title, undefined, showSearch ? search : ''),
+    [shown, title, showSearch, search],
+  )
   const forwardTargets = (
     conversations.data?.pages.flatMap((page) => page.items) ?? []
   ).filter((item) => item.id !== conversation.id && !item.archivedAt)
@@ -1045,28 +1256,61 @@ export function ChatPane({
         </ChatAvatar>
         <HeaderIdentity>
           <h1>{title}</h1>
-          <HeaderStatus $active={typingNames.length > 0}>
-            {typingNames.length === 0 && <LockKey size={12} aria-hidden="true" />}
-            {headerSubtitle}
+          <HeaderStatus $active={headerStatus.typing} role="status" aria-live="polite">
+            {!headerStatus.typing && <LockKey size={12} aria-hidden="true" />}
+            {headerStatus.text}
           </HeaderStatus>
         </HeaderIdentity>
-        <button
+        <IconButton
           type="button"
           aria-label="Buscar na conversa"
           onClick={() => {
             setShowSearch((value) => !value)
             setSearch('')
           }}
-          style={{
-            border: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 6,
-          }}
         >
           <MagnifyingGlass size={20} />
-        </button>
-        <Link to={`/conversas/${conversation.id}?detalhes=1`}>Detalhes</Link>
+        </IconButton>
+        <HeaderMenuWrap>
+          <IconButton
+            type="button"
+            aria-label="Mais opções"
+            aria-haspopup="menu"
+            aria-expanded={headerMenu}
+            onClick={() => setHeaderMenu((value) => !value)}
+          >
+            <DotsThreeVertical size={22} weight="bold" />
+          </IconButton>
+          {headerMenu && (
+            <>
+              <MenuBackdrop onClick={() => setHeaderMenu(false)} />
+              <MenuPanel $align="right" role="menu" aria-label="Opções da conversa">
+                <Link
+                  role="menuitem"
+                  to={`/conversas/${conversation.id}?detalhes=1`}
+                  aria-label="Detalhes da conversa"
+                >
+                  <Info size={20} aria-hidden="true" />
+                  Detalhes da conversa
+                </Link>
+                {state && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={view.readReceipts.enabled}
+                      disabled={busy || view.readReceipts.disabled}
+                      onChange={() => {
+                        setHeaderMenu(false)
+                        void toggleReceipts()
+                      }}
+                    />
+                    {view.readReceipts.label}
+                  </label>
+                )}
+              </MenuPanel>
+            </>
+          )}
+        </HeaderMenuWrap>
       </Header>
       {showSearch && (
         <SearchBar>
@@ -1228,7 +1472,7 @@ export function ChatPane({
             </Button>
           </form>
         </Card>
-      ) : !state ? (
+      ) : !shown ? (
         <Card role="status">
           {error ? (
             <>
@@ -1243,20 +1487,6 @@ export function ChatPane({
         </Card>
       ) : (
         <>
-          <Status
-            role={view.canVerify ? 'button' : undefined}
-            tabIndex={view.canVerify ? 0 : undefined}
-            aria-label={
-              view.canVerify ? 'Confirmar identidade, opcional' : undefined
-            }
-            style={view.canVerify ? { cursor: 'pointer' } : undefined}
-            onClick={() => {
-              if (view.canVerify) setShowVerify((value) => !value)
-            }}
-          >
-            <ShieldCheck size={18} />
-            {view.banner}
-          </Status>
           {view.deviceRequests.map((request) => (
             <Card key={request.id} role="alert">
               <h3>{request.title}</h3>
@@ -1355,7 +1585,7 @@ export function ChatPane({
               </Actions>
             </Card>
           )}
-          {state.error && <Status role="status">{state.error}</Status>}
+          {shown.error && <Status role="status">{shown.error}</Status>}
           <History
             ref={history}
             $wallpaper={chatSettings.wallpaper}
@@ -1368,11 +1598,25 @@ export function ChatPane({
             }}
             aria-label="Mensagens"
           >
+            <Banner
+              role={view.canVerify ? 'button' : undefined}
+              tabIndex={view.canVerify ? 0 : undefined}
+              aria-label={
+                view.canVerify ? 'Confirmar identidade, opcional' : undefined
+              }
+              style={view.canVerify ? { cursor: 'pointer' } : undefined}
+              onClick={() => {
+                if (view.canVerify) setShowVerify((value) => !value)
+              }}
+            >
+              <ShieldCheck size={14} aria-hidden="true" />
+              {view.banner}
+            </Banner>
             <div>
               {view.canLoadOlder && (
                 <Button
                   $secondary
-                  disabled={state.loadingHistory}
+                  disabled={shown.loadingHistory}
                   onClick={() => {
                     void older()
                   }}
@@ -1391,6 +1635,8 @@ export function ChatPane({
                   $own={message.own}
                   $fontSize={bubbleFontSize}
                   $first={message.isFirstInGroup}
+                  $unreadable={message.unreadable}
+                  $tools={message.canReact}
                 >
                 {message.senderName && <strong>{message.senderName}</strong>}
                 {message.forwarded && <ForwardTag>Encaminhada</ForwardTag>}
@@ -1408,6 +1654,7 @@ export function ChatPane({
                     conversationId={conversation.id}
                     client={client.current}
                     session={sessionRef.current}
+                    auto={autoMedia}
                   />
                 )}
                 {message.body && <span>{message.body}</span>}
@@ -1434,65 +1681,106 @@ export function ChatPane({
                   </ReactionRow>
                 )}
                 {message.canReact && (
-                  <BubbleTools>
-                    <button
+                  <>
+                    <BubbleMenuButton
+                      data-bubble-menu
                       type="button"
+                      aria-label="Mais opções da mensagem"
+                      aria-haspopup="menu"
+                      aria-expanded={menuMessageId === message.id}
                       onClick={() =>
-                        setReplyTo({
-                          eventId: message.id,
-                          senderName: message.own
-                            ? 'Você'
-                            : (message.senderName ?? title),
-                          excerpt:
-                            message.body ||
-                            message.attachment?.kindLabel ||
-                            'Mensagem',
-                        })
-                      }
-                    >
-                      <ArrowBendUpLeft size={14} />
-                      Responder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setReactMenuId((id) =>
+                        setMenuMessageId((id) =>
                           id === message.id ? null : message.id,
                         )
                       }
                     >
-                      Reagir
-                    </button>
-                    {message.body && (
-                      <button
-                        type="button"
-                        onClick={() => setForwardingText(message.body)}
-                      >
-                        <ShareFat size={14} />
-                        Encaminhar
-                      </button>
+                      <CaretDown size={16} weight="bold" aria-hidden="true" />
+                    </BubbleMenuButton>
+                    {menuMessageId === message.id && (
+                      <>
+                        <MenuBackdrop onClick={() => setMenuMessageId(null)} />
+                        <MenuPanel
+                          $align={message.own ? 'right' : 'left'}
+                          role="menu"
+                          aria-label="Opções da mensagem"
+                          style={{ top: 28 }}
+                        >
+                          <MenuReactions>
+                            {QUICK_REACTIONS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                role="menuitem"
+                                aria-label={`Reagir com ${emoji}`}
+                                onClick={() => {
+                                  void react(message.id, emoji)
+                                }}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </MenuReactions>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setReplyTo({
+                                eventId: message.id,
+                                senderName: message.own
+                                  ? 'Você'
+                                  : (message.senderName ?? title),
+                                excerpt:
+                                  message.body ||
+                                  message.attachment?.kindLabel ||
+                                  'Mensagem',
+                              })
+                              setMenuMessageId(null)
+                            }}
+                          >
+                            <ArrowBendUpLeft size={20} aria-hidden="true" />
+                            Responder
+                          </button>
+                          {message.body && (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setForwardingText(message.body)
+                                setMenuMessageId(null)
+                              }}
+                            >
+                              <ShareFat size={20} aria-hidden="true" />
+                              Encaminhar
+                            </button>
+                          )}
+                          {message.body && !message.unreadable && (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setMenuMessageId(null)
+                                void navigator.clipboard
+                                  ?.writeText(message.body)
+                                  .catch(() =>
+                                    setError('Não foi possível copiar o texto.'),
+                                  )
+                              }}
+                            >
+                              <CopyIcon size={20} aria-hidden="true" />
+                              Copiar texto
+                            </button>
+                          )}
+                        </MenuPanel>
+                      </>
                     )}
-                  </BubbleTools>
-                )}
-                {reactMenuId === message.id && (
-                  <ReactionRow>
-                    {QUICK_REACTIONS.map((emoji) => (
-                      <Pill
-                        key={emoji}
-                        type="button"
-                        aria-label={`Reagir com ${emoji}`}
-                        onClick={() => {
-                          void react(message.id, emoji)
-                        }}
-                      >
-                        {emoji}
-                      </Pill>
-                    ))}
-                  </ReactionRow>
+                  </>
                 )}
                 <MetaRow>
-                  <span>{message.meta}</span>
+                  <span>{message.time}</span>
                   {renderDeliveryIcon(message.deliveryIcon)}
+                  {message.statusLabel && (
+                    <VisuallyHidden>{message.statusLabel}</VisuallyHidden>
+                  )}
                 </MetaRow>
                 {message.retryTxnId && (
                   <Button
@@ -1513,30 +1801,6 @@ export function ChatPane({
             {view.emptyText && <EmptyHint>{view.emptyText}</EmptyHint>}
             <div ref={bottom} />
           </History>
-          <Status>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={view.readReceipts.enabled}
-                disabled={busy || view.readReceipts.disabled}
-                onChange={() => {
-                  void toggleReceipts()
-                }}
-              />
-              {view.readReceipts.label}
-            </label>
-            <span
-              title={view.readReceipts.help}
-              aria-label="Informações sobre confirmações"
-            >
-              ⓘ
-            </span>
-          </Status>
-          {typingNames.length > 0 && (
-            <Status role="status" aria-live="polite">
-              <span>{conversationTypingLabel(typingNames)}</span>
-            </Status>
-          )}
           {(replyTo || forwardedDraft) && (
             <Note role="status">
               <span>
@@ -1587,41 +1851,50 @@ export function ChatPane({
                 void attachFile(event)
               }}
             />
-            <Button
-              $secondary
-              type="button"
-              aria-label="Anexar arquivo"
-              disabled={!view.canWrite || busy || recording}
-              onClick={() => fileInput.current?.click()}
-            >
-              <Paperclip size={20} />
-            </Button>
-            <Button
-              $secondary
-              type="button"
-              aria-label="Enviar foto"
-              disabled={!view.canWrite || busy || recording}
-              onClick={() => cameraInput.current?.click()}
-            >
-              <Camera size={20} />
-            </Button>
-            <textarea
-              aria-label="Mensagem"
-              placeholder={recording ? 'Gravando áudio…' : view.placeholder}
-              value={draft}
-              onChange={(event) => {
-                const value = event.target.value
-                setDraft(value)
-                emitTyping(value.trim().length > 0)
-              }}
-              onBlur={() => emitTyping(false)}
-              maxLength={4000}
-              rows={1}
-              disabled={!view.canWrite || recording}
-            />
-            {!draft.trim() && (
-              <Button
-                $secondary={!recording}
+            <InputPill>
+              <textarea
+                aria-label="Mensagem"
+                placeholder={recording ? 'Gravando áudio…' : view.placeholder}
+                value={draft}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setDraft(value)
+                  emitTyping(value.trim().length > 0)
+                }}
+                onBlur={() => emitTyping(false)}
+                maxLength={4000}
+                rows={1}
+                disabled={!view.canType || recording}
+              />
+              <InlineIcon
+                type="button"
+                aria-label="Anexar arquivo"
+                disabled={!view.canWrite || busy || recording}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip size={22} />
+              </InlineIcon>
+              {!draft.trim() && (
+                <InlineIcon
+                  type="button"
+                  aria-label="Enviar foto"
+                  disabled={!view.canWrite || busy || recording}
+                  onClick={() => cameraInput.current?.click()}
+                >
+                  <Camera size={22} />
+                </InlineIcon>
+              )}
+            </InputPill>
+            {draft.trim() ? (
+              <RoundButton
+                type="submit"
+                aria-label="Enviar mensagem"
+                disabled={!view.canWrite || busy || recording}
+              >
+                <PaperPlaneTilt size={22} weight="fill" />
+              </RoundButton>
+            ) : (
+              <RoundButton
                 type="button"
                 aria-label={recording ? 'Parar e enviar áudio' : 'Gravar áudio'}
                 disabled={!view.canWrite || busy}
@@ -1629,16 +1902,9 @@ export function ChatPane({
                   void toggleAudioRecording()
                 }}
               >
-                {recording ? <Stop size={20} /> : <Microphone size={20} />}
-              </Button>
+                {recording ? <Stop size={22} weight="fill" /> : <Microphone size={22} weight="fill" />}
+              </RoundButton>
             )}
-            <Button
-              type="submit"
-              aria-label="Enviar mensagem"
-              disabled={!view.canWrite || busy || recording || !draft.trim()}
-            >
-              <PaperPlaneTilt size={22} />
-            </Button>
           </Composer>
         </>
       )}

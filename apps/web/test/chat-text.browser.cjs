@@ -51,7 +51,7 @@ const composerEnabled = (page) =>
   page.waitForFunction(
     () => {
       const field = document.querySelector('textarea[aria-label="Mensagem"]')
-      return !!field && !field.disabled
+      return !!field && !field.disabled && field.placeholder === 'Mensagem'
     },
     undefined,
     { timeout: 45000 },
@@ -147,12 +147,18 @@ async function request(actor, endpoint, method = 'GET', body) {
   console.log('PASS: optional mutual SAS verification through the browser UI')
   const receipt = a.getByLabel('Mensagens', { exact: true }).locator('[data-message-id]').filter({ hasText: text })
   await receipt.getByText(/Entregue/).waitFor()
+  // A confirmação de leitura fica no menu dos três pontos; marcar a opção fecha o menu.
+  const openMenu = (page) => page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+  await openMenu(b)
   assert.equal(await b.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).isChecked(), false)
   await b.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
-  await b.waitForFunction(() => document.querySelector('input[type="checkbox"]').checked)
   await receipt.getByText(/Lida/).waitFor()
+  await openMenu(b)
+  await b.waitForFunction(() => document.querySelector('input[type="checkbox"]').checked)
   await b.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
+  await openMenu(b)
   await b.waitForFunction(() => !document.querySelector('input[type="checkbox"]').checked)
+  await b.keyboard.press('Escape')
   console.log('PASS: optional visible-message read receipts through the actual browser UI')
   for (const width of [1440, 390, 320]) {
     await a.setViewportSize({ width, height: 950 })

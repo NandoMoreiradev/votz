@@ -75,7 +75,9 @@ async function open(user, path) {
   // 1) Navegar para Configurações de conversas e alterar preferências.
   await pageA.getByRole('link', { name: 'Configurações de conversas' }).click()
   await pageA.waitForURL((u) => u.pathname.endsWith('/conversas/configuracoes'))
-  await pageA.getByLabel('Confirmação de leitura').check()
+  // A marcação confirma ~100 ms depois do clique (pedido ao servidor); .check() confere na hora e falharia.
+  await pageA.getByLabel('Confirmação de leitura').click()
+  await pageA.waitForFunction(() => document.getElementById('cfg-read-receipts')?.checked === true)
   await pageA.getByLabel('Visto por último').selectOption('NOBODY')
   await pageA.getByLabel('Quem pode me adicionar a grupos').selectOption('NOBODY')
   await pageA.getByLabel('Quem pode me enviar solicitações').selectOption('NOBODY')

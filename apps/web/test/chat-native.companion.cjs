@@ -56,7 +56,10 @@ const write = value => fs.writeFileSync(resultFile, JSON.stringify(value, null, 
           assert.ok(typeof command.text === 'string' && command.text.startsWith('QA '))
           await page.getByLabel('Mensagem', { exact: true }).fill(command.text)
           await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click()
-        } else if (command.action === 'read') await page.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
+        } else if (command.action === 'read') {
+          await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+          await page.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
+        }
         else if (command.action === 'screenshot') await page.screenshot({ path: path.join(directory, 'native-web.png') })
         else if (command.action === 'reload') await page.reload()
         else if (command.action === 'stop') running = false

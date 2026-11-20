@@ -8,6 +8,8 @@ const {
   composerPlaceholder,
   messagePlaceholder,
   chatPreviews,
+  chatTranscripts,
+  chatSeedState,
   chatView,
   messageStatusLabel,
   deviceRequestText,
@@ -18,6 +20,7 @@ const {
 
 const PEER_PRINT = 'peer-key:public-signing-key'
 function fixture(options = {}) {
+  chatTranscripts.clear()
   const requests = []
   let persisted = { pending: [], ...(options.pins ? { pins: options.pins } : {}) }
   let deny = options.deny || 0
@@ -116,6 +119,7 @@ function fixture(options = {}) {
       () => 'stable-transaction',
     )
   const f = {
+    make,
     client: make(),
     crypto,
     room,
@@ -513,7 +517,7 @@ test('the peer status tells the screens whether to wait, warn or write', async (
   const ready = fixture()
   await ready.client.start()
   assert.equal(ready.client.getState().peerStatus, 'ready')
-  assert.equal(composerPlaceholder(ready.client.getState()), 'Escreva uma mensagem…')
+  assert.equal(composerPlaceholder(ready.client.getState()), 'Mensagem')
   ready.room.canSend = false
   assert.equal(composerPlaceholder({ ...ready.client.getState(), room: { canSend: false } }), 'Esta interação está bloqueada.')
   await ready.client.stop()
@@ -664,7 +668,7 @@ test('the chat view speaks plain language and drives what the screens show', asy
   await ready.client.start()
   const ok = chatView(ready.client.getState(), 'Bruno')
   assert.equal(ok.canWrite, true)
-  assert.equal(ok.placeholder, 'Escreva uma mensagem…')
+  assert.equal(ok.placeholder, 'Mensagem')
   assert.equal(ok.waitingPeer, null)
   assert.deepEqual(ok.notices, [])
   assert.equal(ok.emptyText, 'A conversa de vocês começa aqui.')
@@ -1025,4 +1029,71 @@ test('reply, reaction toggle, forwarded label, local search and Votz post/report
 
   await f.client.stop()
   chatPreviews.clear()
+})
+
+test('sending shows the bubble at once, before any network or cryptography, and drops it when refused', async () => {
+  const f = fixture()
+  await f.client.start()
+  const original = f.crypto.encrypt
+  let release
+  f.crypto.encrypt = async (...args) => {
+    await new Promise((resolve) => {
+      release = resolve
+    })
+    return original(...args)
+  }
+  const sending = f.client.send('Aparece na hora')
+  // Nada de rede nem de criptografia terminou: a bolha já está na tela, aguardando envio.
+  const shown = f.client.getState().messages
+  assert.equal(shown.length, 1)
+  assert.equal(shown[0].text, 'Aparece na hora')
+  assert.equal(shown[0].status, 'pending')
+  assert.equal(f.persisted().pending.length, 0, 'Nothing is persisted before the ciphertext exists')
+  while (!release) await new Promise((resolve) => setTimeout(resolve, 1))
+  release()
+  await sending
+  assert.equal(f.client.getState().messages.length, 1, 'The optimistic bubble becomes the real one, never a duplicate')
+  assert.equal(f.client.getState().messages[0].text, 'Aparece na hora')
+  // Recusado antes de existir mensagem cifrada: a bolha some e o erro chega à tela.
+  f.room.canSend = false
+  await assert.rejects(f.client.send('Recusada'), /bloqueada/)
+  assert.deepEqual(
+    f.client.getState().messages.map((m) => m.text),
+    ['Aparece na hora'],
+  )
+  await f.client.stop()
+})
+test('a message already opened is not decrypted again on every cycle', async () => {
+  let opened = 0
+  const f = fixture({
+    history: [peerEvent('$a'), peerEvent('$b')],
+    decrypt: () => {
+      opened++
+      return 'texto aberto'
+    },
+  })
+  await f.client.start()
+  assert.equal(opened, 2, 'Each history message is opened exactly once at startup')
+  await f.client.verification('cancel')
+  await f.client.verification('cancel')
+  assert.equal(opened, 2, 'Later refreshes reuse the opened messages')
+  assert.equal(f.client.getState().messages.length, 2)
+  await f.client.stop()
+})
+test('a recent conversation reopens at once from memory, which clears with the previews', async () => {
+  const f = fixture({ history: [peerEvent('$a'), peerEvent('$b')] })
+  await f.client.start()
+  assert.equal(f.client.getState().messages.length, 2)
+  await f.client.stop()
+  assert.equal(f.client.getState().messages.length, 0, 'Stopping still clears the client')
+  // Antes de o cliente novo fazer qualquer coisa, a conversa já tem as mensagens.
+  const seed = chatSeedState('conversation')
+  assert.equal(seed.ready, false)
+  assert.equal(seed.messages.length, 2)
+  // O cliente novo já nasce com elas, antes de iniciar.
+  const reopened = f.make()
+  assert.equal(reopened.getState().messages.length, 2)
+  assert.equal(reopened.getState().ready, false)
+  chatPreviews.clear()
+  assert.equal(chatSeedState('conversation'), null, 'Leaving the account or the foreground clears them')
 })

@@ -1,13 +1,14 @@
-import { Alert, FlatList, View } from 'react-native'
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import {
   ConversationGate,
   ConversationLoadingMore,
   ConversationPersonRow,
 } from '../../components/conversation-ui'
 import { Screen, Toolbar } from '../../components/screen'
-import { Button, ErrorText, Label, State } from '../../components/ui'
+import { ErrorText, Label, State } from '../../components/ui'
 import { useConversationAction, useConversationBlocks } from '../../hooks/use-conversations'
 import { errorMessage } from '../../lib/api'
+import { theme } from '../../theme'
 
 function BlockedPeople() {
   const list = useConversationBlocks()
@@ -30,23 +31,32 @@ function BlockedPeople() {
         </View>
       }
       renderItem={({ item }) => (
-        <ConversationPersonRow person={item.blocked}>
-          <Button
-            title="Desbloquear"
-            secondary
-            disabled={action.isPending}
-            onPress={() =>
-              Alert.alert(`Desbloquear ${item.blocked.name}?`, undefined, [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                  text: 'Desbloquear',
-                  onPress: () =>
-                    action.mutate({ path: `/blocks/${item.blockedId}`, method: 'DELETE' }),
-                },
-              ])
-            }
-          />
-        </ConversationPersonRow>
+        <ConversationPersonRow
+          person={item.blocked}
+          title={item.blocked.name}
+          subtitle={item.blocked.username ? `@${item.blocked.username}` : undefined}
+          trailing={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Desbloquear ${item.blocked.name}`}
+              disabled={action.isPending}
+              hitSlop={10}
+              style={{ opacity: action.isPending ? 0.4 : 1 }}
+              onPress={() =>
+                Alert.alert(`Desbloquear ${item.blocked.name}?`, undefined, [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Desbloquear',
+                    onPress: () =>
+                      action.mutate({ path: `/blocks/${item.blockedId}`, method: 'DELETE' }),
+                  },
+                ])
+              }
+            >
+              <Text style={styles.unblock}>Desbloquear</Text>
+            </Pressable>
+          }
+        />
       )}
       ListEmptyComponent={
         <State
@@ -57,6 +67,11 @@ function BlockedPeople() {
               : list.isError
                 ? 'Não foi possível carregar'
                 : 'Nenhuma pessoa bloqueada'
+          }
+          description={
+            list.isPending || list.isError
+              ? undefined
+              : 'Quem você bloquear aparece aqui e pode ser desbloqueado quando quiser.'
           }
           retry={
             list.isError
@@ -89,3 +104,10 @@ export default function BlockedPeopleScreen() {
     </Screen>
   )
 }
+const styles = StyleSheet.create({
+  unblock: {
+    fontSize: 14,
+    fontFamily: theme.fonts.medium,
+    color: theme.colors.action,
+  },
+})

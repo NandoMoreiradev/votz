@@ -1,6 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BellSlash, ChatCircle, Flag, GearSix, Plus, PushPin, ShieldCheck, Users } from '@phosphor-icons/react'
+import {
+  ArrowLeft,
+  Bell,
+  BellSlash,
+  ChatCircle,
+  DeviceMobile,
+  Flag,
+  GearSix,
+  MagnifyingGlass,
+  Monitor,
+  Plus,
+  Prohibit,
+  PushPin,
+  ShieldCheck,
+  SignOut,
+  UserPlus,
+  Users,
+  XCircle,
+} from '@phosphor-icons/react'
 import styled from 'styled-components'
 import {
   CONVERSATION_REPORT_REASONS,
@@ -33,6 +51,7 @@ import { isAxiosError } from 'axios'
 import { deviceRequestText, type ChatDeviceInfo } from '@votz/chat-core'
 import { useChatDeviceAction, useChatDevices } from '../hooks/useChatDevices'
 import { closeWebChatSession } from '../lib/chat-session'
+import { Page, Panel } from '../components/conversations/layout'
 
 const PLATFORM: Record<string, string> = {
   android: 'Android',
@@ -44,29 +63,30 @@ const deviceName = (device: { label: string | null; platform: string }) =>
   device.label || PLATFORM[device.platform] || device.platform
 
 const Shell = styled.main`
-  max-width: 1180px;
-  margin: auto;
-  min-height: calc(100dvh - 56px);
-  background: ${({ theme }) => theme.colors.white};
-  border-inline: 1px solid ${({ theme }) => theme.colors.border};
   display: flex;
   flex-direction: column;
+  min-height: calc(100dvh - 56px);
+  background: ${({ theme }) => theme.colors.white};
+  font-size: 14px;
+  color: ${({ theme }) => theme.colors.text};
   @media (min-width: 960px) {
     flex-direction: row;
     height: calc(100dvh - 56px);
+    min-height: 0;
     overflow: hidden;
   }
   h1 {
-    font-size: 21px;
+    font-size: 18px;
     margin: 0;
     font-family: ${({ theme }) => theme.fonts.heading};
+    letter-spacing: -0.01em;
   }
   h2 {
-    font-size: 18px;
-    margin: 0 0 12px;
+    font-size: 16px;
+    margin: 0 0 8px;
   }
   p {
-    line-height: 1.6;
+    line-height: 1.5;
   }
   button,
   input {
@@ -80,7 +100,7 @@ const Shell = styled.main`
   a:focus-visible,
   input:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.action};
-    outline-offset: 3px;
+    outline-offset: 2px;
   }
   button:disabled {
     opacity: 0.5;
@@ -92,9 +112,10 @@ const Sidebar = styled.aside<{ $hiddenOnMobile?: boolean }>`
   flex-direction: column;
   width: 100%;
   min-width: 0;
+  background: ${({ theme }) => theme.colors.white};
   @media (min-width: 960px) {
     display: flex;
-    width: 340px;
+    width: clamp(320px, 28vw, 440px);
     flex-shrink: 0;
     height: 100%;
     overflow-y: auto;
@@ -107,6 +128,7 @@ const Stage = styled.div<{ $hiddenOnMobile?: boolean }>`
   flex: 1;
   min-width: 0;
   min-height: 0;
+  background: ${({ theme }) => theme.colors.neutral};
   &:has([data-chat-pane]) > header {
     display: none;
   }
@@ -126,39 +148,79 @@ const EmptyStage = styled.div`
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 32px;
-  gap: 10px;
+  padding: 48px 32px;
+  gap: 12px;
   color: ${({ theme }) => theme.colors.muted};
-  background: ${({ theme }) => theme.colors.surfaceHover};
+  h2 {
+    margin: 8px 0 0;
+    font-size: 20px;
+    font-family: ${({ theme }) => theme.fonts.heading};
+    color: ${({ theme }) => theme.colors.text};
+  }
+  p {
+    margin: 0;
+    max-width: 380px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+`
+const EmptyIcon = styled.div`
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.primary};
 `
 const Header = styled.header`
-  height: 60px;
-  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  height: 64px;
+  padding: 0 12px 0 16px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
+  background: ${({ theme }) => theme.colors.white};
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  a {
-    color: inherit;
-  }
   h1 {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  a {
+    color: ${({ theme }) => theme.colors.primary};
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  a:hover {
+    background: ${({ theme }) => theme.colors.neutral};
   }
 `
 const Section = styled.section`
-  padding: 24px 20px;
+  padding: 20px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `
 const Row = styled.div`
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 `
 const Muted = styled.p`
   color: ${({ theme }) => theme.colors.muted};
-  margin: 5px 0;
-  font-size: 14px;
+  margin: 4px 0;
+  font-size: 13.5px;
 `
 const LineTop = styled.div`
   display: flex;
@@ -168,6 +230,7 @@ const LineTop = styled.div`
   strong {
     flex: 1;
     min-width: 0;
+    font-size: 15px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -181,7 +244,7 @@ const LineBottom = styled.div`
   p {
     flex: 1;
     min-width: 0;
-    margin: 3px 0 0;
+    margin: 2px 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -194,14 +257,14 @@ const Time = styled.small<{ $unread: boolean }>`
   font-weight: ${({ $unread }) => ($unread ? 600 : 400)};
 `
 const Badge = styled.span`
-  min-width: 22px;
-  height: 22px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 6px;
-  border-radius: 11px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: ${({ theme }) => theme.colors.white};
   background: ${({ theme }) => theme.colors.action};
@@ -255,46 +318,71 @@ function InboxLine({ item, userId }: { item: ConversationSummary; userId: string
 const Action = styled.button<{ $secondary?: boolean }>`
   border: 1px solid
     ${({ theme, $secondary }) => ($secondary ? theme.colors.border : theme.colors.action)};
-  border-radius: 24px;
+  border-radius: 20px;
   background: ${({ theme, $secondary }) => ($secondary ? theme.colors.white : theme.colors.action)};
   color: ${({ theme, $secondary }) => ($secondary ? theme.colors.text : theme.colors.white)};
-  min-height: 42px;
-  padding: 8px 17px;
+  min-height: 40px;
+  padding: 8px 20px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  &:hover:not(:disabled) {
+    background: ${({ theme, $secondary }) => ($secondary ? theme.colors.neutral : '#d6303d')};
+  }
 `
 const Field = styled.input`
   box-sizing: border-box;
   width: 100%;
-  min-height: 48px;
-  padding: 12px 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: 12px;
+  border-radius: 10px;
+  font-size: 15px;
   margin: 8px 0;
   background: ${({ theme }) => theme.colors.white};
   color: inherit;
 `
 const ListItem = styled.div`
-  padding: 16px 20px;
+  position: relative;
+  padding: 12px 16px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   a {
     color: inherit;
     text-decoration: none;
     display: block;
   }
+  /* A linha inteira é clicável, não só o texto. */
+  a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  &:last-child {
+    border-bottom: 0;
+  }
   &:hover {
     background: ${({ theme }) => theme.colors.surfaceHover};
   }
+  &[data-active='true'] {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
 `
 const Face = styled.div`
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   flex-shrink: 0;
   display: grid;
   place-items: center;
   background: ${({ theme }) => theme.colors.neutral};
   color: ${({ theme }) => theme.colors.primary};
+  font-weight: 700;
+  font-size: 16px;
   overflow: hidden;
   img {
     width: 100%;
@@ -307,13 +395,17 @@ const TabRow = styled.div`
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   button {
     flex: 1;
-    min-height: 52px;
+    min-height: 48px;
     background: transparent;
     border: 0;
     border-bottom: 3px solid transparent;
     cursor: pointer;
     font-weight: 600;
+    font-size: 14px;
     color: ${({ theme }) => theme.colors.muted};
+  }
+  button:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
   button[aria-selected='true'] {
     color: ${({ theme }) => theme.colors.text};
@@ -321,26 +413,183 @@ const TabRow = styled.div`
   }
 `
 const Notice = styled.div`
-  margin: 20px;
-  padding: 18px;
-  border-radius: 14px;
-  background: ${({ theme }) => theme.colors.neutral};
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   color: ${({ theme }) => theme.colors.muted};
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.5;
   svg {
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 1px;
   }
 `
 const Buttons = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 16px;
+`
+// Atalhos da lateral: pílulas pequenas, com o nome completo para leitores de tela.
+const Chips = styled.nav`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  a {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    border-radius: 15px;
+    font-size: 12.5px;
+    color: ${({ theme }) => theme.colors.text};
+    text-decoration: none;
+    background: ${({ theme }) => theme.colors.white};
+  }
+  a:hover {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+`
+
+// Topo da tela de detalhes: avatar grande, nome e uma linha de apoio.
+const Hero = styled.section`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 32px 24px 24px;
+  text-align: center;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 12px;
+  h2 {
+    margin: 12px 0 0;
+    font-size: 20px;
+    font-family: ${({ theme }) => theme.fonts.heading};
+  }
+  p {
+    margin: 0;
+  }
+`
+const HeroFace = styled.div`
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: ${({ theme }) => theme.colors.neutral};
+  color: ${({ theme }) => theme.colors.primary};
+  font-size: 34px;
+  font-weight: 700;
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`
+// Ações em linhas com ícone, como nos aplicativos de mensagem: os botões continuam sendo botões.
+const ActionList = styled.div`
+  display: flex;
+  flex-direction: column;
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 24px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: ${({ theme }) => theme.colors.text};
+    font-weight: 400;
+    font-size: 15px;
+    text-align: left;
+  }
+  button + button {
+    border-top: 1px solid ${({ theme }) => theme.colors.border};
+  }
+  button:hover:not(:disabled) {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+  button[data-danger] {
+    color: ${({ theme }) => theme.colors.action};
+  }
+  button svg {
+    flex-shrink: 0;
+    margin: 0 !important;
+  }
+`
+const SearchPill = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 16px;
+  padding: 0 16px;
+  border-radius: 24px;
+  background: ${({ theme }) => theme.colors.neutral};
+  color: ${({ theme }) => theme.colors.muted};
+  &:focus-within {
+    box-shadow: 0 0 0 2px ${({ theme }) => theme.colors.action};
+  }
+  input {
+    flex: 1;
+    min-width: 0;
+    min-height: 46px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 15px;
+    color: ${({ theme }) => theme.colors.text};
+  }
+  /* O anel de foco é o da pílula inteira, não o do campo de dentro. */
+  input:focus-visible {
+    outline: 0;
+  }
+`
+const VisuallyHidden = styled.label`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+`
+const RowButton = styled.div`
+  cursor: pointer;
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.action};
+    outline-offset: -2px;
+  }
+`
+const TextAction = styled.button`
+  border: 0;
+  background: transparent;
+  color: ${({ theme }) => theme.colors.action};
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.colors.neutral};
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
 `
 
 function message(error: unknown) {
@@ -350,16 +599,17 @@ function message(error: unknown) {
     ? text.join('. ')
     : text || 'Não foi possível concluir. Verifique sua conexão e tente novamente.'
 }
-function Failure({ error, retry }: { error: unknown; retry?: () => void }) {
+function Failure({ error, retry, card = false }: { error: unknown; retry?: () => void; card?: boolean }) {
+  const Box = card ? Panel : Section
   return (
-    <Section role="alert">
+    <Box role="alert">
       <p>{message(error)}</p>
       {retry && (
         <Action $secondary onClick={retry}>
           Tentar novamente
         </Action>
       )}
-    </Section>
+    </Box>
   )
 }
 function Portrait({ person, group }: { person?: ConversationPerson; group?: boolean }) {
@@ -447,17 +697,15 @@ export function Conversations() {
         <Sidebar $hiddenOnMobile={!!sub}>
           <Header>
             <Link to="/" aria-label="Voltar">
-              <ArrowLeft size={23} />
+              <ArrowLeft size={20} />
             </Link>
             <h1>Conversas</h1>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-              <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
-                <GearSix size={22} />
-              </Link>
-              <Link to="/conversas/nova" aria-label="Nova conversa">
-                <Plus size={24} />
-              </Link>
-            </span>
+            <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
+              <GearSix size={20} />
+            </Link>
+            <Link to="/conversas/nova" aria-label="Nova conversa">
+              <Plus size={20} weight="bold" />
+            </Link>
           </Header>
           <ConversationGate>
             <ConversationInbox activeId={id} />
@@ -467,7 +715,7 @@ export function Conversations() {
           {sub && (
             <Header>
               <Link to="/conversas" aria-label="Voltar às conversas">
-                <ArrowLeft size={23} />
+                <ArrowLeft size={20} />
               </Link>
               <h1>
                 {create
@@ -495,9 +743,15 @@ export function Conversations() {
               <ConversationDetail key={id} id={id} />
             ) : (
               <EmptyStage>
-                <ChatCircle size={44} />
+                <EmptyIcon>
+                  <ChatCircle size={36} />
+                </EmptyIcon>
                 <h2>Suas conversas no Votz</h2>
-                <p>Selecione uma conversa à esquerda ou inicie uma nova.</p>
+                <p>Escolha uma conversa na lista ao lado ou comece uma nova com alguém da sua comunidade.</p>
+                <Action as={Link} to="/conversas/nova" style={{ marginTop: 8 }}>
+                  <Plus size={16} weight="bold" aria-hidden="true" />
+                  Nova conversa
+                </Action>
               </EmptyStage>
             )}
           </ConversationGate>
@@ -529,11 +783,15 @@ function ConversationInbox({ activeId }: { activeId?: string }) {
           </button>
         ))}
       </TabRow>
-      <Section style={{ paddingBlock: 12, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+      <Chips aria-label="Atalhos">
         <Link to="/conversas/configuracoes">Configurações</Link>
-        <Link to="/conversas/aparelhos">Aparelhos conectados</Link>
-        <Link to="/conversas/bloqueios">Pessoas bloqueadas</Link>
-      </Section>
+        <Link to="/conversas/aparelhos" aria-label="Aparelhos conectados">
+          Aparelhos
+        </Link>
+        <Link to="/conversas/bloqueios" aria-label="Pessoas bloqueadas">
+          Bloqueadas
+        </Link>
+      </Chips>
       {list.isError && (
         <Failure
           error={list.error}
@@ -557,14 +815,7 @@ function ConversationInbox({ activeId }: { activeId?: string }) {
         </Section>
       ) : null}
       {items.map((item) => (
-        <ListItem
-          key={item.id}
-          style={
-            activeId === item.id
-              ? { background: 'var(--votz-active-chat, rgba(0,0,0,0.04))' }
-              : undefined
-          }
-        >
+        <ListItem key={item.id} data-active={activeId === item.id}>
           <Row>
             <Portrait
               group={item.kind === 'GROUP'}
@@ -648,33 +899,35 @@ function ChatDevices() {
       )
   }
   return (
-    <>
-      <Section>
+    <Page>
+      <Panel>
         <h2>Aparelhos conectados</h2>
         <Muted>
           Você pode usar suas conversas em até 5 aparelhos, como celular e
           navegador. Desconecte os que não usa mais.
         </Muted>
-      </Section>
+      </Panel>
       {notActivated && (
-        <Section role="status">
+        <Panel role="status">
           <strong>Abra uma conversa primeiro</strong>
           <Muted>
             Seus aparelhos aparecem aqui depois que você abrir qualquer
             conversa neste navegador.
           </Muted>
-        </Section>
+        </Panel>
       )}
       {list.isError && !notActivated && (
-        <Failure
+        <Failure card
           error={list.error}
           retry={() => {
             void list.refetch()
           }}
         />
       )}
-      {action.isError && <Failure error={action.error} />}
-      {list.isPending && <Section role="status">Carregando…</Section>}
+      {action.isError && <Failure card error={action.error} />}
+      {list.isPending && <Panel role="status">Carregando…</Panel>}
+      {(links.length > 0 || devices.length > 0) && (
+        <Panel $flush>
       {links.map((link) => {
         const request = deviceRequestText(link)
         return (
@@ -702,6 +955,9 @@ function ChatDevices() {
       {devices.map((device) => (
         <ListItem key={device.id}>
           <Row>
+            <Face aria-hidden="true">
+              {device.platform === 'web' ? <Monitor size={22} /> : <DeviceMobile size={22} />}
+            </Face>
             <span style={{ flex: 1 }}>
               <strong>
                 {deviceName(device)}
@@ -711,20 +967,21 @@ function ChatDevices() {
                 Conectado em {new Date(device.createdAt).toLocaleDateString('pt-BR')}
               </Muted>
             </span>
-            <Action
-              $secondary
+            <TextAction
               disabled={action.isPending}
               onClick={() => revoke(device)}
             >
               {device.current ? 'Sair' : 'Desconectar'}
-            </Action>
+            </TextAction>
           </Row>
         </ListItem>
       ))}
-      {list.isSuccess && !devices.length && (
-        <Section>Nenhum aparelho conectado.</Section>
+        </Panel>
       )}
-    </>
+      {list.isSuccess && !devices.length && (
+        <Panel>Nenhum aparelho conectado.</Panel>
+      )}
+    </Page>
   )
 }
 function BlockedPeople() {
@@ -732,29 +989,33 @@ function BlockedPeople() {
   const action = useConversationAction()
   const items = list.data?.pages.flatMap((page) => page.items) || []
   return (
-    <>
-      <Section>
+    <Page>
+      <Panel>
         <h2>Pessoas bloqueadas</h2>
         <Muted>Você pode permitir novas interações ao desbloquear uma pessoa.</Muted>
-      </Section>
+      </Panel>
       {list.isError && (
-        <Failure
+        <Failure card
           error={list.error}
           retry={() => {
             void list.refetch()
           }}
         />
       )}
-      {action.isError && <Failure error={action.error} />}
-      {list.isPending && <Section role="status">Carregando…</Section>}
-      {list.isSuccess && !items.length && <Section>Nenhuma pessoa bloqueada.</Section>}
+      {action.isError && <Failure card error={action.error} />}
+      {list.isPending && <Panel role="status">Carregando…</Panel>}
+      {list.isSuccess && !items.length && <Panel>Nenhuma pessoa bloqueada.</Panel>}
+      {items.length > 0 && (
+        <Panel $flush>
       {items.map((item) => (
         <ListItem key={item.blockedId}>
           <Row>
             <Portrait person={item.blocked} />
-            <strong style={{ flex: 1 }}>{item.blocked.name}</strong>
-            <Action
-              $secondary
+            <div style={{ flex: 1 }}>
+              <strong>{item.blocked.name}</strong>
+              {item.blocked.username && <Muted>@{item.blocked.username}</Muted>}
+            </div>
+            <TextAction
               disabled={action.isPending}
               onClick={() => {
                 if (window.confirm(`Desbloquear ${item.blocked.name}?`))
@@ -762,12 +1023,14 @@ function BlockedPeople() {
               }}
             >
               Desbloquear
-            </Action>
+            </TextAction>
           </Row>
         </ListItem>
       ))}
+        </Panel>
+      )}
       {list.hasNextPage && (
-        <Section>
+        <Panel>
           <Action
             $secondary
             disabled={list.isFetchingNextPage}
@@ -777,33 +1040,39 @@ function BlockedPeople() {
           >
             Carregar mais
           </Action>
-        </Section>
+        </Panel>
       )}
-    </>
+    </Page>
   )
 }
 function PersonPicker({
   selected,
   onChange,
+  onPick,
   exclude = [],
 }: {
   selected: ConversationPerson[]
   onChange: (people: ConversationPerson[]) => void
+  /** Conversa individual: escolher a pessoa já abre a conversa, sem botão. */
+  onPick?: (person: ConversationPerson) => void
   exclude?: string[]
 }) {
   const [search, setSearch] = useState('')
   const contacts = useConversationContacts(search)
   return (
     <div>
-      <label htmlFor="conversation-person-search">Buscar pessoas</label>
-      <Field
-        id="conversation-person-search"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        maxLength={60}
-        placeholder="Nome ou @usuário"
-        autoComplete="off"
-      />
+      <VisuallyHidden htmlFor="conversation-person-search">Buscar pessoas</VisuallyHidden>
+      <SearchPill>
+        <MagnifyingGlass size={20} aria-hidden="true" />
+        <input
+          id="conversation-person-search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          maxLength={60}
+          placeholder="Nome ou @usuário"
+          autoComplete="off"
+        />
+      </SearchPill>
       {selected.length > 0 && (
         <Buttons>
           {selected.map((person) => (
@@ -828,28 +1097,50 @@ function PersonPicker({
           }}
         />
       )}
-      {search.trim().length < 2 && <Muted>Digite pelo menos 2 caracteres.</Muted>}
+      {search.trim().length < 2 && <Muted>Digite pelo menos 2 letras do nome ou do @usuário.</Muted>}
       {contacts.data
         ?.filter((person) => !exclude.includes(person.id))
-        .map((person) => (
-          <ListItem key={person.id}>
+        .map((person) => {
+          const row = (
             <Row>
               <Portrait person={person} />
               <div style={{ flex: 1 }}>
                 <strong>{person.name}</strong>
                 {person.username && <Muted>@{person.username}</Muted>}
               </div>
-              <Action
-                type="button"
-                $secondary
-                disabled={selected.some((p) => p.id === person.id) || selected.length >= 99}
-                onClick={() => onChange([...selected, person])}
-              >
-                {selected.some((p) => p.id === person.id) ? 'Selecionado' : 'Selecionar'}
-              </Action>
+              {!onPick && (
+                <Action
+                  type="button"
+                  $secondary
+                  disabled={selected.some((p) => p.id === person.id) || selected.length >= 99}
+                  onClick={() => onChange([...selected, person])}
+                >
+                  {selected.some((p) => p.id === person.id) ? 'Selecionado' : 'Selecionar'}
+                </Action>
+              )}
             </Row>
-          </ListItem>
-        ))}
+          )
+          return onPick ? (
+            <ListItem key={person.id}>
+              <RowButton
+                role="button"
+                tabIndex={0}
+                aria-label={`Conversar com ${person.name}`}
+                onClick={() => onPick(person)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onPick(person)
+                  }
+                }}
+              >
+                {row}
+              </RowButton>
+            </ListItem>
+          ) : (
+            <ListItem key={person.id}>{row}</ListItem>
+          )
+        })}
       {contacts.isSuccess && !contacts.data.length && <Muted>Nenhuma pessoa encontrada.</Muted>}
     </div>
   )
@@ -862,10 +1153,10 @@ function CreateConversation() {
   const action = useCreateConversationGroup()
   const navigate = useNavigate()
   const actorId = useConversationScope().user!.id
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (action.isPending || !people.length || (group && !title.trim())) return
-    const signature = JSON.stringify([title.trim(), people.map((p) => p.id).sort()])
+  async function submit(event?: FormEvent, chosen: ConversationPerson[] = people) {
+    event?.preventDefault()
+    if (action.isPending || !chosen.length || (group && !title.trim())) return
+    const signature = JSON.stringify([title.trim(), chosen.map((p) => p.id).sort()])
     if (!submission.current || submission.current.signature !== signature)
       submission.current = { signature, id: crypto.randomUUID() }
     try {
@@ -873,9 +1164,9 @@ function CreateConversation() {
         ? await action.create({
             clientRequestId: submission.current.id,
             title: title.trim(),
-            memberIds: people.map((p) => p.id),
+            memberIds: chosen.map((p) => p.id),
           })
-        : await action.mutateAsync({ path: '/direct', body: { targetUserId: people[0].id } })
+        : await action.mutateAsync({ path: '/direct', body: { targetUserId: chosen[0].id } })
       if (currentConversationActorId() === actorId)
         navigate(`/conversas/${result.id}`, { replace: true })
     } catch {
@@ -883,7 +1174,8 @@ function CreateConversation() {
     }
   }
   return (
-    <Section>
+    <Page>
+    <Panel>
       <TabRow role="tablist" aria-label="Tipo de conversa">
         <button
           role="tab"
@@ -926,24 +1218,35 @@ function CreateConversation() {
           <PersonPicker
             selected={people}
             onChange={(value) => setPeople(group ? value : value.slice(-1))}
+            onPick={
+              group
+                ? undefined
+                : (person) => {
+                    setPeople([person])
+                    void submit(undefined, [person])
+                  }
+            }
           />
           <Muted>
             {group
               ? 'As pessoas recebem um convite e escolhem se querem participar.'
-              : 'A pessoa receberá uma solicitação de conversa.'}
+              : 'Clique em uma pessoa para conversar. Ela receberá uma solicitação de conversa.'}
           </Muted>
-          <Buttons>
-            <Action
-              type="submit"
-              disabled={!people.length || (group && !title.trim()) || action.isPending}
-            >
-              {action.isPending ? 'Preparando…' : group ? 'Criar grupo' : 'Continuar'}
-            </Action>
-          </Buttons>
+          {group && (
+            <Buttons>
+              <Action
+                type="submit"
+                disabled={!people.length || !title.trim() || action.isPending}
+              >
+                {action.isPending ? 'Preparando…' : 'Criar grupo'}
+              </Action>
+            </Buttons>
+          )}
         </fieldset>
       </form>
       {action.isError && <Failure error={action.error} />}
-    </Section>
+    </Panel>
+    </Page>
   )
 }
 // Check the current identity after async mutations, never navigate into a prior user's result.
@@ -966,7 +1269,7 @@ function ConversationDetail({ id }: { id: string }) {
   const [reportDetails, setReportDetails] = useState('')
   const [reportSent, setReportSent] = useState(false)
   const { user } = useConversationScope()
-  if (detail.isPending) return <Section role="status">Carregando conversa…</Section>
+  if (detail.isPending) return <Panel role="status">Carregando conversa…</Panel>
   if (detail.isError)
     return (
       <Failure
@@ -1006,22 +1309,26 @@ function ConversationDetail({ id }: { id: string }) {
   }
   const other = conversation.members.find((member) => member.user.id !== user!.id)?.user
   return (
-    <>
-      <Section>
-        <Row>
-          <Portrait person={other} group={conversation.kind === 'GROUP'} />
-          <div>
-            <h2>{conversationTitle(conversation, user!.id)}</h2>
-            <Muted>
-              {closed
-                ? 'Grupo encerrado'
-                : conversation.kind === 'GROUP'
-                  ? conversationMemberLabel(conversation.memberCount)
-                  : 'Conversa pessoal'}
-            </Muted>
-          </div>
-        </Row>
-      </Section>
+    <Page>
+      <Hero>
+        <HeroFace aria-hidden="true">
+          {conversation.kind === 'GROUP' ? (
+            <Users size={44} />
+          ) : other?.avatarUrl ? (
+            <img src={other.avatarUrl} alt="" />
+          ) : (
+            other?.name.charAt(0).toUpperCase()
+          )}
+        </HeroFace>
+        <h2>{conversationTitle(conversation, user!.id)}</h2>
+        <Muted>
+          {closed
+            ? 'Grupo encerrado'
+            : conversation.kind === 'GROUP'
+              ? conversationMemberLabel(conversation.memberCount)
+              : 'Conversa pessoal'}
+        </Muted>
+      </Hero>
       <Notice>
         <ShieldCheck size={23} />
         <span>
@@ -1030,9 +1337,10 @@ function ConversationDetail({ id }: { id: string }) {
             : 'Mensagens nesta conversa são protegidas de ponta a ponta.'}
         </span>
       </Notice>
-      {action.isError && <Failure error={action.error} />}
-      <Section>
-        <h2>{conversation.kind === 'GROUP' ? 'Participantes' : 'Pessoas nesta conversa'}</h2>
+      {action.isError && <Failure card error={action.error} />}
+      {conversation.kind === 'GROUP' && (
+      <Panel>
+        <h2>Participantes</h2>
         {conversation.members.map((member) => (
           <ListItem key={member.user.id}>
             <Row>
@@ -1102,48 +1410,56 @@ function ConversationDetail({ id }: { id: string }) {
             )}
           </ListItem>
         ))}
-      </Section>
+      </Panel>
+      )}
       {!closed && (
-        <Section>
-          <Buttons>
+        <Panel style={{ padding: '8px 0' }}>
+          <ActionList>
             {conversation.kind === 'GROUP' && admin && (
               <Action $secondary onClick={() => setInviting(!inviting)}>
+                <UserPlus size={22} aria-hidden="true" />
                 Convidar pessoas
               </Action>
             )}
             {conversation.kind === 'GROUP' && !owner && (
               <Action
                 $secondary
+                data-danger
                 disabled={action.isPending}
                 onClick={() => {
                   if (window.confirm('Sair deste grupo?'))
                     void run(`/${id}/leave`, undefined, 'POST', true)
                 }}
               >
+                <SignOut size={22} aria-hidden="true" />
                 Sair do grupo
               </Action>
             )}
             {conversation.kind === 'GROUP' && owner && (
               <Action
                 $secondary
+                data-danger
                 disabled={action.isPending}
                 onClick={() => {
                   if (window.confirm('Encerrar este grupo? Esta ação não pode ser desfeita.'))
                     void run(`/${id}/archive`)
                 }}
               >
+                <XCircle size={22} aria-hidden="true" />
                 Encerrar grupo
               </Action>
             )}
             {conversation.kind === 'DIRECT' && other && (
               <Action
                 $secondary
+                data-danger
                 disabled={action.isPending}
                 onClick={() => {
                   if (window.confirm(`Bloquear novas interações com ${other.name}?`))
                     void run(`/blocks/${other.id}`, undefined, 'POST', true)
                 }}
               >
+                <Prohibit size={22} aria-hidden="true" />
                 Bloquear pessoa
               </Action>
             )}
@@ -1154,7 +1470,7 @@ function ConversationDetail({ id }: { id: string }) {
                 void run(`/${id}/pin`, { pinned: !conversation.pinnedAt }, 'PATCH')
               }}
             >
-              <PushPin size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              <PushPin size={22} aria-hidden="true" />
               {conversation.pinnedAt ? 'Desafixar conversa' : 'Fixar no topo'}
             </Action>
             {conversationIsMuted(conversation.mutedUntil) ? (
@@ -1165,6 +1481,7 @@ function ConversationDetail({ id }: { id: string }) {
                   void run(`/${id}/mute`, { duration: 'off' as ConversationMuteDuration }, 'PATCH')
                 }}
               >
+                <Bell size={22} aria-hidden="true" />
                 Ativar notificações
               </Action>
             ) : (
@@ -1176,11 +1493,13 @@ function ConversationDetail({ id }: { id: string }) {
                   setShowReport(false)
                 }}
               >
+                <BellSlash size={22} aria-hidden="true" />
                 Silenciar notificações
               </Action>
             )}
             <Action
               $secondary
+              data-danger
               disabled={action.isPending}
               onClick={() => {
                 setShowReport((value) => !value)
@@ -1188,10 +1507,10 @@ function ConversationDetail({ id }: { id: string }) {
                 setReportSent(false)
               }}
             >
-              <Flag size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              <Flag size={22} aria-hidden="true" />
               Denunciar conversa
             </Action>
-          </Buttons>
+          </ActionList>
           {showMute && (
             <div style={{ marginTop: 16 }}>
               <Muted>Por quanto tempo silenciar as notificações desta conversa?</Muted>
@@ -1294,8 +1613,8 @@ function ConversationDetail({ id }: { id: string }) {
               </Buttons>
             </div>
           )}
-        </Section>
+        </Panel>
       )}
-    </>
+    </Page>
   )
 }

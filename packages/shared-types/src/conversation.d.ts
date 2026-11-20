@@ -106,4 +106,15 @@ export declare function conversationMemberLabel(count: number): string;
 export declare function conversationTitle(conversation: ConversationSummary, userId: string): string;
 export declare function conversationIsMuted(mutedUntil: string | null | undefined, now?: Date): boolean;
 export declare function conversationTypingLabel(names: string[]): string;
+/** "Visto por último hoje às 21:40", "…ontem às 21:40" ou "…em 18/11/26". */
+export declare function conversationLastSeenLabel(iso: string, now?: Date): string;
+/**
+ * Linha abaixo do nome no cabeçalho da conversa, igual no web e no celular:
+ * "digitando…" (destacado), número de participantes, visto por último ou, sem
+ * essa informação, o aviso de que a conversa é protegida.
+ */
+export declare function conversationHeaderStatus(conversation: Pick<ConversationSummary, 'kind' | 'memberCount' | 'peerLastSeenAt'>, typingNames: string[], now?: Date): {
+    text: string;
+    typing: boolean;
+};
 //# sourceMappingURL=conversation.d.ts.map

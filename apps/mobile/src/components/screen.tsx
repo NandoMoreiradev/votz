@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ComponentRef, type PropsWithChildren, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentRef, type PropsWithChildren, type ReactNode } from 'react'
 import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewProps } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
@@ -10,9 +10,20 @@ import { RevealInput, type InputHandle } from './keyboard-context'
 
 // The avoiding view owns the full screen (including our toolbar), so it needs
 // no guessed navigation-header offset. This also works with Android edge-to-edge.
+// Com o teclado aberto a área segura de baixo não existe mais: sem isso sobra uma faixa em branco entre o campo e o teclado.
+function useKeyboardVisible() {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setVisible(true))
+    const hide = Keyboard.addListener('keyboardDidHide', () => setVisible(false))
+    return () => { show.remove(); hide.remove() }
+  }, [])
+  return visible
+}
 export function Screen({ children, tabs = false }: PropsWithChildren<{ tabs?: boolean }>) {
+  const keyboard = useKeyboardVisible()
   return <KeyboardAvoidingView behavior="padding" style={styles.page}>
-    <SafeAreaView edges={tabs ? ['top'] : ['top', 'bottom']} style={styles.page}>{children}</SafeAreaView>
+    <SafeAreaView edges={tabs || keyboard ? ['top'] : ['top', 'bottom']} style={styles.page}>{children}</SafeAreaView>
   </KeyboardAvoidingView>
 }
 export function Brand() {

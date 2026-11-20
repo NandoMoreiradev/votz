@@ -45,7 +45,7 @@ const composerReady = (page) =>
   page.waitForFunction(
     () => {
       const field = document.querySelector('textarea[aria-label="Mensagem"]')
-      return !!field && !field.disabled
+      return !!field && !field.disabled && field.placeholder === 'Mensagem'
     },
     undefined,
     { timeout: 45000 },
@@ -95,8 +95,15 @@ async function send(page, text) {
   // 1) Cartão de relato no Votz.
   const reportId = '22222222-2222-4222-8222-222222222222'
   const msg1 = `Olha esse problema /relatos/${reportId}`
+  const sentAt = Date.now()
   await send(pageA, msg1)
+  // Envio otimista: a bolha de quem envia já está na tela assim que o botão é clicado.
+  await pageA.locator('[data-message-id]').filter({ hasText: msg1 }).first().waitFor({ timeout: 1000 })
+  const ownShownMs = Date.now() - sentAt
   await pageB.locator('[data-chat-pane]').getByText(msg1, { exact: true }).waitFor()
+  const receivedMs = Date.now() - sentAt
+  assert.ok(receivedMs < 8000, 'Receiving takes ' + receivedMs + ' ms')
+  console.log('LATENCY: own bubble visible by ' + ownShownMs + ' ms; received by the other person in ' + receivedMs + ' ms (click to screen)')
   const cardLink = pageB.locator('[data-chat-pane]').getByRole('link', { name: /Relato no Votz/ })
   await cardLink.waitFor()
   assert.equal(await cardLink.getAttribute('href'), `/relatos/${reportId}`)
@@ -104,7 +111,9 @@ async function send(page, text) {
 
   // 2) Responder com citação.
   const bubble1B = pageB.locator('[data-message-id]').filter({ hasText: msg1 })
-  await bubble1B.getByRole('button', { name: 'Responder' }).click()
+  await bubble1B.getByRole('button', { name: 'Mais opções da mensagem' }).click()
+  await bubble1B.getByRole('menuitem', { name: 'Copiar texto' }).waitFor()
+  await bubble1B.getByRole('menuitem', { name: 'Responder' }).click()
   await pageB.getByText(/Respondendo a/).waitFor()
   const replyText = `Vou apoiar agora! ${run}`
   await send(pageB, replyText)
@@ -114,8 +123,8 @@ async function send(page, text) {
   console.log('PASS: E2EE reply quote delivered and displayed')
 
   // 3) Reagir com emoji (cifrado, sem virar bolha).
-  await replyBubbleA.getByRole('button', { name: 'Reagir' }).click()
-  await replyBubbleA.getByRole('button', { name: 'Reagir com 👍' }).click()
+  await replyBubbleA.getByRole('button', { name: 'Mais opções da mensagem' }).click()
+  await replyBubbleA.getByRole('menuitem', { name: 'Reagir com 👍' }).click()
   await replyBubbleA.getByRole('button', { name: '👍 1' }).waitFor()
   const replyBubbleB = pageB.locator('[data-message-id]').filter({ hasText: replyText })
   await replyBubbleB.getByRole('button', { name: '👍 1' }).waitFor()
@@ -123,7 +132,8 @@ async function send(page, text) {
   console.log('PASS: E2EE emoji reaction syncs across peers without creating a message bubble')
 
   // 4) Encaminhar com identificação para Carol.
-  await replyBubbleB.getByRole('button', { name: 'Encaminhar' }).click()
+  await replyBubbleB.getByRole('button', { name: 'Mais opções da mensagem' }).click()
+  await replyBubbleB.getByRole('menuitem', { name: 'Encaminhar' }).click()
   await pageB.getByRole('dialog', { name: 'Encaminhar mensagem' }).getByRole('button', { name: 'QA Exp Carol' }).click()
   await pageB.waitForURL((u) => u.pathname.endsWith(`/conversas/${bc.id}`))
   await composerReady(pageB)
@@ -153,7 +163,8 @@ async function send(page, text) {
   console.log('PASS: ephemeral typing indicator propagates over Socket.IO')
 
   // 7) Silenciar / ativar notificações e denunciar conversa (Bloco 3B).
-  await pageB.getByRole('link', { name: 'Detalhes' }).click()
+  await pageB.getByRole('button', { name: 'Mais opções', exact: true }).click()
+  await pageB.getByRole('menuitem', { name: 'Detalhes da conversa' }).click()
   await pageB.getByRole('button', { name: 'Silenciar notificações' }).click()
   await pageB.getByRole('button', { name: '8 horas' }).click()
   await pageB.getByRole('button', { name: 'Ativar notificações' }).waitFor()

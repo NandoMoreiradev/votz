@@ -51,7 +51,7 @@ const composerReady = (page) =>
   page.waitForFunction(
     () => {
       const field = document.querySelector('textarea[aria-label="Mensagem"]')
-      return !!field && !field.disabled
+      return !!field && !field.disabled && field.placeholder === 'Mensagem'
     },
     undefined,
     { timeout: 45000 },
@@ -124,10 +124,15 @@ async function send(page, text) {
   // 2) Recibos em grupo: Carol liga leitura -> "Lida por 1 de 2"; Bruno liga -> "Lida".
   const bubble1 = pageA.getByLabel('Mensagens', { exact: true }).locator('[data-message-id]').filter({ hasText: msg1 })
   await bubble1.getByText(/Entregue/).waitFor()
-  await pageC.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
+  // A confirmação de leitura fica no menu dos três pontos do cabeçalho.
+  const toggleReceipts = async (page) => {
+    await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+    await page.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
+  }
+  await toggleReceipts(pageC)
   await bubble1.getByText(/Lida por 1 de 2/).waitFor()
-  await pageB.getByRole('checkbox', { name: 'Compartilhar quando eu ler' }).click()
-  await bubble1.getByText(/· Lida$/).waitFor()
+  await toggleReceipts(pageB)
+  await bubble1.getByText(/^Lida$/).waitFor()
   console.log('PASS: group read receipts progress from Entregue -> Lida por 1 de 2 -> Lida')
 
   // 3) Remoção de Carol + rotação de chave Megolm: Carol perde acesso e não lê mensagem posterior.

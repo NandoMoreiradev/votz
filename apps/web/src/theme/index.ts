@@ -11,6 +11,10 @@ export const theme = {
     muted: '#6B7280',
     surface: '#FFFFFF',
     surfaceHover: '#F9FAFB',
+    // Conversas: fundo cinza-azulado suave, balão próprio em tom claro do vermelho do Votz.
+    chatBackground: '#EDEFF4',
+    bubbleOwn: '#FFDDE0',
+    bubblePeer: '#FFFFFF',
   },
   fonts: {
     heading: "'Space Grotesk', sans-serif",

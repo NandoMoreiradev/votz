@@ -1,17 +1,34 @@
-import { StyleSheet, Switch, View } from 'react-native'
+import { useState } from 'react'
+import { ScrollView, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router'
+import Ban from 'lucide-react-native/icons/ban'
+import Bell from 'lucide-react-native/icons/bell'
+import CheckCheck from 'lucide-react-native/icons/check-check'
+import Clock from 'lucide-react-native/icons/clock'
+import Cloud from 'lucide-react-native/icons/cloud'
+import Download from 'lucide-react-native/icons/download'
+import Image from 'lucide-react-native/icons/image'
+import ShieldCheck from 'lucide-react-native/icons/shield-check'
+import Smartphone from 'lucide-react-native/icons/smartphone'
+import TypeIcon from 'lucide-react-native/icons/type'
+import UserPlus from 'lucide-react-native/icons/user-plus'
+import Users from 'lucide-react-native/icons/users'
+import Vibrate from 'lucide-react-native/icons/vibrate'
+import Volume2 from 'lucide-react-native/icons/volume-2'
 import {
   DEFAULT_CONVERSATION_SETTINGS,
   type ConversationAudience,
   type ConversationDirectPolicy,
   type ConversationFontScale,
   type ConversationMediaAutoDownload,
+  type ConversationSettings,
   type ConversationWallpaper,
   type UpdateConversationSettings,
 } from '@votz/shared-types'
 import { ConversationGate } from '../../components/conversation-ui'
-import { FormScroll, Screen, Toolbar } from '../../components/screen'
-import { Button, ErrorText, Heading, Label, State } from '../../components/ui'
+import { Screen, Toolbar } from '../../components/screen'
+import { OptionSheet, SettingsRow, SettingsSection } from '../../components/settings-ui'
+import { ErrorText, State } from '../../components/ui'
 import {
   useConversationSettings,
   useUpdateConversationSettings,
@@ -19,65 +36,48 @@ import {
 import { errorMessage } from '../../lib/api'
 import { theme } from '../../theme'
 
-function ChoiceGroup<T extends string>({
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  value: T
-  options: [T, string][]
-  disabled: boolean
-  onChange: (next: T) => void
-}) {
-  return (
-    <View style={styles.choices}>
-      {options.map(([key, label]) => (
-        <Button
-          key={key}
-          title={label}
-          secondary={value !== key}
-          disabled={disabled}
-          onPress={() => onChange(key)}
-        />
-      ))}
-    </View>
-  )
-}
+const AUDIENCE: [ConversationAudience, string][] = [
+  ['EVERYONE', 'Todos'],
+  ['CONTACTS', 'Meus contatos'],
+  ['NOBODY', 'Ninguém'],
+]
+const DIRECT: [ConversationDirectPolicy, string][] = [
+  ['EVERYONE', 'Todos'],
+  ['NOBODY', 'Ninguém'],
+]
+const MEDIA: [ConversationMediaAutoDownload, string][] = [
+  ['WIFI_ONLY', 'Somente no Wi-Fi'],
+  ['ALWAYS', 'Wi-Fi e dados móveis'],
+  ['NEVER', 'Nunca'],
+]
+const FONT: [ConversationFontScale, string][] = [
+  ['SMALL', 'Pequena'],
+  ['MEDIUM', 'Padrão'],
+  ['LARGE', 'Grande'],
+]
+const WALLPAPER: [ConversationWallpaper, string][] = [
+  ['DEFAULT', 'Padrão'],
+  ['SOFT', 'Suave'],
+  ['PLAIN', 'Liso'],
+]
+const labelOf = <T extends string>(options: [T, string][], value: T) =>
+  options.find(([key]) => key === value)?.[1] ?? ''
 
-function ToggleRow({
-  title,
-  help,
-  value,
-  disabled,
-  onChange,
-}: {
-  title: string
-  help?: string
-  value: boolean
-  disabled: boolean
-  onChange: (next: boolean) => void
-}) {
-  return (
-    <View style={styles.row}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Label>{title}</Label>
-        {help ? <Label muted>{help}</Label> : null}
-      </View>
-      <Switch
-        accessibilityLabel={title}
-        value={value}
-        disabled={disabled}
-        onValueChange={onChange}
-      />
-    </View>
-  )
-}
+type Choice =
+  | { key: 'lastSeenVisibility'; title: string; help?: string; options: [ConversationAudience, string][] }
+  | { key: 'groupInvitePolicy'; title: string; options: [ConversationAudience, string][] }
+  | { key: 'directRequestPolicy'; title: string; options: [ConversationDirectPolicy, string][] }
+  | { key: 'mediaAutoDownload'; title: string; options: [ConversationMediaAutoDownload, string][] }
+  | { key: 'fontScale'; title: string; options: [ConversationFontScale, string][] }
+  | { key: 'wallpaper'; title: string; options: [ConversationWallpaper, string][] }
+
+const ICON = 20
 
 function SettingsContent() {
   const query = useConversationSettings()
   const update = useUpdateConversationSettings()
-  const settings = query.data ?? DEFAULT_CONVERSATION_SETTINGS
+  const settings: ConversationSettings = query.data ?? DEFAULT_CONVERSATION_SETTINGS
+  const [choice, setChoice] = useState<Choice | null>(null)
 
   function save(patch: UpdateConversationSettings) {
     update.mutate(patch)
@@ -95,147 +95,153 @@ function SettingsContent() {
       />
     )
 
+  const muted = theme.colors.primary
   return (
-    <FormScroll contentContainerStyle={styles.container}>
-      {update.isError && <ErrorText message={errorMessage(update.error)} />}
+    <>
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+        {update.isError && (
+          <View style={{ padding: 16 }}>
+            <ErrorText message={errorMessage(update.error)} />
+          </View>
+        )}
+        <SettingsSection title="Privacidade">
+          <SettingsRow
+            icon={<CheckCheck size={ICON} color={muted} />}
+            title="Confirmação de leitura"
+            subtitle="Mostra quando você leu. Se desligar, você também não vê quando leram as suas."
+            right={
+              <Switch
+                accessibilityLabel="Confirmação de leitura"
+                value={settings.readReceiptsEnabled}
+                onValueChange={(readReceiptsEnabled) => save({ readReceiptsEnabled })}
+                trackColor={{ true: theme.colors.action }}
+                thumbColor={theme.colors.surface}
+              />
+            }
+          />
+          <SettingsRow
+            icon={<Clock size={ICON} color={muted} />}
+            title="Visto por último"
+            subtitle={labelOf(AUDIENCE, settings.lastSeenVisibility)}
+            chevron
+            onPress={() =>
+              setChoice({
+                key: 'lastSeenVisibility',
+                title: 'Visto por último',
+                help: 'Se você escolher "Ninguém", também não vê o de outras pessoas.',
+                options: AUDIENCE,
+              })
+            }
+          />
+          <SettingsRow
+            icon={<Users size={ICON} color={muted} />}
+            title="Quem pode me adicionar a grupos"
+            subtitle={labelOf(AUDIENCE, settings.groupInvitePolicy)}
+            chevron
+            onPress={() =>
+              setChoice({ key: 'groupInvitePolicy', title: 'Quem pode me adicionar a grupos', options: AUDIENCE })
+            }
+          />
+          <SettingsRow
+            icon={<UserPlus size={ICON} color={muted} />}
+            title="Quem pode me enviar solicitações"
+            subtitle={labelOf(DIRECT, settings.directRequestPolicy)}
+            chevron
+            onPress={() =>
+              setChoice({ key: 'directRequestPolicy', title: 'Quem pode me enviar solicitações', options: DIRECT })
+            }
+          />
+          <SettingsRow
+            icon={<Ban size={ICON} color={muted} />}
+            title="Pessoas bloqueadas"
+            chevron
+            onPress={() => router.push('/conversation/blocked')}
+          />
+        </SettingsSection>
 
-      <View style={styles.section}>
-        <Heading>Privacidade</Heading>
-        <ToggleRow
-          title="Confirmação de leitura"
-          help="Mostra quando você leu uma mensagem. Se desativado, você também não vê quando outras pessoas leram."
-          value={settings.readReceiptsEnabled}
-          disabled={update.isPending}
-          onChange={(readReceiptsEnabled) => save({ readReceiptsEnabled })}
-        />
-        <Label>Visto por último</Label>
-        <Label muted>
-          Recíproco: ao escolher "Ninguém", você também não vê o de outras pessoas.
-        </Label>
-        <ChoiceGroup<ConversationAudience>
-          value={settings.lastSeenVisibility}
-          disabled={update.isPending}
-          options={[
-            ['EVERYONE', 'Todos'],
-            ['CONTACTS', 'Meus contatos'],
-            ['NOBODY', 'Ninguém'],
-          ]}
-          onChange={(lastSeenVisibility) => save({ lastSeenVisibility })}
-        />
-        <Label>Quem pode me adicionar a grupos</Label>
-        <ChoiceGroup<ConversationAudience>
-          value={settings.groupInvitePolicy}
-          disabled={update.isPending}
-          options={[
-            ['EVERYONE', 'Todos'],
-            ['CONTACTS', 'Meus contatos'],
-            ['NOBODY', 'Ninguém'],
-          ]}
-          onChange={(groupInvitePolicy) => save({ groupInvitePolicy })}
-        />
-        <Label>Quem pode me enviar solicitações</Label>
-        <ChoiceGroup<ConversationDirectPolicy>
-          value={settings.directRequestPolicy}
-          disabled={update.isPending}
-          options={[
-            ['EVERYONE', 'Todos'],
-            ['NOBODY', 'Ninguém'],
-          ]}
-          onChange={(directRequestPolicy) => save({ directRequestPolicy })}
-        />
-        <Button
-          secondary
-          title="Pessoas bloqueadas"
-          onPress={() => router.push('/conversation/blocked')}
-        />
-      </View>
+        <SettingsSection title="Conversas">
+          <SettingsRow
+            icon={<TypeIcon size={ICON} color={muted} />}
+            title="Tamanho da fonte"
+            subtitle={labelOf(FONT, settings.fontScale)}
+            chevron
+            onPress={() =>
+              setChoice({ key: 'fontScale', title: 'Tamanho da fonte nas conversas', options: FONT })
+            }
+          />
+          <SettingsRow
+            icon={<Image size={ICON} color={muted} />}
+            title="Papel de parede"
+            subtitle={labelOf(WALLPAPER, settings.wallpaper)}
+            chevron
+            onPress={() =>
+              setChoice({ key: 'wallpaper', title: 'Papel de parede das conversas', options: WALLPAPER })
+            }
+          />
+          <SettingsRow
+            icon={<Download size={ICON} color={muted} />}
+            title="Download automático de mídia"
+            subtitle={labelOf(MEDIA, settings.mediaAutoDownload)}
+            chevron
+            onPress={() =>
+              setChoice({ key: 'mediaAutoDownload', title: 'Download automático de mídia', options: MEDIA })
+            }
+          />
+        </SettingsSection>
 
-      <View style={styles.section}>
-        <Heading>Notificações</Heading>
-        <ToggleRow
-          title="Som nas notificações"
-          value={settings.notifySound}
-          disabled={update.isPending}
-          onChange={(notifySound) => save({ notifySound })}
-        />
-        <ToggleRow
-          title="Vibração"
-          value={settings.notifyVibration}
-          disabled={update.isPending}
-          onChange={(notifyVibration) => save({ notifyVibration })}
-        />
-        <ToggleRow
-          title="Mostrar aviso detalhado"
-          help="Notificações nunca mostram o texto das mensagens, apenas que há uma nova mensagem."
-          value={settings.notifyPreview}
-          disabled={update.isPending}
-          onChange={(notifyPreview) => save({ notifyPreview })}
-        />
-        <Label muted>
-          Para silenciar uma conversa ou grupo, abra os Detalhes dentro da conversa.
-        </Label>
-      </View>
+        <SettingsSection title="Notificações">
+          <SettingsRow icon={<Volume2 size={ICON} color={muted} />} title="Som nas notificações" soon />
+          <SettingsRow icon={<Vibrate size={ICON} color={muted} />} title="Vibração" soon />
+          <SettingsRow
+            icon={<Bell size={ICON} color={muted} />}
+            title="Mostrar aviso detalhado"
+            soon
+          />
+          <Text style={{ paddingHorizontal: 16, paddingVertical: 8, fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted }}>
+            Para silenciar uma conversa ou grupo, abra os Detalhes dentro da conversa.
+          </Text>
+        </SettingsSection>
 
-      <View style={styles.section}>
-        <Heading>Aparelhos e segurança</Heading>
-        <Button
-          secondary
-          title="Aparelhos conectados"
-          onPress={() => router.push('/conversation/devices')}
+        <SettingsSection title="Aparelhos e segurança">
+          <SettingsRow
+            icon={<Smartphone size={ICON} color={muted} />}
+            title="Aparelhos conectados"
+            chevron
+            onPress={() => router.push('/conversation/devices')}
+          />
+          <SettingsRow
+            icon={<ShieldCheck size={ICON} color={muted} />}
+            title="Alertas de segurança"
+            subtitle="Sempre ligados: avisam na conversa quando um contato muda de aparelho."
+            right={
+              <Switch
+                accessibilityLabel="Alertas de segurança"
+                value
+                disabled
+                trackColor={{ true: theme.colors.action }}
+                thumbColor={theme.colors.surface}
+              />
+            }
+          />
+          <SettingsRow
+            icon={<Cloud size={ICON} color={muted} />}
+            title="Backup protegido na nuvem"
+            soon
+          />
+        </SettingsSection>
+      </ScrollView>
+      {choice && (
+        <OptionSheet
+          visible
+          title={choice.title}
+          help={'help' in choice ? choice.help : undefined}
+          options={choice.options as readonly (readonly [string, string])[]}
+          value={String(settings[choice.key])}
+          onSelect={(next) => save({ [choice.key]: next } as UpdateConversationSettings)}
+          onClose={() => setChoice(null)}
         />
-        <ToggleRow
-          title="Alertas de segurança"
-          help="Avisa dentro da conversa quando um contato muda de aparelho."
-          value={settings.securityAlertsEnabled}
-          disabled={update.isPending}
-          onChange={(securityAlertsEnabled) => save({ securityAlertsEnabled })}
-        />
-        <ToggleRow
-          title="Backup protegido na nuvem (opcional)"
-          help="Desativado por padrão. Mantém suas conversas apenas nos seus aparelhos quando desligado."
-          value={settings.keyBackupEnabled}
-          disabled={update.isPending}
-          onChange={(keyBackupEnabled) => save({ keyBackupEnabled })}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Heading>Mídia e aparência</Heading>
-        <Label>Download automático de mídia</Label>
-        <ChoiceGroup<ConversationMediaAutoDownload>
-          value={settings.mediaAutoDownload}
-          disabled={update.isPending}
-          options={[
-            ['WIFI_ONLY', 'Somente no Wi-Fi'],
-            ['ALWAYS', 'Wi-Fi e dados móveis'],
-            ['NEVER', 'Nunca'],
-          ]}
-          onChange={(mediaAutoDownload) => save({ mediaAutoDownload })}
-        />
-        <Label>Tamanho da fonte nas conversas</Label>
-        <ChoiceGroup<ConversationFontScale>
-          value={settings.fontScale}
-          disabled={update.isPending}
-          options={[
-            ['SMALL', 'Pequena'],
-            ['MEDIUM', 'Padrão'],
-            ['LARGE', 'Grande'],
-          ]}
-          onChange={(fontScale) => save({ fontScale })}
-        />
-        <Label>Papel de parede das conversas</Label>
-        <ChoiceGroup<ConversationWallpaper>
-          value={settings.wallpaper}
-          disabled={update.isPending}
-          options={[
-            ['DEFAULT', 'Padrão'],
-            ['SOFT', 'Suave'],
-            ['PLAIN', 'Liso'],
-          ]}
-          onChange={(wallpaper) => save({ wallpaper })}
-        />
-      </View>
-    </FormScroll>
+      )}
+    </>
   )
 }
 
@@ -249,27 +255,3 @@ export default function ConversationSettingsScreen() {
     </Screen>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    gap: 20,
-  },
-  section: {
-    gap: 12,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  choices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-})

@@ -364,7 +364,7 @@ export function composerPlaceholder(state: {
 }): string {
   if (state.peerStatus === 'ready')
     return state.room?.canSend
-      ? 'Escreva uma mensagem…'
+      ? 'Mensagem'
       : 'Esta interação está bloqueada.'
   if (state.peerStatus === 'blocked')
     return 'Confira o aviso de segurança para conversar'
@@ -529,6 +529,10 @@ export interface ChatViewMessage {
   canReact: boolean
   time: string
   meta: string
+  /** Estado da própria mensagem por extenso ("Entregue", "Lida"); serve a leitores de tela e dicas. */
+  statusLabel: string | null
+  /** Mensagem que este aparelho não consegue abrir: as telas mostram em tom discreto. */
+  unreadable: boolean
   dayKey: string
   dayDivider: string | null
   isFirstInGroup: boolean
@@ -545,6 +549,8 @@ export interface ChatViewReadReceipts {
 }
 export interface ChatView {
   canWrite: boolean
+  /** Pode digitar: enquanto a conversa ainda prepara, o texto já pode ser escrito (só o envio espera). */
+  canType: boolean
   placeholder: string
   /** Faixa fixa no topo da conversa. */
   banner: string
@@ -605,6 +611,7 @@ export function chatView(
   if (!state)
     return {
       canWrite: false,
+      canType: true,
       placeholder: 'Preparando a conversa…',
       banner,
       preparing: true,
@@ -768,6 +775,8 @@ export function chatView(
         canWrite,
       time,
       meta: own ? `${time} · ${statusText}` : time,
+      statusLabel: own ? statusText : null,
+      unreadable: message.text === null && !message.attachment,
       dayKey,
       dayDivider,
       isFirstInGroup,
@@ -798,6 +807,7 @@ export function chatView(
         : null
   return {
     canWrite,
+    canType: canWrite || !state.ready,
     placeholder: composerPlaceholder(state),
     banner,
     preparing: !state.ready && !state.room,
@@ -867,6 +877,37 @@ export interface ChatPreview {
   text: string
 }
 const previews = new Map<string, ChatPreview>()
+const transcripts = new Map<string, ChatMessage[]>()
+const TRANSCRIPT_CONVERSATIONS = 8
+const TRANSCRIPT_MESSAGES = 80
+/**
+ * Últimas mensagens abertas de cada conversa recente, para a conversa aparecer
+ * na hora ao voltar a ela, enquanto a sincronização termina por trás.
+ *
+ * Só na memória do aplicativo, como a prévia: nunca vai ao disco nem ao
+ * servidor, e some junto com ela (`chatPreviews.clear()`: segundo plano, sair da
+ * conta ou trocar de usuário).
+ */
+export const chatTranscripts = {
+  get: (conversationId: string) => transcripts.get(conversationId),
+  set(conversationId: string, messages: ChatMessage[]) {
+    const merged = new Map(
+      (transcripts.get(conversationId) ?? []).map((m) => [m.id, m] as const),
+    )
+    for (const m of messages) if (!m.id.startsWith('pending:')) merged.set(m.id, m)
+    if (!merged.size) return
+    const kept = [...merged.values()]
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+      .slice(-TRANSCRIPT_MESSAGES)
+    transcripts.delete(conversationId) // mais recente por último
+    transcripts.set(conversationId, kept)
+    while (transcripts.size > TRANSCRIPT_CONVERSATIONS)
+      transcripts.delete(transcripts.keys().next().value as string)
+  },
+  clear() {
+    transcripts.clear()
+  },
+}
 const previewListeners = new Set<() => void>()
 /**
  * Prévia (texto da última mensagem) para a lista de conversas.
@@ -884,6 +925,7 @@ export const chatPreviews = {
     for (const listener of previewListeners) listener()
   },
   clear() {
+    transcripts.clear()
     if (!previews.size) return
     previews.clear()
     for (const listener of previewListeners) listener()
@@ -965,24 +1007,30 @@ export async function enrollDevice(
   }
 }
 
-export class ChatClient {
-  private active = false
-  private pins: Record<string, Record<string, string>> = {}
-  private notices: ChatNotice[] = []
-  private trusted = new Set<string>()
-  private queue: Promise<unknown> = Promise.resolve()
-  private listeners = new Set<(value: ChatState) => void>()
-  private pending: PendingChatMessage[] = []
-  private cursor: string | undefined
-  private events = new Map<string, Json>()
-  private messages = new Map<string, ChatMessage>()
-  private timer: ReturnType<typeof setTimeout> | undefined
-  private refreshAt = 0
-  private receipts: ReceiptJob[] = []
-  private acknowledged: ReceiptJob[] = []
-  private visible = new Set<string>()
-  private received = new Map<string, 'delivered' | 'read'>()
-  private snapshot: ChatState = {
+/** Resultado de abrir uma mensagem cifrada; guardado em memória para não abrir de novo. */
+interface ChatDecoded {
+  text: string | null
+  attachment?: ChatAttachment
+  replyTo?: ChatReplyTo
+  forwarded?: boolean
+  card?: ChatCard
+  reaction?: ChatDecryptedReaction
+}
+/** Executa o trabalho em paralelo, no máximo `limit` por vez. */
+async function runLimited<T>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await work(items[next++])
+  })
+  await Promise.all(workers)
+}
+
+function emptyChatState(): ChatState {
+  return {
     ready: false,
     connected: false,
     messages: [],
@@ -998,6 +1046,39 @@ export class ChatClient {
     notices: [],
     deviceLinks: [],
   }
+}
+/**
+ * Estado para desenhar a conversa antes mesmo de o cliente existir: só as
+ * últimas mensagens abertas (se houver), sem poder escrever ainda.
+ */
+export function chatSeedState(conversationId: string): ChatState | null {
+  const seed = chatTranscripts.get(conversationId)
+  return seed?.length ? { ...emptyChatState(), messages: seed } : null
+}
+
+/** Tamanho da página do histórico no servidor (`limit` de `GET /:id/chat/messages`). */
+const HISTORY_PAGE_SIZE = 30
+
+export class ChatClient {
+  private active = false
+  private pins: Record<string, Record<string, string>> = {}
+  private notices: ChatNotice[] = []
+  private trusted = new Set<string>()
+  private queue: Promise<unknown> = Promise.resolve()
+  private listeners = new Set<(value: ChatState) => void>()
+  private pending: PendingChatMessage[] = []
+  private cursor: string | undefined
+  private events = new Map<string, Json>()
+  private messages = new Map<string, ChatMessage>()
+  /** Mensagens já abertas (só memória): evita decifrar tudo de novo a cada ciclo. */
+  private decoded = new Map<string, ChatDecoded>()
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private refreshAt = 0
+  private receipts: ReceiptJob[] = []
+  private acknowledged: ReceiptJob[] = []
+  private visible = new Set<string>()
+  private received = new Map<string, 'delivered' | 'read'>()
+  private snapshot: ChatState = emptyChatState()
   constructor(
     private readonly conversationId: string,
     private readonly session: ChatSession,
@@ -1005,7 +1086,14 @@ export class ChatClient {
     private readonly http: ChatHttp,
     private readonly storage: ChatStorage,
     private readonly newId: () => string,
-  ) {}
+  ) {
+    // Volta a uma conversa recente: já nasce com as últimas mensagens abertas.
+    const seed = chatTranscripts.get(conversationId)
+    if (seed?.length) {
+      for (const message of seed) this.messages.set(message.id, message)
+      this.snapshot = { ...this.snapshot, messages: seed }
+    }
+  }
   subscribe(listener: (value: ChatState) => void) {
     this.listeners.add(listener)
     listener(this.snapshot)
@@ -1226,6 +1314,7 @@ export class ChatClient {
         text: previewText.replace(/\s+/g, ' ').trim().slice(0, 140),
       })
     }
+    if (this.active) chatTranscripts.set(this.conversationId, messages)
     this.update({ messages })
   }
   private seenAt = 0
@@ -1259,14 +1348,22 @@ export class ChatClient {
       this.update({ notices: this.notices })
       await this.serial(async () => {
         if (!this.active) return
-        const privacy = await this.http('/chat/privacy')
+        // Em paralelo: o histórico (se a sala ainda não existe o servidor devolve
+        // vazio e a leitura é refeita abaixo), a preferência de leitura e a sala.
+        const early = this.http(`/${this.conversationId}/chat/messages`).catch(
+          () => null,
+        )
+        const [privacy] = await Promise.all([
+          this.http('/chat/privacy'),
+          this.refresh(false),
+        ])
         this.update({
           readReceiptsEnabled: privacy.readReceiptsEnabled === true,
         })
-        await this.refresh()
+        void this.refreshDeviceLinks() // informativo: não segura a abertura
         if (!this.active) return
         await this.crypto.pump(this.http)
-        await this.readHistory()
+        await this.readHistory(undefined, await early)
         // Restore only ciphertext; recover the local preview from the encrypted SDK store.
         for (const item of this.pending.filter(
           (item) => item.conversationId === this.conversationId,
@@ -1300,6 +1397,7 @@ export class ChatClient {
     this.listeners.clear()
     this.events.clear()
     this.messages.clear()
+    this.decoded.clear()
     this.visible.clear()
     this.received.clear()
     this.receiptSummaries.clear()
@@ -1398,6 +1496,33 @@ export class ChatClient {
         this.snapshot.connected ? 100 : 3000,
       )
   }
+  /** Confere o aparelho remetente e abre uma mensagem cifrada. */
+  private async decodeEvent(
+    room: ChatRoom,
+    job: { id: string; event: Json; deviceId?: string | null; txn: unknown },
+  ): Promise<ChatDecoded> {
+    const keys = await this.crypto.identity(job.event.sender, job.deviceId!)
+    if (job.event.content.sender_key !== keys.curve25519)
+      throw new Error('Sender device mismatch')
+    // Local queue identifiers are UI identifiers, not Matrix event IDs.
+    // The SDK validates the latter even for a not-yet-sent envelope.
+    const decoded = await this.crypto.decrypt(
+      room.roomId,
+      job.id.startsWith('pending:')
+        ? { ...job.event, event_id: `$votz_pending_${job.txn}` }
+        : job.event,
+    )
+    if (typeof decoded === 'string')
+      return { text: decoded, card: extractVotzCard(decoded) }
+    return {
+      text: decoded.text,
+      attachment: decoded.attachment,
+      replyTo: decoded.replyTo,
+      forwarded: decoded.forwarded,
+      card: decoded.card,
+      reaction: decoded.reaction,
+    }
+  }
   private async refreshMessages() {
     const room = this.snapshot.room
     if (!room) return
@@ -1414,6 +1539,19 @@ export class ChatClient {
       sender: string
       reaction: ChatDecryptedReaction
     }> = []
+    // Fase 1: separa o que precisa ser aberto. O que já foi aberto sai do cache
+    // em memória e não passa de novo pela criptografia a cada ciclo.
+    interface RefreshJob {
+      id: string
+      event: Json
+      own: boolean
+      senderPeer: ChatPeer | undefined
+      deviceId: string | null | undefined
+      txn: unknown
+      listed: boolean
+      trusted: boolean
+    }
+    const jobs: RefreshJob[] = []
     for (const [id, event] of this.events) {
       if (
         event.type !== 'm.room.encrypted' ||
@@ -1450,6 +1588,30 @@ export class ChatClient {
       const trusted =
         (own && deviceId === this.session.deviceId) ||
         (!!deviceId && this.trusted.has(`${event.sender}|${deviceId}`))
+      jobs.push({ id, event, own, senderPeer, deviceId, txn, listed, trusted })
+    }
+    // Fase 2: abre em paralelo (até 6 por vez) só o que ainda não foi aberto.
+    const opened = new Map<string, ChatDecoded>()
+    await runLimited(
+      jobs.filter((job) => job.trusted && job.deviceId && !this.decoded.has(job.id)),
+      6,
+      async (job) => {
+        try {
+          const value = await this.decodeEvent(room, job)
+          opened.set(job.id, value)
+          // Mensagens de verdade ficam no cache; as locais ainda sem id do servidor, não.
+          if (!job.id.startsWith('pending:')) this.decoded.set(job.id, value)
+        } catch {
+          /* Never render unauthenticated or malformed plaintext. */
+        }
+      },
+    )
+    if (!this.active) return
+    // Fase 3: monta as mensagens, em ordem.
+    for (const job of jobs) {
+      const { id, event, own, senderPeer, deviceId, txn, listed, trusted } = job
+      // A mensagem local já foi confirmada pelo servidor nesta mesma passada.
+      if (id.startsWith('pending:') && !this.events.has(id)) continue
       let text: string | null = null
       let attachment: ChatAttachment | undefined
       let replyTo: ChatReplyTo | undefined
@@ -1461,38 +1623,20 @@ export class ChatClient {
         : trusted
           ? 'unavailable'
           : 'unverified'
-      if (trusted && deviceId) {
-        try {
-          const keys = await this.crypto.identity(event.sender, deviceId)
-          if (event.content.sender_key !== keys.curve25519)
-            throw new Error('Sender device mismatch')
-          // Local queue identifiers are UI identifiers, not Matrix event IDs.
-          // The SDK validates the latter even for a not-yet-sent envelope.
-          const decoded = await this.crypto.decrypt(
-            room.roomId,
-            id.startsWith('pending:')
-              ? { ...event, event_id: `$votz_pending_${txn}` }
-              : event,
-          )
-          if (typeof decoded === 'string') {
-            text = decoded
-            card = extractVotzCard(decoded)
-          } else {
-            text = decoded.text
-            attachment = decoded.attachment
-            replyTo = decoded.replyTo
-            forwarded = decoded.forwarded
-            card = decoded.card
-            reaction = decoded.reaction
-          }
-          status = id.startsWith('pending:')
-            ? this.pending.find((item) => item.txnId === txn)?.failed
-              ? 'failed'
-              : 'pending'
-            : this.received.get(id) || 'sent'
-        } catch {
-          /* Never render unauthenticated or malformed plaintext. */
-        }
+      const decoded =
+        trusted && deviceId ? (this.decoded.get(id) ?? opened.get(id)) : undefined
+      if (decoded) {
+        text = decoded.text
+        attachment = decoded.attachment
+        replyTo = decoded.replyTo
+        forwarded = decoded.forwarded
+        card = decoded.card
+        reaction = decoded.reaction
+        status = id.startsWith('pending:')
+          ? this.pending.find((item) => item.txnId === txn)?.failed
+            ? 'failed'
+            : 'pending'
+          : this.received.get(id) || 'sent'
       }
       if (!this.active) return
       if (reaction) {
@@ -1593,6 +1737,41 @@ export class ChatClient {
       throw new Error(
         'Aguarde o envio das mensagens pendentes antes de continuar.',
       )
+    const txnId = this.newId()
+    const createdAt = Date.now()
+    const localId = `pending:${txnId}`
+    const card = options.card ?? extractVotzCard(text)
+    // Aparece na hora, antes de qualquer rede ou criptografia: o relógio da
+    // bolha cobre o resto. Se o envio for recusado, a bolha some e o texto volta.
+    this.messages.set(localId, {
+      id: localId,
+      txnId,
+      text,
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(options.forwarded ? { forwarded: true } : {}),
+      ...(card ? { card } : {}),
+      sender: 'self',
+      createdAt,
+      status: 'pending',
+    })
+    this.render()
+    try {
+      return await this.sendNow(text, options, txnId, createdAt, card)
+    } catch (error) {
+      if (!this.pending.some((item) => item.txnId === txnId)) {
+        this.messages.delete(localId)
+        this.render()
+      }
+      throw error
+    }
+  }
+  private sendNow(
+    text: string,
+    options: ChatSendOptions,
+    txnId: string,
+    createdAt: number,
+    card: ChatCard | undefined,
+  ) {
     return this.serial(async () => {
       // A lista de aparelhos é relida a cada envio, sem cache: um aparelho
       // aprovado há instantes só recebe a chave da sala se entrar na
@@ -1623,7 +1802,6 @@ export class ChatClient {
         this.session.matrixUserId,
       ])
       await this.crypto.pump(this.http)
-      const card = options.card ?? extractVotzCard(text)
       const payload: string | Json =
         options.replyTo || options.forwarded || card
           ? {
@@ -1636,12 +1814,12 @@ export class ChatClient {
           : text
       const content = await this.crypto.encrypt(room.roomId, payload)
       const item: PendingChatMessage = {
-        txnId: this.newId(),
+        txnId,
         conversationId: this.conversationId,
         roomId: room.roomId,
         revision: room.revision,
         content,
-        createdAt: Date.now(),
+        createdAt,
       }
       const next = [...this.pending, item]
       await this.storage.save(this.transport(next))
@@ -1854,16 +2032,20 @@ export class ChatClient {
     }
     this.render()
   }
-  private async readHistory(from?: string) {
-    const history = await this.http(
-      `/${this.conversationId}/chat/messages${from ? `?from=${encodeURIComponent(from)}` : ''}`,
-    )
+  private async readHistory(from?: string, prefetched?: Json | null) {
+    const history: Json =
+      prefetched ??
+      (await this.http(
+        `/${this.conversationId}/chat/messages${from ? `?from=${encodeURIComponent(from)}` : ''}`,
+      ))
     for (const event of history.chunk || [])
       if (typeof event.event_id === 'string')
         this.events.set(event.event_id, event)
     this.update({
+      // Só oferece "mensagens anteriores" quando a página veio cheia: o servidor devolve o
+      // marcador da próxima página mesmo no começo da conversa.
       historyCursor:
-        typeof history.end === 'string' && history.chunk?.length
+        typeof history.end === 'string' && (history.chunk?.length ?? 0) >= HISTORY_PAGE_SIZE
           ? history.end
           : null,
     })

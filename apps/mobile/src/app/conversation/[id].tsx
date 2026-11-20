@@ -10,11 +10,22 @@ import {
   type ConversationPerson,
   type ConversationReportReason,
 } from '@votz/shared-types'
+import Ban from 'lucide-react-native/icons/ban'
+import Bell from 'lucide-react-native/icons/bell'
+import BellOff from 'lucide-react-native/icons/bell-off'
+import CircleX from 'lucide-react-native/icons/circle-x'
+import Flag from 'lucide-react-native/icons/flag'
+import LogOut from 'lucide-react-native/icons/log-out'
+import Pin from 'lucide-react-native/icons/pin'
+import UserPlus from 'lucide-react-native/icons/user-plus'
 import {
   ConversationGate,
+  ConversationHero,
   ConversationNotice,
   ConversationPersonRow,
 } from '../../components/conversation-ui'
+import { OptionSheet, SettingsRow } from '../../components/settings-ui'
+import { theme } from '../../theme'
 import { ConversationPicker } from '../../components/conversation-picker'
 import { FormScroll, Screen, Toolbar } from '../../components/screen'
 import { Button, ErrorText, Field, Heading, Label, State } from '../../components/ui'
@@ -100,7 +111,7 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
     <>
       <Toolbar title="Detalhes da conversa" back />
       <FormScroll contentContainerStyle={{ padding: 0, gap: 0 }}>
-        <ConversationPersonRow
+        <ConversationHero
           group={conversation.kind === 'GROUP'}
           person={other}
           title={conversationTitle(conversation, actorId)}
@@ -113,17 +124,14 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
           }
         />
         <ConversationNotice closed={closed} />
-        <View style={{ padding: 16, gap: 14 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 14 }}>
           <ErrorText
             message={action.isError ? errorMessage(action.error) : undefined}
           />
-          <Heading>
-            {conversation.kind === 'GROUP'
-              ? 'Participantes'
-              : 'Pessoas nesta conversa'}
-          </Heading>
+          {conversation.kind === 'GROUP' && <Heading>Participantes</Heading>}
         </View>
-        {conversation.members.map((member) => (
+        {/* Em conversa de duas pessoas a lista seria só repetir o topo da tela. */}
+        {conversation.kind === 'GROUP' && conversation.members.map((member) => (
           <ConversationPersonRow
             key={member.user.id}
             person={member.user}
@@ -204,143 +212,72 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
           </ConversationPersonRow>
         ))}
         {!closed && (
-          <View style={{ padding: 16, gap: 12 }}>
+          <View>
+            <View style={{ height: 8 }} />
             {conversation.kind === 'GROUP' && admin && (
-              <Button
-                secondary
+              <SettingsRow
+                icon={<UserPlus size={20} color={theme.colors.primary} />}
                 title={inviting ? 'Cancelar convite' : 'Convidar pessoas'}
                 onPress={() => setInviting(!inviting)}
               />
             )}
             {inviting && (
-              <>
+              <View style={{ paddingVertical: 8, gap: 12 }}>
                 <ConversationPicker
                   selected={people}
                   onChange={setPeople}
                   max={20}
                   exclude={conversation.members.map((m) => m.user.id)}
                 />
-                <Button
-                  title="Enviar convites"
-                  loading={action.isPending}
-                  disabled={!people.length}
-                  onPress={() => {
-                    void run(`/${id}/invitations`, {
-                      memberIds: people.map((p) => p.id),
-                    })
-                  }}
-                />
-              </>
+                <View style={{ paddingHorizontal: 16 }}>
+                  <Button
+                    title="Enviar convites"
+                    loading={action.isPending}
+                    disabled={!people.length}
+                    onPress={() => {
+                      void run(`/${id}/invitations`, {
+                        memberIds: people.map((p) => p.id),
+                      })
+                    }}
+                  />
+                </View>
+              </View>
             )}
-            {conversation.kind === 'GROUP' && !owner && (
-              <Button
-                secondary
-                title="Sair do grupo"
-                disabled={action.isPending}
-                onPress={() =>
-                  confirm('Sair deste grupo?', () => {
-                    void run(`/${id}/leave`, undefined, 'POST', true)
-                  })
-                }
-              />
-            )}
-            {conversation.kind === 'GROUP' && owner && (
-              <Button
-                secondary
-                title="Encerrar grupo"
-                disabled={action.isPending}
-                onPress={() =>
-                  Alert.alert(
-                    'Encerrar este grupo?',
-                    'Esta ação não pode ser desfeita.',
-                    [
-                      { text: 'Cancelar', style: 'cancel' },
-                      {
-                        text: 'Encerrar',
-                        style: 'destructive',
-                        onPress: () => {
-                          void run(`/${id}/archive`)
-                        },
-                      },
-                    ],
-                  )
-                }
-              />
-            )}
-            {conversation.kind === 'DIRECT' && other && (
-              <Button
-                secondary
-                title="Bloquear pessoa"
-                disabled={action.isPending}
-                onPress={() =>
-                  confirm(
-                    `Bloquear novas interações com ${other.name}?`,
-                    () => {
-                      void run(`/blocks/${other.id}`, undefined, 'POST', true)
-                    },
-                  )
-                }
-              />
-            )}
-            <Button
-              secondary
+            <SettingsRow
+              icon={<Pin size={20} color={theme.colors.primary} />}
               title={conversation.pinnedAt ? 'Desafixar conversa' : 'Fixar no topo'}
-              disabled={action.isPending}
               onPress={() => {
-                void run(`/${id}/pin`, { pinned: !conversation.pinnedAt }, 'PATCH')
+                if (!action.isPending)
+                  void run(`/${id}/pin`, { pinned: !conversation.pinnedAt }, 'PATCH')
               }}
             />
             {conversationIsMuted(conversation.mutedUntil) ? (
-              <Button
-                secondary
+              <SettingsRow
+                icon={<Bell size={20} color={theme.colors.primary} />}
                 title="Ativar notificações"
-                disabled={action.isPending}
                 onPress={() => {
-                  void run(
-                    `/${id}/mute`,
-                    { duration: 'off' as ConversationMuteDuration },
-                    'PATCH',
-                  )
+                  if (!action.isPending)
+                    void run(
+                      `/${id}/mute`,
+                      { duration: 'off' as ConversationMuteDuration },
+                      'PATCH',
+                    )
                 }}
               />
             ) : (
-              <Button
-                secondary
+              <SettingsRow
+                icon={<BellOff size={20} color={theme.colors.primary} />}
                 title="Silenciar notificações"
-                disabled={action.isPending}
                 onPress={() => {
-                  setShowMute((value) => !value)
+                  setShowMute(true)
                   setShowReport(false)
                 }}
               />
             )}
-            {showMute && (
-              <View style={{ gap: 8 }}>
-                <Label muted>Por quanto tempo silenciar esta conversa?</Label>
-                {(
-                  [
-                    ['8h', '8 horas'],
-                    ['1w', '1 semana'],
-                    ['forever', 'Sempre'],
-                  ] as [ConversationMuteDuration, string][]
-                ).map(([duration, label]) => (
-                  <Button
-                    key={duration}
-                    secondary
-                    title={label}
-                    disabled={action.isPending}
-                    onPress={() => {
-                      setShowMute(false)
-                      void run(`/${id}/mute`, { duration }, 'PATCH')
-                    }}
-                  />
-                ))}
-              </View>
-            )}
-            <Button
-              secondary
+            <SettingsRow
+              icon={<Flag size={20} color={theme.colors.action} />}
               title="Denunciar conversa"
-              disabled={action.isPending}
+              danger
               onPress={() => {
                 setShowReport((value) => !value)
                 setShowMute(false)
@@ -348,7 +285,7 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
               }}
             />
             {showReport && (
-              <View style={{ gap: 10 }}>
+              <View style={{ padding: 16, gap: 10 }}>
                 <Label muted>Motivo da denúncia</Label>
                 {CONVERSATION_REPORT_REASONS.map((option) => (
                   <Button
@@ -388,7 +325,76 @@ function Detail({ id, showDetails }: { id: string; showDetails: boolean }) {
                 />
               </View>
             )}
-            {reportSent && <Label>Denúncia enviada para análise.</Label>}
+            {reportSent && (
+              <View style={{ padding: 16 }}>
+                <Label>Denúncia enviada para análise.</Label>
+              </View>
+            )}
+            {conversation.kind === 'DIRECT' && other && (
+              <SettingsRow
+                icon={<Ban size={20} color={theme.colors.action} />}
+                title="Bloquear pessoa"
+                danger
+                onPress={() =>
+                  confirm(
+                    `Bloquear novas interações com ${other.name}?`,
+                    () => {
+                      void run(`/blocks/${other.id}`, undefined, 'POST', true)
+                    },
+                  )
+                }
+              />
+            )}
+            {conversation.kind === 'GROUP' && !owner && (
+              <SettingsRow
+                icon={<LogOut size={20} color={theme.colors.action} />}
+                title="Sair do grupo"
+                danger
+                onPress={() =>
+                  confirm('Sair deste grupo?', () => {
+                    void run(`/${id}/leave`, undefined, 'POST', true)
+                  })
+                }
+              />
+            )}
+            {conversation.kind === 'GROUP' && owner && (
+              <SettingsRow
+                icon={<CircleX size={20} color={theme.colors.action} />}
+                title="Encerrar grupo"
+                danger
+                onPress={() =>
+                  Alert.alert(
+                    'Encerrar este grupo?',
+                    'Esta ação não pode ser desfeita.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      {
+                        text: 'Encerrar',
+                        style: 'destructive',
+                        onPress: () => {
+                          void run(`/${id}/archive`)
+                        },
+                      },
+                    ],
+                  )
+                }
+              />
+            )}
+            <OptionSheet<ConversationMuteDuration>
+              visible={showMute}
+              title="Silenciar notificações"
+              help="Por quanto tempo silenciar esta conversa?"
+              options={[
+                ['8h', '8 horas'],
+                ['1w', '1 semana'],
+                ['forever', 'Sempre'],
+              ]}
+              value={null}
+              onSelect={(duration) => {
+                void run(`/${id}/mute`, { duration }, 'PATCH')
+              }}
+              onClose={() => setShowMute(false)}
+            />
           </View>
         )}
       </FormScroll>

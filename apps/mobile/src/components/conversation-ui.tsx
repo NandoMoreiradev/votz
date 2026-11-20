@@ -1,6 +1,8 @@
-import type { PropsWithChildren } from 'react'
+import type { PropsWithChildren, ReactNode } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { router } from 'expo-router'
+import BellOff from 'lucide-react-native/icons/bell-off'
+import Pin from 'lucide-react-native/icons/pin'
 import Users from 'lucide-react-native/icons/users'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import { useConversationCapabilities, useConversationScope } from '../hooks/use-conversations'
@@ -49,6 +51,49 @@ export function ConversationGate({ children }: PropsWithChildren) {
     )
   return <>{children}</>
 }
+/** Topo da tela de detalhes: avatar grande, nome e uma linha de apoio, como nos aplicativos de mensagem. */
+export function ConversationHero({
+  person,
+  group,
+  title,
+  subtitle,
+}: {
+  person?: ConversationPerson
+  group?: boolean
+  title: string
+  subtitle?: string
+}) {
+  return (
+    <View style={{ alignItems: 'center', gap: 6, paddingTop: 24, paddingBottom: 12, paddingHorizontal: 24 }}>
+      {group ? (
+        <View
+          style={{
+            width: 96,
+            height: 96,
+            borderRadius: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.colors.soft,
+          }}
+        >
+          <Users size={44} color={theme.colors.primary} />
+        </View>
+      ) : (
+        <Avatar name={person?.name || title} uri={person?.avatarUrl} size={96} />
+      )}
+      <Text
+        style={{ marginTop: 8, fontFamily: theme.fonts.heading, fontSize: 22, color: theme.colors.primary, textAlign: 'center' }}
+      >
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted, textAlign: 'center' }}>
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+  )
+}
 export function ConversationNotice({ closed }: { closed: boolean }) {
   return (
     <View
@@ -67,7 +112,7 @@ export function ConversationNotice({ closed }: { closed: boolean }) {
       >
         {closed
           ? 'Este grupo foi encerrado. Não é possível convidar ou alterar participantes.'
-          : 'Mensagens entre duas pessoas já funcionam. Mensagens em grupo chegam em breve.'}
+          : 'As mensagens desta conversa são protegidas com criptografia de ponta a ponta.'}
       </Text>
     </View>
   )
@@ -79,6 +124,9 @@ export function ConversationPersonRow({
   subtitle,
   meta,
   unread = 0,
+  pinned = false,
+  muted = false,
+  trailing,
   onPress,
   children,
 }: PropsWithChildren<{
@@ -90,6 +138,12 @@ export function ConversationPersonRow({
   meta?: string
   /** Mensagens não lidas: vira um selo e destaca nome e horário. */
   unread?: number
+  /** Conversa fixada no topo: mostra um alfinete. */
+  pinned?: boolean
+  /** Conversa silenciada: mostra o sininho cortado. */
+  muted?: boolean
+  /** Algo à direita da linha (por exemplo, a marca de selecionado). */
+  trailing?: ReactNode
   onPress?: () => void
 }>) {
   const content = (
@@ -97,18 +151,18 @@ export function ConversationPersonRow({
       {group ? (
         <View
           style={{
-            width: 46,
-            height: 46,
-            borderRadius: 23,
+            width: 52,
+            height: 52,
+            borderRadius: 26,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: theme.colors.soft,
           }}
         >
-          <Users size={23} color={theme.colors.primary} />
+          <Users size={26} color={theme.colors.primary} />
         </View>
       ) : (
-        <Avatar name={person?.name || title || 'Conversa'} uri={person?.avatarUrl} size={46} />
+        <Avatar name={person?.name || title || 'Conversa'} uri={person?.avatarUrl} size={52} />
       )}
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
@@ -135,7 +189,7 @@ export function ConversationPersonRow({
             </Text>
           ) : null}
         </View>
-        {(subtitle || unread > 0) && (
+        {(subtitle || unread > 0 || pinned || muted) && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
             <Text
               accessibilityLabel={
@@ -154,6 +208,16 @@ export function ConversationPersonRow({
             >
               {subtitle}
             </Text>
+            {muted && (
+              <View accessible accessibilityLabel="Conversa silenciada">
+                <BellOff size={15} color={theme.colors.muted} />
+              </View>
+            )}
+            {pinned && (
+              <View accessible accessibilityLabel="Conversa fixada">
+                <Pin size={15} color={theme.colors.muted} />
+              </View>
+            )}
             {unread > 0 && (
               <View
                 style={{
@@ -180,25 +244,23 @@ export function ConversationPersonRow({
           </View>
         )}
       </View>
+      {trailing}
     </View>
   )
   return (
-    <View
-      style={{
-        borderBottomWidth: 0.5,
-        borderBottomColor: theme.colors.border,
-        padding: 16,
-        gap: 12,
-      }}
-    >
-      {onPress ? (
-        <Pressable accessibilityRole="button" onPress={onPress}>
-          {content}
-        </Pressable>
-      ) : (
-        content
-      )}
-      {children}
+    <View>
+      <View style={{ paddingVertical: 12, paddingHorizontal: 16, gap: 12 }}>
+        {onPress ? (
+          <Pressable accessibilityRole="button" onPress={onPress}>
+            {content}
+          </Pressable>
+        ) : (
+          content
+        )}
+        {children}
+      </View>
+      {/* Divisória começa depois do avatar, como nos aplicativos de mensagem. */}
+      <View style={{ height: 0.5, marginLeft: 80, backgroundColor: theme.colors.border }} />
     </View>
   )
 }
