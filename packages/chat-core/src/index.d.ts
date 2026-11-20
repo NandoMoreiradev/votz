@@ -78,6 +78,85 @@ export interface ChatVerification {
 }
 export type ChatMediaKind = 'image' | 'video' | 'audio' | 'file';
 export declare const CHAT_MEDIA_LIMITS: Record<ChatMediaKind, number>;
+/**
+ * Qualidade dos envios de foto e vídeo. O servidor não vê o conteúdo das conversas e por isso não consegue
+ * comprimir: a redução acontece no aparelho, ANTES de cifrar. Teto de 1080p / 2560 px: nenhum perfil manda 4K.
+ */
+export type ChatMediaQuality = 'normal' | 'high';
+export interface ChatQualityProfile {
+    /** Maior lado da foto, em pixels. */
+    imageMaxEdge: number;
+    /** Qualidade do JPEG (0 a 1). */
+    imageQuality: number;
+    /** Lado menor do vídeo (720 = "720p"), em pixels. */
+    videoMaxShortEdge: number;
+    videoBitrateKbps: number;
+}
+export declare const CHAT_QUALITY_PROFILES: Record<ChatMediaQuality, ChatQualityProfile>;
+export declare const DEFAULT_CHAT_QUALITY: ChatMediaQuality;
+export declare function parseChatQuality(value: unknown): ChatMediaQuality;
+/**
+ * Tamanho final de uma imagem que cabe em `maxEdge` no maior lado, sem esticar a pequena e sem deformar.
+ * `scaled` diz se foi preciso reduzir (se não, o arquivo original já serve).
+ */
+export declare function fitWithin(width: number, height: number, maxEdge: number): {
+    width: number;
+    height: number;
+    scaled: boolean;
+};
+/** Miniatura que viaja dentro da própria mensagem cifrada: aparece na hora, sem baixar o arquivo. */
+export declare const CHAT_THUMB_MAX_EDGE = 128;
+export declare const CHAT_THUMB_MAX_CHARS = 24000;
+/**
+ * Aceita só imagem pequena em base64. A mensagem vem de outra pessoa: nada além de uma figura de
+ * poucos KB (nunca SVG nem endereço de fora) pode ir parar na tela.
+ */
+export declare function safeThumbnail(value: unknown): string | undefined;
+/**
+ * Cache de mídia já baixada, cifrado no aparelho e com limite de espaço. Quem decide o que sai é esta
+ * função (o mais antigo em uso primeiro); cada plataforma só guarda e apaga os arquivos.
+ */
+export interface MediaCacheEntry {
+    id: string;
+    size: number;
+    /** Último uso (ms desde 1970). */
+    lastUsedAt: number;
+}
+export declare const DEFAULT_MEDIA_CACHE_LIMITS: {
+    readonly mobile: number;
+    readonly web: number;
+};
+export declare function planMediaCacheEviction(entries: readonly MediaCacheEntry[], limitBytes: number, incomingBytes: number): {
+    evict: string[];
+    fits: boolean;
+};
+/** Textos da escolha de qualidade e do cache, em português simples. */
+export declare const CHAT_QUALITY_VIEW: {
+    readonly settingTitle: "Qualidade dos envios";
+    readonly settingHelp: "Vale para as fotos e os vídeos que você envia nas conversas.";
+    readonly options: {
+        readonly normal: {
+            readonly label: "Normal";
+            readonly help: "Usa menos espaço e menos internet. Boa para a maioria.";
+        };
+        readonly high: {
+            readonly label: "Alta";
+            readonly help: "Mais detalhe, mas usa mais espaço e mais internet.";
+        };
+    };
+    readonly oneShotLabel: "HD";
+    readonly oneShotOn: "Este envio vai em alta qualidade";
+    readonly oneShotOff: "Enviar este arquivo em alta qualidade";
+    readonly sentOriginalHint: "Para enviar sem nenhuma redução, envie como arquivo.";
+};
+export declare const CHAT_CACHE_VIEW: {
+    readonly title: "Arquivos guardados neste aparelho";
+    readonly help: "Fotos e vídeos que você já abriu ficam guardados aqui, protegidos, para abrir mais rápido e gastar menos internet. Os mais antigos saem sozinhos quando o espaço enche.";
+    readonly clear: "Liberar espaço";
+    readonly cleared: "Pronto. Os arquivos guardados neste aparelho foram apagados.";
+    readonly clearConfirm: "Apagar os arquivos guardados neste aparelho? Eles continuam na nuvem e baixam de novo quando você abrir.";
+    readonly usage: (bytes: number) => string;
+};
 export interface ChatAttachment {
     kind: ChatMediaKind;
     id: string;
@@ -89,6 +168,8 @@ export interface ChatAttachment {
     width?: number;
     height?: number;
     durationMs?: number;
+    /** Miniatura (`data:image/...;base64,`) de poucos KB, dentro do evento cifrado. */
+    thumbnail?: string;
 }
 export interface ChatReplyTo {
     eventId: string;
@@ -282,6 +363,13 @@ export interface ChatViewAttachment {
     sizeLabel: string;
     kindLabel: string;
     secret: string;
+    /** Tamanho em bytes (para o cache de arquivos baixados). */
+    size: number;
+    /** Medidas da foto ou do vídeo: a bolha reserva o espaço certo antes de baixar. */
+    width: number | null;
+    height: number | null;
+    /** Miniatura que já veio na mensagem (`data:image/...`), para mostrar antes de baixar. */
+    thumbnail: string | null;
 }
 export type ChatDeliveryIcon = 'clock' | 'check' | 'checks' | 'checks-read' | 'alert';
 export interface ChatViewMessage {
@@ -660,6 +748,8 @@ export declare class ChatClient {
         width?: number;
         height?: number;
         durationMs?: number;
+        /** Miniatura (`data:image/jpeg;base64,...`) de poucos KB. Se for grande ou inválida, o envio segue sem ela. */
+        thumbnail?: string;
         /** `info.kind` segue junto no envio só para a tela "Gerenciar armazenamento" (foto, vídeo, áudio, arquivo). */
         upload: (ciphertext: Uint8Array, info: {
             kind: ChatMediaKind;

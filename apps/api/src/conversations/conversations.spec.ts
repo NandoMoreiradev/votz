@@ -4,7 +4,7 @@ import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { ConversationsService } from './conversations.service'
 import { ConversationsOutbox } from './conversations.outbox'
-import { RespondConversationDto } from './conversations.dto'
+import { RespondConversationDto, UpdateConversationSettingsDto } from './conversations.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { NotificationsGateway } from '../notifications/notifications.gateway'
 
@@ -132,17 +132,33 @@ describe('ConversationsService: configurações e políticas (Etapa 6)', () => {
     expect(initial.readReceiptsEnabled).toBe(false)
     expect(initial.fontScale).toBe('MEDIUM')
     expect(initial.wallpaper).toBe('DEFAULT')
+    expect(initial.mediaUploadQuality).toBe('NORMAL')
 
     const updated = await service.updateSettings(actor, {
       readReceiptsEnabled: false,
       fontScale: 'LARGE',
       wallpaper: 'SOFT',
       directRequestPolicy: 'NOBODY',
+      mediaUploadQuality: 'HIGH',
     })
+    expect(updated.mediaUploadQuality).toBe('HIGH')
+    // Um nulo solto não vai para o banco nem apaga a escolha.
+    const again = await service.updateSettings(actor, { mediaUploadQuality: null as never })
+    expect(again.mediaUploadQuality).toBe('HIGH')
     expect(updated.fontScale).toBe('LARGE')
     expect(updated.wallpaper).toBe('SOFT')
     expect(updated.directRequestPolicy).toBe('NOBODY')
     expect(clearReceipts).toHaveBeenCalledTimes(1)
+  })
+
+  it('qualidade dos envios só aceita NORMAL ou HIGH (nada de 4K ou valor solto)', async () => {
+    const check = (value: unknown) =>
+      validate(plainToInstance(UpdateConversationSettingsDto, { mediaUploadQuality: value }))
+    expect(await check('NORMAL')).toHaveLength(0)
+    expect(await check('HIGH')).toHaveLength(0)
+    for (const bad of ['4K', 'high', 'ULTRA', '', 1]) expect((await check(bad)).length).toBeGreaterThan(0)
+    // Ausente (ou nulo) é permitido: a configuração é parcial.
+    expect(await validate(plainToInstance(UpdateConversationSettingsDto, {}))).toHaveLength(0)
   })
 
   it('recusa nova solicitação direta quando destinatário configurou directRequestPolicy = NOBODY', async () => {

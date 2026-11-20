@@ -87,6 +87,9 @@ export async function webChatStorage(userId: string) {
  * na redefinição: a próxima abertura recomeça como a primeira vez.
  */
 export async function forgetWebChat(userId: string) {
+  // O cache de arquivos abertos também some (e a cópia em memória dele, para não gravar em banco apagado).
+  const { dropMediaCache } = await import('./chat-media-cache')
+  dropMediaCache(userId)
   const known = (await indexedDB.databases?.()) || []
   const names = known
     .map((database) => database.name)
@@ -94,6 +97,7 @@ export async function forgetWebChat(userId: string) {
       (name): name is string =>
         !!name &&
         (name === `votz-chat-${userId}` ||
+          name === `votz-chat-media-${userId}` ||
           name.startsWith(`votz-keys-${userId}-`)),
     )
   await Promise.all(

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
 import { Page } from './layout'
@@ -11,6 +11,8 @@ import {
   Database,
   DeviceMobile,
   DownloadSimple,
+  HardDrive,
+  Image,
   ImageSquare,
   Prohibit,
   ShieldCheck,
@@ -26,9 +28,13 @@ import {
   type ConversationDirectPolicy,
   type ConversationFontScale,
   type ConversationMediaAutoDownload,
+  type ConversationMediaUploadQuality,
   type ConversationWallpaper,
   type UpdateConversationSettings,
 } from '@votz/shared-types'
+import { CHAT_CACHE_VIEW, CHAT_QUALITY_VIEW, parseChatQuality } from '@votz/chat-core'
+import { useAuthStore } from '../../store/auth.store'
+import { getMediaCache } from '../../lib/chat-media-cache'
 import {
   useConversationSettings,
   useUpdateConversationSettings,
@@ -170,6 +176,72 @@ function Lead({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   )
 }
 
+const TextButton = styled.button`
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 20px;
+  background: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.text};
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+`
+
+/** Quanto espaço os arquivos já abertos ocupam neste navegador, e o botão para liberar. Some se não houver cache. */
+function CachedFilesRow() {
+  const userId = useAuthStore((state) => state.user?.id)
+  const [bytes, setBytes] = useState<number | null>(null)
+  const [available, setAvailable] = useState(true)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (!userId) return
+    let alive = true
+    void getMediaCache(userId).then(async (cache) => {
+      if (!alive) return
+      if (!cache) return setAvailable(false)
+      setBytes(await cache.usage())
+    })
+    return () => {
+      alive = false
+    }
+  }, [userId])
+
+  async function clear() {
+    if (!userId || !window.confirm(CHAT_CACHE_VIEW.clearConfirm)) return
+    const cache = await getMediaCache(userId)
+    await cache?.clear()
+    setBytes(0)
+    setMessage(CHAT_CACHE_VIEW.cleared)
+  }
+
+  if (!userId || !available) return null
+  return (
+    <>
+      <Row>
+        <Lead icon={<HardDrive size={20} />}>
+          <strong>{CHAT_CACHE_VIEW.title}</strong>
+          <Help>
+            {CHAT_CACHE_VIEW.help}
+            {bytes !== null ? ` ${CHAT_CACHE_VIEW.usage(bytes)}` : ''}
+          </Help>
+        </Lead>
+        <TextButton type="button" disabled={!bytes} onClick={() => void clear()}>
+          {CHAT_CACHE_VIEW.clear}
+        </TextButton>
+      </Row>
+      {message && <Note role="status">{message}</Note>}
+    </>
+  )
+}
+
 export function ConversationSettingsView() {
   const query = useConversationSettings()
   const update = useUpdateConversationSettings()
@@ -306,6 +378,25 @@ export function ConversationSettingsView() {
             <option value="NEVER">Nunca (baixar manualmente)</option>
           </Select>
         </Row>
+        <Row>
+          <Lead icon={<Image size={20} />}>
+            <label htmlFor="cfg-upload-quality">{CHAT_QUALITY_VIEW.settingTitle}</label>
+            <Help>
+              {CHAT_QUALITY_VIEW.settingHelp}{' '}
+              {CHAT_QUALITY_VIEW.options[parseChatQuality(settings.mediaUploadQuality)].help}
+            </Help>
+          </Lead>
+          <Select
+            id="cfg-upload-quality"
+            value={settings.mediaUploadQuality}
+            disabled={update.isPending}
+            onChange={(e) => save({ mediaUploadQuality: e.target.value as ConversationMediaUploadQuality })}
+          >
+            <option value="NORMAL">{CHAT_QUALITY_VIEW.options.normal.label}</option>
+            <option value="HIGH">{CHAT_QUALITY_VIEW.options.high.label}</option>
+          </Select>
+        </Row>
+        <CachedFilesRow />
       </Group>
 
       <Group>

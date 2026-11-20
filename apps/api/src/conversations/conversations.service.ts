@@ -621,6 +621,7 @@ export class ConversationsService {
       securityAlertsEnabled: row?.securityAlertsEnabled ?? DEFAULT_CONVERSATION_SETTINGS.securityAlertsEnabled,
       keyBackupEnabled: row?.keyBackupEnabled ?? DEFAULT_CONVERSATION_SETTINGS.keyBackupEnabled,
       mediaAutoDownload: (row?.mediaAutoDownload as ConversationSettings['mediaAutoDownload']) ?? DEFAULT_CONVERSATION_SETTINGS.mediaAutoDownload,
+      mediaUploadQuality: (row?.mediaUploadQuality as ConversationSettings['mediaUploadQuality']) ?? DEFAULT_CONVERSATION_SETTINGS.mediaUploadQuality,
       fontScale: (row?.fontScale as ConversationSettings['fontScale']) ?? DEFAULT_CONVERSATION_SETTINGS.fontScale,
       wallpaper: (row?.wallpaper as ConversationSettings['wallpaper']) ?? DEFAULT_CONVERSATION_SETTINGS.wallpaper,
     }
@@ -668,7 +669,8 @@ export class ConversationsService {
     this.guard(actor)
     const data: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) data[key] = value
+      // null chega como "ausente" na validação, mas as colunas não aceitam nulo: ignora.
+      if (value !== undefined && value !== null) data[key] = value
     }
     return this.db.$transaction(async (tx) => {
       const row = await tx.chatPrivacy.upsert({

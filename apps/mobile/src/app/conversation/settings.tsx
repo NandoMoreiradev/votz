@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { ScrollView, Switch, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Alert, ScrollView, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router'
 import Ban from 'lucide-react-native/icons/ban'
 import Bell from 'lucide-react-native/icons/bell'
 import CheckCheck from 'lucide-react-native/icons/check-check'
 import Clock from 'lucide-react-native/icons/clock'
 import Cloud from 'lucide-react-native/icons/cloud'
+import Database from 'lucide-react-native/icons/database'
 import Download from 'lucide-react-native/icons/download'
 import HardDrive from 'lucide-react-native/icons/hard-drive'
 import Image from 'lucide-react-native/icons/image'
@@ -22,10 +23,12 @@ import {
   type ConversationDirectPolicy,
   type ConversationFontScale,
   type ConversationMediaAutoDownload,
+  type ConversationMediaUploadQuality,
   type ConversationSettings,
   type ConversationWallpaper,
   type UpdateConversationSettings,
 } from '@votz/shared-types'
+import { CHAT_CACHE_VIEW, CHAT_QUALITY_VIEW, parseChatQuality } from '@votz/chat-core'
 import { ConversationGate } from '../../components/conversation-ui'
 import { Screen, Toolbar } from '../../components/screen'
 import { OptionSheet, SettingsRow, SettingsSection } from '../../components/settings-ui'
@@ -35,6 +38,8 @@ import {
   useUpdateConversationSettings,
 } from '../../hooks/use-conversations'
 import { errorMessage } from '../../lib/api'
+import { getNativeMediaCache } from '../../lib/chat-media-cache'
+import { useSession } from '../../lib/session'
 import { theme } from '../../theme'
 
 const AUDIENCE: [ConversationAudience, string][] = [
@@ -61,14 +66,66 @@ const WALLPAPER: [ConversationWallpaper, string][] = [
   ['SOFT', 'Suave'],
   ['PLAIN', 'Liso'],
 ]
+const QUALITY: [ConversationMediaUploadQuality, string][] = [
+  ['NORMAL', CHAT_QUALITY_VIEW.options.normal.label],
+  ['HIGH', CHAT_QUALITY_VIEW.options.high.label],
+]
 const labelOf = <T extends string>(options: [T, string][], value: T) =>
   options.find(([key]) => key === value)?.[1] ?? ''
+
+/** Quanto espaço os arquivos já baixados ocupam neste aparelho, e como liberar. */
+function CachedFilesRow() {
+  const userId = useSession((state) => state.user?.id)
+  const [bytes, setBytes] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!userId) return
+    let alive = true
+    void getNativeMediaCache(userId)
+      .usage()
+      .then((value) => {
+        if (alive) setBytes(value)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [userId])
+
+  if (!userId) return null
+  const clear = () =>
+    Alert.alert(CHAT_CACHE_VIEW.title, CHAT_CACHE_VIEW.clearConfirm, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: CHAT_CACHE_VIEW.clear,
+        style: 'destructive',
+        onPress: () => {
+          void getNativeMediaCache(userId)
+            .clear()
+            .then(() => {
+              setBytes(0)
+              Alert.alert(CHAT_CACHE_VIEW.title, CHAT_CACHE_VIEW.cleared)
+            })
+        },
+      },
+    ])
+  return (
+    <SettingsRow
+      icon={<Database size={ICON} color={theme.colors.primary} />}
+      title={CHAT_CACHE_VIEW.title}
+      subtitle={`${CHAT_CACHE_VIEW.help}${bytes !== null ? ` ${CHAT_CACHE_VIEW.usage(bytes)}` : ''}`}
+      chevron={!!bytes}
+      onPress={bytes ? clear : undefined}
+    />
+  )
+}
 
 type Choice =
   | { key: 'lastSeenVisibility'; title: string; help?: string; options: [ConversationAudience, string][] }
   | { key: 'groupInvitePolicy'; title: string; options: [ConversationAudience, string][] }
   | { key: 'directRequestPolicy'; title: string; options: [ConversationDirectPolicy, string][] }
   | { key: 'mediaAutoDownload'; title: string; options: [ConversationMediaAutoDownload, string][] }
+  | { key: 'mediaUploadQuality'; title: string; help?: string; options: [ConversationMediaUploadQuality, string][] }
   | { key: 'fontScale'; title: string; options: [ConversationFontScale, string][] }
   | { key: 'wallpaper'; title: string; options: [ConversationWallpaper, string][] }
 
@@ -188,6 +245,21 @@ function SettingsContent() {
               setChoice({ key: 'mediaAutoDownload', title: 'Download automático de mídia', options: MEDIA })
             }
           />
+          <SettingsRow
+            icon={<Image size={ICON} color={muted} />}
+            title={CHAT_QUALITY_VIEW.settingTitle}
+            subtitle={`${labelOf(QUALITY, settings.mediaUploadQuality)}. ${CHAT_QUALITY_VIEW.options[parseChatQuality(settings.mediaUploadQuality)].help}`}
+            chevron
+            onPress={() =>
+              setChoice({
+                key: 'mediaUploadQuality',
+                title: CHAT_QUALITY_VIEW.settingTitle,
+                help: CHAT_QUALITY_VIEW.settingHelp,
+                options: QUALITY,
+              })
+            }
+          />
+          <CachedFilesRow />
         </SettingsSection>
 
         <SettingsSection title="Notificações">

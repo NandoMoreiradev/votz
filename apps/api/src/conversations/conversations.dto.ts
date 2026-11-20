@@ -133,6 +133,10 @@ export class UpdateConversationSettingsDto {
   mediaAutoDownload?: 'WIFI_ONLY' | 'ALWAYS' | 'NEVER'
 
   @IsOptional()
+  @IsIn(['NORMAL', 'HIGH'])
+  mediaUploadQuality?: 'NORMAL' | 'HIGH'
+
+  @IsOptional()
   @IsIn(['SMALL', 'MEDIUM', 'LARGE'])
   fontScale?: 'SMALL' | 'MEDIUM' | 'LARGE'
 

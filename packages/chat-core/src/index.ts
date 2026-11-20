@@ -88,6 +88,113 @@ export const CHAT_MEDIA_LIMITS: Record<ChatMediaKind, number> = {
   file: 25 * 1024 * 1024,
   video: 50 * 1024 * 1024,
 }
+/**
+ * Qualidade dos envios de foto e vídeo. O servidor não vê o conteúdo das conversas e por isso não consegue
+ * comprimir: a redução acontece no aparelho, ANTES de cifrar. Teto de 1080p / 2560 px: nenhum perfil manda 4K.
+ */
+export type ChatMediaQuality = 'normal' | 'high'
+export interface ChatQualityProfile {
+  /** Maior lado da foto, em pixels. */
+  imageMaxEdge: number
+  /** Qualidade do JPEG (0 a 1). */
+  imageQuality: number
+  /** Lado menor do vídeo (720 = "720p"), em pixels. */
+  videoMaxShortEdge: number
+  videoBitrateKbps: number
+}
+export const CHAT_QUALITY_PROFILES: Record<ChatMediaQuality, ChatQualityProfile> = {
+  normal: { imageMaxEdge: 1600, imageQuality: 0.75, videoMaxShortEdge: 720, videoBitrateKbps: 2500 },
+  high: { imageMaxEdge: 2560, imageQuality: 0.85, videoMaxShortEdge: 1080, videoBitrateKbps: 5000 },
+}
+export const DEFAULT_CHAT_QUALITY: ChatMediaQuality = 'normal'
+export function parseChatQuality(value: unknown): ChatMediaQuality {
+  return value === 'high' || value === 'HIGH' ? 'high' : 'normal'
+}
+/**
+ * Tamanho final de uma imagem que cabe em `maxEdge` no maior lado, sem esticar a pequena e sem deformar.
+ * `scaled` diz se foi preciso reduzir (se não, o arquivo original já serve).
+ */
+export function fitWithin(
+  width: number,
+  height: number,
+  maxEdge: number,
+): { width: number; height: number; scaled: boolean } {
+  if (!(width > 0) || !(height > 0)) return { width: 0, height: 0, scaled: false }
+  const longest = Math.max(width, height)
+  if (longest <= maxEdge) return { width: Math.round(width), height: Math.round(height), scaled: false }
+  const ratio = maxEdge / longest
+  return {
+    width: Math.max(1, Math.round(width * ratio)),
+    height: Math.max(1, Math.round(height * ratio)),
+    scaled: true,
+  }
+}
+/** Miniatura que viaja dentro da própria mensagem cifrada: aparece na hora, sem baixar o arquivo. */
+export const CHAT_THUMB_MAX_EDGE = 128
+export const CHAT_THUMB_MAX_CHARS = 24_000
+const THUMB_PATTERN = /^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/]+={0,2}$/
+/**
+ * Aceita só imagem pequena em base64. A mensagem vem de outra pessoa: nada além de uma figura de
+ * poucos KB (nunca SVG nem endereço de fora) pode ir parar na tela.
+ */
+export function safeThumbnail(value: unknown): string | undefined {
+  return typeof value === 'string' &&
+    value.length <= CHAT_THUMB_MAX_CHARS &&
+    THUMB_PATTERN.test(value)
+    ? value
+    : undefined
+}
+/**
+ * Cache de mídia já baixada, cifrado no aparelho e com limite de espaço. Quem decide o que sai é esta
+ * função (o mais antigo em uso primeiro); cada plataforma só guarda e apaga os arquivos.
+ */
+export interface MediaCacheEntry {
+  id: string
+  size: number
+  /** Último uso (ms desde 1970). */
+  lastUsedAt: number
+}
+export const DEFAULT_MEDIA_CACHE_LIMITS = {
+  mobile: 500 * 1024 * 1024,
+  web: 200 * 1024 * 1024,
+} as const
+export function planMediaCacheEviction(
+  entries: readonly MediaCacheEntry[],
+  limitBytes: number,
+  incomingBytes: number,
+): { evict: string[]; fits: boolean } {
+  // Arquivo maior que o limite inteiro nunca entra: não vale apagar tudo por causa dele.
+  if (incomingBytes > limitBytes) return { evict: [], fits: false }
+  let used = entries.reduce((sum, entry) => sum + entry.size, 0)
+  const evict: string[] = []
+  for (const entry of [...entries].sort((a, b) => a.lastUsedAt - b.lastUsedAt)) {
+    if (used + incomingBytes <= limitBytes) break
+    evict.push(entry.id)
+    used -= entry.size
+  }
+  return { evict, fits: true }
+}
+/** Textos da escolha de qualidade e do cache, em português simples. */
+export const CHAT_QUALITY_VIEW = {
+  settingTitle: 'Qualidade dos envios',
+  settingHelp: 'Vale para as fotos e os vídeos que você envia nas conversas.',
+  options: {
+    normal: { label: 'Normal', help: 'Usa menos espaço e menos internet. Boa para a maioria.' },
+    high: { label: 'Alta', help: 'Mais detalhe, mas usa mais espaço e mais internet.' },
+  },
+  oneShotLabel: 'HD',
+  oneShotOn: 'Este envio vai em alta qualidade',
+  oneShotOff: 'Enviar este arquivo em alta qualidade',
+  sentOriginalHint: 'Para enviar sem nenhuma redução, envie como arquivo.',
+} as const
+export const CHAT_CACHE_VIEW = {
+  title: 'Arquivos guardados neste aparelho',
+  help: 'Fotos e vídeos que você já abriu ficam guardados aqui, protegidos, para abrir mais rápido e gastar menos internet. Os mais antigos saem sozinhos quando o espaço enche.',
+  clear: 'Liberar espaço',
+  cleared: 'Pronto. Os arquivos guardados neste aparelho foram apagados.',
+  clearConfirm: 'Apagar os arquivos guardados neste aparelho? Eles continuam na nuvem e baixam de novo quando você abrir.',
+  usage: (bytes: number) => `Usando ${formatStorageSize(bytes)} neste aparelho.`,
+} as const
 export interface ChatAttachment {
   kind: ChatMediaKind
   id: string
@@ -99,6 +206,8 @@ export interface ChatAttachment {
   width?: number
   height?: number
   durationMs?: number
+  /** Miniatura (`data:image/...;base64,`) de poucos KB, dentro do evento cifrado. */
+  thumbnail?: string
 }
 export interface ChatReplyTo {
   eventId: string
@@ -192,6 +301,7 @@ export function buildMediaEventContent(
       ...(attachment.width ? { w: attachment.width } : {}),
       ...(attachment.height ? { h: attachment.height } : {}),
       ...(attachment.durationMs ? { duration: attachment.durationMs } : {}),
+      ...(attachment.thumbnail ? { 'br.votz.thumbnail': attachment.thumbnail } : {}),
     },
     file: {
       ...parsed,
@@ -302,6 +412,9 @@ export function parseDecryptedMessage(content: Json): ChatDecryptedContent {
         : mediaKindLabel(kind)
   const body = typeof content.body === 'string' ? content.body.trim().slice(0, 1000) : ''
   const caption = body && body !== name ? body : ''
+  // Só foto e vídeo têm miniatura; qualquer outra coisa nesse campo é descartada.
+  const thumbnail =
+    kind === 'image' || kind === 'video' ? safeThumbnail(info['br.votz.thumbnail']) : undefined
   return {
     text: caption,
     ...(replyTo ? { replyTo } : {}),
@@ -319,6 +432,7 @@ export function parseDecryptedMessage(content: Json): ChatDecryptedContent {
       ...(typeof info.w === 'number' ? { width: info.w } : {}),
       ...(typeof info.h === 'number' ? { height: info.h } : {}),
       ...(typeof info.duration === 'number' ? { durationMs: info.duration } : {}),
+      ...(thumbnail ? { thumbnail } : {}),
     },
   }
 }
@@ -532,6 +646,13 @@ export interface ChatViewAttachment {
   sizeLabel: string
   kindLabel: string
   secret: string
+  /** Tamanho em bytes (para o cache de arquivos baixados). */
+  size: number
+  /** Medidas da foto ou do vídeo: a bolha reserva o espaço certo antes de baixar. */
+  width: number | null
+  height: number | null
+  /** Miniatura que já veio na mensagem (`data:image/...`), para mostrar antes de baixar. */
+  thumbnail: string | null
 }
 export type ChatDeliveryIcon = 'clock' | 'check' | 'checks' | 'checks-read' | 'alert'
 export interface ChatViewMessage {
@@ -773,6 +894,10 @@ export function chatView(
             sizeLabel: formatFileSize(message.attachment.size),
             kindLabel: mediaKindLabel(message.attachment.kind),
             secret: message.attachment.secret,
+            size: message.attachment.size,
+            width: message.attachment.width ?? null,
+            height: message.attachment.height ?? null,
+            thumbnail: message.attachment.thumbnail ?? null,
           }
         : null,
       replyTo: message.replyTo ?? null,
@@ -2130,6 +2255,8 @@ export class ChatClient {
     width?: number
     height?: number
     durationMs?: number
+    /** Miniatura (`data:image/jpeg;base64,...`) de poucos KB. Se for grande ou inválida, o envio segue sem ela. */
+    thumbnail?: string
     /** `info.kind` segue junto no envio só para a tela "Gerenciar armazenamento" (foto, vídeo, áudio, arquivo). */
     upload: (
       ciphertext: Uint8Array,
@@ -2149,6 +2276,9 @@ export class ChatClient {
       throw new Error(
         'Aguarde o envio das mensagens pendentes antes de continuar.',
       )
+    // Miniatura inválida ou grande demais não impede o envio: só vai sem ela.
+    const thumbnail =
+      input.kind === 'image' || input.kind === 'video' ? safeThumbnail(input.thumbnail) : undefined
     return this.serial(async () => {
       await this.refresh(false)
       const room = this.snapshot.room
@@ -2182,6 +2312,7 @@ export class ChatClient {
         ...(input.width ? { width: input.width } : {}),
         ...(input.height ? { height: input.height } : {}),
         ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+        ...(thumbnail ? { thumbnail } : {}),
       }
       const peers = this.roomPeers(room)
       await this.crypto.share(room.roomId, [

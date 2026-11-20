@@ -24,6 +24,7 @@ import {
   WarningCircle,
 } from '@phosphor-icons/react'
 import {
+  CHAT_QUALITY_VIEW,
   ChatClient,
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
@@ -33,7 +34,9 @@ import {
   chatSeedState,
   chatView,
   mediaKindFromMime,
+  parseChatQuality,
   type ChatDeliveryIcon,
+  type ChatMediaQuality,
   type ChatPendingLink,
   type ChatReplyTo,
   type ChatState,
@@ -58,6 +61,8 @@ import { api } from '../../lib/api'
 import { DeviceLinkQr } from './DeviceLinkQr'
 import { useTypingUsers } from '../../lib/chat-typing'
 import { webChatStorage } from '../../lib/chat-storage'
+import { getMediaCache } from '../../lib/chat-media-cache'
+import { prepareChatImage, readVideoPreview, type PreparedMedia } from '../../lib/chat-media-prepare'
 import {
   WebChatLockBusyError,
   acquireWebChatSession,
@@ -626,12 +631,22 @@ const failureMessage = (failure: unknown) =>
   (failure as Error).message ||
   'Não foi possível abrir suas conversas. Tente de novo.'
 
+/** Botão "HD" do envio: liga a alta qualidade só para o próximo arquivo. */
+const HdToggle = styled(InlineIcon)<{ $on: boolean }>`
+  width: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: ${({ theme, $on }) => ($on ? theme.colors.action : theme.colors.muted)};
+`
+
 function AttachmentView({
   attachment,
   conversationId,
   client,
   session,
   auto,
+  userId,
 }: {
   attachment: ChatViewAttachment
   conversationId: string
@@ -639,6 +654,7 @@ function AttachmentView({
   session: WebChatSession | null
   /** Baixar sozinho (configuração "Download automático de mídia"). */
   auto: boolean
+  userId: string
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -660,8 +676,14 @@ function AttachmentView({
     setLoading(true)
     setFailed('')
     try {
-      const cipher = await session.downloadMedia(conversationId, attachment.id)
-      const plain = await client.decryptMedia(cipher, attachment.secret)
+      // Já aberto antes neste navegador: sai do cache cifrado, sem baixar nem decifrar de novo.
+      const cache = await getMediaCache(userId)
+      let plain = (await cache?.get(attachment.id)) ?? null
+      if (!plain) {
+        const cipher = await session.downloadMedia(conversationId, attachment.id)
+        plain = await client.decryptMedia(cipher, attachment.secret)
+        void cache?.put(attachment.id, plain)
+      }
       const copy = new Uint8Array(plain.byteLength)
       copy.set(plain)
       const objectUrl = URL.createObjectURL(
@@ -703,10 +725,22 @@ function AttachmentView({
         <img src={url} alt={attachment.name} />
       )}
       {url && attachment.kind === 'video' && (
-        <video controls src={url} />
+        <video controls src={url} poster={attachment.thumbnail ?? undefined} />
       )}
       {url && attachment.kind === 'audio' && (
         <audio controls src={url} />
+      )}
+      {/* Antes de baixar: a miniatura que veio na mensagem, no tamanho certo, sem a bolha pular depois. */}
+      {!url && attachment.thumbnail && (attachment.kind === 'image' || attachment.kind === 'video') && (
+        <img
+          src={attachment.thumbnail}
+          alt=""
+          aria-hidden="true"
+          style={{
+            width: 'min(100%, 280px)',
+            aspectRatio: attachment.width && attachment.height ? `${attachment.width} / ${attachment.height}` : undefined,
+          }}
+        />
       )}
       {(!url || attachment.kind === 'file') && (
         <Button
@@ -809,6 +843,9 @@ export function ChatPane({
   const [password, setPassword] = useState('')
   const [attempt, setAttempt] = useState(0)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  // Alta qualidade só no próximo envio (botão HD); sem ela vale o que a pessoa escolheu nas Configurações.
+  const [qualityOverride, setQualityOverride] = useState<ChatMediaQuality | null>(null)
+  const quality: ChatMediaQuality = qualityOverride ?? parseChatQuality(chatSettings.mediaUploadQuality)
   const client = useRef<ChatClient | null>(null)
   const sessionRef = useRef<WebChatSession | null>(null)
   const uploadAbort = useRef<AbortController | null>(null)
@@ -1111,13 +1148,27 @@ export function ChatPane({
     setUploadProgress(0)
     setError('')
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer())
       const kind = mediaKindFromMime(file.type)
+      // O servidor não vê o conteúdo das conversas e não consegue comprimir: a foto é reduzida aqui, antes de
+      // cifrar. O vídeo ainda vai como veio, com miniatura e medidas. O resto vai sem mudança.
+      const prepared: PreparedMedia =
+        kind === 'image'
+          ? await prepareChatImage(file, quality)
+          : {
+              bytes: new Uint8Array(await file.arrayBuffer()),
+              mimeType: file.type || 'application/octet-stream',
+              name: file.name,
+              ...(kind === 'video' ? await readVideoPreview(file) : {}),
+            }
       await client.current.sendMedia({
         kind,
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        bytes,
+        name: prepared.name,
+        mimeType: prepared.mimeType,
+        bytes: prepared.bytes,
+        width: prepared.width,
+        height: prepared.height,
+        durationMs: prepared.durationMs,
+        thumbnail: prepared.thumbnail,
         caption: draft.trim() || undefined,
         upload: (ciphertext, info) =>
           sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
@@ -1127,6 +1178,7 @@ export function ChatPane({
           }),
       })
       setDraft('')
+      setQualityOverride(null)
     } catch (failure) {
       if (!controller.signal.aborted)
         setError(failureMessage(failure))
@@ -1660,6 +1712,7 @@ export function ChatPane({
                     client={client.current}
                     session={sessionRef.current}
                     auto={autoMedia}
+                    userId={userId}
                   />
                 )}
                 {message.body && <span>{message.body}</span>}
@@ -1871,6 +1924,17 @@ export function ChatPane({
                 rows={1}
                 disabled={!view.canType || recording}
               />
+              <HdToggle
+                type="button"
+                $on={quality === 'high'}
+                aria-pressed={quality === 'high'}
+                aria-label={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
+                title={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
+                disabled={!view.canWrite || busy || recording}
+                onClick={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
+              >
+                {CHAT_QUALITY_VIEW.oneShotLabel}
+              </HdToggle>
               <InlineIcon
                 type="button"
                 aria-label="Anexar arquivo"

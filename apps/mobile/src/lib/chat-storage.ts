@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 import { uuid } from 'expo-modules-core'
 import { Platform } from 'react-native'
+import { dropNativeMediaCache } from './chat-media-cache'
 import type {
   ChatCredentials,
   ChatStorage,
@@ -90,6 +91,8 @@ export async function nativeChatStorage(userId: string) {
  * credenciais novas, como se fosse a primeira vez.
  */
 export async function forgetNativeChat(userId: string) {
+  // Os arquivos guardados ficam em chat/<usuário>/media: somem junto com a pasta abaixo.
+  dropNativeMediaCache(userId)
   await SecureStore.deleteItemAsync(`votz.chat.${userId}`)
   try {
     const { Directory, Paths } = await import('expo-file-system')

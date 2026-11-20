@@ -1205,3 +1205,143 @@ test('backup and history transfer helpers use plain language and call the right 
     'POST /chat/history-transfer/t1/consume',
   ])
 })
+
+test('quality: profiles cap at 1080p / 2560 px, sizes never grow and never distort', () => {
+  const {
+    CHAT_QUALITY_PROFILES,
+    DEFAULT_CHAT_QUALITY,
+    parseChatQuality,
+    fitWithin,
+  } = require('../src/index.js')
+  assert.equal(DEFAULT_CHAT_QUALITY, 'normal')
+  assert.equal(CHAT_QUALITY_PROFILES.normal.imageMaxEdge, 1600)
+  assert.equal(CHAT_QUALITY_PROFILES.normal.videoMaxShortEdge, 720)
+  assert.equal(CHAT_QUALITY_PROFILES.high.imageMaxEdge, 2560)
+  assert.equal(CHAT_QUALITY_PROFILES.high.videoMaxShortEdge, 1080)
+  for (const profile of Object.values(CHAT_QUALITY_PROFILES)) {
+    assert.ok(profile.imageMaxEdge <= 2560, 'no profile goes above 2560 px')
+    assert.ok(profile.videoMaxShortEdge <= 1080, 'no profile sends 4K')
+  }
+  assert.equal(parseChatQuality('HIGH'), 'high')
+  assert.equal(parseChatQuality('high'), 'high')
+  assert.equal(parseChatQuality('NORMAL'), 'normal')
+  assert.equal(parseChatQuality(undefined), 'normal')
+  assert.equal(parseChatQuality('4k'), 'normal')
+
+  assert.deepEqual(fitWithin(4000, 3000, 1600), { width: 1600, height: 1200, scaled: true })
+  assert.deepEqual(fitWithin(3000, 4000, 1600), { width: 1200, height: 1600, scaled: true })
+  assert.deepEqual(fitWithin(800, 600, 1600), { width: 800, height: 600, scaled: false })
+  assert.deepEqual(fitWithin(1600, 900, 1600), { width: 1600, height: 900, scaled: false })
+  assert.deepEqual(fitWithin(100000, 1, 1600), { width: 1600, height: 1, scaled: true })
+  assert.deepEqual(fitWithin(0, 10, 1600), { width: 0, height: 0, scaled: false })
+})
+
+test('thumbnail: only a small base64 picture is accepted, never a link, an svg or a script', () => {
+  const { safeThumbnail, CHAT_THUMB_MAX_CHARS } = require('../src/index.js')
+  const ok = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ=='
+  assert.equal(safeThumbnail(ok), ok)
+  assert.equal(safeThumbnail('data:image/webp;base64,UklGRg=='), 'data:image/webp;base64,UklGRg==')
+  for (const bad of [
+    'data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg==',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'https://evil.example/pixel.jpg',
+    'javascript:alert(1)',
+    'data:image/jpeg;base64,abc" onerror="alert(1)',
+    'data:image/jpeg;base64,',
+    'data:image/jpeg,raw',
+    `data:image/jpeg;base64,${'A'.repeat(CHAT_THUMB_MAX_CHARS)}`,
+    42,
+    null,
+    undefined,
+    { toString: () => ok },
+  ])
+    assert.equal(safeThumbnail(bad), undefined, String(bad).slice(0, 40))
+})
+
+test('thumbnail: travels inside the encrypted event and comes out on the other side', () => {
+  const { buildMediaEventContent, parseDecryptedMessage } = require('../src/index.js')
+  const secret = JSON.stringify({
+    v: 'v2',
+    key: { kty: 'oct', alg: 'A256CTR', k: 'abc', ext: true, key_ops: ['encrypt', 'decrypt'] },
+    iv: 'iv',
+    hashes: { sha256: 'hash' },
+  })
+  const thumb = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ=='
+  const attachment = (kind, extra = {}) => ({
+    kind,
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'foto.jpg',
+    mimeType: 'image/jpeg',
+    size: 1234,
+    secret,
+    width: 1600,
+    height: 1200,
+    ...extra,
+  })
+
+  const sent = buildMediaEventContent(attachment('image', { thumbnail: thumb }))
+  assert.equal(sent.info['br.votz.thumbnail'], thumb)
+  const received = parseDecryptedMessage(sent)
+  assert.equal(received.attachment.thumbnail, thumb)
+  assert.equal(received.attachment.width, 1600)
+  assert.equal(received.attachment.height, 1200)
+
+  // Sem miniatura, nada aparece.
+  assert.equal(parseDecryptedMessage(buildMediaEventContent(attachment('image'))).attachment.thumbnail, undefined)
+  // Miniatura maliciosa vinda de fora é descartada, e a mensagem continua válida.
+  const hostile = buildMediaEventContent(attachment('image'))
+  hostile.info['br.votz.thumbnail'] = 'data:image/svg+xml;base64,PHN2Zz4='
+  const parsed = parseDecryptedMessage(hostile)
+  assert.equal(parsed.attachment.thumbnail, undefined)
+  assert.equal(parsed.attachment.id, '11111111-1111-4111-8111-111111111111')
+  // Áudio e arquivo não têm miniatura, mesmo que o campo venha preenchido.
+  for (const kind of ['audio', 'file']) {
+    const content = buildMediaEventContent(attachment(kind, { thumbnail: thumb, mimeType: 'application/octet-stream' }))
+    assert.equal(parseDecryptedMessage(content).attachment.thumbnail, undefined, kind)
+  }
+})
+
+test('media cache: the least recently used files leave first, only as many as needed', () => {
+  const { planMediaCacheEviction, DEFAULT_MEDIA_CACHE_LIMITS } = require('../src/index.js')
+  const MB = 1024 * 1024
+  const entries = [
+    { id: 'recente', size: 100 * MB, lastUsedAt: 3000 },
+    { id: 'antigo', size: 200 * MB, lastUsedAt: 1000 },
+    { id: 'meio', size: 150 * MB, lastUsedAt: 2000 },
+  ]
+  assert.deepEqual(planMediaCacheEviction(entries, 500 * MB, 40 * MB), { evict: [], fits: true })
+  assert.deepEqual(planMediaCacheEviction(entries, 500 * MB, 100 * MB), { evict: ['antigo'], fits: true })
+  assert.deepEqual(planMediaCacheEviction(entries, 500 * MB, 250 * MB), { evict: ['antigo'], fits: true })
+  assert.deepEqual(planMediaCacheEviction(entries, 500 * MB, 300 * MB), { evict: ['antigo', 'meio'], fits: true })
+  assert.deepEqual(planMediaCacheEviction([], 500 * MB, 10 * MB), { evict: [], fits: true })
+  // Maior que o limite inteiro: não entra e não apaga nada à toa.
+  assert.deepEqual(planMediaCacheEviction(entries, 500 * MB, 600 * MB), { evict: [], fits: false })
+  // Não altera a lista recebida.
+  assert.equal(entries[0].id, 'recente')
+  assert.equal(DEFAULT_MEDIA_CACHE_LIMITS.mobile, 500 * MB)
+  assert.ok(DEFAULT_MEDIA_CACHE_LIMITS.web < DEFAULT_MEDIA_CACHE_LIMITS.mobile)
+})
+
+test('quality and cache texts are plain Portuguese, with no technical jargon', () => {
+  const { CHAT_QUALITY_VIEW, CHAT_CACHE_VIEW } = require('../src/index.js')
+  const texts = [
+    CHAT_QUALITY_VIEW.settingTitle,
+    CHAT_QUALITY_VIEW.settingHelp,
+    CHAT_QUALITY_VIEW.options.normal.label,
+    CHAT_QUALITY_VIEW.options.normal.help,
+    CHAT_QUALITY_VIEW.options.high.label,
+    CHAT_QUALITY_VIEW.options.high.help,
+    CHAT_QUALITY_VIEW.oneShotOn,
+    CHAT_QUALITY_VIEW.oneShotOff,
+    CHAT_QUALITY_VIEW.sentOriginalHint,
+    CHAT_CACHE_VIEW.title,
+    CHAT_CACHE_VIEW.help,
+    CHAT_CACHE_VIEW.clear,
+    CHAT_CACHE_VIEW.cleared,
+    CHAT_CACHE_VIEW.clearConfirm,
+    CHAT_CACHE_VIEW.usage(150 * 1024 * 1024),
+  ].join(' ')
+  for (const word of ['cache', 'criptograf', 'bitrate', 'codec', 'jpeg', 'h.264', 'indexeddb', 'bucket', 'megolm', 'matrix', 'pixel', 'resolução'])
+    assert.equal(texts.toLowerCase().includes(word), false, word)
+  assert.equal(CHAT_CACHE_VIEW.usage(150 * 1024 * 1024), 'Usando 150,0 MB neste aparelho.')
+})

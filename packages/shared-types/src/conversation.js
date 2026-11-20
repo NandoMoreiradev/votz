@@ -21,6 +21,7 @@ exports.DEFAULT_CONVERSATION_SETTINGS = {
     securityAlertsEnabled: true,
     keyBackupEnabled: false,
     mediaAutoDownload: 'WIFI_ONLY',
+    mediaUploadQuality: 'NORMAL',
     fontScale: 'MEDIUM',
     wallpaper: 'DEFAULT',
 };

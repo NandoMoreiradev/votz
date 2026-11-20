@@ -1,6 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChatClient = exports.STORAGE_KIND_LABEL = exports.CHAT_BACKUP_TEXT = exports.CHAT_BACKUP_MIN_PASSWORD = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.ChatClient = exports.STORAGE_KIND_LABEL = exports.CHAT_BACKUP_TEXT = exports.CHAT_BACKUP_MIN_PASSWORD = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_CACHE_VIEW = exports.CHAT_QUALITY_VIEW = exports.DEFAULT_MEDIA_CACHE_LIMITS = exports.CHAT_THUMB_MAX_CHARS = exports.CHAT_THUMB_MAX_EDGE = exports.DEFAULT_CHAT_QUALITY = exports.CHAT_QUALITY_PROFILES = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.parseChatQuality = parseChatQuality;
+exports.fitWithin = fitWithin;
+exports.safeThumbnail = safeThumbnail;
+exports.planMediaCacheEviction = planMediaCacheEviction;
 exports.extractVotzCard = extractVotzCard;
 exports.mediaKindFromMime = mediaKindFromMime;
 exports.mediaKindLabel = mediaKindLabel;
@@ -30,6 +34,85 @@ exports.CHAT_MEDIA_LIMITS = {
     audio: 25 * 1024 * 1024,
     file: 25 * 1024 * 1024,
     video: 50 * 1024 * 1024,
+};
+exports.CHAT_QUALITY_PROFILES = {
+    normal: { imageMaxEdge: 1600, imageQuality: 0.75, videoMaxShortEdge: 720, videoBitrateKbps: 2500 },
+    high: { imageMaxEdge: 2560, imageQuality: 0.85, videoMaxShortEdge: 1080, videoBitrateKbps: 5000 },
+};
+exports.DEFAULT_CHAT_QUALITY = 'normal';
+function parseChatQuality(value) {
+    return value === 'high' || value === 'HIGH' ? 'high' : 'normal';
+}
+/**
+ * Tamanho final de uma imagem que cabe em `maxEdge` no maior lado, sem esticar a pequena e sem deformar.
+ * `scaled` diz se foi preciso reduzir (se não, o arquivo original já serve).
+ */
+function fitWithin(width, height, maxEdge) {
+    if (!(width > 0) || !(height > 0))
+        return { width: 0, height: 0, scaled: false };
+    const longest = Math.max(width, height);
+    if (longest <= maxEdge)
+        return { width: Math.round(width), height: Math.round(height), scaled: false };
+    const ratio = maxEdge / longest;
+    return {
+        width: Math.max(1, Math.round(width * ratio)),
+        height: Math.max(1, Math.round(height * ratio)),
+        scaled: true,
+    };
+}
+/** Miniatura que viaja dentro da própria mensagem cifrada: aparece na hora, sem baixar o arquivo. */
+exports.CHAT_THUMB_MAX_EDGE = 128;
+exports.CHAT_THUMB_MAX_CHARS = 24_000;
+const THUMB_PATTERN = /^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+/**
+ * Aceita só imagem pequena em base64. A mensagem vem de outra pessoa: nada além de uma figura de
+ * poucos KB (nunca SVG nem endereço de fora) pode ir parar na tela.
+ */
+function safeThumbnail(value) {
+    return typeof value === 'string' &&
+        value.length <= exports.CHAT_THUMB_MAX_CHARS &&
+        THUMB_PATTERN.test(value)
+        ? value
+        : undefined;
+}
+exports.DEFAULT_MEDIA_CACHE_LIMITS = {
+    mobile: 500 * 1024 * 1024,
+    web: 200 * 1024 * 1024,
+};
+function planMediaCacheEviction(entries, limitBytes, incomingBytes) {
+    // Arquivo maior que o limite inteiro nunca entra: não vale apagar tudo por causa dele.
+    if (incomingBytes > limitBytes)
+        return { evict: [], fits: false };
+    let used = entries.reduce((sum, entry) => sum + entry.size, 0);
+    const evict = [];
+    for (const entry of [...entries].sort((a, b) => a.lastUsedAt - b.lastUsedAt)) {
+        if (used + incomingBytes <= limitBytes)
+            break;
+        evict.push(entry.id);
+        used -= entry.size;
+    }
+    return { evict, fits: true };
+}
+/** Textos da escolha de qualidade e do cache, em português simples. */
+exports.CHAT_QUALITY_VIEW = {
+    settingTitle: 'Qualidade dos envios',
+    settingHelp: 'Vale para as fotos e os vídeos que você envia nas conversas.',
+    options: {
+        normal: { label: 'Normal', help: 'Usa menos espaço e menos internet. Boa para a maioria.' },
+        high: { label: 'Alta', help: 'Mais detalhe, mas usa mais espaço e mais internet.' },
+    },
+    oneShotLabel: 'HD',
+    oneShotOn: 'Este envio vai em alta qualidade',
+    oneShotOff: 'Enviar este arquivo em alta qualidade',
+    sentOriginalHint: 'Para enviar sem nenhuma redução, envie como arquivo.',
+};
+exports.CHAT_CACHE_VIEW = {
+    title: 'Arquivos guardados neste aparelho',
+    help: 'Fotos e vídeos que você já abriu ficam guardados aqui, protegidos, para abrir mais rápido e gastar menos internet. Os mais antigos saem sozinhos quando o espaço enche.',
+    clear: 'Liberar espaço',
+    cleared: 'Pronto. Os arquivos guardados neste aparelho foram apagados.',
+    clearConfirm: 'Apagar os arquivos guardados neste aparelho? Eles continuam na nuvem e baixam de novo quando você abrir.',
+    usage: (bytes) => `Usando ${formatStorageSize(bytes)} neste aparelho.`,
 };
 exports.QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '🙏'];
 /** Detecta link interno de publicação ou relato do Votz para exibir cartão na bolha. */
@@ -90,6 +173,7 @@ function buildMediaEventContent(attachment, caption) {
             ...(attachment.width ? { w: attachment.width } : {}),
             ...(attachment.height ? { h: attachment.height } : {}),
             ...(attachment.durationMs ? { duration: attachment.durationMs } : {}),
+            ...(attachment.thumbnail ? { 'br.votz.thumbnail': attachment.thumbnail } : {}),
         },
         file: {
             ...parsed,
@@ -192,6 +276,8 @@ function parseDecryptedMessage(content) {
             : mediaKindLabel(kind);
     const body = typeof content.body === 'string' ? content.body.trim().slice(0, 1000) : '';
     const caption = body && body !== name ? body : '';
+    // Só foto e vídeo têm miniatura; qualquer outra coisa nesse campo é descartada.
+    const thumbnail = kind === 'image' || kind === 'video' ? safeThumbnail(info['br.votz.thumbnail']) : undefined;
     return {
         text: caption,
         ...(replyTo ? { replyTo } : {}),
@@ -208,6 +294,7 @@ function parseDecryptedMessage(content) {
             ...(typeof info.w === 'number' ? { width: info.w } : {}),
             ...(typeof info.h === 'number' ? { height: info.h } : {}),
             ...(typeof info.duration === 'number' ? { durationMs: info.duration } : {}),
+            ...(thumbnail ? { thumbnail } : {}),
         },
     };
 }
@@ -427,6 +514,10 @@ function chatView(state, peerName, verified = state?.verification?.state === 'do
                     sizeLabel: formatFileSize(message.attachment.size),
                     kindLabel: mediaKindLabel(message.attachment.kind),
                     secret: message.attachment.secret,
+                    size: message.attachment.size,
+                    width: message.attachment.width ?? null,
+                    height: message.attachment.height ?? null,
+                    thumbnail: message.attachment.thumbnail ?? null,
                 }
                 : null,
             replyTo: message.replyTo ?? null,
@@ -1635,6 +1726,8 @@ class ChatClient {
             throw new Error('O envio de anexos ainda não está disponível neste aparelho.');
         if (this.pending.length >= 100)
             throw new Error('Aguarde o envio das mensagens pendentes antes de continuar.');
+        // Miniatura inválida ou grande demais não impede o envio: só vai sem ela.
+        const thumbnail = input.kind === 'image' || input.kind === 'video' ? safeThumbnail(input.thumbnail) : undefined;
         return this.serial(async () => {
             await this.refresh(false);
             const room = this.snapshot.room;
@@ -1662,6 +1755,7 @@ class ChatClient {
                 ...(input.width ? { width: input.width } : {}),
                 ...(input.height ? { height: input.height } : {}),
                 ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+                ...(thumbnail ? { thumbnail } : {}),
             };
             const peers = this.roomPeers(room);
             await this.crypto.share(room.roomId, [

@@ -41,6 +41,8 @@ export interface ConversationSummary {
 export type ConversationAudience = 'EVERYONE' | 'CONTACTS' | 'NOBODY';
 export type ConversationDirectPolicy = 'EVERYONE' | 'NOBODY';
 export type ConversationMediaAutoDownload = 'WIFI_ONLY' | 'ALWAYS' | 'NEVER';
+/** Qualidade das fotos e dos vídeos que a pessoa envia (NORMAL: 1600 px / 720p; HIGH: 2560 px / 1080p). */
+export type ConversationMediaUploadQuality = 'NORMAL' | 'HIGH';
 export type ConversationFontScale = 'SMALL' | 'MEDIUM' | 'LARGE';
 export type ConversationWallpaper = 'DEFAULT' | 'SOFT' | 'PLAIN';
 export interface ConversationSettings {
@@ -54,6 +56,7 @@ export interface ConversationSettings {
     securityAlertsEnabled: boolean;
     keyBackupEnabled: boolean;
     mediaAutoDownload: ConversationMediaAutoDownload;
+    mediaUploadQuality: ConversationMediaUploadQuality;
     fontScale: ConversationFontScale;
     wallpaper: ConversationWallpaper;
 }

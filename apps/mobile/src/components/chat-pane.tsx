@@ -33,6 +33,7 @@ import {
   type ConversationSummary,
 } from '@votz/shared-types'
 import {
+  CHAT_QUALITY_VIEW,
   ChatDeviceDisconnectedError,
   ENROLL_WAITING,
   QUICK_REACTIONS,
@@ -41,7 +42,9 @@ import {
   chatSeedState,
   chatView,
   mediaKindFromMime,
+  parseChatQuality,
   type ChatClient,
+  type ChatMediaQuality,
   type ChatPendingLink,
   type ChatReplyTo,
   type ChatState,
@@ -62,6 +65,8 @@ import {
   uploadNativeChatMedia,
 } from '../lib/chat-runtime'
 import { api, ApiError } from '../lib/api'
+import { getNativeMediaCache } from '../lib/chat-media-cache'
+import { imageManipulatorAvailable, prepareChatImage } from '../lib/chat-media-prepare'
 import { useTypingUsers } from '../lib/chat-typing'
 import { useSession } from '../lib/session'
 import { ChatHeader } from './chat-header'
@@ -117,12 +122,27 @@ function NativeAttachmentView({
     setLoading(true)
     setFailed('')
     try {
-      const cipher = await downloadNativeChatMedia(
-        userId,
-        conversationId,
-        attachment.id,
-      )
-      const plain = await runtime.decryptMedia(cipher, attachment.secret)
+      // Já baixado antes: sai do disco (guardado cifrado), sem gastar internet de novo.
+      const cache = getNativeMediaCache(userId)
+      let plain: Uint8Array | null = null
+      const stored = await cache.get(attachment.id)
+      if (stored) {
+        try {
+          plain = await runtime.decryptMedia(stored, attachment.secret)
+        } catch {
+          // Arquivo guardado estragado: descarta e baixa de novo.
+          await cache.remove(attachment.id)
+        }
+      }
+      if (!plain) {
+        const cipher = await downloadNativeChatMedia(
+          userId,
+          conversationId,
+          attachment.id,
+        )
+        plain = await runtime.decryptMedia(cipher, attachment.secret)
+        void cache.put(attachment.id, cipher)
+      }
       if (attachment.kind === 'image')
         setDataUri(
           `data:${attachment.mimeType || 'image/jpeg'};base64,${bytesToBase64(plain)}`,
@@ -152,6 +172,21 @@ function NativeAttachmentView({
           style={styles.mediaImage}
         />
       ) : (
+        <>
+          {/* Antes de baixar: a miniatura que veio na mensagem, no tamanho certo, sem a bolha pular depois. */}
+          {!!attachment.thumbnail && (attachment.kind === 'image' || attachment.kind === 'video') && (
+            <Image
+              source={{ uri: attachment.thumbnail }}
+              accessible={false}
+              contentFit="cover"
+              style={[
+                styles.mediaThumb,
+                attachment.width && attachment.height
+                  ? { aspectRatio: attachment.width / attachment.height }
+                  : { height: 180 },
+              ]}
+            />
+          )}
         <Pressable
           accessibilityRole="button"
           disabled={loading}
@@ -166,6 +201,7 @@ function NativeAttachmentView({
               : `${attachment.kindLabel}: ${attachment.name} (${attachment.sizeLabel})`}
           </Text>
         </Pressable>
+        </>
       )}
       {!!failed && <Text style={styles.mediaError}>{failed}</Text>}
     </View>
@@ -447,6 +483,9 @@ export function ChatPane({
   const [password, setPassword] = useState('')
   const [runtime, setRuntime] = useState<ChatClient | null>(null)
   const [uploading, setUploading] = useState(false)
+  // Alta qualidade só no próximo envio (botão HD); sem ela vale o que a pessoa escolheu nas Configurações.
+  const [qualityOverride, setQualityOverride] = useState<ChatMediaQuality | null>(null)
+  const quality: ChatMediaQuality = qualityOverride ?? parseChatQuality(chatSettings.mediaUploadQuality)
   const uploadAbort = useRef<AbortController | null>(null)
   const runtimeRef = useRef<ChatClient | null>(null)
   const onVisible = useCallback(
@@ -678,14 +717,24 @@ export function ChatPane({
   }
   async function attachMedia(fromCamera = false) {
     if (!runtime || busy) return
+    // Com o módulo de imagem (versão nova do app) a foto é reduzida aqui e o seletor não precisa recomprimir;
+    // sem ele, mantém o comportamento de antes (JPEG a 85%).
+    const reducible = imageManipulatorAvailable()
+    const photoQuality = reducible ? 1 : 0.85
+    // No iPhone o vídeo já sai reduzido pelo próprio sistema; no Android ainda vai como veio.
+    const videoExportPreset =
+      quality === 'high'
+        ? ImagePicker.VideoExportPreset.H264_1920x1080
+        : ImagePicker.VideoExportPreset.H264_1280x720
     const result = fromCamera
       ? await ImagePicker.launchCameraAsync({
           mediaTypes: ['images'],
-          quality: 0.85,
+          quality: photoQuality,
         })
       : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images', 'videos'],
-          quality: 0.85,
+          quality: photoQuality,
+          videoExportPreset,
         })
     const asset = result.canceled ? null : result.assets[0]
     if (!asset) return
@@ -695,21 +744,40 @@ export function ChatPane({
     setUploading(true)
     setError('')
     try {
-      const { File } = await import('expo-file-system')
-      const bytes = await new File(asset.uri).bytes()
       const mimeType =
         asset.mimeType ||
         (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
       const kind = mediaKindFromMime(mimeType)
+      let uri = asset.uri
+      let width = asset.width
+      let height = asset.height
+      let sentMime = mimeType
+      let name = asset.fileName || (kind === 'video' ? 'video.mp4' : 'foto.jpg')
+      let thumbnail: string | undefined
+      if (kind === 'image') {
+        // O servidor não vê o conteúdo e não consegue comprimir: a foto é reduzida aqui, antes de cifrar.
+        const prepared = await prepareChatImage({ uri, width, height }, quality)
+        if (prepared) {
+          uri = prepared.uri
+          width = prepared.width
+          height = prepared.height
+          sentMime = prepared.mimeType
+          thumbnail = prepared.thumbnail
+          name = `${name.replace(/\.[^./\\]+$/, '') || 'foto'}.jpg`
+        }
+      }
+      const { File } = await import('expo-file-system')
+      const bytes = await new File(uri).bytes()
       await runtime.sendMedia({
         kind,
-        name: asset.fileName || (kind === 'video' ? 'video.mp4' : 'foto.jpg'),
-        mimeType,
+        name,
+        mimeType: sentMime,
         bytes,
         caption: draft.trim() || undefined,
-        width: asset.width,
-        height: asset.height,
+        width,
+        height,
         durationMs: asset.duration ?? undefined,
+        thumbnail,
         upload: (ciphertext, info) =>
           uploadNativeChatMedia(
             userId,
@@ -720,6 +788,7 @@ export function ChatPane({
           ),
       })
       setDraft('')
+      setQualityOverride(null)
     } catch (failure) {
       if (!controller.signal.aborted)
         setError((failure as Error).message || chatError(failure))
@@ -1090,6 +1159,23 @@ export function ChatPane({
               </View>
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{ selected: quality === 'high' }}
+                accessibilityLabel={quality === 'high' ? CHAT_QUALITY_VIEW.oneShotOn : CHAT_QUALITY_VIEW.oneShotOff}
+                disabled={!view.canWrite || busy}
+                onPress={() => setQualityOverride(quality === 'high' ? 'normal' : 'high')}
+                style={[styles.inlineIcon, (!view.canWrite || busy) && { opacity: 0.4 }]}
+              >
+                <Text
+                  style={[
+                    styles.hdText,
+                    { color: quality === 'high' ? theme.colors.action : theme.colors.muted },
+                  ]}
+                >
+                  {CHAT_QUALITY_VIEW.oneShotLabel}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
                 accessibilityLabel="Anexar foto ou vídeo"
                 disabled={!view.canWrite || busy}
                 onPress={() => {
@@ -1362,6 +1448,16 @@ const styles = StyleSheet.create({
   },
   mediaBox: {
     gap: 4,
+  },
+  mediaThumb: {
+    width: 220,
+    borderRadius: 8,
+    backgroundColor: theme.colors.soft,
+  },
+  hdText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 12,
+    letterSpacing: 0.3,
   },
   mediaImage: {
     width: 220,

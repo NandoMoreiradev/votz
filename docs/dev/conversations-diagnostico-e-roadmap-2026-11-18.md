@@ -10,7 +10,7 @@ Estado atualizado em **20/11/2026, de madrugada** (último commit `b8ca0bf`; **t
 
 ### 1. O que está pronto e verificado
 
-- Texto individual e em grupo, mídia cifrada (90 dias), responder/reagir/encaminhar/copiar, digitando, silenciar, fixar, buscar, denunciar, cartões do Votz, configurações de conversas, aparelhos conectados, bloqueios. Web e celular.
+- Texto individual e em grupo, mídia cifrada (cota de 2 GB por pessoa, sem prazo; ver seção 7), responder/reagir/encaminhar/copiar, digitando, silenciar, fixar, buscar, denunciar, cartões do Votz, configurações de conversas, aparelhos conectados, bloqueios. Web e celular.
 - **Agilidade** (medida no Android físico e no Chromium): bolha enviada em ~0,17 s (antes 1,1 s), reabrir conversa recente em ~0,2 s, primeira abertura ~2,5 s (antes ~9 s), recebimento entre navegadores em ~1 s. Envio otimista, decifragem em cache e em paralelo, abertura em paralelo e cache de conversa só na memória (decisão aprovada, ver abaixo).
 - **Layout estilo WhatsApp** no celular e no web, com tokens do tema (`chatBackground`, `bubbleOwn`, `bubblePeer`). O web ocupa a tela inteira, com escala de espaço e telas de apoio em cartões, no padrão do resto do Votz Web (ver "Quarta rodada").
 - Testes que passam (ver cada rodada): `chat-core` 39/39; `tsc` limpo no web e no celular; Chromium real `chat-experience`, `chat-group`, `chat-list`, `chat-settings`, `chat-devices` e `conversations`.
@@ -27,7 +27,7 @@ Estado atualizado em **20/11/2026, de madrugada** (último commit `b8ca0bf`; **t
 
 ### 3. Decisões do dono do produto
 
-- **Aprovadas:** chamadas adiadas (19/11); retenção de anexos em 90 dias; transferência de histórico e backup cifrado empurrados para depois; **cache de conversa só na memória** (últimas 80 mensagens de até 8 conversas, apagado ao ir para segundo plano, sair da conta ou trocar de usuário; aprovado em 19/11); ele faz os commits.
+- **Aprovadas:** chamadas adiadas (19/11); retenção de anexos: **cota por pessoa (2 GB), sem apagar sozinho** (20/11, substitui os 90 dias; ver seção 7); transferência de histórico e backup cifrado empurrados para depois; **cache de conversa só na memória** (últimas 80 mensagens de até 8 conversas, apagado ao ir para segundo plano, sair da conta ou trocar de usuário; aprovado em 19/11); ele faz os commits.
 - **Em aberto:** prévia sempre visível (exige guardar texto cifrado em disco) e senha opcional do navegador em Configurações.
 - **Regras de trabalho:** web e celular sempre juntos; nenhum jargão técnico para o cidadão (um teste automático garante); mudanças no modelo de segurança só com aval; declarar o que foi e o que não foi verificado; atualizar este documento a cada entrega.
 
@@ -56,6 +56,17 @@ Estado atualizado em **20/11/2026, de madrugada** (último commit `b8ca0bf`; **t
 - O app de desenvolvimento mostra tela vermelha para módulo nativo ausente mesmo dentro de `try/catch`; conferir antes com `requireOptionalNativeModule` do `expo`.
 - Uma configuração com `.check()` do Playwright falha porque a marcação confirma ~100 ms depois do clique; usar `click()` e esperar.
 
+### 7. Mídia: armazenamento, qualidade e cache (20/11/2026)
+
+Decisões do dono do produto: nada de Google Drive/iCloud (tudo na nossa nuvem), celular leve, custo previsível, servidor sem ver o conteúdo.
+
+- **Cota, não prazo.** Cada pessoa tem 2 GB de anexos enviados (`CHAT_MEDIA_QUOTA_MB`, e espaço extra por pessoa em `chat_storage`, liberado pelo admin em `PATCH /admin/users/:id/chat-storage`). Sem espaço, o envio é recusado (HTTP 507, `CHAT_STORAGE_FULL`) e **nada é apagado sozinho**. Tela "Gerenciar armazenamento" (web `/conversas/armazenamento`, celular `conversation/storage`): lista o que a pessoa enviou, apaga em lote (some para todos da conversa). "Aumentar espaço" aparece como "Em breve" (não há cobrança ainda). O servidor guarda só o **tipo grosso** do anexo (`chat_attachments.kind`), com aval do dono.
+- **Qualidade dos envios.** Normal (padrão: foto 1600 px, vídeo 720p) e Alta (foto 2560 px, vídeo 1080p); teto sem 4K; sem redução = enviar como arquivo. Configuração `mediaUploadQuality` (NORMAL/HIGH, sincronizada) + botão **HD** só para o próximo envio, no web e no celular. A redução acontece no aparelho, **antes de cifrar** (o servidor não comprime). Web: foto reduzida por canvas (sem EXIF/GPS) e miniatura; vídeo ainda vai como veio, com miniatura e medidas. Celular: foto reduzida por `expo-image-manipulator` (**módulo nativo novo: só vale depois da próxima build do EAS**; sem ele o app segue como antes, JPEG a 85%); no iPhone o seletor já reduz o vídeo (`videoExportPreset`, nunca testado); **vídeo no Android e miniatura de vídeo no celular ainda não existem** (precisam de biblioteca nativa e teste em aparelho).
+- **Miniatura dentro da mensagem.** Até 128 px, no campo `br.votz.thumbnail` do evento (já cifrado), validada com rigor ao receber (`safeThumbnail`: só `data:image` pequena). A bolha reserva o tamanho certo e mostra a miniatura antes de baixar.
+- **Cache de arquivos abertos, cifrado e com limite** (`planMediaCacheEviction` no chat-core decide o que sai: o mais tempo sem uso). Web: IndexedDB, AES-GCM com chave derivada do `storeSecret` (mesma proteção das chaves das conversas; navegador sem esse segredo fica sem cache), 200 MB. Celular: guarda o arquivo **já cifrado** (a chave só existe na mensagem, que fica na memória), 500 MB, em `documentos/chat/<usuário>/media`. "Liberar espaço" nas Configurações dos dois; sai junto ao desconectar o aparelho. O texto continua só na memória (decisão de 19/11 mantida); o cache é só de arquivos.
+- **Verificado:** testes de unidade (API 219, chat-core 47, celular 36), `tsc` limpo; web (preparação da foto, GIF, PNG, vídeo, cache, "nada em claro no disco") em Chromium de verdade com um teste isolado. **Não verificado:** o fluxo completo no app (enviar foto entre dois navegadores, celular físico, iOS) — rodar `chat-media.browser.cjs` e testar no Android com a build nova.
+- **Falta:** vídeo reduzido no celular e no web (biblioteca nativa / WebCodecs), miniatura de vídeo no celular, aviso de 80% do espaço dentro da conversa, cobrança do "Aumentar espaço".
+
 ## Estado em 18/11/2026
 
 Base sólida, mas a entrega funcional é só **texto em conversa individual**.
@@ -69,7 +80,7 @@ Base sólida, mas a entrega funcional é só **texto em conversa individual**.
 | Enviada, entregue, lida (leitura opcional) | Pronto | Pronto | Pronto |
 | Fila offline durável, reenvio sem duplicar | Pronto | Pronto | Pronto |
 | Texto em grupo | Pronto | Pronto | Pronto (validado no Android físico) |
-| Imagem, vídeo, áudio, arquivo | Pronto (bucket privado, retenção 90 dias) | Pronto (imagem/vídeo/áudio/arquivo E2EE) | Parcial (imagem/vídeo via galeria + decifração Matrix v2 validada no Android físico; nota de voz e seletor de documentos pendentes de libs Expo + build EAS) |
+| Imagem, vídeo, áudio, arquivo | Pronto (bucket privado, cota de 2 GB por pessoa) | Pronto (imagem/vídeo/áudio/arquivo E2EE) | Parcial (imagem/vídeo via galeria + decifração Matrix v2 validada no Android físico; nota de voz e seletor de documentos pendentes de libs Expo + build EAS) |
 | Chamada de voz e de vídeo | Ausente | Ausente | Ausente |
 | Responder, reagir, encaminhar | Ausente | Ausente | Ausente |
 | Prévia e não lidas na lista | Ausente | Ausente | Ausente |
