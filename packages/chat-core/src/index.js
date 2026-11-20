@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChatClient = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
+exports.ChatClient = exports.STORAGE_KIND_LABEL = exports.ChatDeviceDisconnectedError = exports.chatPreviews = exports.chatTranscripts = exports.RESET_WARNING = exports.ENROLL_WAITING = exports.QUICK_REACTIONS = exports.CHAT_MEDIA_LIMITS = void 0;
 exports.extractVotzCard = extractVotzCard;
 exports.mediaKindFromMime = mediaKindFromMime;
 exports.mediaKindLabel = mediaKindLabel;
@@ -13,7 +13,14 @@ exports.composerPlaceholder = composerPlaceholder;
 exports.chatError = chatError;
 exports.chatView = chatView;
 exports.deviceRequestText = deviceRequestText;
+exports.formatLinkCode = formatLinkCode;
+exports.formatDeviceLinkQr = formatDeviceLinkQr;
+exports.parseDeviceLinkQr = parseDeviceLinkQr;
 exports.chatDevicesApi = chatDevicesApi;
+exports.chatStorageApi = chatStorageApi;
+exports.formatStorageSize = formatStorageSize;
+exports.chatStorageView = chatStorageView;
+exports.chatStorageDeleteConfirm = chatStorageDeleteConfirm;
 exports.enrollDevice = enrollDevice;
 exports.chatSeedState = chatSeedState;
 exports.CHAT_MEDIA_LIMITS = {
@@ -510,12 +517,56 @@ function deviceRequestText(link, names = {
         deny: 'Negar',
     };
 }
+/** Formata o código de 6 dígitos para leitura fácil (ex.: "482 910"). */
+function formatLinkCode(code) {
+    const digits = code.replace(/\D/g, '');
+    return digits.length === 6 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : code;
+}
+/** Monta o conteúdo do código QR de conexão entre aparelhos. */
+function formatDeviceLinkQr(pending) {
+    const digits = pending.code.replace(/\D/g, '');
+    const query = pending.id
+        ? `code=${encodeURIComponent(digits)}&id=${encodeURIComponent(pending.id)}`
+        : `code=${encodeURIComponent(digits)}`;
+    return `votz://chat-link?${query}`;
+}
+/** Lê um código QR de conexão ou um código numérico de 6 dígitos digitado pela pessoa. */
+function parseDeviceLinkQr(raw) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed)
+        return null;
+    if (trimmed.toLowerCase().startsWith('votz://chat-link')) {
+        const queryIndex = trimmed.indexOf('?');
+        if (queryIndex < 0)
+            return null;
+        const params = new URLSearchParams(trimmed.slice(queryIndex + 1));
+        const code = (params.get('code') || '').replace(/\D/g, '');
+        if (!/^\d{6}$/.test(code))
+            return null;
+        const id = params.get('id')?.trim();
+        return id && /^[0-9a-f-]{36}$/i.test(id) ? { code, linkId: id } : { code };
+    }
+    const digits = trimmed.replace(/\D/g, '');
+    if (/^\d{6}$/.test(digits))
+        return { code: digits };
+    return null;
+}
 /** Tela de quem espera a permissão de outro aparelho. */
 exports.ENROLL_WAITING = {
     title: 'Permita no seu outro aparelho',
     text: 'Abra o Votz em outro aparelho seu e permita este acesso. Confira se o código é o mesmo:',
+    qrHint: 'Ou aponte a câmera do celular em Aparelhos conectados para ler o código QR.',
+    historyNote: 'Suas novas mensagens vão aparecer nos dois aparelhos. Conversas anteriores continuam salvas no outro aparelho.',
     note: 'O pedido vale por 10 minutos.',
     lost: 'Não tenho mais acesso aos outros aparelhos',
+    bannerTitle: 'Conecte este aparelho às suas conversas',
+    bannerText: 'Você já usa mensagens em outro aparelho. Libere este acesso para enviar e receber por aqui.',
+    bannerAction: 'Conectar agora',
+    bannerDismiss: 'Agora não',
+    enterCodeTitle: 'Conectar outro aparelho',
+    enterCodeHint: 'Digite os 6 dígitos mostrados na tela do novo aparelho ou leia o código QR.',
+    enterCodeAction: 'Permitir aparelho',
+    scanQrAction: 'Ler código QR',
 };
 /** Aviso antes de redefinir quando não há mais nenhum aparelho antigo. */
 exports.RESET_WARNING = {
@@ -604,12 +655,75 @@ exports.ChatDeviceDisconnectedError = ChatDeviceDisconnectedError;
 function chatDevicesApi(http) {
     return {
         list: () => http('/chat/devices'),
+        status: () => http('/chat/devices/status'),
         decide: (linkId, approve) => http(`/chat/device-links/${encodeURIComponent(linkId)}`, 'POST', {
             approve,
+        }),
+        approveByCode: (code, linkId) => http('/chat/device-links/approve-code', 'POST', {
+            code,
+            ...(linkId ? { linkId } : {}),
         }),
         revoke: (deviceId) => http(`/chat/devices/${encodeURIComponent(deviceId)}`, 'DELETE'),
     };
 }
+/**
+ * "Gerenciar armazenamento": lista e apaga os arquivos que a própria pessoa enviou. Como a lista de
+ * aparelhos, não precisa do motor criptográfico, só das credenciais deste aparelho no `http`.
+ */
+function chatStorageApi(http) {
+    return {
+        list: (options = {}) => {
+            const query = [
+                options.sort ? `sort=${options.sort}` : '',
+                options.skip ? `skip=${Math.trunc(options.skip)}` : '',
+                options.take ? `take=${Math.trunc(options.take)}` : '',
+            ].filter(Boolean);
+            return http(`/chat/storage${query.length ? `?${query.join('&')}` : ''}`);
+        },
+        remove: (ids) => http('/chat/storage', 'DELETE', { ids }),
+    };
+}
+/** Tamanho em linguagem de gente: KB, MB ou GB, com vírgula. */
+function formatStorageSize(bytes) {
+    const value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+    if (value < 1024 * 1024 * 1024)
+        return formatFileSize(value);
+    return `${(value / (1024 * 1024 * 1024)).toFixed(1).replace('.', ',')} GB`;
+}
+/** Textos da tela "Gerenciar armazenamento", em português simples. */
+function chatStorageView(usage) {
+    const limit = Math.max(usage.limitBytes, 1);
+    const full = usage.usedBytes >= limit;
+    const level = full
+        ? 'full'
+        : usage.nearLimit
+            ? 'near'
+            : 'ok';
+    return {
+        level,
+        percent: Math.min(100, Math.round((usage.usedBytes / limit) * 100)),
+        summary: `Você usou ${formatStorageSize(usage.usedBytes)} de ${formatStorageSize(limit)}.`,
+        hint: {
+            ok: '',
+            near: 'Seu espaço está quase cheio. Apague o que você não usa mais para continuar enviando.',
+            full: 'Seu espaço acabou. Apague arquivos para voltar a enviar fotos, vídeos e documentos.',
+        }[level],
+        help: 'Aqui aparecem os arquivos que você enviou nas conversas. Os que outras pessoas enviaram ficam no espaço delas.',
+        empty: 'Você ainda não enviou nenhum arquivo.',
+        upgrade: { label: 'Aumentar espaço', soon: 'Em breve' },
+    };
+}
+/** Pergunta antes de apagar: avisa que o arquivo some para todos da conversa. */
+function chatStorageDeleteConfirm(count) {
+    const what = count === 1 ? 'Apagar este arquivo?' : `Apagar estes ${count} arquivos?`;
+    return `${what} Ele some para todos da conversa. A mensagem continua lá, mas o arquivo não abre mais. Isso não pode ser desfeito.`;
+}
+exports.STORAGE_KIND_LABEL = {
+    IMAGE: 'Foto',
+    VIDEO: 'Vídeo',
+    AUDIO: 'Áudio',
+    FILE: 'Arquivo',
+};
 /**
  * Ativa este aparelho. O primeiro da conta entra direto; os demais ficam
  * aguardando a aprovação de um aparelho já ativo e mostram o código ao usuário.
@@ -638,7 +752,11 @@ async function enrollDevice(enroll, options) {
             const { status: _status, ...session } = result;
             return session;
         }
-        options.onPending({ code: result.code, expiresAt: result.expiresAt });
+        options.onPending({
+            ...(result.id ? { id: result.id } : {}),
+            code: result.code,
+            expiresAt: result.expiresAt,
+        });
         await sleep(options.intervalMs ?? 4000);
     }
 }
@@ -1469,7 +1587,7 @@ class ChatClient {
     }
     /**
      * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
-     * antes do upload. O servidor só armazena bytes opacos por 90 dias.
+     * antes do upload. O servidor só armazena bytes opacos, dentro da cota de quem envia.
      */
     async sendMedia(input) {
         if (!input.bytes.length)
@@ -1495,7 +1613,9 @@ class ChatClient {
             if (!this.hasTrustedPeer(room))
                 throw new Error('A segurança desta conversa mudou. Confira o aviso antes de enviar.');
             const sealed = await this.crypto.encryptAttachment(input.bytes);
-            const uploaded = await input.upload(sealed.ciphertext);
+            const uploaded = await input.upload(sealed.ciphertext, {
+                kind: input.kind,
+            });
             const attachment = {
                 kind: input.kind,
                 id: uploaded.id,

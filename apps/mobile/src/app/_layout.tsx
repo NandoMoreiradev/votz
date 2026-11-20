@@ -13,6 +13,7 @@ import { queryClient } from '../lib/query-client'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
 import { ConversationsLive } from '../hooks/use-conversations'
+import { DeviceLinkPrompt } from '../components/device-link-prompt'
 import { subscribeChatPushOpen } from '../lib/chat-push'
 
 void SplashScreen.preventAutoHideAsync()
@@ -38,6 +39,7 @@ export default function RootLayout() {
   if ((!loaded && !fontError) || !ready) return null
   return <SafeAreaProvider><QueryClientProvider client={queryClient}>
     <ConversationsLive />
+    <DeviceLinkPrompt />
     <StatusBar style="dark" />
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

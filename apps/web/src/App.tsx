@@ -21,6 +21,7 @@ import { EntityProfile } from './pages/EntityProfile'
 import { PoliticianProfile } from './pages/PoliticianProfile'
 import { MapView } from './pages/MapView'
 import { EntitiesList } from './pages/EntitiesList'
+import { Search } from './pages/Search'
 import { PoliticiansList } from './pages/PoliticiansList'
 import { GoogleCallback } from './pages/GoogleCallback'
 import { Admin } from './pages/Admin'
@@ -57,6 +58,7 @@ import { Sugestoes } from './pages/Sugestoes'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
 import { OrgReauthGate } from './components/ui/OrgReauthGate'
+import { DeviceLinkPrompt } from './components/conversations/DeviceLinkPrompt'
 import { useSocket } from './hooks/useSocket'
 import { MediaViewerProvider } from './components/ui/MediaViewer'
 
@@ -107,6 +109,7 @@ function App() {
           <BrowserRouter>
             <AuthInit />
             <OrgReauthGate />
+            <DeviceLinkPrompt />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/publicacoes/:id" element={<PostDetail />} />
@@ -125,6 +128,7 @@ function App() {
               <Route path="/reivindicar/:type/:id" element={<ClaimProfile />} />
               <Route path="/entidade/:id/editar" element={<EntityEdit />} />
               <Route path="/mapa" element={<MapView />} />
+              <Route path="/buscar" element={<Search />} />
               <Route path="/entidades" element={<EntitiesList />} />
               <Route path="/politicos" element={<PoliticiansList />} />
               <Route path="/auth/google/callback" element={<GoogleCallback />} />

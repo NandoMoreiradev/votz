@@ -34,6 +34,7 @@ import {
   chatView,
   mediaKindFromMime,
   type ChatDeliveryIcon,
+  type ChatPendingLink,
   type ChatReplyTo,
   type ChatState,
   type ChatHttp,
@@ -54,6 +55,7 @@ import {
   useConversationSettings,
 } from '../../hooks/useConversations'
 import { api } from '../../lib/api'
+import { DeviceLinkQr } from './DeviceLinkQr'
 import { useTypingUsers } from '../../lib/chat-typing'
 import { webChatStorage } from '../../lib/chat-storage'
 import {
@@ -125,10 +127,11 @@ const ChatAvatar = styled.span`
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: ${({ theme }) => theme.colors.primary};
-  color: ${({ theme }) => theme.colors.white};
+  background: ${({ theme }) => theme.colors.action}14;
+  color: ${({ theme }) => theme.colors.action};
+  font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
-  font-size: 14px;
+  font-size: 17px;
   img {
     width: 100%;
     height: 100%;
@@ -157,7 +160,8 @@ const MetaRow = styled.small`
   align-items: center;
   gap: 3px;
   margin: 8px 0 -3px 12px;
-  font-size: 11px;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 10.5px;
   line-height: 1;
   color: ${({ theme }) => theme.colors.muted};
   white-space: nowrap;
@@ -675,7 +679,7 @@ function AttachmentView({
       const status = (err as { response?: { status?: number } }).response?.status
       setFailed(
         status === 410
-          ? 'Este arquivo expirou após 90 dias.'
+          ? 'Este arquivo não está mais guardado no Votz.'
           : 'Não foi possível abrir este arquivo.',
       )
     } finally {
@@ -799,7 +803,7 @@ export function ChatPane({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [headerMenu, menuMessageId])
-  const [pending, setPending] = useState<{ code: string } | null>(null)
+  const [pending, setPending] = useState<ChatPendingLink | null>(null)
   const [showVerify, setShowVerify] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [password, setPassword] = useState('')
@@ -980,7 +984,7 @@ export function ChatPane({
         signal,
         onPending: (value) => {
           if (signal.aborted) return
-          setPending({ code: value.code })
+          setPending(value)
           setBusy(false)
         },
       })
@@ -1115,10 +1119,11 @@ export function ChatPane({
         mimeType: file.type || 'application/octet-stream',
         bytes,
         caption: draft.trim() || undefined,
-        upload: (ciphertext) =>
+        upload: (ciphertext, info) =>
           sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
             signal: controller.signal,
             onProgress: setUploadProgress,
+            kind: info.kind,
           }),
       })
       setDraft('')
@@ -1178,10 +1183,11 @@ export function ChatPane({
             name: `audio-${Date.now()}.webm`,
             mimeType: blob.type || 'audio/webm',
             bytes,
-            upload: (ciphertext) =>
+            upload: (ciphertext, info) =>
               sessionRef.current!.uploadMedia(conversation.id, ciphertext, {
                 signal: controller.signal,
                 onProgress: setUploadProgress,
+                kind: info.kind,
               }),
           })
         } catch (failure) {
@@ -1247,11 +1253,7 @@ export function ChatPane({
           ) : otherPerson?.avatarUrl ? (
             <img src={otherPerson.avatarUrl} alt="" />
           ) : (
-            title
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((w) => w[0]?.toUpperCase() ?? '')
-              .join('')
+            (title.trim()[0] ?? '').toUpperCase()
           )}
         </ChatAvatar>
         <HeaderIdentity>
@@ -1373,12 +1375,15 @@ export function ChatPane({
         <Card role="status">
           <h2>{ENROLL_WAITING.title}</h2>
           <p>{ENROLL_WAITING.text}</p>
+          <DeviceLinkQr id={pending.id} code={pending.code} />
           <p
             aria-label="Código do pedido"
-            style={{ fontSize: 28, letterSpacing: 3, fontWeight: 700 }}
+            style={{ fontSize: 28, letterSpacing: 4, fontWeight: 700 }}
           >
             {pending.code}
           </p>
+          <p>{ENROLL_WAITING.qrHint}</p>
+          <p>{ENROLL_WAITING.historyNote}</p>
           <p>{ENROLL_WAITING.note}</p>
           {resetting ? (
             <form onSubmit={reset}>

@@ -25,11 +25,14 @@ import { CHAT_MEDIA_MAX_BYTES, ChatService } from './chat.service'
 import {
   ChatPushTokenDto,
   ChatTypingDto,
+  ApproveChatDeviceCodeDto,
   DecideChatDeviceLinkDto,
   ResetChatDevicesDto,
   ChatPrivacyDto,
   ChatReceiptDto,
   ChatReceiptQueryDto,
+  ChatStorageListQueryDto,
+  DeleteChatMediaDto,
   EnrollChatDeviceDto,
   SendChatMessageDto,
 } from './chat.dto'
@@ -68,8 +71,23 @@ export class ChatController {
   reset(@Req() req: Request, @Body() body: ResetChatDevicesDto) {
     return this.service.reset(req.user, body.password)
   }
+  @Get('chat/devices/status')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  deviceStatus(@Req() req: Request) {
+    return this.service.deviceStatus(req.user, this.device(req))
+  }
   @Get('chat/devices') devices(@Req() req: Request) {
     return this.service.devices(req.user, this.device(req))
+  }
+  @Post('chat/device-links/approve-code')
+  @Throttle({ long: { limit: 20, ttl: 60000 } })
+  approveByCode(@Req() req: Request, @Body() body: ApproveChatDeviceCodeDto) {
+    return this.service.approveByCode(
+      req.user,
+      this.device(req),
+      body.code,
+      body.linkId,
+    )
   }
   @Post('chat/device-links/:id') @Throttle({ long: { limit: 20, ttl: 60000 } })
   decideLink(
@@ -193,13 +211,26 @@ export class ChatController {
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file?: { buffer?: Buffer },
+    // Campo de texto "kind" do mesmo multipart: IMAGE, VIDEO, AUDIO ou FILE (só para a tela de espaço).
+    @Body('kind') kind?: string,
   ) {
     return this.service.uploadMedia(
       req.user,
       this.device(req),
       id,
       file?.buffer ?? Buffer.alloc(0),
+      kind,
     )
+  }
+  @Get('chat/storage')
+  @Throttle({ long: { limit: 60, ttl: 60000 } })
+  storage(@Req() req: Request, @Query() query: ChatStorageListQueryDto) {
+    return this.service.listMedia(req.user, this.device(req), query)
+  }
+  @Delete('chat/storage')
+  @Throttle({ long: { limit: 20, ttl: 60000 } })
+  deleteStorage(@Req() req: Request, @Body() body: DeleteChatMediaDto) {
+    return this.service.deleteMedia(req.user, this.device(req), body.ids)
   }
   @Get(':id/chat/media/:attachmentId')
   async downloadMedia(

@@ -32,18 +32,30 @@ async function withDevices<T>(
     store.close()
   }
 }
-export function useChatDevices() {
+export function useChatDeviceStatus() {
+  const scope = useConversationScope()
+  return useQuery({
+    queryKey: [...scope.key, 'chat-device-status'],
+    queryFn: () => withDevices(scope.user!.id, (devices) => devices.status()),
+    enabled: scope.enabled,
+    staleTime: 15_000,
+    retry: false,
+  })
+}
+export function useChatDevices(enabled = true) {
   const scope = useConversationScope()
   return useQuery({
     queryKey: [...scope.key, 'chat-devices'],
     queryFn: () => withDevices(scope.user!.id, (devices) => devices.list()),
-    enabled: scope.enabled,
+    enabled: scope.enabled && enabled,
     retry: false,
     // Pedidos novos aparecem sozinhos; ao falhar, não insiste a cada ciclo.
     refetchInterval: (query) => (query.state.status === 'error' ? false : 5_000),
   })
 }
-export type ChatDeviceAction = { type: 'approve' | 'deny' | 'revoke'; id: string }
+export type ChatDeviceAction =
+  | { type: 'approve' | 'deny' | 'revoke'; id: string }
+  | { type: 'approve-code'; code: string; linkId?: string }
 export function useChatDeviceAction() {
   const scope = useConversationScope()
   const client = useQueryClient()
@@ -52,9 +64,15 @@ export function useChatDeviceAction() {
       withDevices(scope.user!.id, (devices) =>
         action.type === 'revoke'
           ? devices.revoke(action.id)
-          : devices.decide(action.id, action.type === 'approve'),
+          : action.type === 'approve-code'
+            ? devices.approveByCode(action.code, action.linkId)
+            : devices.decide(action.id, action.type === 'approve'),
       ),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: [...scope.key, 'chat-devices'] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: [...scope.key, 'chat-devices'] })
+      void client.invalidateQueries({
+        queryKey: [...scope.key, 'chat-device-status'],
+      })
+    },
   })
 }

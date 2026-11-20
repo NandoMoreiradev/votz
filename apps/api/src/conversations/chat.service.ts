@@ -41,8 +41,23 @@ export const MAX_PENDING_CHAT_LINKS = 3
 export const CHAT_LINK_TTL_MS = 10 * 60 * 1000
 /** HTTP 423: o aparelho existe, mas foi desconectado. Não confundir com 401 (sessão) nem 410 (pedido expirado). */
 export const CHAT_DEVICE_DISCONNECTED = 423
-/** Retenção de anexos cifrados na nuvem (decisão de produto: 90 dias). */
-export const CHAT_MEDIA_RETENTION_DAYS = 90
+/**
+ * Anexos cifrados ficam na nuvem sem prazo fixo. O limite é uma cota por pessoa (quem enviou), em MB,
+ * ajustável por CHAT_MEDIA_QUOTA_MB e, por pessoa, pela tabela ChatStorage (espaço extra liberado pelo admin).
+ * Sem espaço, o envio é recusado (nada é apagado sozinho): a pessoa apaga o que não usa ou aumenta o espaço.
+ */
+export const CHAT_MEDIA_DEFAULT_QUOTA_MB = 2048
+/** A partir desta fração da cota o app avisa a pessoa. */
+export const CHAT_MEDIA_QUOTA_WARN_RATIO = 0.8
+/** HTTP 507: o envio foi recusado porque o espaço de arquivos da pessoa acabou (o corpo traz code CHAT_STORAGE_FULL). */
+export const CHAT_STORAGE_FULL = 507
+/** Quantos anexos a pessoa pode apagar por pedido. */
+export const CHAT_MEDIA_DELETE_BATCH = 100
+const MEDIA_KINDS = ['IMAGE', 'VIDEO', 'AUDIO', 'FILE'] as const
+function normalizeMediaKind(kind: unknown) {
+  const value = typeof kind === 'string' ? kind.toUpperCase() : ''
+  return (MEDIA_KINDS as readonly string[]).includes(value) ? value : 'FILE'
+}
 export const CHAT_MEDIA_MAX_BYTES = 50 * 1024 * 1024
 @Injectable()
 export class ChatService {
@@ -107,9 +122,10 @@ export class ChatService {
       maxDevices: MAX_CHAT_DEVICES,
     }
   }
-  private waiting(link: { code: string; expiresAt: Date }) {
+  private waiting(link: { id: string; code: string; expiresAt: Date }) {
     return {
       status: 'pending_approval' as const,
+      id: link.id,
       code: link.code,
       expiresAt: link.expiresAt.toISOString(),
     }
@@ -149,7 +165,16 @@ export class ChatService {
     this.guard(actor)
     await this.matrix.admin()
     await this.matrix.provision(actor.id)
-    return this.db.$transaction(
+    const emitted: {
+      link: {
+        id: string
+        platform: string
+        label: string | null
+        code: string
+        expiresAt: Date
+      } | null
+    } = { link: null }
+    const outcome = await this.db.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
         const secretHash = this.hash(input.secret)
@@ -201,19 +226,18 @@ export class ChatService {
               'Há pedidos de conexão demais aguardando resposta. Responda ou aguarde expirar.',
               429,
             )
-          return this.waiting(
-            await tx.chatDeviceLink.create({
-              data: {
-                id: input.id,
-                userId: actor.id,
-                platform: input.platform,
-                label: input.label?.trim() || null,
-                secretHash,
-                code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
-                expiresAt: new Date(now.getTime() + CHAT_LINK_TTL_MS),
-              },
-            }),
-          )
+          emitted.link = await tx.chatDeviceLink.create({
+            data: {
+              id: input.id,
+              userId: actor.id,
+              platform: input.platform,
+              label: input.label?.trim() || null,
+              secretHash,
+              code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+              expiresAt: new Date(now.getTime() + CHAT_LINK_TTL_MS),
+            },
+          })
+          return this.waiting(emitted.link)
         }
         if (link.userId !== actor.id || !this.same(link.secretHash, secretHash))
           throw new ConflictException(
@@ -232,6 +256,66 @@ export class ChatService {
       },
       { timeout: 15000 },
     )
+    if (emitted.link) {
+      this.events.emitToUser(actor.id, 'chat:device-link', {
+        id: emitted.link.id,
+        platform: emitted.link.platform,
+        label: emitted.link.label,
+        code: emitted.link.code,
+        expiresAt: emitted.link.expiresAt.toISOString(),
+      })
+    }
+    return outcome
+  }
+  /**
+   * Consulta leve do estado deste aparelho em relação às conversas, sem criar
+   * pedido de vínculo. Serve para mostrar o aviso de conexão após o login ou ao
+   * entrar em Conversas.
+   */
+  async deviceStatus(actor: ConversationActor, headers: DeviceHeaders) {
+    if (!this.matrix.enabled() || actor.ctx || !actor.emailVerified)
+      return { enabled: false, status: 'disabled' as const, activeDevices: 0 }
+    const activeDevices = await this.db.chatDevice.count({
+      where: { userId: actor.id, revokedAt: null },
+    })
+    if (headers.id && headers.secret && headers.secret.length <= 128) {
+      const known = await this.db.chatDevice.findUnique({
+        where: { id: headers.id },
+      })
+      if (
+        known &&
+        known.userId === actor.id &&
+        this.same(known.secretHash, this.hash(headers.secret))
+      ) {
+        if (known.revokedAt)
+          return {
+            enabled: true,
+            status: 'revoked' as const,
+            activeDevices,
+          }
+        const pendingLinks = await this.db.chatDeviceLink.count({
+          where: {
+            userId: actor.id,
+            decidedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        })
+        return {
+          enabled: true,
+          status: 'active' as const,
+          activeDevices,
+          pendingLinks,
+        }
+      }
+    }
+    return {
+      enabled: true,
+      status:
+        activeDevices === 0
+          ? ('first_device' as const)
+          : ('needs_approval' as const),
+      activeDevices,
+    }
   }
   /**
    * Quem perdeu o acesso a todos os aparelhos antigos recomeça do zero:
@@ -322,7 +406,7 @@ export class ChatService {
     approve: boolean,
   ) {
     const device = await this.device(actor, headers)
-    return this.db.$transaction(async (tx) => {
+    const result = await this.db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
       const link = await tx.chatDeviceLink.findUnique({ where: { id: linkId } })
       if (!link || link.userId !== actor.id) throw new NotFoundException()
@@ -338,6 +422,62 @@ export class ChatService {
       })
       return { approved: approve }
     })
+    this.events.emitToUser(actor.id, 'chat:device-link-decided', {
+      id: linkId,
+      approved: approve,
+    })
+    return result
+  }
+  /**
+   * Aprova um pedido de vínculo usando os 6 dígitos exibidos na tela do novo
+   * aparelho (ou lidos via código QR). Exige um aparelho já ativo da conta.
+   */
+  async approveByCode(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    code: string,
+    linkId?: string,
+  ) {
+    const device = await this.device(actor, headers)
+    const clean = code.replace(/\D/g, '')
+    if (!/^\d{6}$/.test(clean))
+      throw new BadRequestException('Digite os 6 dígitos do código.')
+    const match = await this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${actor.id} FOR UPDATE`
+      const pending = await tx.chatDeviceLink.findMany({
+        where: {
+          userId: actor.id,
+          decidedAt: null,
+          expiresAt: { gt: new Date() },
+          ...(linkId ? { id: linkId } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      const found = pending.find((row) => this.same(row.code, clean))
+      if (!found)
+        throw new NotFoundException(
+          'Código não encontrado ou expirado. Confira os 6 dígitos no outro aparelho.',
+        )
+      await tx.chatDeviceLink.update({
+        where: { id: found.id },
+        data: {
+          approved: true,
+          decidedAt: new Date(),
+          decidedByDeviceId: device.id,
+        },
+      })
+      return found
+    })
+    this.events.emitToUser(actor.id, 'chat:device-link-decided', {
+      id: match.id,
+      approved: true,
+    })
+    return {
+      approved: true,
+      id: match.id,
+      label: match.label,
+      platform: match.platform,
+    }
   }
   async revokeDevice(
     actor: ConversationActor,
@@ -1233,15 +1373,59 @@ export class ChatService {
       { timeout: 10000, maxWait: 3000 },
     )
   }
+  /** Espaço liberado para a pessoa: o que o admin definiu para ela ou, sem isso, a cota padrão. */
+  private async mediaQuotaBytes(userId: string) {
+    const own = await this.db.chatStorage.findUnique({
+      where: { userId },
+      select: { quotaMb: true },
+    })
+    const fallback = Number(this.config.get('CHAT_MEDIA_QUOTA_MB'))
+    const mb =
+      own?.quotaMb ??
+      (Number.isFinite(fallback) && fallback > 0 ? fallback : CHAT_MEDIA_DEFAULT_QUOTA_MB)
+    return mb * 1024 * 1024
+  }
+  private async mediaUsage(userId: string) {
+    const [usedBytes, limitBytes] = await Promise.all([
+      this.mediaUsedBytes(userId),
+      this.mediaQuotaBytes(userId),
+    ])
+    return {
+      usedBytes,
+      limitBytes,
+      nearLimit: usedBytes >= limitBytes * CHAT_MEDIA_QUOTA_WARN_RATIO,
+    }
+  }
+  private async mediaUsedBytes(userId: string) {
+    const total = await this.db.chatAttachment.aggregate({
+      where: { uploaderId: userId, deletedAt: null },
+      _sum: { sizeBytes: true },
+    })
+    return total._sum.sizeBytes ?? 0
+  }
+  /** Apaga o anexo do bucket e o marca como removido (o objeto já ausente não impede a marcação). */
+  private async removeAttachment(row: { id: string; objectKey: string }, now: Date) {
+    try {
+      await this.storage?.delete(row.objectKey)
+    } catch {
+      /* Objeto já ausente ou indisponível: ainda assim marca como removido. */
+    }
+    await this.db.chatAttachment.update({
+      where: { id: row.id },
+      data: { deletedAt: now },
+    })
+  }
   /**
    * Recebe bytes já cifrados de ponta a ponta (AES-256-CTR no cliente), grava no
-   * bucket privado e registra metadados mínimos com expiração de 90 dias.
+   * bucket privado e registra metadados mínimos. Sem prazo: vale a cota por pessoa.
+   * Nada é apagado sozinho: sem espaço, o envio é recusado e a pessoa escolhe o que apagar.
    */
   async uploadMedia(
     actor: ConversationActor,
     headers: DeviceHeaders,
     conversationId: string,
     data: Buffer,
+    kind?: string,
   ) {
     await this.device(actor, headers)
     await this.conversation(actor, conversationId, true)
@@ -1253,11 +1437,21 @@ export class ChatService {
       throw new ServiceUnavailableException(
         'Armazenamento de mídia indisponível.',
       )
+    const before = await this.mediaUsage(actor.id)
+    if (before.usedBytes + data.length > before.limitBytes)
+      throw new HttpException(
+        {
+          statusCode: CHAT_STORAGE_FULL,
+          code: 'CHAT_STORAGE_FULL',
+          message:
+            'Seu espaço de arquivos acabou. Apague o que não usa mais ou aumente seu espaço.',
+          usedBytes: before.usedBytes,
+          limitBytes: before.limitBytes,
+        },
+        CHAT_STORAGE_FULL,
+      )
     const id = randomUUID()
     const objectKey = `chat-media/${conversationId}/${id}.enc`
-    const expiresAt = new Date(
-      Date.now() + CHAT_MEDIA_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    )
     await this.storage.uploadEncryptedBlob(objectKey, data)
     await this.db.chatAttachment.create({
       data: {
@@ -1266,16 +1460,81 @@ export class ChatService {
         uploaderId: actor.id,
         objectKey,
         sizeBytes: data.length,
-        expiresAt,
+        kind: normalizeMediaKind(kind),
       },
     })
     return {
       id,
       sizeBytes: data.length,
-      expiresAt: expiresAt.toISOString(),
+      quota: await this.mediaUsage(actor.id),
     }
   }
-  /** Baixa anexo cifrado garantindo pertencimento à conversa e validade de 90 dias. */
+  /** Uso de espaço e os anexos enviados pela pessoa, para a tela "Gerenciar armazenamento". */
+  async listMedia(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    options: { sort?: string; skip?: number; take?: number } = {},
+  ) {
+    await this.device(actor, headers)
+    const take = Math.min(Math.max(Math.trunc(options.take ?? 50), 1), 100)
+    const skip = Math.max(Math.trunc(options.skip ?? 0), 0)
+    const [usage, rows] = await Promise.all([
+      this.mediaUsage(actor.id),
+      this.db.chatAttachment.findMany({
+        where: { uploaderId: actor.id, deletedAt: null },
+        orderBy:
+          options.sort === 'date'
+            ? [{ createdAt: 'desc' }]
+            : [{ sizeBytes: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: take + 1,
+        select: {
+          id: true,
+          conversationId: true,
+          kind: true,
+          sizeBytes: true,
+          createdAt: true,
+        },
+      }),
+    ])
+    return {
+      usage,
+      items: rows.slice(0, take).map((row) => ({
+        id: row.id,
+        conversationId: row.conversationId,
+        kind: row.kind,
+        sizeBytes: row.sizeBytes,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      hasMore: rows.length > take,
+    }
+  }
+  /**
+   * Apaga anexos que a própria pessoa enviou. Some para todos da conversa; a mensagem continua
+   * no histórico, mas o arquivo deixa de abrir. Ids de outras pessoas são ignorados.
+   */
+  async deleteMedia(
+    actor: ConversationActor,
+    headers: DeviceHeaders,
+    attachmentIds: string[],
+  ) {
+    await this.device(actor, headers)
+    const ids = [...new Set(attachmentIds)].slice(0, CHAT_MEDIA_DELETE_BATCH)
+    const rows = ids.length
+      ? await this.db.chatAttachment.findMany({
+          where: { id: { in: ids }, uploaderId: actor.id, deletedAt: null },
+          select: { id: true, objectKey: true, sizeBytes: true },
+        })
+      : []
+    const now = new Date()
+    for (const row of rows) await this.removeAttachment(row, now)
+    return {
+      deleted: rows.length,
+      freedBytes: rows.reduce((sum, row) => sum + row.sizeBytes, 0),
+      usage: await this.mediaUsage(actor.id),
+    }
+  }
+  /** Baixa anexo cifrado garantindo pertencimento à conversa e que ele ainda está guardado. */
   async downloadMedia(
     actor: ConversationActor,
     headers: DeviceHeaders,
@@ -1288,8 +1547,8 @@ export class ChatService {
       where: { id: attachmentId, conversationId },
     })
     if (!row) throw new NotFoundException('Arquivo não encontrado.')
-    if (row.deletedAt || row.expiresAt <= new Date())
-      throw new GoneException('Este arquivo expirou após 90 dias.')
+    if (row.deletedAt || (row.expiresAt && row.expiresAt <= new Date()))
+      throw new GoneException('Este arquivo saiu do armazenamento do Votz.')
     if (!this.storage)
       throw new ServiceUnavailableException(
         'Armazenamento de mídia indisponível.',
@@ -1297,7 +1556,10 @@ export class ChatService {
     const buffer = await this.storage.downloadEncryptedBlob(row.objectKey)
     return { buffer, sizeBytes: row.sizeBytes }
   }
-  /** Limpeza diária de anexos cifrados que passaram dos 90 dias de retenção. */
+  /**
+   * Limpeza diária de anexos que ainda trazem prazo (os antigos, de antes da cota). Os novos não têm
+   * prazo e nada é apagado sozinho: a cota recusa o envio e a pessoa gerencia o próprio espaço.
+   */
   @Cron('0 4 * * *')
   async purgeExpiredAttachments() {
     if (!this.storage) return 0
@@ -1307,17 +1569,7 @@ export class ChatService {
       take: 200,
       select: { id: true, objectKey: true },
     })
-    for (const row of expired) {
-      try {
-        await this.storage.delete(row.objectKey)
-      } catch {
-        /* Objeto já ausente ou indisponível: ainda assim marca como expirado. */
-      }
-      await this.db.chatAttachment.update({
-        where: { id: row.id },
-        data: { deletedAt: now },
-      })
-    }
+    for (const row of expired) await this.removeAttachment(row, now)
     return expired.length
   }
 }

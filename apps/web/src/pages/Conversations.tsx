@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type PropsWithChildren } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   Bell,
@@ -48,10 +48,25 @@ import { useAuthStore } from '../store/auth.store'
 import { ChatPane } from '../components/conversations/ChatPane'
 import { ConversationSettingsView } from '../components/conversations/ConversationSettings'
 import { isAxiosError } from 'axios'
-import { deviceRequestText, type ChatDeviceInfo } from '@votz/chat-core'
-import { useChatDeviceAction, useChatDevices } from '../hooks/useChatDevices'
+import {
+  chatStorageDeleteConfirm,
+  chatStorageView,
+  deviceRequestText,
+  ENROLL_WAITING,
+  formatStorageSize,
+  parseDeviceLinkQr,
+  STORAGE_KIND_LABEL,
+  type ChatDeviceInfo,
+} from '@votz/chat-core'
+import {
+  useChatDeviceAction,
+  useChatDevices,
+  useChatDeviceStatus,
+} from '../hooks/useChatDevices'
+import { useChatStorage, useDeleteChatStorage } from '../hooks/useChatStorage'
 import { closeWebChatSession } from '../lib/chat-session'
 import { Page, Panel } from '../components/conversations/layout'
+import { ConnectDeviceCard } from '../components/conversations/ConnectDeviceCard'
 
 const PLATFORM: Record<string, string> = {
   android: 'Android',
@@ -62,6 +77,14 @@ const PLATFORM: Record<string, string> = {
 const deviceName = (device: { label: string | null; platform: string }) =>
   device.label || PLATFORM[device.platform] || device.platform
 
+/** Fundo da página: o mesmo cinza das outras telas, para a caixa de conversas ficar "dentro" da página. */
+const Backdrop = styled.div`
+  background: ${({ theme }) => theme.colors.neutral};
+  @media (min-width: 960px) {
+    padding: 24px 32px;
+  }
+`
+/** Largura da página inicial: até 1480 px com 32 px de margem. Abaixo de 960 px ocupa a tela toda. */
 const Shell = styled.main`
   display: flex;
   flex-direction: column;
@@ -71,9 +94,14 @@ const Shell = styled.main`
   color: ${({ theme }) => theme.colors.text};
   @media (min-width: 960px) {
     flex-direction: row;
-    height: calc(100dvh - 56px);
+    box-sizing: border-box;
+    max-width: 1416px;
+    margin: 0 auto;
+    height: calc(100dvh - 56px - 48px);
     min-height: 0;
     overflow: hidden;
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    border-radius: 12px;
   }
   h1 {
     font-size: 18px;
@@ -251,7 +279,8 @@ const LineBottom = styled.div`
   }
 `
 const Time = styled.small<{ $unread: boolean }>`
-  font-size: 12px;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 11px;
   white-space: nowrap;
   color: ${({ theme, $unread }) => ($unread ? theme.colors.action : theme.colors.muted)};
   font-weight: ${({ $unread }) => ($unread ? 600 : 400)};
@@ -379,10 +408,11 @@ const Face = styled.div`
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  background: ${({ theme }) => theme.colors.neutral};
-  color: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.action}14;
+  color: ${({ theme }) => theme.colors.action};
+  font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
   overflow: hidden;
   img {
     width: 100%;
@@ -435,29 +465,6 @@ const Buttons = styled.div`
   margin-top: 16px;
 `
 // Atalhos da lateral: pílulas pequenas, com o nome completo para leitores de tela.
-const Chips = styled.nav`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
-  a {
-    display: inline-flex;
-    align-items: center;
-    height: 30px;
-    padding: 0 12px;
-    border: 1px solid ${({ theme }) => theme.colors.border};
-    border-radius: 15px;
-    font-size: 12.5px;
-    color: ${({ theme }) => theme.colors.text};
-    text-decoration: none;
-    background: ${({ theme }) => theme.colors.white};
-  }
-  a:hover {
-    background: ${({ theme }) => theme.colors.neutral};
-  }
-`
-
 // Topo da tela de detalhes: avatar grande, nome e uma linha de apoio.
 const Hero = styled.section`
   display: flex;
@@ -485,8 +492,9 @@ const HeroFace = styled.div`
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: ${({ theme }) => theme.colors.neutral};
-  color: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.action}14;
+  color: ${({ theme }) => theme.colors.action};
+  font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 34px;
   font-weight: 700;
   img {
@@ -677,11 +685,17 @@ export function Conversations() {
   const blocked = subpath === 'bloqueios'
   const devices = subpath === 'aparelhos'
   const settings = subpath === 'configuracoes'
+  const storage = subpath === 'armazenamento'
   const id =
-    subpath && !create && !blocked && !devices && !settings && !subpath.includes('/')
+    subpath && !create && !blocked && !devices && !settings && !storage && !subpath.includes('/')
       ? subpath
       : undefined
-  const sub = id || create || blocked || devices || settings
+  const sub = id || create || blocked || devices || settings || storage
+  const [params] = useSearchParams()
+  const requests = params.get('solicitacoes') === '1' && !sub
+  const pendingRequests = usePendingRequests()
+  const deviceStatus = useChatDeviceStatus()
+  const needsApproval = deviceStatus.data?.status === 'needs_approval'
   // Mantém a sessão cifrada aberta enquanto a pessoa navega em /conversas/* e
   // fecha tudo ao sair da área de conversas, trocar de conta ou entrar em contexto.
   useEffect(() => {
@@ -693,13 +707,15 @@ export function Conversations() {
   return (
     <>
       <Navbar />
+      <Backdrop>
       <Shell data-split-layout>
         <Sidebar $hiddenOnMobile={!!sub}>
           <Header>
-            <Link to="/" aria-label="Voltar">
+            <Link to={requests ? '/conversas' : '/'} aria-label={requests ? 'Voltar às conversas' : 'Voltar'}>
               <ArrowLeft size={20} />
             </Link>
-            <h1>Conversas</h1>
+            <h1>{requests ? 'Solicitações' : 'Conversas'}</h1>
+            {!requests && <RequestsLink pending={pendingRequests} />}
             <Link to="/conversas/configuracoes" aria-label="Configurações de conversas">
               <GearSix size={20} />
             </Link>
@@ -708,7 +724,7 @@ export function Conversations() {
             </Link>
           </Header>
           <ConversationGate>
-            <ConversationInbox activeId={id} />
+            <ConversationInbox activeId={id} folder={requests ? 'requests' : 'active'} />
           </ConversationGate>
         </Sidebar>
         <Stage $hiddenOnMobile={!sub}>
@@ -724,9 +740,11 @@ export function Conversations() {
                     ? 'Detalhes da conversa'
                     : devices
                       ? 'Aparelhos conectados'
-                      : settings
-                        ? 'Configurações de conversas'
-                        : 'Pessoas bloqueadas'}
+                      : storage
+                        ? 'Gerenciar armazenamento'
+                        : settings
+                          ? 'Configurações de conversas'
+                          : 'Pessoas bloqueadas'}
               </h1>
             </Header>
           )}
@@ -735,12 +753,18 @@ export function Conversations() {
               <ConversationSettingsView />
             ) : devices ? (
               <ChatDevices />
+            ) : storage ? (
+              <ChatStorageManager />
             ) : blocked ? (
               <BlockedPeople />
             ) : create ? (
               <CreateConversation />
             ) : id ? (
               <ConversationDetail key={id} id={id} />
+            ) : needsApproval ? (
+              <EmptyStage>
+                <ConnectDeviceCard />
+              </EmptyStage>
             ) : (
               <EmptyStage>
                 <EmptyIcon>
@@ -757,41 +781,58 @@ export function Conversations() {
           </ConversationGate>
         </Stage>
       </Shell>
+      </Backdrop>
     </>
   )
 }
-function ConversationInbox({ activeId }: { activeId?: string }) {
-  const [folder, setFolder] = useState<'active' | 'requests'>('active')
+/** Quantidade de pedidos esperando resposta, para o aviso no ícone de Solicitações. */
+function usePendingRequests(): number {
+  const scope = useConversationScope()
+  const list = useConversationList('requests')
+  return scope.enabled ? (list.data?.pages[0]?.total ?? 0) : 0
+}
+const PendingDot = styled.span`
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: ${({ theme }) => theme.colors.action};
+  color: ${({ theme }) => theme.colors.white};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+`
+/** Ícone de Solicitações no topo da lista (antes era uma aba). */
+function RequestsLink({ pending }: { pending: number }) {
+  return (
+    <Link
+      to="/conversas?solicitacoes=1"
+      aria-label={pending ? `Solicitações de conversa, ${pending} ${pending === 1 ? 'pendente' : 'pendentes'}` : 'Solicitações de conversa'}
+      title="Solicitações"
+      style={{ position: 'relative' }}
+    >
+      <UserPlus size={20} />
+      {pending > 0 && <PendingDot aria-hidden="true">{pending > 9 ? '9+' : pending}</PendingDot>}
+    </Link>
+  )
+}
+function ConversationInbox({ activeId, folder }: { activeId?: string; folder: 'active' | 'requests' }) {
   const list = useConversationList(folder)
   const action = useConversationAction()
+  const resetAction = action.reset
+  useEffect(() => {
+    resetAction()
+  }, [folder, resetAction])
   const { user } = useConversationScope()
   const items = list.data?.pages.flatMap((page) => page.items) || []
   return (
     <>
-      <TabRow role="tablist" aria-label="Caixas de conversas">
-        {(['active', 'requests'] as const).map((value) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={folder === value}
-            onClick={() => {
-              setFolder(value)
-              action.reset()
-            }}
-          >
-            {value === 'active' ? 'Conversas' : 'Solicitações'}
-          </button>
-        ))}
-      </TabRow>
-      <Chips aria-label="Atalhos">
-        <Link to="/conversas/configuracoes">Configurações</Link>
-        <Link to="/conversas/aparelhos" aria-label="Aparelhos conectados">
-          Aparelhos
-        </Link>
-        <Link to="/conversas/bloqueios" aria-label="Pessoas bloqueadas">
-          Bloqueadas
-        </Link>
-      </Chips>
       {list.isError && (
         <Failure
           error={list.error}
@@ -880,10 +921,30 @@ function ConversationInbox({ activeId }: { activeId?: string }) {
 function ChatDevices() {
   const list = useChatDevices()
   const action = useChatDeviceAction()
+  const [codeInput, setCodeInput] = useState('')
+  const [codeMessage, setCodeMessage] = useState('')
   const devices = list.data?.devices || []
   const links = list.data?.links || []
   // 401 aqui significa que ESTE navegador ainda não ativou as conversas.
   const notActivated = isAxiosError(list.error) && list.error.response?.status === 401
+  function approveByCode(event: FormEvent) {
+    event.preventDefault()
+    const parsed = parseDeviceLinkQr(codeInput)
+    if (!parsed) {
+      setCodeMessage('Digite os 6 dígitos mostrados no outro aparelho.')
+      return
+    }
+    setCodeMessage('')
+    action.mutate(
+      { type: 'approve-code', code: parsed.code, linkId: parsed.linkId },
+      {
+        onSuccess: () => {
+          setCodeInput('')
+          setCodeMessage('Aparelho permitido com sucesso.')
+        },
+      },
+    )
+  }
   function revoke(device: ChatDeviceInfo) {
     const message = device.current
       ? 'Sair das conversas neste navegador? Ele deixa de receber mensagens e você perde o acesso ao histórico dele. Para voltar, abra uma conversa de novo; se você usa outros aparelhos, será preciso permitir este acesso.'
@@ -914,6 +975,62 @@ function ChatDevices() {
             Seus aparelhos aparecem aqui depois que você abrir qualquer
             conversa neste navegador.
           </Muted>
+          <div style={{ marginTop: 12 }}>
+            <Action as={Link} to="/conversas">
+              {ENROLL_WAITING.bannerAction}
+            </Action>
+          </div>
+        </Panel>
+      )}
+      {list.isSuccess && (
+        <Panel>
+          <strong>{ENROLL_WAITING.enterCodeTitle}</strong>
+          <Muted>{ENROLL_WAITING.enterCodeHint}</Muted>
+          <form
+            onSubmit={approveByCode}
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginTop: 10,
+              alignItems: 'center',
+            }}
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              aria-label="Código de 6 dígitos"
+              placeholder="000 000"
+              maxLength={7}
+              value={codeInput}
+              onChange={(event) => {
+                setCodeInput(event.target.value)
+                if (codeMessage) setCodeMessage('')
+              }}
+              style={{
+                width: 150,
+                height: 40,
+                padding: '0 12px',
+                borderRadius: 10,
+                border: '1px solid #d1d5db',
+                fontSize: 16,
+                letterSpacing: 3,
+                fontFamily: 'monospace',
+              }}
+            />
+            <Action
+              type="submit"
+              disabled={action.isPending || !parseDeviceLinkQr(codeInput)}
+            >
+              {ENROLL_WAITING.enterCodeAction}
+            </Action>
+          </form>
+          {codeMessage && (
+            <Muted role="status" style={{ marginTop: 8 }}>
+              {codeMessage}
+            </Muted>
+          )}
         </Panel>
       )}
       {list.isError && !notActivated && (
@@ -980,6 +1097,144 @@ function ChatDevices() {
       )}
       {list.isSuccess && !devices.length && (
         <Panel>Nenhum aparelho conectado.</Panel>
+      )}
+    </Page>
+  )
+}
+/** Barra de uso do espaço: verde enquanto sobra, vermelho quando acaba. */
+const UsageBar = styled.div<{ $percent: number; $level: 'ok' | 'near' | 'full' }>`
+  height: 10px;
+  margin: 12px 0 8px;
+  border-radius: 5px;
+  background: ${({ theme }) => theme.colors.neutral};
+  overflow: hidden;
+  &::after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: ${({ $percent }) => $percent}%;
+    border-radius: 5px;
+    background: ${({ theme, $level }) =>
+      $level === 'ok' ? theme.colors.positive : theme.colors.action};
+  }
+`
+function ChatStorageManager() {
+  const user = useAuthStore((state) => state.user)
+  const [sort, setSort] = useState<'size' | 'date'>('size')
+  const [picked, setPicked] = useState<string[]>([])
+  const list = useChatStorage(sort)
+  const remove = useDeleteChatStorage()
+  const conversations = useConversationList('active')
+  const titles = new Map(
+    (conversations.data?.pages.flatMap((page) => page.items) || []).map((item) => [
+      item.id,
+      user ? conversationTitle(item, user.id) : 'Conversa',
+    ]),
+  )
+  const usage = list.data?.pages[0]?.usage
+  const view = usage ? chatStorageView(usage) : null
+  const items = list.data?.pages.flatMap((page) => page.items) || []
+  // 401 aqui significa que ESTE navegador ainda não ativou as conversas.
+  const notActivated = isAxiosError(list.error) && list.error.response?.status === 401
+  const chosenBytes = items
+    .filter((item) => picked.includes(item.id))
+    .reduce((total, item) => total + item.sizeBytes, 0)
+  function toggle(id: string) {
+    setPicked((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    )
+  }
+  function eraseChosen() {
+    if (!picked.length || !window.confirm(chatStorageDeleteConfirm(picked.length))) return
+    remove.mutate(picked, { onSuccess: () => setPicked([]) })
+  }
+  return (
+    <Page>
+      <Panel>
+        <h2>Gerenciar armazenamento</h2>
+        <Muted>{chatStorageView({ usedBytes: 0, limitBytes: 1, nearLimit: false }).help}</Muted>
+        {view && usage && (
+          <div role="status">
+            <UsageBar
+              $percent={view.percent}
+              $level={view.level}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={view.percent}
+              aria-label="Espaço usado"
+            />
+            <strong>{view.summary}</strong>
+            {view.hint && <Muted>{view.hint}</Muted>}
+          </div>
+        )}
+        <Row style={{ marginTop: 8 }}>
+          <Action $secondary disabled title={view?.upgrade.soon}>
+            {view?.upgrade.label ?? 'Aumentar espaço'} · {view?.upgrade.soon ?? 'Em breve'}
+          </Action>
+        </Row>
+      </Panel>
+      {notActivated && (
+        <Panel role="status">
+          <strong>Abra uma conversa primeiro</strong>
+          <Muted>Seus arquivos aparecem aqui depois que você abrir qualquer conversa neste navegador.</Muted>
+        </Panel>
+      )}
+      {list.isError && !notActivated && (
+        <Failure card error={list.error} retry={() => void list.refetch()} />
+      )}
+      {remove.isError && <Failure card error={remove.error} />}
+      {list.isPending && <Panel role="status">Carregando…</Panel>}
+      {list.isSuccess && (
+        <Panel $flush>
+          <ListItem>
+            <Row>
+              <span style={{ flex: 1 }}>
+                <strong>{picked.length ? `${picked.length} selecionado(s) · ${formatStorageSize(chosenBytes)}` : 'Seus arquivos'}</strong>
+              </span>
+              <TextAction
+                onClick={() => {
+                  setSort(sort === 'size' ? 'date' : 'size')
+                  setPicked([])
+                }}
+              >
+                {sort === 'size' ? 'Maiores primeiro' : 'Mais novos primeiro'}
+              </TextAction>
+              <TextAction disabled={!picked.length || remove.isPending} onClick={eraseChosen}>
+                Apagar
+              </TextAction>
+            </Row>
+          </ListItem>
+          {items.map((item) => (
+            <ListItem key={item.id}>
+              <Row as="label">
+                <input
+                  type="checkbox"
+                  checked={picked.includes(item.id)}
+                  onChange={() => toggle(item.id)}
+                  aria-label={`Selecionar ${STORAGE_KIND_LABEL[item.kind]} de ${new Date(item.createdAt).toLocaleDateString('pt-BR')}`}
+                />
+                <span style={{ flex: 1 }}>
+                  <strong>
+                    {STORAGE_KIND_LABEL[item.kind]} · {formatStorageSize(item.sizeBytes)}
+                  </strong>
+                  <Muted>
+                    {titles.get(item.conversationId) || 'Conversa'} ·{' '}
+                    {new Date(item.createdAt).toLocaleDateString('pt-BR')}
+                  </Muted>
+                </span>
+              </Row>
+            </ListItem>
+          ))}
+          {!items.length && <ListItem>{view?.empty ?? 'Você ainda não enviou nenhum arquivo.'}</ListItem>}
+          {list.hasNextPage && (
+            <ListItem>
+              <Action $secondary disabled={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
+                {list.isFetchingNextPage ? 'Carregando…' : 'Mostrar mais'}
+              </Action>
+            </ListItem>
+          )}
+        </Panel>
       )}
     </Page>
   )

@@ -11,8 +11,9 @@ import { ConfigService } from '@nestjs/config'
 import { randomUUID } from 'node:crypto'
 import { hashSync } from 'bcrypt'
 import {
+  CHAT_MEDIA_DEFAULT_QUOTA_MB,
   CHAT_MEDIA_MAX_BYTES,
-  CHAT_MEDIA_RETENTION_DAYS,
+  CHAT_STORAGE_FULL,
   ChatService,
   MAX_CHAT_DEVICES,
   MAX_PENDING_CHAT_LINKS,
@@ -57,7 +58,7 @@ const bob = { id: '22222222-2222-4222-8222-222222222222', emailVerified: true }
 const carol = { id: '33333333-3333-4333-8333-333333333333', emailVerified: true }
 const mx = (id: string) => `@votz_${id.replace(/-/g, '')}:votz.test`
 
-function fixture() {
+function fixture(extraConfig: Record<string, string> = {}) {
   const devices: Device[] = []
   const links: Link[] = []
   const attachments: Array<{
@@ -66,11 +67,14 @@ function fixture() {
     uploaderId: string
     objectKey: string
     sizeBytes: number
+    kind: string
     createdAt: Date
-    expiresAt: Date
+    expiresAt: Date | null
     deletedAt: Date | null
   }> = []
   const blobs = new Map<string, Buffer>()
+  // Espaço extra liberado pelo admin (ChatStorage); sem entrada vale a cota padrão.
+  const storageQuotas = new Map<string, { quotaMb: number }>()
   const storage = {
     uploadEncryptedBlob: jest.fn(async (key: string, data: Buffer) => {
       blobs.set(key, Buffer.from(data))
@@ -127,7 +131,7 @@ function fixture() {
     conversationBlock: { count: jest.fn(async () => 0) },
     chatAttachment: {
       create: jest.fn(async ({ data }) => {
-        const row = { createdAt: new Date(), deletedAt: null, ...data }
+        const row = { createdAt: new Date(), deletedAt: null, expiresAt: null, kind: 'FILE', ...data }
         attachments.push(row)
         return row
       }),
@@ -137,15 +141,41 @@ function fixture() {
             row.id === where.id && row.conversationId === where.conversationId,
         ) ?? null,
       ),
-      findMany: jest.fn(async ({ where }) =>
-        attachments.filter(
-          (row) =>
-            row.deletedAt === null && row.expiresAt <= where.expiresAt.lte,
-        ),
-      ),
+      findMany: jest.fn(async ({ where, take, skip, orderBy }) => {
+        let rows = where.uploaderId
+          ? attachments.filter(
+              (row) =>
+                row.uploaderId === where.uploaderId &&
+                row.deletedAt === null &&
+                (!where.id || where.id.in.includes(row.id)),
+            )
+          : attachments.filter(
+              (row) =>
+                row.deletedAt === null &&
+                row.expiresAt !== null &&
+                row.expiresAt <= where.expiresAt.lte,
+            )
+        if (orderBy?.[0]?.sizeBytes)
+          rows = [...rows].sort((a, b) => b.sizeBytes - a.sizeBytes)
+        else if (orderBy?.[0]?.createdAt) rows = [...rows].reverse()
+        const start = skip ?? 0
+        return rows.slice(start, take === undefined ? undefined : start + take)
+      }),
+      aggregate: jest.fn(async ({ where }) => ({
+        _sum: {
+          sizeBytes: attachments
+            .filter(
+              (row) => row.uploaderId === where.uploaderId && row.deletedAt === null,
+            )
+            .reduce((sum, row) => sum + row.sizeBytes, 0),
+        },
+      })),
       update: jest.fn(async ({ where, data }) =>
         Object.assign(attachments.find((row) => row.id === where.id)!, data),
       ),
+    },
+    chatStorage: {
+      findUnique: jest.fn(async ({ where }) => storageQuotas.get(where.userId) ?? null),
     },
     chatReceipt: {
       findMany: jest.fn(async ({ where }) =>
@@ -292,7 +322,7 @@ function fixture() {
   const pushQueue = { add: jest.fn().mockResolvedValue(undefined) }
   const service = new ChatService(
     db as unknown as PrismaService,
-    new ConfigService({ CHAT_TOKEN_ENCRYPTION_KEY: KEY }),
+    new ConfigService({ CHAT_TOKEN_ENCRYPTION_KEY: KEY, ...extraConfig }),
     matrix as unknown as ChatMatrixService,
     { emitToUser: emit } as unknown as NotificationsGateway,
     storage as unknown as StorageService,
@@ -311,6 +341,7 @@ function fixture() {
     links,
     receipts,
     attachments,
+    storageQuotas,
     blobs,
     storage,
     pushQueue,
@@ -905,8 +936,8 @@ describe('ChatService: texto em grupo', () => {
   })
 })
 
-describe('ChatService: mídia cifrada (Etapa 2, retenção 90 dias)', () => {
-  it('sobe e baixa bytes cifrados opacos com expiração de 90 dias e isola por conversa', async () => {
+describe('ChatService: mídia cifrada (cota por pessoa, sem prazo fixo)', () => {
+  it('sobe e baixa bytes cifrados opacos sem prazo, informa a cota e isola por conversa', async () => {
     const f = fixture()
     const aDev = f.input()
     const bDev = f.input()
@@ -916,10 +947,12 @@ describe('ChatService: mídia cifrada (Etapa 2, retenção 90 dias)', () => {
     const cipher = Buffer.from([1, 2, 3, 4, 5, 6, 7, 8])
     const uploaded = await f.service.uploadMedia(alice, f.headers(aDev.id), 'c1', cipher)
     expect(uploaded.sizeBytes).toBe(8)
-    const days =
-      (new Date(uploaded.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)
-    expect(days).toBeGreaterThan(CHAT_MEDIA_RETENTION_DAYS - 1)
-    expect(days).toBeLessThanOrEqual(CHAT_MEDIA_RETENTION_DAYS + 0.1)
+    expect(f.attachments[0].expiresAt).toBeNull()
+    expect(uploaded.quota).toEqual({
+      usedBytes: 8,
+      limitBytes: CHAT_MEDIA_DEFAULT_QUOTA_MB * 1024 * 1024,
+      nearLimit: false,
+    })
 
     const downloaded = await f.service.downloadMedia(
       bob,
@@ -967,6 +1000,83 @@ describe('ChatService: mídia cifrada (Etapa 2, retenção 90 dias)', () => {
     expect(purged).toBe(1)
     expect(f.storage.delete).toHaveBeenCalledTimes(1)
     expect(f.attachments[0].deletedAt).not.toBeNull()
+  })
+
+  it('sem espaço: recusa o envio com 507 sem apagar nada, e a pessoa libera espaço apagando o que enviou', async () => {
+    const f = fixture({ CHAT_MEDIA_QUOTA_MB: '1' })
+    const aDev = f.input()
+    const bDev = f.input()
+    await f.service.enroll(alice, aDev)
+    await f.service.enroll(bob, bDev)
+    const aHeaders = f.headers(aDev.id)
+    const bHeaders = f.headers(bDev.id)
+    const file = () => Buffer.alloc(450_000, 7)
+
+    // Anexo de outra pessoa na mesma conversa não entra na conta da Alice.
+    const bobUp = await f.service.uploadMedia(bob, bHeaders, 'c1', file(), 'FILE')
+    const first = await f.service.uploadMedia(alice, aHeaders, 'c1', file(), 'VIDEO')
+    expect(first.quota.nearLimit).toBe(false)
+    const second = await f.service.uploadMedia(alice, aHeaders, 'c1', file(), 'image')
+    expect(second.quota.nearLimit).toBe(true)
+
+    // O terceiro não cabe em 1 MB: o envio é recusado e nada é apagado sozinho.
+    const refused = await f.service
+      .uploadMedia(alice, aHeaders, 'c1', file())
+      .catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(HttpException)
+    expect((refused as HttpException).getStatus()).toBe(CHAT_STORAGE_FULL)
+    expect((refused as HttpException).getResponse()).toMatchObject({
+      code: 'CHAT_STORAGE_FULL',
+      usedBytes: 900_000,
+      limitBytes: 1024 * 1024,
+    })
+    expect(f.storage.delete).not.toHaveBeenCalled()
+    expect(f.attachments).toHaveLength(3)
+
+    // A lista mostra só o que a Alice enviou, com o tipo, mais novo primeiro.
+    const list = await f.service.listMedia(alice, aHeaders, { sort: 'date' })
+    expect(list.items.map((item) => [item.id, item.kind])).toEqual([
+      [second.id, 'IMAGE'],
+      [first.id, 'VIDEO'],
+    ])
+    expect(list.usage.usedBytes).toBe(900_000)
+    expect(list.hasMore).toBe(false)
+
+    // Cada um só apaga o que enviou: ids de outra pessoa são ignorados.
+    const ignored = await f.service.deleteMedia(bob, bHeaders, [first.id])
+    expect(ignored.deleted).toBe(0)
+    const freed = await f.service.deleteMedia(alice, aHeaders, [first.id, bobUp.id])
+    expect(freed).toMatchObject({ deleted: 1, freedBytes: 450_000 })
+    expect(freed.usage.usedBytes).toBe(450_000)
+    expect(f.storage.delete).toHaveBeenCalledTimes(1)
+    expect(f.storage.delete).toHaveBeenCalledWith(f.attachments[1].objectKey)
+    expect(f.attachments[0].deletedAt).toBeNull()
+
+    // Com espaço livre, o envio volta a funcionar; o arquivo apagado deixa de abrir para todos.
+    await expect(
+      f.service.uploadMedia(alice, aHeaders, 'c1', file()),
+    ).resolves.toMatchObject({ sizeBytes: 450_000 })
+    await expect(
+      f.service.downloadMedia(bob, bHeaders, 'c1', first.id),
+    ).rejects.toBeInstanceOf(GoneException)
+    const kept = await f.service.downloadMedia(bob, bHeaders, 'c1', second.id)
+    expect(kept.sizeBytes).toBe(450_000)
+  })
+
+  it('espaço extra liberado pelo admin vale no lugar da cota padrão e tipo inválido vira arquivo', async () => {
+    const f = fixture({ CHAT_MEDIA_QUOTA_MB: '1' })
+    f.storageQuotas.set(alice.id, { quotaMb: 2 })
+    const aDev = f.input()
+    await f.service.enroll(alice, aDev)
+    const aHeaders = f.headers(aDev.id)
+
+    // 3 x 450 KB não cabem em 1 MB, mas cabem nos 2 MB liberados.
+    const up = await f.service.uploadMedia(alice, aHeaders, 'c1', Buffer.alloc(450_000), 'banana')
+    await f.service.uploadMedia(alice, aHeaders, 'c1', Buffer.alloc(450_000))
+    const last = await f.service.uploadMedia(alice, aHeaders, 'c1', Buffer.alloc(450_000))
+    expect(up.quota.limitBytes).toBe(2 * 1024 * 1024)
+    expect(last.quota.usedBytes).toBe(1_350_000)
+    expect(f.attachments[0].kind).toBe('FILE')
   })
 })
 
@@ -1051,5 +1161,89 @@ describe('ChatService: digitando efêmero e silenciar (Etapa 3B)', () => {
       userName: 'Alice',
       typing: true,
     })
+  })
+})
+
+describe('ChatService: vínculo intuitivo (status, código de 6 dígitos/QR e aviso em tempo real)', () => {
+  it('informa o status do aparelho sem criar pedido de vínculo', async () => {
+    const f = fixture()
+    const first = f.input()
+    const second = f.input()
+
+    await expect(f.service.deviceStatus(alice, {})).resolves.toEqual({
+      enabled: true,
+      status: 'first_device',
+      activeDevices: 0,
+    })
+
+    await f.service.enroll(alice, first)
+    await expect(
+      f.service.deviceStatus(alice, f.headers(first.id)),
+    ).resolves.toEqual({
+      enabled: true,
+      status: 'active',
+      activeDevices: 1,
+      pendingLinks: 0,
+    })
+    await expect(
+      f.service.deviceStatus(alice, f.headers(second.id)),
+    ).resolves.toEqual({
+      enabled: true,
+      status: 'needs_approval',
+      activeDevices: 1,
+    })
+    expect(f.links).toHaveLength(0)
+
+    await f.service.revokeDevice(alice, f.headers(first.id), first.id)
+    await expect(
+      f.service.deviceStatus(alice, f.headers(first.id)),
+    ).resolves.toEqual({
+      enabled: true,
+      status: 'revoked',
+      activeDevices: 0,
+    })
+  })
+
+  it('emite chat:device-link ao criar pedido e permite aprovar por código ou QR', async () => {
+    const f = fixture()
+    const first = f.input()
+    const second = f.input()
+    await f.service.enroll(alice, first)
+
+    f.emit.mockClear()
+    const pending = await f.service.enroll(alice, second)
+    expect(pending.status).toBe('pending_approval')
+    if (pending.status !== 'pending_approval') throw new Error('expected pending')
+    expect(pending.id).toBe(second.id)
+    expect(f.emit).toHaveBeenCalledWith(
+      alice.id,
+      'chat:device-link',
+      expect.objectContaining({ id: second.id, code: pending.code }),
+    )
+
+    // Código errado é recusado.
+    const wrongCode = pending.code === '000000' ? '999999' : '000000'
+    await expect(
+      f.service.approveByCode(alice, f.headers(first.id), wrongCode),
+    ).rejects.toBeInstanceOf(NotFoundException)
+
+    // Código correto (com linkId vindo do QR) aprova e emite evento de decisão.
+    f.emit.mockClear()
+    await expect(
+      f.service.approveByCode(
+        alice,
+        f.headers(first.id),
+        pending.code,
+        pending.id,
+      ),
+    ).resolves.toMatchObject({ approved: true, id: second.id })
+    expect(f.emit).toHaveBeenCalledWith(alice.id, 'chat:device-link-decided', {
+      id: second.id,
+      approved: true,
+    })
+
+    // Segundo aparelho conclui ativação normalmente.
+    const ready = await f.service.enroll(alice, second)
+    expect(ready.status).toBe('ready')
   })
 })

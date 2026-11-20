@@ -3,6 +3,7 @@ import {
   type ChatCredentials,
   type ChatEnrollment,
   type ChatHttp,
+  type ChatPendingLink,
   type ChatSession,
   type ChatStorage,
 } from '@votz/chat-core'
@@ -27,7 +28,12 @@ export interface WebChatSession {
   uploadMedia: (
     conversationId: string,
     ciphertext: Uint8Array,
-    options?: { signal?: AbortSignal; onProgress?: (pct: number) => void },
+    options?: {
+      signal?: AbortSignal
+      onProgress?: (pct: number) => void
+      /** Tipo do anexo (image, video, audio, file), só para a tela "Gerenciar armazenamento". */
+      kind?: string
+    },
   ) => Promise<{ id: string }>
   downloadMedia: (
     conversationId: string,
@@ -103,7 +109,7 @@ function openOnce(options: {
   userId: string
   secret: string
   signal: AbortSignal
-  onPending: (pending: { code: string; expiresAt: string }) => void
+  onPending: (pending: ChatPendingLink) => void
 }): Promise<WebChatSession> {
   const { userId, secret, signal, onPending } = options
   return new Promise<WebChatSession>((accepted, rejected) => {
@@ -193,6 +199,7 @@ function openOnce(options: {
             if (current.user?.id !== userId || current.activeContext)
               throw new Error('Sessão alterada.')
             const form = new FormData()
+            if (opts?.kind) form.append('kind', opts.kind.toUpperCase())
             const copy = new Uint8Array(ciphertext.byteLength)
             copy.set(ciphertext)
             form.append(
@@ -277,7 +284,7 @@ export async function acquireWebChatSession(options: {
   userId: string
   secret: string
   signal: AbortSignal
-  onPending: (pending: { code: string; expiresAt: string }) => void
+  onPending: (pending: ChatPendingLink) => void
 }): Promise<WebChatSession> {
   const { userId, secret, signal, onPending } = options
   if (active?.userId === userId) return active

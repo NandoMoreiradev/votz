@@ -55,9 +55,20 @@ export interface ChatDeviceInfo {
   createdAt: string
   current: boolean
 }
+export interface ChatPendingLink {
+  id?: string
+  code: string
+  expiresAt: string
+}
 export type ChatEnrollment =
   | ({ status: 'ready' } & ChatSession)
-  | { status: 'pending_approval'; code: string; expiresAt: string }
+  | ({ status: 'pending_approval' } & ChatPendingLink)
+export interface ChatDeviceStatus {
+  enabled: boolean
+  status: 'disabled' | 'active' | 'first_device' | 'needs_approval' | 'revoked'
+  activeDevices: number
+  pendingLinks?: number
+}
 export interface ChatVerification {
   state:
     | 'none'
@@ -857,12 +868,58 @@ export function deviceRequestText(
     deny: 'Negar',
   }
 }
+/** Formata o código de 6 dígitos para leitura fácil (ex.: "482 910"). */
+export function formatLinkCode(code: string): string {
+  const digits = code.replace(/\D/g, '')
+  return digits.length === 6 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : code
+}
+/** Monta o conteúdo do código QR de conexão entre aparelhos. */
+export function formatDeviceLinkQr(pending: { id?: string; code: string }): string {
+  const digits = pending.code.replace(/\D/g, '')
+  const query = pending.id
+    ? `code=${encodeURIComponent(digits)}&id=${encodeURIComponent(pending.id)}`
+    : `code=${encodeURIComponent(digits)}`
+  return `votz://chat-link?${query}`
+}
+/** Lê um código QR de conexão ou um código numérico de 6 dígitos digitado pela pessoa. */
+export function parseDeviceLinkQr(
+  raw: string,
+): { code: string; linkId?: string } | null {
+  const trimmed = (raw || '').trim()
+  if (!trimmed) return null
+  if (trimmed.toLowerCase().startsWith('votz://chat-link')) {
+    const queryIndex = trimmed.indexOf('?')
+    if (queryIndex < 0) return null
+    const params = new URLSearchParams(trimmed.slice(queryIndex + 1))
+    const code = (params.get('code') || '').replace(/\D/g, '')
+    if (!/^\d{6}$/.test(code)) return null
+    const id = params.get('id')?.trim()
+    return id && /^[0-9a-f-]{36}$/i.test(id) ? { code, linkId: id } : { code }
+  }
+  const digits = trimmed.replace(/\D/g, '')
+  if (/^\d{6}$/.test(digits)) return { code: digits }
+  return null
+}
 /** Tela de quem espera a permissão de outro aparelho. */
 export const ENROLL_WAITING = {
   title: 'Permita no seu outro aparelho',
   text: 'Abra o Votz em outro aparelho seu e permita este acesso. Confira se o código é o mesmo:',
+  qrHint:
+    'Ou aponte a câmera do celular em Aparelhos conectados para ler o código QR.',
+  historyNote:
+    'Suas novas mensagens vão aparecer nos dois aparelhos. Conversas anteriores continuam salvas no outro aparelho.',
   note: 'O pedido vale por 10 minutos.',
   lost: 'Não tenho mais acesso aos outros aparelhos',
+  bannerTitle: 'Conecte este aparelho às suas conversas',
+  bannerText:
+    'Você já usa mensagens em outro aparelho. Libere este acesso para enviar e receber por aqui.',
+  bannerAction: 'Conectar agora',
+  bannerDismiss: 'Agora não',
+  enterCodeTitle: 'Conectar outro aparelho',
+  enterCodeHint:
+    'Digite os 6 dígitos mostrados na tela do novo aparelho ou leia o código QR.',
+  enterCodeAction: 'Permitir aparelho',
+  scanQrAction: 'Ler código QR',
 }
 /** Aviso antes de redefinir quando não há mais nenhum aparelho antigo. */
 export const RESET_WARNING = {
@@ -956,9 +1013,20 @@ export interface ChatDevices {
 export function chatDevicesApi(http: ChatHttp) {
   return {
     list: () => http<ChatDevices>('/chat/devices'),
+    status: () => http<ChatDeviceStatus>('/chat/devices/status'),
     decide: (linkId: string, approve: boolean) =>
       http(`/chat/device-links/${encodeURIComponent(linkId)}`, 'POST', {
         approve,
+      }),
+    approveByCode: (code: string, linkId?: string) =>
+      http<{
+        approved: boolean
+        id: string
+        label: string | null
+        platform: string
+      }>('/chat/device-links/approve-code', 'POST', {
+        code,
+        ...(linkId ? { linkId } : {}),
       }),
     revoke: (deviceId: string) =>
       http<{ revoked: boolean; self: boolean }>(
@@ -966,6 +1034,93 @@ export function chatDevicesApi(http: ChatHttp) {
         'DELETE',
       ),
   }
+}
+
+/** Espaço de arquivos das conversas da pessoa (a API devolve no envio e na lista). */
+export interface ChatStorageUsage {
+  usedBytes: number
+  limitBytes: number
+  /** Passou de 80% do espaço. */
+  nearLimit: boolean
+}
+export type ChatStorageKind = 'IMAGE' | 'VIDEO' | 'AUDIO' | 'FILE'
+export interface ChatStorageItem {
+  id: string
+  conversationId: string
+  kind: ChatStorageKind
+  sizeBytes: number
+  createdAt: string
+}
+export interface ChatStorageList {
+  usage: ChatStorageUsage
+  items: ChatStorageItem[]
+  hasMore: boolean
+}
+/**
+ * "Gerenciar armazenamento": lista e apaga os arquivos que a própria pessoa enviou. Como a lista de
+ * aparelhos, não precisa do motor criptográfico, só das credenciais deste aparelho no `http`.
+ */
+export function chatStorageApi(http: ChatHttp) {
+  return {
+    list: (
+      options: { sort?: 'size' | 'date'; skip?: number; take?: number } = {},
+    ) => {
+      const query = [
+        options.sort ? `sort=${options.sort}` : '',
+        options.skip ? `skip=${Math.trunc(options.skip)}` : '',
+        options.take ? `take=${Math.trunc(options.take)}` : '',
+      ].filter(Boolean)
+      return http<ChatStorageList>(
+        `/chat/storage${query.length ? `?${query.join('&')}` : ''}`,
+      )
+    },
+    remove: (ids: string[]) =>
+      http<{ deleted: number; freedBytes: number; usage: ChatStorageUsage }>(
+        '/chat/storage',
+        'DELETE',
+        { ids },
+      ),
+  }
+}
+/** Tamanho em linguagem de gente: KB, MB ou GB, com vírgula. */
+export function formatStorageSize(bytes: number): string {
+  const value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0
+  if (value < 1024 * 1024 * 1024) return formatFileSize(value)
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1).replace('.', ',')} GB`
+}
+/** Textos da tela "Gerenciar armazenamento", em português simples. */
+export function chatStorageView(usage: ChatStorageUsage) {
+  const limit = Math.max(usage.limitBytes, 1)
+  const full = usage.usedBytes >= limit
+  const level: 'ok' | 'near' | 'full' = full
+    ? 'full'
+    : usage.nearLimit
+      ? 'near'
+      : 'ok'
+  return {
+    level,
+    percent: Math.min(100, Math.round((usage.usedBytes / limit) * 100)),
+    summary: `Você usou ${formatStorageSize(usage.usedBytes)} de ${formatStorageSize(limit)}.`,
+    hint: {
+      ok: '',
+      near: 'Seu espaço está quase cheio. Apague o que você não usa mais para continuar enviando.',
+      full: 'Seu espaço acabou. Apague arquivos para voltar a enviar fotos, vídeos e documentos.',
+    }[level],
+    help: 'Aqui aparecem os arquivos que você enviou nas conversas. Os que outras pessoas enviaram ficam no espaço delas.',
+    empty: 'Você ainda não enviou nenhum arquivo.',
+    upgrade: { label: 'Aumentar espaço', soon: 'Em breve' },
+  }
+}
+/** Pergunta antes de apagar: avisa que o arquivo some para todos da conversa. */
+export function chatStorageDeleteConfirm(count: number): string {
+  const what = count === 1 ? 'Apagar este arquivo?' : `Apagar estes ${count} arquivos?`
+  return `${what} Ele some para todos da conversa. A mensagem continua lá, mas o arquivo não abre mais. Isso não pode ser desfeito.`
+}
+export const STORAGE_KIND_LABEL: Record<ChatStorageKind, string> = {
+  IMAGE: 'Foto',
+  VIDEO: 'Vídeo',
+  AUDIO: 'Áudio',
+  FILE: 'Arquivo',
 }
 
 /**
@@ -976,7 +1131,7 @@ export function chatDevicesApi(http: ChatHttp) {
 export async function enrollDevice(
   enroll: () => Promise<ChatEnrollment>,
   options: {
-    onPending: (pending: { code: string; expiresAt: string }) => void
+    onPending: (pending: ChatPendingLink) => void
     signal?: AbortSignal
     intervalMs?: number
     sleep?: (ms: number) => Promise<void>
@@ -1002,7 +1157,11 @@ export async function enrollDevice(
       const { status: _status, ...session } = result
       return session
     }
-    options.onPending({ code: result.code, expiresAt: result.expiresAt })
+    options.onPending({
+      ...(result.id ? { id: result.id } : {}),
+      code: result.code,
+      expiresAt: result.expiresAt,
+    })
     await sleep(options.intervalMs ?? 4000)
   }
 }
@@ -1891,7 +2050,7 @@ export class ChatClient {
   }
   /**
    * Envia imagem, vídeo, áudio ou arquivo cifrado no cliente (padrão Matrix v2)
-   * antes do upload. O servidor só armazena bytes opacos por 90 dias.
+   * antes do upload. O servidor só armazena bytes opacos, dentro da cota de quem envia.
    */
   async sendMedia(input: {
     kind: ChatMediaKind
@@ -1902,7 +2061,11 @@ export class ChatClient {
     width?: number
     height?: number
     durationMs?: number
-    upload: (ciphertext: Uint8Array) => Promise<{ id: string }>
+    /** `info.kind` segue junto no envio só para a tela "Gerenciar armazenamento" (foto, vídeo, áudio, arquivo). */
+    upload: (
+      ciphertext: Uint8Array,
+      info: { kind: ChatMediaKind },
+    ) => Promise<{ id: string }>
   }) {
     if (!input.bytes.length)
       throw new Error('O arquivo selecionado está vazio.')
@@ -1937,7 +2100,9 @@ export class ChatClient {
           'A segurança desta conversa mudou. Confira o aviso antes de enviar.',
         )
       const sealed = await this.crypto.encryptAttachment!(input.bytes)
-      const uploaded = await input.upload(sealed.ciphertext)
+      const uploaded = await input.upload(sealed.ciphertext, {
+        kind: input.kind,
+      })
       const attachment: ChatAttachment = {
         kind: input.kind,
         id: uploaded.id,

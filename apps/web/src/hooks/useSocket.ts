@@ -42,6 +42,12 @@ export function useSocket() {
     socket.on('conversation:changed', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
     })
+    socket.on('chat:device-link', () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    })
+    socket.on('chat:device-link-decided', () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    })
     socket.on('conversation:typing', (data: ConversationTypingEvent) => {
       recordTyping(data)
     })

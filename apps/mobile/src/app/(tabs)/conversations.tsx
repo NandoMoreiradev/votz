@@ -17,6 +17,8 @@ import {
   conversationUnreadLabel,
   type ConversationSummary,
 } from '@votz/shared-types'
+import { ENROLL_WAITING } from '@votz/chat-core'
+import { useChatDeviceStatus } from '../../hooks/use-chat-devices'
 import { useChatPreview } from '../../hooks/use-chat-preview'
 import { MenuItem, PopoverMenu } from '../../components/chat-sheet'
 import {
@@ -131,9 +133,11 @@ function Inbox() {
   const list = useConversationList(folder)
   const requests = useConversationList('requests')
   const action = useConversationAction()
+  const deviceStatus = useChatDeviceStatus()
   const { user } = useConversationScope()
   const items = list.data?.pages.flatMap((page) => page.items) || []
   const requestCount = requests.data?.pages.flatMap((page) => page.items).length ?? 0
+  const needsApproval = deviceStatus.data?.status === 'needs_approval'
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
       {action.isError && (
@@ -158,14 +162,31 @@ function Inbox() {
           void list.refetch()
         }}
         ListHeaderComponent={
-          <FolderRow
-            folder={folder}
-            requestCount={requestCount}
-            onOpen={(value) => {
-              setFolder(value)
-              action.reset()
-            }}
-          />
+          <View>
+            {needsApproval && (
+              <View style={styles.connectCard}>
+                <Text style={styles.connectTitle}>{ENROLL_WAITING.bannerTitle}</Text>
+                <Text style={styles.connectText}>{ENROLL_WAITING.bannerText}</Text>
+                <Button
+                  title={ENROLL_WAITING.bannerAction}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/conversation/devices',
+                      params: { connect: '1' },
+                    })
+                  }
+                />
+              </View>
+            )}
+            <FolderRow
+              folder={folder}
+              requestCount={requestCount}
+              onOpen={(value) => {
+                setFolder(value)
+                action.reset()
+              }}
+            />
+          </View>
         }
         renderItem={({ item }) => (
           <InboxRow item={item} folder={folder} userId={user!.id}>
@@ -337,6 +358,27 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.medium,
     fontSize: 12,
     color: theme.colors.surface,
+  },
+  connectCard: {
+    margin: 16,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 16,
+    gap: 8,
+    backgroundColor: theme.colors.tint,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  connectTitle: {
+    fontFamily: theme.fonts.heading,
+    fontSize: 16,
+    color: theme.colors.text,
+  },
+  connectText: {
+    fontFamily: theme.fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: theme.colors.muted,
   },
   fab: {
     position: 'absolute',

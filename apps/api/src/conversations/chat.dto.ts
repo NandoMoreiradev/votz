@@ -11,11 +11,34 @@ import {
   IsString,
   Matches,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator'
 import { Transform } from 'class-transformer'
+export class ChatStorageListQueryDto {
+  @IsOptional() @IsIn(['size', 'date']) sort?: 'size' | 'date'
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? value : Number(value)))
+  @IsInt()
+  @Min(0)
+  skip?: number
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? value : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  take?: number
+}
+export class DeleteChatMediaDto {
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  ids!: string[]
+}
 export class EnrollChatDeviceDto {
   @IsUUID() id!: string
   @IsString() @MinLength(48) @MaxLength(128) secret!: string
@@ -31,6 +54,17 @@ export class DecideChatDeviceLinkDto {
   @Transform(({ obj }) => obj.approve)
   @IsBoolean()
   approve!: boolean
+}
+export class ApproveChatDeviceCodeDto {
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
+  @IsString()
+  @Matches(/^\d{6}$/)
+  code!: string
+  @IsOptional()
+  @IsUUID()
+  linkId?: string
 }
 export class SendChatMessageDto {
   @IsInt() @Min(1) revision!: number

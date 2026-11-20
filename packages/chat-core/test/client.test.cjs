@@ -16,6 +16,9 @@ const {
   ENROLL_WAITING,
   RESET_WARNING,
   ChatDeviceDisconnectedError,
+  formatLinkCode,
+  formatDeviceLinkQr,
+  parseDeviceLinkQr,
 } = require('../src/index.js')
 
 const PEER_PRINT = 'peer-key:public-signing-key'
@@ -1096,4 +1099,76 @@ test('a recent conversation reopens at once from memory, which clears with the p
   assert.equal(reopened.getState().ready, false)
   chatPreviews.clear()
   assert.equal(chatSeedState('conversation'), null, 'Leaving the account or the foreground clears them')
+})
+
+test('storage screen: texts are plain, sizes read in GB and the api only touches the storage routes', async () => {
+  const {
+    chatStorageApi,
+    chatStorageView,
+    chatStorageDeleteConfirm,
+    formatStorageSize,
+  } = require('../src/index.js')
+  const gb = 1024 * 1024 * 1024
+  assert.equal(formatStorageSize(512), '512 B')
+  assert.equal(formatStorageSize(1.5 * 1024 * 1024), '1,5 MB')
+  assert.equal(formatStorageSize(2 * gb), '2,0 GB')
+
+  const ok = chatStorageView({ usedBytes: gb, limitBytes: 2 * gb, nearLimit: false })
+  assert.equal(ok.level, 'ok')
+  assert.equal(ok.percent, 50)
+  assert.equal(ok.summary, 'Você usou 1,0 GB de 2,0 GB.')
+  assert.equal(ok.hint, '')
+  const near = chatStorageView({ usedBytes: 1.7 * gb, limitBytes: 2 * gb, nearLimit: true })
+  assert.equal(near.level, 'near')
+  const full = chatStorageView({ usedBytes: 2 * gb, limitBytes: 2 * gb, nearLimit: true })
+  assert.equal(full.level, 'full')
+  assert.equal(full.percent, 100)
+
+  // Nada de jargão técnico na frente do cidadão.
+  const texts = [
+    ok.summary, near.hint, full.hint, ok.help, ok.empty,
+    ok.upgrade.label, ok.upgrade.soon,
+    chatStorageDeleteConfirm(1), chatStorageDeleteConfirm(3),
+  ].join(' ')
+  for (const word of ['cota', 'quota', 'Matrix', 'Megolm', 'criptograf', 'bucket', 'blob', 'servidor'])
+    assert.equal(texts.toLowerCase().includes(word.toLowerCase()), false, word)
+  assert.match(chatStorageDeleteConfirm(3), /Apagar estes 3 arquivos\?/)
+  assert.match(chatStorageDeleteConfirm(1), /para todos da conversa/)
+
+  const calls = []
+  const storage = chatStorageApi(async (path, method = 'GET', body) => {
+    calls.push([method, path, body])
+    return {}
+  })
+  await storage.list()
+  await storage.list({ sort: 'date', skip: 50, take: 25 })
+  await storage.remove(['a', 'b'])
+  assert.deepEqual(calls, [
+    ['GET', '/chat/storage', undefined],
+    ['GET', '/chat/storage?sort=date&skip=50&take=25', undefined],
+    ['DELETE', '/chat/storage', { ids: ['a', 'b'] }],
+  ])
+})
+
+test('device link QR and 6-digit code helpers format, parse and call the approval routes cleanly', async () => {
+  const id = '11111111-1111-4111-8111-111111111111'
+  assert.equal(formatLinkCode('482910'), '482 910')
+  const qr = formatDeviceLinkQr({ id, code: '482910' })
+  assert.equal(qr, `votz://chat-link?code=482910&id=${id}`)
+  assert.deepEqual(parseDeviceLinkQr(qr), { code: '482910', linkId: id })
+  assert.deepEqual(parseDeviceLinkQr('482 910'), { code: '482910' })
+  assert.equal(parseDeviceLinkQr('12345'), null)
+  assert.equal(parseDeviceLinkQr('votz://chat-link?code=abc'), null)
+
+  const calls = []
+  const api = chatDevicesApi(async (path, method = 'GET', body) => {
+    calls.push([method, path, body])
+    return {}
+  })
+  await api.status()
+  await api.approveByCode('482910', id)
+  assert.deepEqual(calls, [
+    ['GET', '/chat/devices/status', undefined],
+    ['POST', '/chat/device-links/approve-code', { code: '482910', linkId: id }],
+  ])
 })

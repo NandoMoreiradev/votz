@@ -42,6 +42,7 @@ import {
   chatView,
   mediaKindFromMime,
   type ChatClient,
+  type ChatPendingLink,
   type ChatReplyTo,
   type ChatState,
   type ChatViewAttachment,
@@ -52,6 +53,7 @@ import {
   useConversationList,
   useConversationSettings,
 } from '../hooks/use-conversations'
+import { DeviceLinkQr } from './device-link-qr'
 import {
   downloadNativeChatMedia,
   forgetNativeChat,
@@ -128,7 +130,7 @@ function NativeAttachmentView({
     } catch (err) {
       setFailed(
         err instanceof ApiError && err.status === 410
-          ? 'Este arquivo expirou após 90 dias.'
+          ? 'Este arquivo não está mais guardado no Votz.'
           : 'Não foi possível abrir este arquivo.',
       )
     } finally {
@@ -439,7 +441,7 @@ export function ChatPane({
   const [search, setSearch] = useState('')
   const [menu, setMenu] = useState<{ message: ChatViewMessage; anchor: MenuAnchor } | null>(null)
   const bubbleRefs = useRef<Record<string, ComponentRef<typeof View> | null>>({})
-  const [pending, setPending] = useState<{ code: string } | null>(null)
+  const [pending, setPending] = useState<ChatPendingLink | null>(null)
   const [showVerify, setShowVerify] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [password, setPassword] = useState('')
@@ -708,12 +710,13 @@ export function ChatPane({
         width: asset.width,
         height: asset.height,
         durationMs: asset.duration ?? undefined,
-        upload: (ciphertext) =>
+        upload: (ciphertext, info) =>
           uploadNativeChatMedia(
             userId,
             conversation.id,
             ciphertext,
             controller.signal,
+            info.kind,
           ),
       })
       setDraft('')
@@ -814,9 +817,12 @@ export function ChatPane({
           <ShieldCheck size={26} color={theme.colors.primary} />
           <Heading>{ENROLL_WAITING.title}</Heading>
           <Label muted>{ENROLL_WAITING.text}</Label>
+          <DeviceLinkQr id={pending.id} code={pending.code} />
           <Text accessibilityLabel="Código do pedido" style={styles.code}>
             {pending.code}
           </Text>
+          <Label muted>{ENROLL_WAITING.qrHint}</Label>
+          <Label muted>{ENROLL_WAITING.historyNote}</Label>
           <Label muted>{ENROLL_WAITING.note}</Label>
           {resetting ? (
             <>

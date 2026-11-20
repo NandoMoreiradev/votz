@@ -3,6 +3,7 @@ import {
   enrollDevice,
   type ChatEnrollment,
   type ChatHttp,
+  type ChatPendingLink,
   type ChatState,
 } from '@votz/chat-core'
 import { Platform } from 'react-native'
@@ -41,7 +42,7 @@ export function openNativeChat(
   signal: AbortSignal,
   listener: (state: ChatState) => void,
   onClient: (client: ChatClient) => void,
-  onPending: (pending: { code: string; expiresAt: string } | null) => void = () => {},
+  onPending: (pending: ChatPendingLink | null) => void = () => {},
 ) {
   const task = opening.then(async () => {
     if (previous) {
@@ -141,6 +142,8 @@ export async function uploadNativeChatMedia(
   conversationId: string,
   ciphertext: Uint8Array,
   signal?: AbortSignal,
+  /** Tipo do anexo (image, video, audio, file): a API guarda só para a tela "Gerenciar armazenamento". */
+  kind?: string,
 ): Promise<{ id: string }> {
   const { File, Paths } = await import('expo-file-system')
   const storage = await nativeChatStorage(userId)
@@ -154,6 +157,7 @@ export async function uploadNativeChatMedia(
       {
         timeoutMs: 5 * 60_000,
         signal,
+        ...(kind ? { parameters: { kind: kind.toUpperCase() } } : {}),
         headers: {
           'x-votz-chat-device': storage.credentials.id,
           'x-votz-chat-secret': storage.credentials.secret,
@@ -193,7 +197,7 @@ export async function downloadNativeChatMedia(
   if (!response.ok)
     throw new ApiError(
       response.status === 410
-        ? 'Este arquivo expirou após 90 dias.'
+        ? 'Este arquivo não está mais guardado no Votz.'
         : 'Não foi possível baixar o arquivo.',
       response.status,
     )
