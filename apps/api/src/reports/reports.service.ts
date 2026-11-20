@@ -10,6 +10,7 @@ import { AlertsService } from '../alerts/alerts.service'
 import { AlertRulesService } from '../alerts/alert-rules.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { StorageService } from '../storage/storage.service'
+import { ReportMediaService } from '../storage/report-media.service'
 import { WebhooksService } from '../webhooks/webhooks.service'
 import { TopicsService } from '../topics/topics.service'
 import { CreateReportDto } from './dto/create-report.dto'
@@ -38,6 +39,7 @@ export class ReportsService {
     @Optional() private readonly alertRules?: AlertRulesService,
     @Optional() private readonly webhooks?: WebhooksService,
     @Optional() private readonly topics?: TopicsService,
+    @Optional() private readonly reportMedia?: ReportMediaService,
   ) {}
 
   /** Compara nomes sem olhar maiúsculas, acentos, hífen ou apóstrofo ("Santa Bárbara d'Oeste" = "SANTA BARBARA D OESTE"). */
@@ -76,6 +78,9 @@ export class ReportsService {
   async create(dto: CreateReportDto, user: { id: string; type: string; emailVerified: boolean }) {
     if (!user.emailVerified) throw new BadRequestException('Email verification required to create reports')
     this.storage.assertOwnStorageUrls(dto.media, 'reports')
+    // Confere que os arquivos são da própria pessoa e já os marca: quem erra a cidade e reenvia usa os mesmos
+    // arquivos. Quem desiste fica sem anexar e o arquivo é apagado pela limpeza, que só olha o que nunca foi marcado.
+    await this.reportMedia?.attach(dto.media, user.id)
     await this.assertKnownCity(dto.city, dto.state)
 
     if (dto.recipientType === RecipientType.POLITICIAN && dto.recipientId) {
@@ -221,6 +226,7 @@ export class ReportsService {
     user: ActingUser,
   ) {
     this.storage.assertOwnStorageUrls(dto.media, 'reports')
+    await this.reportMedia?.attach(dto.media, user.id)
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Report not found')
 
@@ -446,6 +452,7 @@ export class ReportsService {
 
   async dispute(reportId: string, dto: DisputeDto, userId: string) {
     this.storage.assertOwnStorageUrls(dto.evidence, 'reports')
+    await this.reportMedia?.attach(dto.evidence, userId)
     const report = await this.repository.findById(reportId)
     if (!report) throw new NotFoundException('Report not found')
 

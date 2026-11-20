@@ -255,7 +255,7 @@ export function EntityEdit() {
     mutationFn: (file: File) => {
       const form = new FormData()
       form.append('file', file)
-      return api.post<{ url: string }>('/storage/upload/entities', form).then((r) => r.data)
+      return api.post<{ url: string }>('/storage/upload/entity-logo', form).then((r) => r.data)
     },
     onSuccess: ({ url }) => {
       setPendingLogoUrl(url)

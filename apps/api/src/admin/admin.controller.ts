@@ -13,6 +13,7 @@ import { UserType } from '@votz/shared-types'
 import { AdminService } from './admin.service'
 import { SetApiKeyTierDto } from './dto/set-api-key-tier.dto'
 import { SetBanDto } from './dto/ban-user.dto'
+import { SetChatStorageDto } from './dto/set-chat-storage.dto'
 import { DeleteReportDto } from './dto/delete-report.dto'
 import { SetTypeDto } from './dto/set-type.dto'
 
@@ -74,6 +75,17 @@ export class AdminController {
     @CurrentUser() actor: { id: string },
   ) {
     return this.service.banUser(id, dto.banned, actor.id, dto.reason)
+  }
+
+  @Patch('users/:id/chat-storage')
+  @Roles(UserType.ADMIN)
+  @ApiOperation({ summary: 'Liberar espaço de arquivos das conversas para uma pessoa (admin only)' })
+  setChatStorage(
+    @Param('id') id: string,
+    @Body() dto: SetChatStorageDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.setChatStorageQuota(id, dto.quotaMb, actor.id, dto.reason)
   }
 
   @Patch('users/:id/type')

@@ -21,10 +21,12 @@ import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { TimelineEvent } from '../types/api'
+import { uploadReportMedia } from '../lib/report-upload'
 import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
 import { videoPosterUrl } from '../lib/video-poster'
 
+import { thumbUrl } from '../lib/image-thumb'
 const Page = styled.div`
   min-height: 100vh;
   background: ${({ theme }) => theme.colors.neutral};
@@ -117,6 +119,13 @@ const Location = styled.p`
 `
 
 const MediaGallery = styled.div`
+/** Quadradinho da galeria: usa a miniatura e, se a foto for antiga (sem miniatura), a foto inteira. */
+function GalleryImage({ url }: { url: string }) {
+  const thumb = thumbUrl(url)
+  const [src, setSrc] = useState(thumb ?? url)
+  return <img src={src} alt="" loading="lazy" onError={() => src !== url && setSrc(url)} />
+}
+
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
@@ -688,7 +697,7 @@ function TimelineRow({
                 onClick={() => onOpenMedia(media.map((u) => ({ url: u })), i)}
                 onKeyDown={(e) => e.key === 'Enter' && onOpenMedia(media.map((u) => ({ url: u })), i)}
               >
-                <img src={url} alt="" loading="lazy" />
+                <GalleryImage url={url} />
               </TimelineMediaItem>
             ))}
           </TimelineMediaGrid>
@@ -819,13 +828,7 @@ export function ReportDetail() {
       toProcess.map(async (file, i) => {
         const localId = newItems[i].id
         try {
-          const form = new FormData()
-          form.append('file', file)
-          const { url } = await api
-            .post<{ url: string }>('/storage/upload/report-media', form, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-            })
-            .then((r) => r.data)
+          const { url } = await uploadReportMedia(file)
           setMediaItems((prev) =>
             prev.map((it) => (it.id === localId ? { ...it, url, uploading: false } : it)),
           )
@@ -926,7 +929,7 @@ export function ReportDetail() {
                             <VideoPlayOverlay>▶</VideoPlayOverlay>
                           </>
                         ) : (
-                          <img src={url} alt="" loading="lazy" />
+                          <GalleryImage url={url} />
                         )}
                       </MediaItem>
                     )

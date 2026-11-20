@@ -118,6 +118,8 @@ export interface UploadOptions {
   headers?: Record<string, string>
   /** Cancela o envio em andamento. */
   signal?: AbortSignal
+  /** Campos de texto extras do multipart (ex.: o tipo do anexo do chat). */
+  parameters?: Record<string, string>
 }
 
 /**
@@ -126,13 +128,14 @@ export interface UploadOptions {
  * "Unsupported FormDataPart implementation") e, com Blob, leria o vídeo inteiro para a memória.
  */
 export async function uploadFile<T>(path: string, file: { uri: string; mimeType: string }, options: UploadOptions = {}): Promise<T> {
-  const { timeoutMs = 60_000, headers = {}, signal } = options
+  const { timeoutMs = 60_000, headers = {}, signal, parameters } = options
   const aborted = () => Object.assign(new Error('Envio cancelado'), { name: 'AbortError' })
   const send = async () => {
     if (signal?.aborted) throw aborted()
     if (accessToken && tokenExpiresAt && tokenExpiresAt <= Date.now() + 5_000) await refreshSession()
     const task = FileSystem.createUploadTask(`${API_URL}${path}`, file.uri, {
       httpMethod: 'POST', uploadType: FileSystem.FileSystemUploadType.MULTIPART, fieldName: 'file', mimeType: file.mimeType,
+      ...(parameters ? { parameters } : {}),
       headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...headers },
     })
     const cancel = () => { void task.cancelAsync() }
@@ -156,6 +159,35 @@ export async function uploadFile<T>(path: string, file: { uri: string; mimeType:
     throw new ApiError(message || 'Não foi possível concluir. Tente novamente.', result.status)
   }
   return JSON.parse(result.body) as T
+}
+/**
+ * Envia um arquivo local direto para um endereço assinado do armazenamento (PUT com o próprio arquivo como
+ * corpo), em streaming a partir do disco. NÃO leva o token da API: o endereço já vem assinado.
+ */
+export async function putFile(
+  url: string,
+  file: { uri: string },
+  headers: Record<string, string>,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<void> {
+  const { timeoutMs = 60_000, signal } = options
+  if (signal?.aborted) throw Object.assign(new Error('Envio cancelado'), { name: 'AbortError' })
+  const task = FileSystem.createUploadTask(url, file.uri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers,
+  })
+  const cancel = () => { void task.cancelAsync() }
+  const timer = setTimeout(cancel, timeoutMs)
+  signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    const result = await task.uploadAsync()
+    if (!result) throw Object.assign(new Error('Tempo esgotado'), { name: 'AbortError' })
+    if (result.status < 200 || result.status >= 300) throw new ApiError('O armazenamento recusou o arquivo.', result.status)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
 }
 export const json = (data: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(data) })
 /** Falha ao enviar um arquivo do relato: diz qual arquivo e por quê, em vez do aviso genérico de conexão. */

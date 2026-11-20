@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Post,
   UploadedFile,
@@ -12,13 +13,22 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import { StorageService } from './storage.service'
+import { ReportMediaService } from './report-media.service'
+import { MediaProcessingService } from './media-processing'
+import { DirectUploadService } from './direct-upload.service'
+import { CompleteUploadDto, PresignUploadDto } from './dto/direct-upload.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 
 @ApiTags('storage')
 @Controller('storage')
 export class StorageController {
-  constructor(private readonly storageService: StorageService) {}
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly reportMedia: ReportMediaService,
+    private readonly mediaProcessing: MediaProcessingService,
+    private readonly directUpload: DirectUploadService,
+  ) {}
 
   @Post('upload/report-media')
   @HttpCode(HttpStatus.CREATED)
@@ -31,10 +41,38 @@ export class StorageController {
   @ApiOperation({ summary: 'Upload media file for a report (image, video, pdf)' })
   async uploadReportMedia(
     @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() _user: { id: string },
+    @CurrentUser() user: { id: string },
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado')
-    return this.storageService.upload(file.buffer, file.mimetype, 'reports')
+    const uploaded = await this.storageService.upload(file.buffer, file.mimetype, 'reports')
+    await this.reportMedia.register(uploaded, user.id)
+    // O vídeo já está no ar como veio; a conversão para 1080p acontece em segundo plano e troca o arquivo.
+    if (uploaded.mimeType.startsWith('video/')) await this.mediaProcessing.enqueueVideo(uploaded.key)
+    return uploaded
+  }
+
+  @Post('uploads/presign')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 40, ttl: 3_600_000 } })
+  @ApiOperation({
+    summary: 'Pede o endereço para enviar um vídeo ou PDF de relato direto ao armazenamento (PUT). Depois, confirme em /storage/uploads/complete.',
+  })
+  presignUpload(@Body() dto: PresignUploadDto, @CurrentUser() user: { id: string }) {
+    return this.directUpload.presign(user.id, dto)
+  }
+
+  @Post('uploads/complete')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 20, ttl: 60_000 }, long: { limit: 60, ttl: 3_600_000 } })
+  @ApiOperation({
+    summary: 'Confirma o envio direto: confere tamanho e tipo reais e publica o arquivo. Devolve o mesmo formato de /storage/upload/report-media.',
+  })
+  completeUpload(@Body() dto: CompleteUploadDto, @CurrentUser() user: { id: string }) {
+    return this.directUpload.complete(user.id, dto.key)
   }
 
   @Post('upload/avatar')
@@ -134,7 +172,9 @@ export class StorageController {
     if (!allowed.has(file.mimetype)) {
       throw new BadRequestException('Arquivo deve ser imagem (JPEG, PNG, WebP, GIF) ou vídeo (MP4, MOV)')
     }
-    return this.storageService.upload(file.buffer, file.mimetype, 'posts')
+    const uploaded = await this.storageService.upload(file.buffer, file.mimetype, 'posts')
+    if (uploaded.mimeType.startsWith('video/')) await this.mediaProcessing.enqueueVideo(uploaded.key)
+    return uploaded
   }
 
   @Post('upload/post-comment-media')

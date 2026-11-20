@@ -71,6 +71,32 @@ describe('AdminService', () => {
     expect(repo.listReports).toHaveBeenCalledWith({ search: 'buraco', page: 1, limit: 50 })
   })
 
+  it('libera espaço extra de arquivos das conversas só com motivo e para usuário existente', async () => {
+    prisma.user = { findUnique: jest.fn().mockResolvedValue(null) }
+    prisma.chatStorage = {
+      upsert: jest.fn().mockResolvedValue({ userId: 'u1', quotaMb: 10240 }),
+    }
+
+    await expect(
+      service.setChatStorageQuota('u1', 10240, 'admin-1', 'curto'),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    await expect(
+      service.setChatStorageQuota('u1', 10240, 'admin-1', 'Plano de 10 GB combinado'),
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(prisma.chatStorage.upsert).not.toHaveBeenCalled()
+
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+    await expect(
+      service.setChatStorageQuota('u1', 10240, 'admin-1', '  Plano de 10 GB combinado  '),
+    ).resolves.toEqual({ userId: 'u1', quotaMb: 10240 })
+    expect(prisma.chatStorage.upsert).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+      create: { userId: 'u1', quotaMb: 10240 },
+      update: { quotaMb: 10240 },
+      select: { userId: true, quotaMb: true },
+    })
+  })
+
   it('delegates plan and verification mutations', async () => {
     await service.verifyEntity('e1', true)
     expect(repo.setEntityVerified).toHaveBeenCalledWith('e1', true)

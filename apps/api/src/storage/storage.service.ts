@@ -5,10 +5,13 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomUUID } from 'crypto'
 import { generateVideoPoster, posterKeyFor } from './video-poster'
+import { normalizeImage, thumbKeyFor } from './image-normalize'
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -114,11 +117,21 @@ function parseHttpUrl(raw: unknown): URL | null {
   }
 }
 
+/** Pastas em que a foto é otimizada no servidor (avatar, capa e documentos têm regras próprias). */
+const NORMALIZED_IMAGE_FOLDERS = new Set(['reports', 'posts'])
+
 export interface UploadedFile {
   key: string
   url: string
   mimeType: string
+  /** Tamanho do que ficou guardado (para foto, depois de reduzida). */
   size: number
+  /** Tamanho do que a pessoa enviou. */
+  originalSize?: number
+  width?: number
+  height?: number
+  /** Miniatura da foto, para listas. Só existe em foto otimizada. */
+  thumbUrl?: string
 }
 
 @Injectable()
@@ -230,7 +243,27 @@ export class StorageService {
       throw new BadRequestException(label)
     }
 
-    const ext = mimeType.split('/')[1].replace('quicktime', 'mov')
+    // Fotos de relato e de publicação: reduz, comprime, tira os metadados da câmera e gera a miniatura.
+    // Se não der para ler a foto, ela é guardada como veio (o envio nunca falha por causa disso).
+    let body = buffer
+    let storedMime = mimeType
+    let thumb: Buffer | null = null
+    let width: number | undefined
+    let height: number | undefined
+    if (NORMALIZED_IMAGE_FOLDERS.has(folder) && mimeType.startsWith('image/')) {
+      const normalized = await normalizeImage(buffer, mimeType, {
+        onFailure: (reason) => this.logger.warn(`Foto guardada sem otimizar (${folder}): ${reason}`),
+      })
+      if (normalized) {
+        body = normalized.data
+        storedMime = normalized.mimeType
+        thumb = normalized.thumb
+        width = normalized.width
+        height = normalized.height
+      }
+    }
+
+    const ext = storedMime.split('/')[1].replace('quicktime', 'mov')
     const key = `${folder}/${randomUUID()}.${ext}`
     const isPrivate = folder === 'verification'
 
@@ -238,19 +271,23 @@ export class StorageService {
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Body: buffer,
-        ContentType: mimeType,
+        Body: body,
+        ContentType: storedMime,
         CacheControl: isPrivate ? 'private, no-cache' : 'public, max-age=31536000, immutable',
       }),
     )
 
     if (isVideo && !isPrivate) await this.storeVideoPoster(key, buffer, ext)
+    const thumbUrl = thumb ? await this.storeThumb(key, thumb) : undefined
 
     return {
       key,
       url: `${this.publicBase}/${key}`,
-      mimeType,
-      size: buffer.byteLength,
+      mimeType: storedMime,
+      size: body.byteLength,
+      originalSize: buffer.byteLength,
+      ...(width && height ? { width, height } : {}),
+      ...(thumbUrl ? { thumbUrl } : {}),
     }
   }
 
@@ -333,16 +370,32 @@ export class StorageService {
     }
   }
 
+  /**
+   * Guarda a miniatura ao lado da foto. É um extra, como a capa do vídeo: se falhar, a foto já foi salva
+   * e o envio segue; as listas caem para a foto inteira.
+   */
+  private async storeThumb(imageKey: string, thumb: Buffer): Promise<string | undefined> {
+    const thumbKey = thumbKeyFor(imageKey)
+    if (!thumbKey) return undefined
+    try {
+      await this.uploadBuffer(thumbKey, thumb, 'image/webp', false)
+      return `${this.publicBase}/${thumbKey}`
+    } catch (error) {
+      this.logger.warn(`Sem miniatura para ${imageKey}: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
+    }
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     )
-    // A capa do vídeo some junto com ele (não existe nos vídeos antigos; apagar chave inexistente não dá erro).
-    const posterKey = posterKeyFor(key)
-    if (posterKey) {
+    // A capa do vídeo e a miniatura da foto somem junto (não existem nos arquivos antigos; apagar chave inexistente não dá erro).
+    for (const extraKey of [posterKeyFor(key), thumbKeyFor(key)]) {
+      if (!extraKey) continue
       await this.client
-        .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: posterKey }))
-        .catch((error) => this.logger.warn(`Não foi possível apagar a capa ${posterKey}: ${error instanceof Error ? error.message : String(error)}`))
+        .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: extraKey }))
+        .catch((error) => this.logger.warn(`Não foi possível apagar ${extraKey}: ${error instanceof Error ? error.message : String(error)}`))
     }
   }
 
@@ -376,10 +429,17 @@ export class StorageService {
     )
   }
 
+  /**
+   * Endereço para o app enviar o arquivo direto ao bucket (PUT). Com `contentLength`, o tamanho vai assinado
+   * e o bucket recusa outro tamanho (testado no MinIO). O tipo NÃO é imposto pelo bucket: quem garante o tipo é
+   * a conferência dos primeiros bytes ao confirmar o envio (sniffObjectMime), que também regrava o
+   * `Content-Type` na cópia (moveObject).
+   */
   async getSignedUploadUrl(
     key: string,
     mimeType: string,
     expiresInSeconds = 300,
+    contentLength?: number,
   ): Promise<string> {
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       throw new BadRequestException(`Tipo de arquivo não permitido: ${mimeType}`)
@@ -391,8 +451,45 @@ export class StorageService {
         Bucket: this.bucket,
         Key: key,
         ContentType: mimeType,
+        ...(contentLength ? { ContentLength: contentLength } : {}),
       }),
       { expiresIn: expiresInSeconds },
     )
+  }
+
+  /** Tamanho do objeto no bucket, ou null se ele não existe. */
+  async headObjectSize(key: string): Promise<number | null> {
+    try {
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }))
+      return head.ContentLength ?? 0
+    } catch (error) {
+      const info = error as { name?: string; $metadata?: { httpStatusCode?: number } }
+      if (info.name === 'NotFound' || info.name === 'NoSuchKey' || info.$metadata?.httpStatusCode === 404) return null
+      throw error
+    }
+  }
+
+  /** Tipo real do objeto pelos primeiros bytes (o `Content-Type` que o app declarou não vale como prova). */
+  async sniffObjectMime(key: string): Promise<string> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key, Range: 'bytes=0-31' }),
+    )
+    if (!res.Body) return ''
+    return detectMimeFromBuffer(Buffer.from(await res.Body.transformToByteArray()))
+  }
+
+  /** Move o objeto dentro do bucket sem passar os bytes pela API (copia e apaga o de origem). */
+  async moveObject(fromKey: string, toKey: string, contentType: string): Promise<void> {
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        Key: toKey,
+        CopySource: `${this.bucket}/${fromKey.split('/').map(encodeURIComponent).join('/')}`,
+        ContentType: contentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+        MetadataDirective: 'REPLACE',
+      }),
+    )
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: fromKey }))
   }
 }

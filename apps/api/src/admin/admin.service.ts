@@ -187,6 +187,28 @@ export class AdminService {
     return apiKey
   }
 
+  /**
+   * Libera espaço extra de arquivos das conversas para uma pessoa (upgrade manual enquanto não há cobrança).
+   * Sem linha, vale a cota padrão. Registrado no log com quem liberou e o motivo.
+   */
+  async setChatStorageQuota(userId: string, quotaMb: number, actorId: string, reason: string) {
+    const trimmedReason = reason?.trim()
+    if (!trimmedReason || trimmedReason.length < 10 || trimmedReason.length > 500) {
+      throw new BadRequestException('Informe um motivo entre 10 e 500 caracteres.')
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } })
+    if (!user) throw new NotFoundException('Usuário não encontrado.')
+
+    const saved = await this.prisma.chatStorage.upsert({
+      where: { userId },
+      create: { userId, quotaMb },
+      update: { quotaMb },
+      select: { userId: true, quotaMb: true },
+    })
+    this.logger.log(`Espaço de conversas de ${userId} definido em ${quotaMb} MB por ${actorId}: ${trimmedReason}`)
+    return saved
+  }
+
   superadminOverview() {
     return this.repo.superadminOverview()
   }

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common'
 import { S3Client } from '@aws-sdk/client-s3'
+import sharp from 'sharp'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { StorageService } from './storage.service'
 import { generateVideoPoster } from './video-poster'
@@ -136,14 +137,144 @@ describe('StorageService', () => {
       ])
     })
 
-    it('apagar algo que não é vídeo apaga só o próprio arquivo', async () => {
+    it('apagar uma foto apaga também a miniatura', async () => {
       await service.delete('reports/abc.jpeg')
+      expect(sentKeys().map((s) => [s.name, s.key])).toEqual([
+        ['DeleteObjectCommand', 'reports/abc.jpeg'],
+        ['DeleteObjectCommand', 'reports/abc.thumb.webp'],
+      ])
+    })
+
+    it('apagar algo que não é vídeo nem foto apaga só o próprio arquivo', async () => {
+      await service.delete('reports/abc.pdf')
       expect(sentKeys()).toHaveLength(1)
     })
 
     it('falha ao apagar a capa não impede apagar o vídeo', async () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('sem permissão'))
       await expect(service.delete('reports/abc.mp4')).resolves.toBeUndefined()
+    })
+  })
+
+  describe('envio direto ao bucket', () => {
+    const commands = () => sendMock.mock.calls.map(([command]) => ({ name: command.constructor.name, input: command.input }))
+
+    it('assina o envio com o tamanho (quando informado); o tipo vai no comando mas o bucket não o impõe', async () => {
+      await service.getSignedUploadUrl('pending/a.mp4', 'video/mp4', 900, 5_000_000)
+      const command = (getSignedUrl as jest.Mock).mock.calls[0][1]
+      expect(command.input).toMatchObject({ Key: 'pending/a.mp4', ContentType: 'video/mp4', ContentLength: 5_000_000 })
+      expect((getSignedUrl as jest.Mock).mock.calls[0][2]).toEqual({ expiresIn: 900 })
+
+      ;(getSignedUrl as jest.Mock).mockClear()
+      await service.getSignedUploadUrl('pending/b.pdf', 'application/pdf')
+      expect((getSignedUrl as jest.Mock).mock.calls[0][1].input).not.toHaveProperty('ContentLength')
+    })
+
+    it('headObjectSize devolve o tamanho, null quando não existe e repassa outros erros', async () => {
+      sendMock.mockResolvedValueOnce({ ContentLength: 1234 })
+      await expect(service.headObjectSize('pending/a.mp4')).resolves.toBe(1234)
+
+      sendMock.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } }))
+      await expect(service.headObjectSize('pending/a.mp4')).resolves.toBeNull()
+
+      sendMock.mockRejectedValueOnce(Object.assign(new Error('sem permissão'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }))
+      await expect(service.headObjectSize('pending/a.mp4')).rejects.toThrow('sem permissão')
+    })
+
+    it('sniffObjectMime lê só os primeiros bytes e reconhece o tipo real', async () => {
+      const pdf = Buffer.from('%PDF-1.7\n%conteudo qualquer', 'latin1')
+      sendMock.mockResolvedValueOnce({ Body: { transformToByteArray: async () => new Uint8Array(pdf) } })
+      await expect(service.sniffObjectMime('pending/a.pdf')).resolves.toBe('application/pdf')
+      expect(commands()[0].input).toMatchObject({ Key: 'pending/a.pdf', Range: 'bytes=0-31' })
+
+      const html = Buffer.from('<html><script>alert(1)</script>')
+      sendMock.mockResolvedValueOnce({ Body: { transformToByteArray: async () => new Uint8Array(html) } })
+      await expect(service.sniffObjectMime('pending/b.mp4')).resolves.toBe('')
+
+      sendMock.mockResolvedValueOnce({})
+      await expect(service.sniffObjectMime('pending/c.mp4')).resolves.toBe('')
+    })
+
+    it('moveObject copia com o tipo e o cache definitivos e só então apaga a origem', async () => {
+      await service.moveObject('pending/video bom (1).mp4', 'reports/v.mp4', 'video/mp4')
+      const [copy, del] = commands()
+      expect(copy.name).toBe('CopyObjectCommand')
+      expect(copy.input).toMatchObject({
+        Bucket: 'votz-bucket',
+        Key: 'reports/v.mp4',
+        ContentType: 'video/mp4',
+        MetadataDirective: 'REPLACE',
+      })
+      expect(copy.input.CopySource).toBe('votz-bucket/pending/video%20bom%20(1).mp4')
+      expect(copy.input.CacheControl).toMatch(/^public/)
+      expect(del.name).toBe('DeleteObjectCommand')
+      expect(del.input).toMatchObject({ Key: 'pending/video bom (1).mp4' })
+    })
+
+    it('se a cópia falhar, a origem NÃO é apagada', async () => {
+      sendMock.mockRejectedValueOnce(new Error('R2 fora do ar'))
+      await expect(service.moveObject('pending/a.mp4', 'reports/a.mp4', 'video/mp4')).rejects.toThrow('R2 fora do ar')
+      expect(commands().map((c) => c.name)).toEqual(['CopyObjectCommand'])
+    })
+  })
+
+  describe('foto de relato: reduzida, sem metadados e com miniatura', () => {
+    const sentKeys = () => sendMock.mock.calls.map(([command]) => ({ name: command.constructor.name, key: command.input.Key, type: command.input.ContentType, cache: command.input.CacheControl, body: command.input.Body as Buffer }))
+    const bigJpeg = () =>
+      sharp({ create: { width: 4000, height: 3000, channels: 3, background: { r: 90, g: 120, b: 150 } } })
+        .jpeg({ quality: 95 })
+        .withExif({ IFD0: { Copyright: 'dados-da-camera' } })
+        .toBuffer()
+
+    it('guarda a foto reduzida e a miniatura ao lado, e devolve as medidas', async () => {
+      const original = await bigJpeg()
+      const res = await service.upload(original, 'image/jpeg', 'reports')
+
+      expect(res.mimeType).toBe('image/jpeg')
+      expect(res.key).toMatch(/^reports\/.+\.jpeg$/)
+      expect(res.width).toBe(2048)
+      expect(res.height).toBe(1536)
+      expect(res.originalSize).toBe(original.byteLength)
+      expect(res.size).toBeLessThan(original.byteLength)
+      expect(res.thumbUrl).toBe(`https://cdn.votz.app/${res.key.replace(/\.jpeg$/, '.thumb.webp')}`)
+
+      const sent = sentKeys()
+      expect(sent).toHaveLength(2)
+      expect(sent[0]).toMatchObject({ key: res.key, type: 'image/jpeg' })
+      expect(sent[0].body.includes(Buffer.from('dados-da-camera'))).toBe(false)
+      expect(sent[0].body.byteLength).toBe(res.size)
+      expect(sent[1]).toMatchObject({ key: res.key.replace(/\.jpeg$/, '.thumb.webp'), type: 'image/webp' })
+      expect(sent[1].cache).toMatch(/^public/)
+    })
+
+    it('fotos de publicação também são otimizadas', async () => {
+      const res = await service.upload(await bigJpeg(), 'image/jpeg', 'posts')
+      expect(res.width).toBe(2048)
+      expect(res.thumbUrl).toBeDefined()
+    })
+
+    it('avatar não passa pela otimização de foto de relato', async () => {
+      const original = await bigJpeg()
+      const res = await service.upload(original, 'image/jpeg', 'avatars')
+      expect(res.size).toBe(original.byteLength)
+      expect(res.thumbUrl).toBeUndefined()
+      expect(sentKeys()).toHaveLength(1)
+    })
+
+    it('GIF fica como veio e não ganha miniatura', async () => {
+      const gif = await sharp({ create: { width: 40, height: 40, channels: 3, background: '#f00' } }).gif().toBuffer()
+      const res = await service.upload(gif, 'image/gif', 'reports')
+      expect(res.mimeType).toBe('image/gif')
+      expect(res.size).toBe(gif.byteLength)
+      expect(res.thumbUrl).toBeUndefined()
+      expect(sentKeys()).toHaveLength(1)
+    })
+
+    it('se salvar a miniatura falhar, a foto já está salva e o envio segue', async () => {
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('R2 fora do ar'))
+      const res = await service.upload(await bigJpeg(), 'image/jpeg', 'reports')
+      expect(res.key).toMatch(/^reports\/.+\.jpeg$/)
+      expect(res.thumbUrl).toBeUndefined()
     })
   })
 

@@ -12,6 +12,7 @@ import { useCreateReport } from '../hooks/useAuth'
 import { useSimilarReports } from '../hooks/useSimilarReports'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
+import { uploadReportMedia } from '../lib/report-upload'
 import { EntitiesResponse, EntityListItem, PoliticiansResponse, Politician } from '../types/api'
 import { SimilarReportsCard } from '../components/reports/SimilarReportsCard'
 
@@ -155,13 +156,9 @@ function useMediaUpload() {
     setFiles((prev) => [...prev, ...toAdd])
 
     toAdd.filter((e) => !e.error).forEach((entry) => {
-      const form = new FormData()
-      form.append('file', entry.file)
-      api
-        .post<{ url: string }>('/storage/upload/report-media', form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-        .then(({ data }) => {
+      // Vídeo e PDF vão direto ao armazenamento; foto passa pela API (precisa ser reduzida).
+      uploadReportMedia(entry.file)
+        .then((data) => {
           setFiles((prev) =>
             prev.map((f) => f.id === entry.id ? { ...f, uploading: false, uploadedUrl: data.url } : f),
           )

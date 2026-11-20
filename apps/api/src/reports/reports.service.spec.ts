@@ -15,6 +15,7 @@ import { AlertsService } from '../alerts/alerts.service'
 import { EmbeddingService } from '../embedding/embedding.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
+import { ReportMediaService } from '../storage/report-media.service'
 import { REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { ReportStatus, EventType } from '@votz/shared-types'
 import { OrgPermission } from '@prisma/client'
@@ -46,6 +47,7 @@ const mockPrisma = {
   orgMembership: { findUnique: jest.fn() },
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
+const mockReportMedia = { attach: jest.fn().mockResolvedValue(undefined) }
 const STORAGE_BASE = 'https://cdn.votz.app'
 const mockStorage = {
   assertOwnStorageUrls: jest.fn((urls: string[] | undefined, folder?: string) => {
@@ -85,6 +87,7 @@ describe('ReportsService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: StorageService, useValue: mockStorage },
         { provide: getQueueToken(REPORTS_QUEUE), useValue: mockReportsQueue },
+        { provide: ReportMediaService, useValue: mockReportMedia },
       ],
     }).compile()
 
@@ -94,6 +97,7 @@ describe('ReportsService', () => {
     mockTimeline.record.mockResolvedValue(undefined)
     mockAlerts.enqueueCheck.mockResolvedValue(undefined)
     mockReportsQueue.add.mockResolvedValue({})
+    mockReportMedia.attach.mockResolvedValue(undefined)
     mockPrisma.follower.findMany.mockResolvedValue([])
     mockPrisma.orgMembership.findUnique.mockResolvedValue({
       status: 'ACTIVE',
@@ -462,6 +466,7 @@ describe('ReportsService', () => {
           { id: 'u1', type: 'CITIZEN', emailVerified: true },
         ),
       ).rejects.toThrow(BadRequestException)
+      expect(mockReportMedia.attach).not.toHaveBeenCalled()
 
       await expect(
         service.updateStatus(
@@ -511,6 +516,62 @@ describe('ReportsService', () => {
         'u1',
       )
       expect(mockRepo.setDisputed).toHaveBeenCalledWith('r1')
+
+      // Criar, atualizar e contestar marcam os arquivos como usados (a limpeza de órfãos só olha o que nunca foi marcado).
+      expect(mockReportMedia.attach).toHaveBeenCalledTimes(3)
+      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(1, validMedia, 'u1')
+      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(2, validMedia, 'admin-1')
+      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(3, validMedia, 'u1')
+    })
+
+    it('arquivo de outra pessoa barra o relato, a atualização e a contestação ANTES de gravar qualquer coisa', async () => {
+      const notYours = () => mockReportMedia.attach.mockRejectedValueOnce(new ForbiddenException('Você só pode anexar arquivos que você mesmo enviou.'))
+
+      notYours()
+      await expect(
+        service.create(
+          {
+            title: 'Buraco grande na via',
+            description: 'Buraco atrapalhando trânsito.',
+            category: 'INFRASTRUCTURE' as any,
+            latitude: -23.5,
+            longitude: -46.6,
+            media: validMedia,
+          } as any,
+          { id: 'u1', type: 'CITIZEN', emailVerified: true },
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException)
+      expect(mockRepo.create).not.toHaveBeenCalled()
+
+      notYours()
+      await expect(
+        service.updateStatus('r1', { content: 'Equipe enviada ao local hoje.', media: validMedia }, { id: 'admin-1', type: 'ADMIN' }),
+      ).rejects.toBeInstanceOf(ForbiddenException)
+      expect(mockRepo.findById).not.toHaveBeenCalled()
+      expect(mockTimeline.record).not.toHaveBeenCalled()
+
+      notYours()
+      await expect(
+        service.dispute('r1', { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: validMedia }, 'u1'),
+      ).rejects.toBeInstanceOf(ForbiddenException)
+      expect(mockRepo.findById).not.toHaveBeenCalled()
+      expect(mockRepo.setDisputed).not.toHaveBeenCalled()
+    })
+
+    it('sem mídia, não consulta nem recusa nada', async () => {
+      mockRepo.create.mockResolvedValue({ id: 'r1', category: 'INFRASTRUCTURE' })
+      await service.create(
+        {
+          title: 'Buraco grande na via',
+          description: 'Buraco atrapalhando trânsito.',
+          category: 'INFRASTRUCTURE' as any,
+          latitude: -23.5,
+          longitude: -46.6,
+        } as any,
+        { id: 'u1', type: 'CITIZEN', emailVerified: true },
+      )
+      expect(mockReportMedia.attach).toHaveBeenCalledWith(undefined, 'u1')
+      expect(mockRepo.create).toHaveBeenCalled()
     })
   })
 })

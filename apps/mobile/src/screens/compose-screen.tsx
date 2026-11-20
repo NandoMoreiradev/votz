@@ -17,6 +17,7 @@ import { FormScroll, Screen, Toolbar } from '../components/screen'
 import { ChoiceSheet } from '../components/choice-sheet'
 import { LocationPanel, MediaTiles, RecipientPicker, SimilarReportsCard } from '../components/report-compose-parts'
 import { errorMessage, UploadError, uploadFile } from '../lib/api'
+import { uploadReportMedia } from '../lib/report-upload'
 import { useCreateContent } from '../hooks/use-content'
 import { useSession } from '../lib/session'
 import { buildLocationPayload, emptyLocation, locationError, type LocationDraft } from '../lib/report-location'
@@ -102,7 +103,9 @@ export default function ComposeScreen() {
           const started = Date.now()
           let uploaded: { url: string }
           try {
-            uploaded = await uploadFile<{ url: string }>(`/storage/upload/${isReport ? 'report-media' : 'post-media'}`, { uri: item.uri, mimeType: item.mimeType }, { timeoutMs: uploadTimeoutMs(item.kind) })
+            uploaded = isReport
+              ? await uploadReportMedia(item)
+              : await uploadFile<{ url: string }>('/storage/upload/post-media', { uri: item.uri, mimeType: item.mimeType }, { timeoutMs: uploadTimeoutMs(item.kind) })
           } catch (error) {
             console.warn('[envio] falhou', JSON.stringify({ tipo: item.kind, arquivo: item.name, mime: item.mimeType, bytes: item.size, uri: item.uri.slice(0, 60), ms: Date.now() - started, erro: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }))
             throw new UploadError(label, error)
