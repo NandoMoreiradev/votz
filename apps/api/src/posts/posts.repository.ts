@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import {
   FlagStatus,
   FlagTargetType,
@@ -10,6 +10,8 @@ import {
 } from '@prisma/client'
 import { FeedSuggestedProfile, PostAuthorInfo, PostCommentDto, PostDto, PostRepostInfo, UserType } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
+import { MediaAssetsService } from '../media/media-assets.service'
+import { legacyItemsFromUrls } from '../media/media-items'
 import { ViewerRankingContext } from './feed-ranking.service'
 import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
 
@@ -116,7 +118,10 @@ interface OrgMeta {
 
 @Injectable()
 export class PostsRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly mediaAssets?: MediaAssetsService,
+  ) {}
 
   async createPost(data: {
     content: string
@@ -428,6 +433,15 @@ export class PostsRepository {
         ])
       : [[], [], [], []]
 
+    // Fotos e vídeos no padrão de formatos, das publicações e das citadas, numa consulta só.
+    const mediaPosts = [
+      ...posts.map((p) => ({ id: p.id, media: p.media })),
+      ...posts.flatMap((p) => (p.quotePost ? [{ id: p.quotePost.id, media: p.quotePost.media }] : [])),
+    ]
+    const mediaItems = this.mediaAssets
+      ? await this.mediaAssets.itemsForPosts(mediaPosts)
+      : new Map(mediaPosts.map((p) => [p.id, legacyItemsFromUrls(p.media)]))
+
     const likedSet = new Set(likes.map((l) => l.postId))
     const repostedSet = new Set(reposts.map((r) => r.postId))
     const pollVoteMap = new Map(pollVotes.map((v) => [v.pollId, v.optionId]))
@@ -442,6 +456,7 @@ export class PostsRepository {
         content: p.content,
         kind: p.kind as PostDto['kind'],
         media: p.media,
+        mediaItems: mediaItems.get(p.id) ?? legacyItemsFromUrls(p.media),
         city: p.city,
         state: p.state,
         likesCount: p.likesCount,
@@ -509,6 +524,7 @@ export class PostsRepository {
               content: p.quotePost.content,
               kind: p.quotePost.kind as PostDto['kind'],
               media: p.quotePost.media,
+              mediaItems: mediaItems.get(p.quotePost.id) ?? legacyItemsFromUrls(p.quotePost.media),
               createdAt: p.quotePost.createdAt.toISOString(),
               author: this.buildAuthorInfo(
                 p.quotePost.authorUser,

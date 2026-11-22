@@ -11,7 +11,7 @@ import {
   formatGapDaysPtBr,
   formatPercentPtBr,
 } from '@votz/shared-types'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { AnalyticsHeatmap } from '../components/analytics/AnalyticsHeatmap'
 import { MetricChart } from '../components/analytics/MetricChart'
@@ -46,9 +46,11 @@ const Page = styled.div`
 const Content = styled.main`
   width: 100%;
   box-sizing: border-box;
-  max-width: 1180px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: ${({ theme }) => theme.spacing[6]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[16]};
+  padding: 24px 32px ${({ theme }) => theme.spacing[16]};
+
+  @media (max-width: 820px) { padding: 16px 16px 48px; }
 `
 
 const TopBar = styled.div`
@@ -57,14 +59,15 @@ const TopBar = styled.div`
   align-items: flex-start;
   gap: ${({ theme }) => theme.spacing[4]};
   flex-wrap: wrap;
-  margin-bottom: ${({ theme }) => theme.spacing[5]};
+  margin-bottom: 16px;
 `
 
 const PageTitle = styled.h1`
   margin: 0;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes['3xl']};
-  color: ${({ theme }) => theme.colors.primary};
+  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
 `
 
 const PageSubtitle = styled.p`
@@ -86,20 +89,36 @@ const MetaBanner = styled.div`
   gap: 14px;
 `
 
+/** Abas à esquerda e filtros à direita, na mesma linha. */
+const Toolbar = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+`
+
 const ControlsRow = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: ${({ theme }) => theme.spacing[3]};
+  gap: 8px 14px;
   align-items: center;
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[4]};
-  margin-bottom: ${({ theme }) => theme.spacing[5]};
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: ${({ theme }) => theme.fontSizes.xs};
+    font-weight: ${({ theme }) => theme.fontWeights.semibold};
+    color: ${({ theme }) => theme.colors.muted};
+  }
 `
 
 const Select = styled.select`
-  padding: 7px 12px;
+  padding: 6px 10px;
   border-radius: ${({ theme }) => theme.radii.md};
   border: 1px solid ${({ theme }) => theme.colors.border};
   background: ${({ theme }) => theme.colors.white};
@@ -109,9 +128,42 @@ const Select = styled.select`
 
 const TabsRow = styled.div`
   display: flex;
-  gap: ${({ theme }) => theme.spacing[2]};
+  gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: ${({ theme }) => theme.spacing[5]};
+`
+
+const OverviewGrid = styled.div<{ $split: boolean }>`
+  display: grid;
+  grid-template-columns: ${({ $split }) => ($split ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : 'minmax(0, 1fr)')};
+  gap: ${({ theme }) => theme.spacing[5]};
+  align-items: start;
+
+  @media (max-width: 1100px) { grid-template-columns: minmax(0, 1fr); }
+`
+
+const TableScroll = styled.div`
+  overflow-x: auto;
+`
+
+const ExportGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+`
+
+const ExportCard = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.neutral};
+
+  strong { font-family: ${({ theme }) => theme.fonts.heading}; }
+  p { margin: 0 0 6px; font-size: ${({ theme }) => theme.fontSizes.sm}; color: ${({ theme }) => theme.colors.muted}; }
 `
 
 const TabButton = styled.button<{ $active: boolean }>`
@@ -131,9 +183,11 @@ const TabButton = styled.button<{ $active: boolean }>`
 
 const KpiGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: ${({ theme }) => theme.spacing[4]};
-  margin-bottom: ${({ theme }) => theme.spacing[5]};
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+
+  @media (max-width: 900px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 560px) { grid-template-columns: minmax(0, 1fr); }
 `
 
 const KpiCard = styled.div`
@@ -141,7 +195,7 @@ const KpiCard = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[4]};
+  padding: 14px 16px;
 `
 
 const KpiHeader = styled.div`
@@ -160,7 +214,7 @@ const KpiLabel = styled.span`
 
 const KpiValue = styled.div`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: clamp(1.125rem, 1.5vw, 1.375rem);
+  font-size: 1.25rem;
   line-height: 1.25;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.primary};
@@ -180,7 +234,7 @@ const KpiSub = styled.div`
 const Stack = styled.div`
   display: flex;
   flex-direction: column;
-  gap: ${({ theme }) => theme.spacing[5]};
+  gap: 16px;
   min-width: 0;
   width: 100%;
 `
@@ -189,7 +243,7 @@ const PanelBox = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[6]};
+  padding: 20px 24px;
   min-width: 0;
   box-sizing: border-box;
 `
@@ -293,7 +347,7 @@ export function PainelDados() {
   if (!user || !hasOrgContext) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <PanelBox>
             <PageTitle>Painel de Dados</PageTitle>
@@ -342,7 +396,7 @@ export function PainelDados() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <TopBar>
           <div>
@@ -366,6 +420,31 @@ export function PainelDados() {
             </MetaBanner>
           )}
         </TopBar>
+
+        <Toolbar>
+        <TabsRow role="tablist" aria-label="Seções do painel de dados">
+          {(
+            [
+              ['overview', 'Visão geral'],
+              ['heatmap', 'Mapa de calor'],
+              ['recurrence', 'Reincidência'],
+              ['response-times', 'Tempos de resposta'],
+              ['categories', 'Categorias'],
+              ['export', 'Exportar'],
+            ] as Array<[PainelTab, string]>
+          ).map(([key, label]) => (
+            <TabButton
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              $active={tab === key}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </TabButton>
+          ))}
+        </TabsRow>
 
         <ControlsRow>
           <label>
@@ -416,30 +495,7 @@ export function PainelDados() {
             </Select>
           </label>
         </ControlsRow>
-
-        <TabsRow role="tablist" aria-label="Seções do painel de dados">
-          {(
-            [
-              ['overview', 'Visão geral'],
-              ['heatmap', 'Mapa de calor'],
-              ['recurrence', 'Reincidência'],
-              ['response-times', 'Tempos de resposta'],
-              ['categories', 'Categorias'],
-              ['export', 'Exportar'],
-            ] as Array<[PainelTab, string]>
-          ).map(([key, label]) => (
-            <TabButton
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              $active={tab === key}
-              onClick={() => setTab(key)}
-            >
-              {label}
-            </TabButton>
-          ))}
-        </TabsRow>
+        </Toolbar>
 
         {tab === 'overview' && (
           <Stack>
@@ -541,6 +597,7 @@ export function PainelDados() {
                   </KpiCard>
                 </KpiGrid>
 
+                <OverviewGrid $split={!!outbreaksQ.data && outbreaksQ.data.items.length > 0}>
                 {timeseriesLock ? (
                   <PlanLockedPreview
                     featureName="Série temporal e comparativo de período"
@@ -608,6 +665,7 @@ export function PainelDados() {
                       <h3 style={{ margin: 0 }}>Histórico recente de surtos</h3>
                       <MetricInfoModal metricKey="outbreak_history" />
                     </div>
+                    <TableScroll>
                     <DataTable>
                       <thead>
                         <tr>
@@ -634,8 +692,10 @@ export function PainelDados() {
                         ))}
                       </tbody>
                     </DataTable>
+                    </TableScroll>
                   </PanelBox>
                 )}
+                </OverviewGrid>
               </>
             )}
           </Stack>
@@ -691,6 +751,7 @@ export function PainelDados() {
                   {recurrenceQ.data.minCellSize} relatos suprimidas:{' '}
                   {formatCountPtBr(recurrenceQ.data.suppressedCells)}
                 </p>
+                <TableScroll>
                 <DataTable>
                   <thead>
                     <tr>
@@ -715,6 +776,7 @@ export function PainelDados() {
                     ))}
                   </tbody>
                 </DataTable>
+                </TableScroll>
               </PanelBox>
             )}
           </Stack>
@@ -771,7 +833,7 @@ export function PainelDados() {
                 title="Volume por categoria"
                 whatItShows="participação de cada tema no recorte selecionado (categorias com menos de 10 relatos são suprimidas)."
                 metricKey="category_mix"
-                variant="bar"
+                variant="hbar"
                 data={categoriesQ.data.items.map((item) => ({
                   label: CATEGORY_CONFIG[item.category as Category]?.label ?? item.category,
                   value: item.volume,
@@ -792,18 +854,26 @@ export function PainelDados() {
               Gera arquivo CSV ou JSON contendo exclusivamente séries agregadas por dia, município e categoria, com cabeçalho de definições ({metaSource?.definitionVersion ?? 'v1.0.0'}) e supressão automática de linhas com menos de{' '}
               {metaSource?.minCellSize ?? 10} relatos. Nunca contém dados pessoais ou coordenadas exatas.
             </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <ActionBtn type="button" disabled={exportLoading} onClick={() => handleExport('csv')}>
-                Baixar CSV agregado
-              </ActionBtn>
-              <SecondaryBtn
-                type="button"
-                disabled={exportLoading}
-                onClick={() => handleExport('json')}
-              >
-                Baixar JSON agregado
-              </SecondaryBtn>
-            </div>
+            <ExportGrid>
+              <ExportCard>
+                <strong>Planilha (CSV)</strong>
+                <p>Abre direto no Excel ou no Google Planilhas. Bom para tabelas e gráficos.</p>
+                <ActionBtn type="button" disabled={exportLoading} onClick={() => handleExport('csv')}>
+                  Baixar CSV agregado
+                </ActionBtn>
+              </ExportCard>
+              <ExportCard>
+                <strong>Dados para sistemas (JSON)</strong>
+                <p>Formato para programas e integrações que leem os dados automaticamente.</p>
+                <SecondaryBtn
+                  type="button"
+                  disabled={exportLoading}
+                  onClick={() => handleExport('json')}
+                >
+                  Baixar JSON agregado
+                </SecondaryBtn>
+              </ExportCard>
+            </ExportGrid>
             {exportMsg && <p style={{ marginBottom: 0, marginTop: 12 }}>{exportMsg}</p>}
           </PanelBox>
         )}

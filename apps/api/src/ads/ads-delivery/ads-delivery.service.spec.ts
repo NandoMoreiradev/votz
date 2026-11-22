@@ -1,0 +1,223 @@
+import { NotFoundException } from '@nestjs/common'
+import { AdsDeliveryService } from './ads-delivery.service'
+import { isHoldout } from './delivery-rules'
+
+const NOW = new Date('2026-11-22T12:00:00Z')
+
+// Pessoa que não cai no grupo de controle (sem anúncio).
+const USER = (() => {
+  for (let index = 0; index < 100; index += 1) if (!isHoldout(`u-${index}`, 0.05)) return `u-${index}`
+  throw new Error('sem usuário fora do grupo de controle')
+})()
+
+function candidate(overrides: Record<string, unknown> = {}, set: Record<string, unknown> = {}, account: Record<string, unknown> = {}) {
+  return {
+    id: 'ad-1',
+    adSetId: 'set-1',
+    creative: { headline: 'Pão quentinho', body: 'Todo dia às 6h', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/' },
+    adSet: {
+      dailyBudgetCents: 1000,
+      bidCapCents: null,
+      states: [],
+      cities: [],
+      interests: [],
+      ageBands: [],
+      genders: [],
+      automaticAudience: false,
+      campaign: {
+        objective: 'AWARENESS',
+        account: {
+          id: 'acc-1',
+          balanceCents: 5000,
+          pendingSpendMillicents: 0,
+          companyId: 'co-1',
+          company: { id: 'co-1', tradeName: 'Padaria', username: 'padaria', logoUrl: null },
+          ...account,
+        },
+      },
+      ...set,
+    },
+    ...overrides,
+  }
+}
+
+function makeRepo(pool: unknown[] = [candidate()], viewer: Record<string, unknown> = {}) {
+  return {
+    findViewerFacts: jest.fn().mockResolvedValue({ city: 'São Paulo', state: 'SP', birthDate: null, gender: null, adPreference: null, ...viewer }),
+    hiddenCompanyIds: jest.fn().mockResolvedValue([]),
+    excludedAdIds: jest.fn().mockResolvedValue([]),
+    findCandidates: jest.fn().mockResolvedValue(pool),
+    spentTodayByAdSet: jest.fn().mockResolvedValue(new Map()),
+    createImpression: jest.fn().mockResolvedValue({ id: 'imp-1' }),
+    findImpression: jest.fn(),
+    countClicks: jest.fn().mockResolvedValue(0),
+    applyEvent: jest.fn().mockResolvedValue(true),
+    findAccount: jest.fn(),
+    listAccountDailyStats: jest.fn().mockResolvedValue([]),
+    accountsWithPendingSpend: jest.fn().mockResolvedValue([]),
+    closeSpend: jest.fn(),
+  }
+}
+
+const query = { surface: 'FEED_FOR_YOU' as const, position: 3 }
+
+describe('AdsDeliveryService.next', () => {
+  it('entrega o anúncio e fixa o preço da exibição em millicents', async () => {
+    const repo = makeRepo()
+    const view = await new AdsDeliveryService(repo as never).next(USER, query, NOW)
+    expect(view).toMatchObject({ impressionId: 'imp-1', adId: 'ad-1', headline: 'Pão quentinho', advertiser: { name: 'Padaria' } })
+    // Sem lance e sem concorrente: R$ 6,00 por mil = 600 millicents por exibição visível.
+    expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeOn: 'VIEWABLE_IMPRESSION', chargeMillicents: 600, day: '2026-11-22', position: 3 }))
+  })
+
+  it('tráfego cobra por clique: R$ 0,40 = 40.000 millicents', async () => {
+    const traffic = candidate()
+    traffic.adSet.campaign.objective = 'TRAFFIC'
+    const repo = makeRepo([traffic])
+    await new AdsDeliveryService(repo as never).next(USER, query, NOW)
+    expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeOn: 'CLICK', chargeMillicents: 40_000 }))
+  })
+
+  it('o grupo de controle nunca vê anúncio', async () => {
+    let held = 'x'
+    for (let index = 0; index < 1000; index += 1) if (isHoldout(`h-${index}`, 0.05)) { held = `h-${index}`; break }
+    const repo = makeRepo()
+    expect(await new AdsDeliveryService(repo as never).next(held, query, NOW)).toBeNull()
+    expect(repo.findCandidates).not.toHaveBeenCalled()
+  })
+
+  it('sem saldo disponível (descontado o gasto ainda não lançado) não entrega', async () => {
+    const repo = makeRepo([candidate({}, {}, { balanceCents: 1, pendingSpendMillicents: 1000 })])
+    expect(await new AdsDeliveryService(repo as never).next(USER, query, NOW)).toBeNull()
+    expect(repo.createImpression).not.toHaveBeenCalled()
+  })
+
+  it('orçamento do dia esgotado não entrega', async () => {
+    const repo = makeRepo()
+    repo.spentTodayByAdSet.mockResolvedValue(new Map([['set-1', 1000 * 1000 - 100]]))
+    expect(await new AdsDeliveryService(repo as never).next(USER, query, NOW)).toBeNull()
+  })
+
+  it('região da tela vale sem aceite; a do cadastro só com aceite', async () => {
+    const sp = candidate({}, { states: ['SP'] })
+    const noConsent = makeRepo([sp])
+    expect(await new AdsDeliveryService(noConsent as never).next(USER, { surface: 'FEED_FOR_YOU' }, NOW)).toBeNull()
+    expect(await new AdsDeliveryService(noConsent as never).next(USER, { surface: 'FEED_FOR_YOU', state: 'sp' }, NOW)).not.toBeNull()
+
+    const consent = makeRepo([sp], { adPreference: { personalizationConsent: true, interests: [] } })
+    expect(await new AdsDeliveryService(consent as never).next(USER, { surface: 'FEED_FOR_YOU' }, NOW)).not.toBeNull()
+  })
+
+  it('interesse só com aceite, e menor de idade nunca é perfilado', async () => {
+    const food = candidate({}, { interests: ['food-drink'] })
+    const consented = { adPreference: { personalizationConsent: true, interests: ['food-drink'] } }
+    expect(await new AdsDeliveryService(makeRepo([food]) as never).next(USER, query, NOW)).toBeNull()
+    expect(await new AdsDeliveryService(makeRepo([food], consented) as never).next(USER, query, NOW)).not.toBeNull()
+
+    const minor = { ...consented, birthDate: new Date('2012-05-01') }
+    expect(await new AdsDeliveryService(makeRepo([food], minor) as never).next(USER, query, NOW)).toBeNull()
+  })
+
+  it('o "por que estou vendo isto" só cita o que foi usado', async () => {
+    const regional = await new AdsDeliveryService(makeRepo([candidate({}, { cities: ['São Paulo'] })]) as never).next(USER, { surface: 'FEED_FOR_YOU', city: 'São Paulo' }, NOW)
+    expect(regional?.why).toContain('região')
+    const everyone = await new AdsDeliveryService(makeRepo() as never).next(USER, query, NOW)
+    expect(everyone?.why).toContain('todo mundo')
+  })
+
+  it('segundo preço entre dois anunciantes', async () => {
+    const high = candidate({ id: 'ad-high' }, { bidCapCents: 2000 })
+    const low = candidate({ id: 'ad-low', adSetId: 'set-2' }, { bidCapCents: 900 })
+    const repo = makeRepo([high, low])
+    const view = await new AdsDeliveryService(repo as never).next(USER, query, NOW)
+    expect(view?.adId).toBe('ad-high')
+    expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeMillicents: 900 }))
+  })
+})
+
+describe('AdsDeliveryService.ingest', () => {
+  const impression = {
+    id: 'imp-1',
+    userId: USER,
+    adId: 'ad-1',
+    servedAt: new Date('2026-11-22T11:59:50Z'),
+    viewableAt: null,
+    clickedAt: null,
+    hiddenAt: null,
+    ad: { adSetId: 'set-1', adSet: { campaign: { accountId: 'acc-1', account: { companyId: 'co-1' } } } },
+  }
+  const event = (overrides: Record<string, unknown> = {}) => ({
+    eventId: '11111111-1111-4111-8111-111111111111',
+    type: 'VIEWABLE_IMPRESSION',
+    impressionId: 'imp-1',
+    adId: 'ad-1',
+    surface: 'FEED_FOR_YOU',
+    position: 0,
+    occurredAt: '2026-11-22T11:59:55Z',
+    visibleMs: 1500,
+    ...overrides,
+  })
+
+  it('aceita exibição visível válida', async () => {
+    const repo = makeRepo()
+    repo.findImpression.mockResolvedValue(impression)
+    const result = await new AdsDeliveryService(repo as never).ingest(USER, { events: [event()] } as never, NOW)
+    expect(result).toEqual({ accepted: 1, duplicates: 0, rejected: 0 })
+    expect(repo.applyEvent).toHaveBeenCalledWith(expect.objectContaining({ status: 'ACCEPTED', reason: null, accountId: 'acc-1', companyId: 'co-1', day: '2026-11-22' }))
+  })
+
+  it('entrega de outra pessoa, de outro anúncio ou inexistente é ignorada sem aplicar nada', async () => {
+    const repo = makeRepo()
+    const service = new AdsDeliveryService(repo as never)
+    repo.findImpression.mockResolvedValueOnce({ ...impression, userId: 'someone-else' })
+    repo.findImpression.mockResolvedValueOnce({ ...impression, adId: 'other-ad' })
+    repo.findImpression.mockResolvedValueOnce(null)
+    const result = await service.ingest(USER, { events: [event(), event({ eventId: '22222222-2222-4222-8222-222222222222' }), event({ eventId: '33333333-3333-4333-8333-333333333333' })] } as never, NOW)
+    expect(result).toEqual({ accepted: 0, duplicates: 0, rejected: 3 })
+    expect(repo.applyEvent).not.toHaveBeenCalled()
+  })
+
+  it('evento inválido é guardado com o motivo e conta como rejeitado', async () => {
+    const repo = makeRepo()
+    repo.findImpression.mockResolvedValue(impression)
+    const result = await new AdsDeliveryService(repo as never).ingest(USER, { events: [event({ visibleMs: 300 })] } as never, NOW)
+    expect(result.rejected).toBe(1)
+    expect(repo.applyEvent).toHaveBeenCalledWith(expect.objectContaining({ status: 'INVALID', reason: 'NOT_VIEWABLE' }))
+  })
+
+  it('evento repetido (mesmo eventId) conta como duplicado', async () => {
+    const repo = makeRepo()
+    repo.findImpression.mockResolvedValue(impression)
+    repo.applyEvent.mockResolvedValue(false)
+    expect(await new AdsDeliveryService(repo as never).ingest(USER, { events: [event()] } as never, NOW)).toEqual({ accepted: 0, duplicates: 1, rejected: 0 })
+  })
+
+  it('clique consulta os cliques do dia antes de aceitar', async () => {
+    const repo = makeRepo()
+    repo.findImpression.mockResolvedValue(impression)
+    repo.countClicks.mockResolvedValue(2)
+    const result = await new AdsDeliveryService(repo as never).ingest(USER, { events: [event({ type: 'CLICK', visibleMs: undefined })] } as never, NOW)
+    expect(result.rejected).toBe(1)
+    expect(repo.applyEvent).toHaveBeenCalledWith(expect.objectContaining({ reason: 'TOO_MANY_CLICKS' }))
+  })
+})
+
+describe('AdsDeliveryService.stats e fechamento', () => {
+  it('só a empresa dona da conta vê o relatório', async () => {
+    const repo = makeRepo()
+    repo.findAccount.mockResolvedValue({ id: 'acc-1', companyId: 'co-1' })
+    const service = new AdsDeliveryService(repo as never)
+    await expect(service.stats('outra', 'acc-1')).rejects.toBeInstanceOf(NotFoundException)
+    repo.listAccountDailyStats.mockResolvedValue([{ day: new Date('2026-11-22'), _sum: { impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendMillicents: 25_400 } }])
+    expect(await service.stats('co-1', 'acc-1')).toEqual([{ day: '2026-11-22', impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendCents: 25 }])
+  })
+
+  it('o fechamento horário passa por cada conta com gasto a lançar e não derruba o resto se uma falhar', async () => {
+    const repo = makeRepo()
+    repo.accountsWithPendingSpend.mockResolvedValue([{ id: 'a' }, { id: 'b' }])
+    repo.closeSpend.mockResolvedValue(undefined)
+    expect(await new AdsDeliveryService(repo as never).closeSpend()).toBe(2)
+    repo.closeSpend.mockRejectedValueOnce(new Error('falhou'))
+    expect(await new AdsDeliveryService(repo as never).closeSpend()).toBe(1)
+  })
+})

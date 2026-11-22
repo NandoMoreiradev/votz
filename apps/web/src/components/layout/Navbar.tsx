@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass, Check } from '@phosphor-icons/react'
+import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass, Check, Buildings } from '@phosphor-icons/react'
 import { useConversationCapabilities, useConversationsUnread } from '../../hooks/useConversations'
 import { useMyPageUnread, useStaffUnread } from '../../hooks/usePageInbox'
 import type { OrgType } from '../../hooks/useOrgMemberships'
@@ -168,14 +168,12 @@ const NavLink = styled(Link)`
   }
 `
 
-const OrgMenuWrapper = styled.div`
-  position: relative;
-`
-
+/** Botão do Estúdio na barra: em destaque, para quem tem acesso a uma organização. */
 const OrgMenuButton = styled.button`
   display: inline-flex;
   align-items: center;
   gap: ${({ theme }) => theme.spacing[1]};
+  text-decoration: none;
   color: ${({ theme }) => theme.colors.white};
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -498,6 +496,16 @@ function NotificationsPanel() {
   )
 }
 
+/** "Entrar" na barra escura: texto claro e, no hover, fundo translúcido (nunca branco). */
+const LoginButton = styled(Button)`
+  color: rgba(255, 255, 255, 0.8);
+  &:hover,
+  &:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+`
+
 const ReportButton = styled(Button)`
   background: ${({ theme }) => theme.colors.action};
   color: #fff;
@@ -665,14 +673,12 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
-  const [orgMenuOpen, setOrgMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [feedMenuOpen, setFeedMenuOpen] = useState(false)
   const feedMenuRef = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const orgMenuRef = useRef<HTMLDivElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
 
@@ -689,7 +695,6 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
   useEffect(() => {
     setMobileOpen(false)
     setOpen(false)
-    setOrgMenuOpen(false)
   }, [location.pathname, location.search])
 
   useEffect(() => {
@@ -713,9 +718,6 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setOpen(false)
       }
-      if (orgMenuRef.current && !orgMenuRef.current.contains(e.target as Node)) {
-        setOrgMenuOpen(false)
-      }
       if (
         mobileOpen &&
         drawerRef.current &&
@@ -729,7 +731,6 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         if (mobileOpen) closeMobileMenu(true)
-        setOrgMenuOpen(false)
         setOpen(false)
       }
     }
@@ -762,6 +763,9 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
         if ('requiresMfaSetup' in data) { setMfaSetupRequired(true); return }
         if ('requiresMfa' in data) return
         setShowProfileModal(false)
+        // Entrou no perfil de uma organização: leva direto ao Estúdio.
+        if ('ctx' in data && data.ctx) navigate('/estudio')
+        else if (location.pathname.startsWith('/estudio')) navigate('/')
       },
     })
   }
@@ -829,44 +833,10 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
             <NavLink to="/propostas">Propostas</NavLink>
             {(isPressOrResearch || isStaff) && <NavLink to="/imprensa">Imprensa</NavLink>}
             {hasOrgContext && (
-              <OrgMenuWrapper ref={orgMenuRef}>
-                <OrgMenuButton
-                  type="button"
-                  aria-expanded={orgMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setOrgMenuOpen((o) => !o)}
-                >
-                  Minha organização
-                  <CaretDown size={14} weight="bold" aria-hidden="true" />
-                </OrgMenuButton>
-                {orgMenuOpen && (
-                  <Dropdown style={{ left: 0, right: 'auto', minWidth: 204 }}>
-                    {(activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
-                      <DropdownItem to="/painel-dados" onClick={() => setOrgMenuOpen(false)}>
-                        Painel de dados
-                      </DropdownItem>
-                    )}
-                    {activeContext.type === 'ENTITY' && (
-                      <DropdownItem to="/entidade/prazos" onClick={() => setOrgMenuOpen(false)}>
-                        Prazos &amp; Fila
-                      </DropdownItem>
-                    )}
-                    {activeContext.type === 'POLITICIAN' && (
-                      <DropdownItem to="/mandato" onClick={() => setOrgMenuOpen(false)}>
-                        Caixa do mandato
-                      </DropdownItem>
-                    )}
-                    {activeContext.type === 'COMPANY' && (
-                      <DropdownItem to={`/empresa/${activeContext.id}`} onClick={() => setOrgMenuOpen(false)}>
-                        Perfil da empresa
-                      </DropdownItem>
-                    )}
-                    <DropdownItem to="/planos" onClick={() => setOrgMenuOpen(false)}>
-                      Planos e assinatura
-                    </DropdownItem>
-                  </Dropdown>
-                )}
-              </OrgMenuWrapper>
+              <OrgMenuButton as={Link as any} to="/estudio">
+                <Buildings size={16} aria-hidden="true" />
+                Estúdio
+              </OrgMenuButton>
             )}
             {!user && <NavLink to="/planos">Para organizações</NavLink>}
             {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Moderação</NavLink>}
@@ -887,6 +857,17 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
                     </ContextAvatar>
                     <ContextName>{activeContext.name}</ContextName>
                   </ContextBadge>
+                )}
+
+                {!activeContext && hasMultipleProfiles && (
+                  <OrgMenuButton
+                    type="button"
+                    title="Trocar para o perfil de uma organização que você gerencia"
+                    onClick={() => { setShowProfileModal(true); setOpen(false) }}
+                  >
+                    <Buildings size={16} aria-hidden="true" />
+                    Abrir Estúdio
+                  </OrgMenuButton>
                 )}
 
                 <ReportButton as={Link as any} to="/novo">
@@ -956,15 +937,14 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
               </>
             ) : (
               <>
-                <Button
+                <LoginButton
                   variant="ghost"
                   size="sm"
                   as={Link as any}
                   to="/entrar"
-                  style={{ color: 'rgba(255,255,255,0.8)' }}
                 >
                   Entrar
-                </Button>
+                </LoginButton>
                 <ReportButton as={Link as any} to="/novo">
                   + Relatar
                 </ReportButton>
@@ -997,30 +977,21 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
           {(isPressOrResearch || isStaff) && (
             <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
           )}
-          {hasOrgContext && (activeContext.type === 'ENTITY' || activeContext.type === 'POLITICIAN') && (
-            <MobileNavLink to="/painel-dados" onClick={() => setMobileOpen(false)}>
-              Painel de dados
-            </MobileNavLink>
-          )}
-          {activeContext?.type === 'ENTITY' && (
-            <MobileNavLink to="/entidade/prazos" onClick={() => setMobileOpen(false)}>
-              Prazos &amp; Fila
-            </MobileNavLink>
-          )}
-          {activeContext?.type === 'POLITICIAN' && (
-            <MobileNavLink to="/mandato" onClick={() => setMobileOpen(false)}>
-              Caixa do mandato
-            </MobileNavLink>
-          )}
-          {activeContext?.type === 'COMPANY' && (
-            <MobileNavLink to={`/empresa/${activeContext.id}`} onClick={() => setMobileOpen(false)}>
-              Perfil da empresa
-            </MobileNavLink>
-          )}
           {hasOrgContext && (
-            <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>
-              Planos e assinatura
+            <MobileNavLink to="/estudio" onClick={() => setMobileOpen(false)}>
+              Estúdio
             </MobileNavLink>
+          )}
+          {user && !activeContext && hasMultipleProfiles && (
+            <MobileDrawerAction
+              type="button"
+              onClick={() => {
+                setMobileOpen(false)
+                setShowProfileModal(true)
+              }}
+            >
+              Abrir Estúdio
+            </MobileDrawerAction>
           )}
           {!user && (
             <MobileNavLink to="/planos" onClick={() => setMobileOpen(false)}>

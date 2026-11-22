@@ -1,0 +1,372 @@
+# Anúncios no Votz: plano de implementação (v1, 21/11/2026)
+
+> **O que é:** o plano para o Votz ter um gerenciador de anúncios próprio, no estilo do Business Manager e do Gerenciador de Anúncios da Meta, com um sistema de IA próprio que entende os interesses das pessoas e escolhe o anúncio com mais chance de interesse.
+> **Estado:** **plano aprovado pelo dono do produto em 21/11/2026** (decisões registradas na seção 10). Etapas 0 e 1 e a parte 1 da Etapa 2 estão no código (veja "Como retomar"). Falta a revisão de advogado (LGPD e publicidade) antes de abrir para o público.
+
+## Como retomar (leia primeiro)
+
+Atualizado em **21/11/2026**. Índice de todas as frentes: [EM-ANDAMENTO.md](EM-ANDAMENTO.md).
+
+- **Estado (corrigido em 21/11 à tarde, conferido no código):** plano e decisões aprovados (seção 10). **Etapa 0 feita no código, sem commit:** `packages/shared-types/src/ads.ts` (taxonomia, sensíveis, categorias, `ADS_FEATURE_ALLOWLIST`, faixas de idade, gênero, eventos); teste do muro em `apps/api/src/ads/ads-policy.spec.ts` (10/10 passam); rascunhos `docs/legal/politica-de-anuncios-rascunho.md` e `ripd-anuncios-rascunho.md`; `birthDate` e `gender` no cadastro e no perfil (DTOs da API, `Register.tsx`, `MyProfile.tsx`, `DemographicsFields.tsx`, `edit-profile-screen.tsx`, migration `20261121150000_user_birth_date_gender`).
+- **Verificado em 21/11:** o dono viu data de nascimento e gênero na tela de perfil, no site e no celular; migration `20261121150000` aplicada no banco do Docker (colunas `birth_date` e `gender` em `users`, conferido pelo Claude).
+- **Tela "Preferências de anúncios" feita em 21/11 (sem commit):** modelo `AdUserPreference` (`ad_user_preferences`, migration `20261121180000_ad_user_preferences`, aplicada no banco do Docker); API `GET/PATCH /api/v1/ads/preferences/me` em `apps/api/src/ads/ads-preferences/` (aceite opt-in com data e versão, até 10 interesses da lista permitida, devolve só a faixa de idade); exportação LGPD leva as preferências (`lgpd.processor.ts`); site: `AdPreferencesSection.tsx` dentro de `MyProfile.tsx`; celular: `ad-preferences-screen.tsx`, aberta pelo menu "Opções da conta" do perfil. Textos e constantes compartilhados em `ads.ts` (`AD_PREFERENCES_COPY`, `AdPreferencesView`).
+- **Verificado em 21/11 (Claude):** testes de `src/ads` e `src/users` passam (43/43); `tsc` limpo em api, web e mobile; pela API real com o usuário de teste do seed: padrão desligado, ligar registra data e versão, tema sensível e mais de 10 interesses dão erro 400, desligar volta ao padrão; no site (navegador do Claude): seção aparece, interruptor e interesses salvam e voltam.
+- **Não verificado:** a tela no celular (só tipos; a rota `/ad-preferences` é JavaScript, sai por `eas update`, mas o arquivo gerado `.expo/types/router.d.ts` só se atualiza quando o Metro roda); aparência do site em tela pequena; cadastro (`Register.tsx`) com nascimento/gênero; exclusão de conta apagando `ad_user_preferences` (a chave estrangeira apaga em cascata, falta ver na prática); revisão do advogado nos dois rascunhos.
+- **Etapa 1, parte 1 feita em 21/11 (sem commit):** contas e campanhas em três níveis no Estúdio.
+  - **Banco:** permissões `MANAGE_ADS` e `VIEW_ADS` em `OrgPermission` (migration `20261121200000_org_permission_ads`, separada porque valor novo de enum só vale depois de gravado); `AdAccount`, `AdCampaign`, `AdSet`, `AdCreative`, `Ad` e enums `AdObjective`, `AdStatus`, `AdReviewStatus` (migration `20261121200100_ad_accounts_campaigns`, que também dá as duas permissões ao papel de dono das empresas que já existem). Empresas novas já recebem todas as permissões no cadastro. Aplicadas no banco do Docker.
+  - **API** (`apps/api/src/ads/ads-campaigns/`, rotas `/api/v1/ads/COMPANY/:empresa/...`): listar e criar conta (só empresa verificada, até 5 por empresa), listar campanhas com conjuntos e anúncios, criar campanha pelo passo a passo (tudo como rascunho, textos limpos, link só `https`, segmentação só com sinais permitidos, público automático zera idade, gênero e interesses), ligar/pausar/arquivar (ligar exige anúncio aprovado **e** saldo; arquivada não volta), enviar anúncio para revisão.
+  - **Site:** grupo "Anúncios" no menu do Estúdio para empresas (`studio-nav.ts`); `StudioAds.tsx` (conta, saldo, campanhas que abrem em público e anúncio) e `StudioAdsNew.tsx` (objetivo → público e orçamento → anúncio com prévia "Patrocinado" → revisão). Textos e listas em `ads.ts` (`AD_OBJECTIVE_LABELS`, `AD_CTA_LABELS`, `AD_LIMITS`, `CreateAdCampaignInput` e as views).
+  - **Verificado (Claude, 21/11):** 180 testes passam nos módulos de anúncios, usuários, auth, membros, cadastro de organização e assinaturas; `tsc` limpo em api e web; pela API: conta, campanha, interesse sensível recusado, ligar sem aprovação recusado, revisão sem reenvio duplo, empresa alheia e perfil de político barrados (403); no site, logado como a empresa de teste: menu, criar conta, passo a passo inteiro com acentos, avisos de erro, envio para revisão e recusa ao ligar.
+  - **Dados de teste no banco local:** empresa verificada "Padaria Teste (Claude)" (CNPJ `00000000000191`) com o João do seed como dono, conta "Conta principal" e duas campanhas (uma com o nome acentuado quebrado, criada pelo terminal do Windows, que estraga acentos no `curl`; pelo site os acentos saem certos). O João do seed agora **tem MFA ligado** (o segredo ficou só no rascunho temporário do Claude). Pode apagar tudo se preferir.
+  - **Não verificado:** tela em celular estreito; papéis específicos de anúncios na tela de Equipe (hoje só o dono tem as permissões novas; dá para criar papel com elas pela API de membros).
+- **Etapa 1, parte 2 feita em 21/11 (sem commit): fila humana de revisão e faturamento pré-pago.**
+  - **Banco:** migration `20261122100000_ad_review_billing` (aplicada no Docker): `AdReview` (cada decisão, com quem, motivo e o texto do anúncio naquele momento), `AdTopUp` (pedido de recarga), `AdLedgerEntry` (livro-caixa de partidas dobradas: contas `CUSTOMER_BALANCE`, `PAYMENTS_RECEIVED`, `AD_REVENUE`, `PROMO_FUND`). O banco barra valor zero ou negativo e **proíbe editar** uma linha do livro (gatilho em UPDATE).
+  - **Revisão** (`apps/api/src/ads/ads-review/`, rota no módulo de moderação: `GET /admin/ad-reviews?status=` e `POST /admin/ad-reviews/:adId/decision`, só moderador ou admin): fila do mais antigo para o mais novo; aprovar ou recusar; recusar exige motivo de 10 a 500 letras (o anunciante lê no Estúdio); decidir um anúncio que não está pendente dá 409; duas pessoas ao mesmo tempo não se atropelam (atualização condicional).
+  - **Faturamento** (`apps/api/src/ads/ads-billing/`, rotas `/api/v1/ads/COMPANY/:empresa/accounts/:conta/billing`, `.../topups`, `.../topups/:id/confirm-test`, `.../topups/:id/cancel`): `balanceCents` só muda dentro de `postLedger`, na mesma transação do lançamento. Recarga: R$ 20 a R$ 10.000, Pix, boleto ou cartão. Confirmar a mesma recarga duas vezes (inclusive ao mesmo tempo) credita uma vez só. Recarga que vence aparece como "venceu", mas pagamento tardio ainda credita. A resposta de `billing` traz `reconciled` (saldo da conta = soma do livro).
+  - **Provedores:** `PaymentGateway` com três implementações. **Teste local** (`ADS_BILLING_MODE=test`, padrão fora de produção): sem serviço externo, código falso, e `confirm-test` finge o pagamento (só existe nesse modo). **Asaas** (Pix e boleto) e **Stripe** (cartão) são esqueletos que dizem "ainda não está ligado" e escondem a forma de pagamento no modo real: falta a conta do dono (chave de API, segredo do webhook), trocar o corpo de `createCharge` e criar o webhook, que deve conferir a assinatura e chamar `AdsBillingService.settleTopUp`. **Em produção o padrão é "live"**: no Railway de teste é preciso `ADS_BILLING_MODE=test` para recarregar.
+  - **Site:** aba "Anúncios" no painel de moderação (`/admin`, `AdReviewQueue.tsx`: prévia "Patrocinado", empresa, público, aprovar, recusar com motivo, histórico); tela "Faturamento" no Estúdio (`StudioBilling.tsx`, `/estudio/anuncios/faturamento`, no grupo "Anúncios": saldo, recarga com valores prontos, código Pix, simular pagamento no modo de teste, cancelar, extrato).
+  - **Verificado (Claude, 21/11):** testes Jest dos módulos de anúncios e moderação passam (ledger, revisão, faturamento, DTO, muro de privacidade); `tsc` limpo em api e web. **Revisão pela API real** (moderador de teste): cidadão recebe 403 na fila e na decisão; recusar sem motivo, com motivo curto, decisão inválida e id inválido dão 400; id inexistente 404; recusar com motivo e aprovar gravam em `ad_reviews` e no anúncio; decidir de novo dá 409. **Faturamento com o banco real** (script de integração sem HTTP, conta temporária apagada no fim): 13 verificações, entre elas confirmação dupla simultânea credita uma vez, livro com duas linhas equilibradas, recarga cancelada não credita, vencida credita se paga depois, outra empresa não enxerga, livro não aceita edição, saldo mexido fora do livro é detectado.
+  - **Faturamento provado também por HTTP e no site (Claude, 21/11, depois de o dono autorizar resetar o MFA do João):** pela API, entrando como a empresa: ligar sem saldo e com anúncio recusado dão 400; recarga abaixo do mínimo, acima do máximo e forma inválida dão 400; cidadão e tipo de perfil errado dão 403; pedir recarga não mexe no saldo; simular pagamento credita, simular de novo não credita de novo; cancelar recarga paga dá 400; com saldo e anúncio aprovado a campanha liga (`ACTIVE`). No site (navegador do Claude, entrando como a empresa com MFA): tela "Faturamento" com aviso de modo de teste, recarga de R$ 100 pelo Pix, código de teste, "Simular pagamento" (saldo foi de R$ 50 para R$ 150, extrato e lista de recargas certos), aviso de valor mínimo, layout em celular de 375 px; na tela Campanhas, "Ligar" num anúncio ainda em revisão mostra o aviso de que precisa de anúncio aprovado.
+  - **Fila de moderação provada no site (Claude, 21/11, com autorização do dono para aceitar os Termos na conta de teste do moderador):** aba "Anúncios" com contador, prévia "Patrocinado", empresa e público com acentos certos; aprovar derrubou a fila de 2 para 1; recusar abre o modal de motivo (mínimo 10 letras) e grava; filtros "Aprovados" e "Recusados" mostram motivo e histórico ("Recusado em … por <nome do moderador>"). **Ciclo completo no site:** como empresa, o motivo da recusa aparece no anúncio; "Ligar" na campanha aprovada (com saldo de R$ 150) a deixou "Ativa". Extrato em celular de 375 px sem estouro horizontal (medido depois do ajuste).
+  - **Não verificado:** aviso ao anunciante quando o anúncio é aprovado ou recusado (não existe ainda), papel "Financeiro" separado (hoje pedir e cancelar recarga usam `MANAGE_ADS` e ver o saldo usa `VIEW_ADS`), tela da fila em celular estreito, Asaas e Stripe de verdade.
+  - **Dados de teste no banco local (atualização de 22/11: o MFA do moderador foi resetado e reinscrito, o segredo só ficou na conversa; "TESTE-IA 1" e "TESTE-IA 2" estão na fila):** o moderador `moderador@votz.app` agora **tem MFA ligado** (inscrito pelo fluxo normal; segredo só no scratchpad do Claude, some). A decisão dos dois anúncios antigos da Padaria Teste foi feita pela API (um recusado, um aprovado). Há duas campanhas novas "TESTE-FILA 1" e "TESTE-FILA 2" (anúncios em revisão, para testar a fila no site; a 2 tem texto de "cura milagrosa", feito para ser recusado). Pode apagar tudo.
+  - **`role-matrix.spec.ts`:** ganhou as duas rotas novas, mas o teste de cobertura já falhava antes por rotas novas do `AdminController` (posts, api-keys, companies, audit-logs, superadmin) que não são deste trabalho.
+- **Aviso ao anunciante da decisão feito em 22/11 (sem commit):** ao aprovar ou recusar, `AdsReviewService` avisa quem tem `MANAGE_ADS` na empresa (dono e papéis com a permissão) pelo módulo `notifications` (sino do site). Tipos novos `AD_APPROVED` e `AD_REJECTED` (migration `20261122110000_notification_ad_review`, aplicada no Docker). Texto e link (`/estudio/anuncios`) em `apps/web/src/lib/notification-content.ts`. Se o aviso falhar, a decisão continua valendo (só registra no log). **Verificado:** testes Jest (73 em `src/ads`, com casos de aprovar, recusar com motivo, falha do aviso e conflito sem aviso), `tsc` limpo em api e web, e no banco real: o tipo novo grava e a consulta de quem recebe acha o dono da Padaria Teste. **Sino provado no site (22/11):** o moderador (pela API, com MFA) aprovou "TESTE-IA 3" e recusou "TESTE-IA 2" com motivo; o João, logado no site, viu o selo "2" no sino e as mensagens "... foi aprovado. Já pode ligar a campanha." e "... foi recusado. Abra para ler o motivo e corrigir.". **Não verificado:** clicar na notificação para chegar no motivo no Estúdio (o link leva a `/estudio/anuncios`), aviso no celular (o app não lista notificações por tipo), e-mail ao anunciante.
+- **Revisão por IA feita em 22/11 (sem commit), só do texto do anúncio:** módulo `apps/api/src/ads/ads-ai-review/`. Ao enviar o anúncio (passo a passo ou reenvio), entra na fila BullMQ `ads-ai-review`; o Gemini (`@google/generative-ai`, modelo `ADS_AI_MODEL`, padrão `gemini-2.5-flash`, usa `GOOGLE_AI_API_KEY`) devolve categoria, categoria restrita, suspeitas de violação, tema sensível, confiança e explicação. Tabela `ad_ai_analyses` (migration `20261122120000_ad_ai_analysis`, aplicada no Docker). **Regras de segurança (testadas):** a IA **nunca recusa**; **por padrão só anota** o parecer para o moderador (caixa "Parecer da IA" na aba Anúncios de `/admin`); só aprova sozinha com `ADS_AI_AUTO_APPROVE=true` **e** nenhuma suspeita, tema não sensível, fora das categorias restritas (saúde, educação, financeiro, imóveis, bebida) e confiança ≥ 0,9 (`canAutoApprove`); trava por palavras independente do modelo (`obviousViolations`: cassino, cigarro, cura milagrosa, política etc.) impede aprovação automática mesmo se a IA disser que está tudo bem; o texto do anunciante vai ao modelo como dado dentro de um bloco, com aviso contra ordens escondidas; resposta fora do formato, erro ou IA sem chave: o anúncio segue para a fila humana (erro tenta 3 vezes). Aprovação pela IA grava `AdReview` com `source: AI`, usa a mesma atualização condicional (pessoa que decidiu antes não é sobrescrita) e avisa o anunciante. **Verificado:** 122 testes Jest em `src/ads` e `src/moderation` (política, serviço, campanhas, revisão), `tsc` limpo em api e web, e no banco real: gravar o parecer, lê-lo na fila e ler objetivo e empresa do anúncio. **Chamada real ao Gemini provada (22/11, chave nova no `.env`):** anúncio de padaria deu categoria `food-drink`, confiança 1, sem violações (aprovaria); anúncio "cura milagrosa do diabetes" com ordem escondida ("ignore as regras") deu `health-claims` 100%, tema sensível, confiança 0,2, e o modelo apontou a ordem maliciosa (não aprovaria). **Fila BullMQ provada de ponta a ponta com a API reiniciada (22/11):** dois anúncios novos "TESTE-IA 1" (padaria) e "TESTE-IA 2" (cura milagrosa + ordem escondida) na conta da Padaria Teste, postos na fila `ads-ai-review`; o worker da API chamou o Gemini e gravou o parecer; o segundo saiu com `health-claims` 100% e tema sensível, o primeiro limpo; `autoApproved: false` nos dois e ambos seguiram PENDING na fila humana; o serviço de revisão devolve o parecer no formato que a tela lê. Observação: o modelo às vezes dá confiança alta mesmo para o anúncio ruim (1,0 na segunda rodada, 0,2 na primeira): por isso a aprovação automática nunca depende só da confiança (violação e tema sensível também travam). **Envio real pelo site provado (22/11, depois de o dono autorizar resetar o MFA do João, que foi reinscrito):** entrando como a Padaria Teste no Estúdio, o passo a passo "Bolo caseiro de fubá" → "Salvar e enviar para revisão" enfileirou o job sozinho (gancho funciona); a primeira tentativa falhou 3 vezes com `API_KEY_INVALID` porque o processo que atendia a porta 3000 era um watcher `start:dev` de outra conversa, com a chave antiga; depois de parar todos os watchers e subir um só, o job reprocessado gravou o parecer (`food-drink`, certeza 0,95, sem violações, `autoApproved: false`, anúncio segue PENDING). Em falha da IA o anúncio simplesmente fica na fila humana, como projetado. **Não verificado:** (o envio já foi provado acima), (a caixa do parecer **foi vista no site em 22/11**, depois de o dono autorizar resetar o MFA do moderador: verde para o anúncio limpo, vermelha com "Suspeita: Saúde com promessa de cura (100%)" e "tenta manipular a aprovação" para o enganoso; o rótulo passou a dizer "certeza da leitura" e o prompt foi ajustado, porque o modelo usava a confiança como certeza da própria análise e mostrava 100% num anúncio ruim; o ajuste do prompt ainda não foi retestado com o Gemini), imagem e vídeo do criativo (ainda não existem), página de destino (domínio e lista de bloqueio), prazo de 24 h e recurso do anunciante. **Decisão do dono:** ligar ou não `ADS_AI_AUTO_APPROVE` (hoje desligado; recomendo rodar semanas anotando e comparar com as decisões humanas antes de ligar).
+- **Etapa 2, parte 1 feita em 22/11 (sem commit): entrega, eventos, cobrança e relatório diário, só no servidor.** Módulo `apps/api/src/ads/ads-delivery/`. O card no feed vem na parte 2 (abaixo) e o relatório no Estúdio na parte 3.
+  - **Banco:** migrations `20261122130000_ad_events_delivery` e `20261122130100_ad_pending_spend_range` (aplicadas no Docker): `AdImpression` (cada entrega, com o preço fixado na hora), `AdEvent` (cada evento do aparelho, com `event_id` único), `AdDailyStat` (contagem por anúncio e dia, fuso de São Paulo), `AdHiddenAdvertiser` ("esconder todos desta empresa"); `AdAccount.pendingSpendMillicents`. O banco barra preço zero e gasto negativo.
+  - **Dinheiro em milésimos de centavo (millicents):** R$ 6,00 por mil exibições custa 600 millicents por exibição, exato. O gasto acumula na conta e vai ao livro-caixa em **centavos inteiros** (a cada R$ 1,00 gasto e de hora em hora, `@Cron` em `closeSpend`). O saldo disponível para entregar é o saldo menos o gasto ainda não lançado. Gasto acima do saldo é absorvido pelo Votz (lança só o que há) e **as campanhas da conta pausam**.
+  - **Entrega** (`GET /api/v1/ads/next?surface=&state=&city=&position=`): **sem IA** (Etapa 3 troca isso). Elegibilidade: campanha ativa, anúncio aprovado, saldo, orçamento do dia, período, empresa não escondida, anúncio não escondido, no máximo 3 exibições por pessoa por anúncio em 24 h. Região é **contexto da tela** (vale sem aceite; o cadastro só completa com aceite). Interesses, faixa e gênero **só com aceite** e nunca para menor de 18 (conjunto que os exige não aparece para quem não aceitou). 5% das pessoas (grupo de controle, por id) nunca veem anúncio. **Leilão de segundo preço** simples: o maior valor esperado vence e paga o que bastava para passar o segundo, nunca abaixo do piso nem acima do lance; clique e mil exibições se comparam com chance de clique de partida de 1%. A resposta traz o texto "Por que estou vendo isto?" e **não** vaza alvo, lance nem preço.
+  - **Eventos** (`POST /api/v1/ads/events`, lote de até 50): só da pessoa dona da exibição; `eventId` repetido = duplicado, não conta. Cada carimbo (visível, clique, esconder) passa de nulo para data uma vez, e só quem passa cobra (vale mesmo com envios simultâneos). **Antifraude v1:** visível exige 1 s de tela; clique em menos de 300 ms da entrega é de robô; no máximo 2 cliques por pessoa por anúncio por dia; relógio do aparelho com folga de 5 min; exibição vence em 24 h. Evento inválido fica guardado com o motivo e **nunca é cobrado**. Reconhecimento e Conversões cobram por exibição visível; Tráfego por clique.
+  - **Preços mínimos (valores de partida, decisão do dono):** R$ 6,00 por mil exibições visíveis e R$ 0,40 por clique (`AD_PRICING` em `ads.ts`).
+  - **Relatório:** `GET /api/v1/ads/COMPANY/:empresa/accounts/:conta/stats?days=` (diário, somado entre os anúncios; exige `VIEW_ADS`).
+  - **Verificado (Claude, 22/11):** 161 testes Jest em `src/ads` e `src/moderation` (23 das regras puras: alvo, aceite, grupo de controle, leilão, antifraude, dia de São Paulo; 14 do serviço); `tsc` limpo em api e web; **banco real, 18 verificações** (script sem HTTP, conta temporária apagada): entrega com região da tela, preço fixado, cobra uma vez, mesmo `eventId` duplicado, segunda visível rejeitada, evento de outra pessoa ignorado, **8 envios paralelos da mesma exibição cobram uma vez**, esconder anúncio e depois empresa, 121 centavos lançados com sobra de 700 millicents, saldo = livro-caixa, partidas dobradas, fechamento horário, estouro de saldo debita só o que há e pausa a campanha; **HTTP real como cidadã** (Maria do seed): sem aceite não entrega, com aceite entrega, parâmetros inválidos dão 400, conversão pelo aparelho dá 400, visível cobra 600 millicents uma vez e repetir não cobra. Nos dados de teste da Padaria sobrou gasto de 600 millicents e uma contagem do dia.
+  - **Não verificado:** `SponsoredCard` e medição de visibilidade (web e celular: ainda não existem); rota de relatório por HTTP com a empresa (só o serviço está testado); tabelas de eventos **sem partição** por dia (o plano pede; vale quando o volume crescer) e sem envio ao BigQuery; antifraude por taxa de cliques e anomalias; API de conversões e `votz.app/c/<id>`; a regra "nenhum anúncio perto de relato contra o anunciante" (entra quando o feed pedir o anúncio); aviso de saldo acabando/campanha pausada ao anunciante. **Observação:** neste dia a API local respondeu em cerca de 10 s até a um 401 (Redis do limitador de pedidos ou os 5 watchers `start:dev` rodando juntos); não investiguei e não é desta mudança, mas atrapalha o feed se for da API.
+- **Etapa 2, parte 2 feita em 22/11 (sem commit): card patrocinado no feed do site e do celular.**
+  - **Site:** `components/ads/SponsoredSlot.tsx` (espaço no feed, só pede o anúncio quando chega a 400 px da tela, para não gastar exibição à toa) e `SponsoredCard.tsx` (rótulo "Patrocinado", botão do anunciante em nova aba com `rel="noopener noreferrer sponsored"`, menu "Por que estou vendo isto / Esconder este anúncio / Denunciar anúncio", depois de esconder oferece "Não ver mais anúncios de <empresa>"). Visibilidade com `IntersectionObserver`: 50% do card por 1 s seguido, com a aba aberta. Fila de eventos em `lib/ad-events.ts` (lote a cada 2 s, imediata para clique e esconder, até 3 tentativas). Em `Home.tsx`: 1 espaço a cada 8 publicações (`AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD`), só para quem entrou; seção "cidade" vira `FEED_CITY`, "Recentes" vira `FEED_RECENT`.
+  - **Celular (só JavaScript, sai por `eas update`):** `components/sponsored-card.tsx` (mesmo card, menu pelo `ActionSheet`, botão abre o link com `Linking`), `lib/ad-feed.ts` (`withAdSlots`: espaços com id estável `__ad__8`, `__ad__16`), `lib/ad-events.ts`, e em `screens/home-screen.tsx` a medição pelo `onViewableItemsChanged` (`itemVisiblePercentThreshold: 50`, `minimumViewTime: 1000`).
+  - **Verificado (Claude, 22/11):** `tsc` limpo em web, mobile e api; 4 testes novos do mobile (`tests/ad-feed.test.mjs`). **No site, logado como o João do seed com perfil de teste (Campinas, 25-34, aceite e interesse em comida):** o espaço apareceu depois do 8º post com a Padaria Teste, o menu abriu, "Por que estou vendo isto?" mostrou o texto certo, o banco gravou **1 exibição** (posição 8, `FEED_FOR_YOU`), a visibilidade chegou (1012 ms), cobrou **600 millicents uma vez** (a segunda visível, depois de o Vite recarregar a página, foi recusada como `DUPLICATE_ACTION` e não cobrou), "Esconder este anúncio" e "Não ver mais anúncios de…" chegaram e foram aceitos, e a empresa entrou em `ad_hidden_advertisers`. Dados do João devolvidos ao original e o esconder-empresa apagado no fim.
+  - **Não verificado:** **o celular em aparelho** (sem aparelho: só tipos e a lógica de espaços; vale conferir se o espaço que carrega depois de visível dispara o evento de visibilidade, já que a lista só avisa quando muda o que está visível); clique no botão do anúncio e "Denunciar" no site (o servidor tem os dois testados, a tela não); aparência em tela estreita; o feed de relatos e a página de detalhe não têm anúncio (só publicações).
+  - **Ambiente (22/11):** a API local levou cerca de 10 s por pedido, em qualquer rota. Causa achada: o Redis do Docker **não aceita conexão pela máquina** (a conexão cai na hora em `localhost:6379`, `127.0.0.1` e `[::1]`; por dentro do contêiner o `PING` responde) e o limitador de pedidos espera esse tempo antes de cair para memória. Não mexi no Redis nem nos processos do dono (há 5 watchers `start:dev` e um `dist/main` antigos rodando juntos). Provável conserto: reiniciar o Docker Desktop ou o contêiner `votz-redis`. Isso também afeta as filas BullMQ (revisão por IA).
+- **Etapa 2, parte 3 feita em 22/11 (sem commit): relatório no Estúdio.** Tela `StudioAdsReport.tsx` (`/estudio/anuncios/relatorio`, item "Relatório" no grupo "Anúncios" do menu): períodos de 7, 30 e 90 dias; quatro números (exibições vistas, cliques com taxa de cliques, gasto com custo por mil, custo por clique com quantos esconderam); gráfico de barras por dia (exibições vistas, cliques ou gasto, com dia sem movimento preenchido com zero); tabela com os mesmos números por dia, para quem não enxerga o gráfico; escolha da conta quando há mais de uma; atualiza a cada 60 s. Usa `GET .../accounts/:conta/stats`. As contas de soma e taxa ficam em `packages/shared-types/src/ads.ts` (`summarizeAdStats`, `fillAdStatDays`), com 4 testes em `ads-delivery/ad-report.spec.ts`. **Verificado:** `tsc` limpo em web e api; 43 testes Jest em `ads-delivery` passam. **Provado no navegador em 22/11** (com o dono autorizando refazer o MFA do João, pelo fluxo normal da API; segredo só no scratchpad): entrando como Padaria Teste, a tela leu `/stats` com login de empresa e mostrou 3 entregues, 2 vistas, 1 clique, 1 escondido, R$ 0,01, igual aos dados de teste; a troca de período (30 dias dá 30 linhas) e de métrica (Gasto) funciona; layout ok em 800 px. Corrigido o plural "1 pessoa escondeu o anúncio". **Não verificado:** tela de celular estreita (~375 px); conta com mais de uma conta de anúncios; o custo por mil sai impreciso com poucos dados, porque o gasto diário está em centavos inteiros (R$ 0,01 com 2 vistas dá R$ 5,00 por mil; some com volume real).
+- **Ainda não existe:** **Asaas e Stripe de verdade** (contas do dono), **notas fiscais** e alerta de saldo baixo, devolução de saldo, recarga automática, imagem e vídeo no criativo (usar o envio do padrão de mídia, que ainda não tem commit), duplicar e editar em massa, estimativa de alcance, biblioteca pública, `apps/ads-server`, "esconder todos desta empresa" e "interesses deduzidos" (Etapas 2 e 4).
+- **Próximo passo real:** (1) (feito: fila e Faturamento provados no site); (2) (feito em 22/11: aviso ao anunciante da decisão; falta ver o sino no site com a API reiniciada); (3) (feito em 22/11 só para texto; chamada real ao Gemini provada); (4) **Próximo:** (relatório no Estúdio já visto na tela em 22/11) testar o card no celular, `votz.app/c/<id>` e a API de conversões, regra "nenhum anúncio perto de relato contra o anunciante"; (5) Asaas e Stripe quando o dono criar as contas. Pendências da Etapa 0: dono revisar os rascunhos de política e RIPD e mandar ao advogado; testar "Preferências de anúncios" no celular. Equipe: só o dono e o Claude, uma etapa por vez (seção 9).
+- **Depende de:** [padrão de fotos e vídeos](padrao-de-midia-plano-2026-11-21.md) provado de ponta a ponta (o criativo do anúncio usa o mesmo caminho de envio e recorte).
+- **Próximo passo:** Etapa 0, nesta ordem: (1) taxonomia de interesses (base IAB 3.0) e lista de temas sensíveis em `packages/shared-types`; (2) `ADS_FEATURE_ALLOWLIST` com teste que falha se entrar sinal proibido; (3) formato dos eventos (exibição, clique, esconder, conversão); (4) campos opcionais de data de nascimento e gênero no cadastro (decisão 3); (5) política de anúncios e rascunho do RIPD em `docs/legal/` para o advogado.
+- **Regras que não mudam sem o dono:** sinais permitidos e proibidos (seção 3), personalização só com aceite, nada de dado político ou sensível nos modelos, nenhum anúncio perto de relatos contra o anunciante.
+- **Ao terminar cada etapa:** atualizar este bloco e a linha da frente em `EM-ANDAMENTO.md`, dizendo o que foi e o que não foi verificado.
+
+---
+
+## 1. Resumo
+
+- O anunciante é uma **empresa com perfil no Votz**. Ele cria campanhas dentro do **Estúdio**, que é o nosso "Business Manager", paga com **saldo pré-pago** e acompanha os resultados.
+- Quem decide **qual anúncio cada pessoa vê** é um sistema próprio de IA em três partes:
+  1. **Entender o anúncio:** modelos que leem texto e imagem e dizem do que o anúncio trata.
+  2. **Entender a pessoa:** um retrato dos interesses dela, montado **só com sinais permitidos**.
+  3. **Prever e leiloar:** um modelo que estima a chance de clique, de conversão e de rejeição, e um leilão que junta essa chance com o lance do anunciante.
+- A IA aprende com cada exibição, clique e anúncio escondido, e é retreinada todo dia.
+- **Regra que não se negocia:** a IA **nunca** usa atividade política nem dado sensível (seção 3). Isso fica garantido por separação técnica, não por promessa.
+
+### Sobre "começar robusto"
+A Meta é forte por dois motivos: **arquitetura** e **volume de dados**. A arquitetura dá para construir completa desde o início, e este plano faz isso: modelos de verdade, leilão, controle de gasto, medição confiável, antifraude, testes A/B e retreino automático. O volume de dados não se compra: no lançamento o Votz ainda não tem histórico de cliques.
+
+Por isso o sistema já nasce preparado para o "começo frio":
+- **Modelos de linguagem e imagem pré-treinados** (Gemini/Vertex) entendem anúncios e conteúdos desde o primeiro dia, sem histórico.
+- **Exploração controlada:** o sistema mostra um pouco os anúncios novos para aprender rápido, sem desperdiçar o orçamento do anunciante.
+- **Valores de partida por cidade e categoria,** que vão sendo substituídos pelo aprendizado.
+
+A qualidade da previsão cresce sozinha com o uso. A estrutura é a definitiva desde a primeira versão.
+
+---
+
+## 2. Como funciona, de ponta a ponta
+
+```
+ Anunciante (Estúdio)                     Cidadão (web e celular)
+   │ cria campanha, paga saldo                │ abre o feed
+   ▼                                          ▼
+ API de anúncios ── revisão automática ──► Servidor de anúncios (ads-server)
+   │   (IA + fila humana)                     │ 1. elegibilidade (orçamento, região, política, frequência)
+   │                                          │ 2. busca por semelhança (pessoa × anúncio)  ~200 candidatos
+   ▼                                          │ 3. ranqueamento (chance de clique, conversão, rejeição)
+ Banco (campanhas, saldo, livro-caixa)        │ 4. leilão + controle de gasto
+                                              ▼
+                                   Card "Patrocinado" no feed
+                                              │ exibição visível, clique, esconder
+                                              ▼
+                           Eventos ─► contagem para cobrança (Postgres)
+                                    └► armazém de dados (BigQuery) ─► treino diário (Vertex AI)
+                                                                        └► nova versão do modelo
+                                                                           (teste em sombra → A/B → produção)
+```
+
+---
+
+## 3. Regras de privacidade, que fazem parte da arquitetura
+
+### 3.1 Sinais que a IA pode usar
+| Sinal | Condição |
+|---|---|
+| Cidade, estado, bairro (do cadastro) | Sempre, em nível de bairro, nunca coordenadas |
+| Seção e tema da tela atual (contexto) | Sempre |
+| Aparelho, sistema, horário, idioma | Sempre |
+| Interesses escolhidos pela pessoa (tela "Preferências de anúncios") | Com permissão |
+| Empresas que a pessoa segue | Com permissão de personalização |
+| Interações com anúncios (exibição, clique, esconder, conversão) | Com permissão de personalização |
+| Interações com conteúdo **classificado como não sensível** (ex.: post sobre feira gastronômica do bairro), só em nível de categoria | Com permissão de personalização |
+| Faixa etária e gênero | Informados no cadastro, ambos opcionais (decisão 3). A IA e o anunciante só veem **faixas** de idade (18–24, 25–34, 35–44, 45–54, 55–64, 65+), nunca a data. Só com permissão de personalização |
+
+### 3.2 Sinais proibidos (nunca chegam aos modelos)
+- Políticos, partidos, entidades públicas que a pessoa segue ou com quem interage.
+- Relatos criados ou apoiados, votos em propostas e enquetes, comentários em temas cívicos, participação em debates, Mandatômetro.
+- Texto de relatos, posts e comentários, que podem conter saúde, religião ou endereço. Só entram categorias já filtradas pelo classificador de sensibilidade.
+- Conversas (cifradas de ponta a ponta: o servidor nem consegue ler), CPF, documentos de verificação, coordenadas.
+- Qualquer categoria sensível da LGPD (art. 5º, II): origem racial ou étnica, religião, opinião política, filiação sindical ou a organização política, saúde, vida sexual, dado genético ou biométrico.
+
+### 3.3 Como isso é garantido (o "muro")
+1. **Base separada de sinais (`ads_signals`):** um job monta, todos os dias, só as colunas da lista 3.1. O servidor de anúncios e o treino **só acessam essa base**, com usuário de banco e conta de serviço próprios, **sem permissão** nas tabelas de relatos, votos, políticos, debates e conversas.
+2. **Lista fechada de atributos no código** (`ADS_FEATURE_ALLOWLIST` em `packages/shared-types`) e teste automatizado que falha se um atributo fora da lista aparecer no treino ou no servidor.
+3. **Classificador de sensibilidade:** todo conteúdo e todo anúncio recebe um rótulo. Os de tema sensível não alimentam o perfil de ninguém, e anúncios de tema sensível são recusados ou vão para revisão humana.
+4. **Proibição de segmentação sensível também para o anunciante:** a lista de interesses que ele pode escolher não tem nenhuma categoria sensível.
+5. **Relatórios agregados com piso mínimo:** nenhum recorte com menos pessoas que o `MIN_CELL_SIZE`, que já existe em `@votz/shared-types` e é usado no painel de dados. Nenhum relatório identifica pessoas.
+6. **Sem pixel e sem lista de clientes:** o anunciante não instala rastreador nem envia e-mails ou telefones. Conversão só por identificador de clique (seção 6.4).
+7. **RIPD** (relatório de impacto à proteção de dados) antes do lançamento, revisado por advogado.
+
+### 3.4 O que a pessoa controla
+- **"Preferências de anúncios"** nas Configurações: ligar ou desligar a personalização (padrão: desligada até ela aceitar), escolher e remover interesses, ver os interesses deduzidos e apagá-los.
+- **"Por que estou vendo isto?"** em cada anúncio: cidade, interesse e o fato de a empresa ter escolhido aquele público.
+- **Esconder anúncio** e **esconder todos desta empresa**.
+- Os dados de anúncios entram na **exportação e na exclusão da LGPD** (`apps/api/src/users/lgpd.processor.ts`).
+- **Sem permissão,** a pessoa vê só anúncios por contexto: cidade e seção da tela.
+
+---
+
+## 4. Plataforma do anunciante (o "Business Manager")
+
+Fica dentro do **Estúdio** (`apps/web/src/pages/studio/`), num grupo novo do menu, "Anúncios", e só para perfis de **empresa verificada**.
+
+| Tela | O que faz |
+|---|---|
+| **Contas de anúncios** | Uma ou mais por empresa. Moeda BRL, fuso, dados fiscais |
+| **Pessoas e papéis** | Reaproveita `org-memberships`. Papéis novos: Administrador de anúncios, Anunciante (cria e edita), Analista (só vê), Financeiro (saldo e notas) |
+| **Campanhas** | Tabela em três níveis, como na Meta: campanha → conjunto → anúncio. Ligar e desligar, duplicar, editar em massa |
+| **Criar campanha** | Passo a passo: objetivo → público e orçamento → criativo → revisão |
+| **Público** | Regiões (estado, cidade, bairro, raio a partir de um endereço), interesses da lista permitida, "público automático" (a IA encontra), público semelhante interno (6.3). **Estimativa de alcance** sempre com piso mínimo |
+| **Criativos** | Biblioteca de imagens e vídeos, texto, título, botão e link. Prévia de feed no celular e no computador |
+| **Faturamento** | Saldo, recarga por Pix, boleto ou cartão, extrato, notas fiscais, alerta de saldo baixo |
+| **Relatórios** | Exibições, alcance, frequência, cliques, taxa de cliques, conversões, custo por resultado, gasto, por dia e por região. Exportação CSV. Todos com piso mínimo |
+| **Conversões** | Chave de API para o anunciante mandar conversões pelo identificador de clique (6.4) |
+
+**Objetivos de campanha:**
+- **Reconhecimento:** cobrado por mil exibições, otimizado para alcance.
+- **Tráfego:** cobrado por clique, otimizado para clique.
+- **Conversões:** cobrado por mil exibições, otimizado para conversão. É o mesmo modelo da Meta.
+
+**Políticas de anúncios** (página pública e revisão):
+- **Proibidos:** política e eleição, órgãos públicos, apostas, armas, tabaco e vape, conteúdo adulto, crédito predatório, saúde com promessa de cura, e qualquer tema sensível da LGPD.
+- **Restritos, com revisão humana:** saúde, educação, financeiro, imobiliário.
+- **Regra de credibilidade:** o anúncio nunca aparece dentro de relatos, perfis, conversas ou debates, nem ao lado de relato contra o próprio anunciante. Anunciar não altera nota, posição nem Votz Score.
+
+**Biblioteca pública de anúncios** (`/anuncios/biblioteca`): todo anúncio ativo ou dos últimos 12 meses, com quem pagou, período, regiões, faixa de gasto e faixa de exibições. É transparência obrigatória por decisão de produto, no mesmo espírito do repositório que o TSE exige para conteúdo político, que de qualquer forma é proibido aqui.
+
+---
+
+## 5. Revisão automática de anúncios
+
+1. **Ao enviar:** o criativo (texto, imagem, quadros do vídeo e página de destino) passa por um **modelo multimodal (Gemini via Vertex AI)**, que devolve:
+   - categoria na taxonomia de interesses (base: IAB Content Taxonomy 3.0, adaptada);
+   - violações de política, com nível de confiança;
+   - rótulo de sensibilidade;
+   - texto curto explicando a decisão.
+2. **Aprovação automática** só com confiança alta e categoria não restrita. O resto vai para a **fila humana** da moderação (`apps/api/src/moderation`), com prazo de 24 h.
+3. **Página de destino:** verificação de domínio, HTTPS e lista de bloqueio. Uma nova verificação a cada 7 dias em anúncio ativo.
+4. **Recurso do anunciante:** pedido de revisão, com registro de toda decisão.
+
+---
+
+## 6. O sistema de IA
+
+### 6.1 Entender o anúncio
+- **Representação numérica do anúncio (embedding multimodal):** texto e imagem viram um vetor com o modelo multimodal do Vertex AI. Isso permite comparar anúncios com interesses e com outros anúncios.
+- **Classificação:** categoria, subcategoria, sensibilidade e público provável, feita pelo modelo da seção 5.
+- **Começo frio de um anúncio novo:** a chance inicial de clique vem de anúncios parecidos (vizinhos no vetor), não de um valor fixo.
+
+### 6.2 Entender a pessoa
+- **Torre do usuário:** uma rede neural que transforma os sinais permitidos (3.1) num vetor de interesses de 128 dimensões. Entradas:
+  - região, aparelho e horário;
+  - interesses declarados;
+  - vetores das empresas seguidas;
+  - **sequência dos últimos anúncios** vistos, clicados e escondidos, com mecanismo de atenção (o mesmo tipo de técnica dos modelos de linguagem);
+  - categorias de conteúdo não sensível com que interagiu.
+- Calculada **em lote todo dia** para todos, e **atualizada na hora** com as ações recentes (cliques e esconder).
+- **Sem permissão de personalização,** a torre recebe só contexto e região.
+
+### 6.3 Encontrar candidatos e ordenar
+1. **Elegibilidade (regras):** campanha ativa, saldo, região, horário, política, frequência máxima, empresa não escondida pela pessoa, distância de conteúdo contra o anunciante.
+2. **Busca por semelhança (modelo de duas torres):** pessoa × anúncio no mesmo espaço vetorial. Busca aproximada de vizinhos devolve cerca de 200 candidatos. No começo, com poucos milhares de anúncios, o índice fica em memória no servidor de anúncios. Acima de 100 mil anúncios, passa para o Vertex AI Vector Search.
+3. **Ranqueamento multitarefa:** uma rede profunda do tipo **DCN-v2** (a mesma família usada em grandes sistemas de anúncios) prevê ao mesmo tempo:
+   - `pClique`: chance de clicar;
+   - `pConversão`: chance de converter depois do clique;
+   - `pRejeição`: chance de esconder ou denunciar.
+
+   Atributos: vetores da pessoa e do anúncio, cruzamentos (cidade × categoria, horário × categoria), posição no feed, histórico suavizado de cliques do anúncio e qualidade do anunciante.
+4. **Calibração:** regressão isotônica por objetivo, para que "5%" signifique 5% de verdade. Sem isso o leilão cobra errado.
+5. **Exploração:** amostragem de Thompson sobre as previsões calibradas, com teto de 5 a 10% das exibições para anúncios com pouco histórico.
+6. **Público automático (como o Advantage+ da Meta):** o anunciante informa só objetivo e região, e a busca por semelhança encontra o público.
+7. **Público semelhante interno:** a semente são pessoas que **já interagiram** com os anúncios ou com o perfil da empresa no Votz. O sistema busca vizinhos no espaço da torre do usuário, nunca com listas externas.
+
+### 6.4 Medir conversão sem rastreador
+- O clique passa por `votz.app/c/<id-do-clique>`, que redireciona ao anunciante com o `votz_click_id` no link.
+- O anunciante manda a conversão para a **API de conversões do Votz**: `id do clique + tipo de evento + valor + hora`, assinado com a chave dele. **Sem dado pessoal.**
+- Janela de atribuição: 7 dias após o clique. As duplicadas são descartadas.
+
+### 6.5 Leilão e cobrança
+- **Valor total** de cada candidato = `lance × chance da ação do objetivo × 1000 + bônus de qualidade − penalidade por rejeição prevista`.
+- **Segundo preço:** o vencedor paga o mínimo necessário para manter a posição, nunca abaixo do **preço mínimo** da região.
+- **Controle de gasto (pacing):** um controlador PID por conjunto de anúncios ajusta, a cada minuto, a probabilidade de participar do leilão, para o orçamento render o dia todo. Os contadores ficam no Redis. Gasto acima do orçamento é limitado a 5% e absorvido pelo Votz.
+- **Carga de anúncios:** no máximo 1 anúncio a cada 8 itens do feed no começo, com frequência máxima por pessoa e campanha e pausa depois de "esconder". Esses limites são do Votz, não do anunciante.
+
+### 6.6 Treino, versões e testes
+- **Treino diário** no Vertex AI Pipelines: exporta eventos e sinais permitidos (BigQuery) → treina (PyTorch) → avalia fora do ar (AUC, perda logarítmica, calibração por cidade e categoria) → registra a versão.
+- **Execução dentro do servidor de anúncios:** modelo exportado em **ONNX** e rodado com `onnxruntime-node`, em poucos milissegundos, sem chamada externa por exibição. Os vetores das pessoas vêm pré-calculados do Redis.
+- **Promoção segura:** modo sombra (prevê sem decidir) → teste A/B com 5% → produção. Volta automática para a versão anterior se uma métrica de proteção piorar.
+- **Grupo de controle permanente:** 5% das pessoas nunca veem anúncio. Serve para medir se os anúncios atrapalham o que importa no Votz: relatos criados, apoios e retorno em 7 e 30 dias.
+
+---
+
+## 7. Eventos, medição e antifraude
+
+- **Exibição conta só quando visível:** 50% do card na tela por 1 segundo, como o padrão de mercado.
+  - Web: `IntersectionObserver` (o projeto já usa em `ChatPane.tsx`).
+  - Celular: `onViewableItemsChanged` na lista do feed.
+- **Eventos:** pedido, exibição, exibição visível, clique, esconder, denunciar, conversão. Cada um com identificador único, para não contar duas vezes.
+- **Caminho dos eventos:** API `POST /ads/events` (lotes, assinados pela sessão) → Redis Streams → worker BullMQ, que:
+  1. grava a **contagem que vale para cobrança** no Postgres (tabelas particionadas por dia, livro-caixa de dupla entrada);
+  2. envia para o **BigQuery** (análise e treino).
+- **Antifraude:**
+  - limite por sessão e por aparelho;
+  - bots conhecidos;
+  - taxa de cliques anormal;
+  - cliques sem exibição antes;
+  - modelo de detecção de anomalias.
+
+  Tráfego inválido **não é cobrado** e, se já foi, volta como crédito.
+- **Fechamento financeiro:** a cada hora consolida o gasto, e a cada dia faz a conciliação. A nota fiscal sai **na recarga**, não no gasto.
+
+---
+
+## 8. Onde entra no código atual
+
+### 8.1 API (NestJS, `apps/api/src`)
+| Módulo novo | Responsabilidade |
+|---|---|
+| `ads-accounts` | Contas de anúncios, papéis (estende `org-memberships`), dados fiscais |
+| `ads-campaigns` | Campanhas, conjuntos, anúncios, criativos. DTOs com `class-validator` e schemas em `packages/zod-schemas` |
+| `ads-review` | Revisão automática (Gemini/Vertex) e integração com `moderation` |
+| `ads-billing` | Saldo, recargas (Asaas para Pix e boleto, Stripe para cartão, reaproveitando `subscricoes`), livro-caixa, notas |
+| `ads-events` | Recebimento de eventos, deduplicação, antifraude, contagem para cobrança |
+| `ads-reports` | Relatórios agregados com `MIN_CELL_SIZE`, no padrão de `analytics` |
+| `ads-conversions` | API de conversões por identificador de clique |
+| `ads-library` | Biblioteca pública |
+| `ads-preferences` | Permissão, interesses e "por que estou vendo isto" |
+
+Regras do `CLAUDE.md` que valem aqui: Prisma em todas as consultas (a busca vetorial usa `Prisma.sql` parametrizado, nunca com texto do usuário), Swagger em tudo, testes unitários dos services, jobs só via BullMQ.
+
+### 8.2 Servidor de anúncios (`apps/ads-server`, serviço novo)
+- **Serviço separado:** escala sozinho e não deixa a lentidão de um afetar o outro. É NestJS também, para manter a stack.
+- Mantém em memória o índice dos anúncios elegíveis (atualizado a cada 30 s), o modelo ONNX e o índice de vizinhos.
+- **Orçamento de tempo:** 40 ms. Se passar, o feed sai sem anúncio. Nunca atrasa o feed.
+- Rota interna `POST /select` chamada por `posts.service.ts`. A mistura do feed (`apps/api/src/posts/feed-mix.ts`) ganha o espaço `sponsored`.
+
+### 8.3 Jobs (BullMQ)
+| Fila | Quando roda |
+|---|---|
+| `ads-events-flush` | Contínuo |
+| `ads-pacing` | A cada minuto |
+| `ads-billing-close` | De hora em hora |
+| `ads-review` | Ao enviar o anúncio |
+| `ads-stats-rollup` | De hora em hora |
+| `ads-warehouse-export` | Contínuo, para o BigQuery |
+| `ads-signals-build` | Diário: monta a base `ads_signals` |
+| `ads-user-embeddings` | Diário, mais atualização na hora |
+| `ads-ivt-scan` | De hora em hora |
+| `ads-landing-recheck` | A cada 7 dias |
+
+### 8.4 Banco (Prisma, campos em snake_case)
+`AdAccount`, `AdAccountRole`, `AdCampaign`, `AdSet`, `Ad`, `AdCreative`, `AdReview`, `AdLedgerEntry`, `AdTopUp`, `AdInvoice`, `AdDailyStat` (particionada), `AdClick`, `AdConversion`, `AdUserPreference`, `AdHiddenAdvertiser`, `AdModelVersion`, `AdInterest` (taxonomia), `AdPolicyViolation`.
+
+### 8.5 Web (`apps/web`)
+- Estúdio: grupo "Anúncios" com as telas da seção 4.
+- Feed: componente `SponsoredCard` com rótulo "Patrocinado", menu "Por que estou vendo isto? / Esconder / Denunciar" e medição de visibilidade.
+- Configurações: "Preferências de anúncios".
+- Página pública: biblioteca de anúncios.
+- Cores sempre do `theme`, dados via TanStack Query.
+
+### 8.6 Celular (`apps/mobile/src`)
+- `SponsoredCard` no feed, medição com `onViewableItemsChanged`, tela "Preferências de anúncios".
+- É só JavaScript: sai por `eas update`, sem build nova, desde que não entre biblioteca nativa.
+
+### 8.7 Infra (Google Cloud, seguindo o plano de São Paulo)
+- **BigQuery:** armazém de eventos e sinais.
+- **Vertex AI:** modelo multimodal, Pipelines e registro de modelos.
+- **Cloud Storage:** artefatos de modelo.
+- `ads-server` no **Cloud Run** com instância sempre ligada.
+- Conta de serviço própria para o treino, **sem acesso** às tabelas proibidas.
+
+---
+
+## 9. Etapas
+
+Equipe de referência: 2 pessoas de backend, 1 de IA/ML, 1 de web, 1 de celular (meio período) e advogado ou responsável por políticas (meio período). Com equipe menor, a ordem é a mesma e o prazo estica.
+
+| Etapa | Semanas | Entrega | Pronto quando |
+|---|---|---|---|
+| **0. Fundações** | 1–3 | RIPD, política de anúncios, taxonomia de interesses e lista sensível, telas de permissão, desenho do muro de dados, formato dos eventos | Dono do produto aprova os sinais (seção 10) e o advogado revisa RIPD e políticas |
+| **1. Plataforma do anunciante e cobrança** | 3–10 | Contas, papéis, campanhas em 3 níveis, criativos, saldo pré-pago (Asaas e Stripe), notas, revisão automática + humana, biblioteca pública | Uma empresa de teste cria campanha, recarrega, tem o anúncio aprovado e vê na biblioteca |
+| **2. Eventos, medição e antifraude** | 3–9 | `SponsoredCard` web e celular com medição de visibilidade, ingestão, deduplicação, livro-caixa, relatórios, BigQuery, API de conversões | Contagem bate entre cliente, Postgres e BigQuery (diferença < 0,5%) num teste de carga |
+| **3. Servidor de anúncios e leilão** | 7–14 | `ads-server`, elegibilidade, busca por semelhança, ranqueamento, leilão de segundo preço, pacing, frequência, carga, tempo-limite | Resposta em menos de 40 ms no p99 com 1.000 pedidos/s; gasto fica dentro de ±5% do orçamento em simulação |
+| **4. Modelos v1** | 5–18 | Compreensão de anúncios (Vertex), torre do usuário, duas torres, ranqueador multitarefa, calibração, treino diário, sombra, A/B, público automático | Modelo supera em teste A/B a ordenação por histórico de cliques, sem piorar as métricas cívicas do grupo de controle |
+| **5. Lançamento controlado** | 18–22 | Beta com 20 a 50 anunciantes locais em 2 ou 3 cidades, anúncios do próprio Votz para aquecer os modelos, ajustes | Metas do beta atingidas (taxa de cliques, recompra de saldo, reclamações abaixo do limite) |
+| **6. Escala** | depois | Público semelhante interno, otimização por conversão, API para agências, vídeo, regras automáticas, estudos de incremento | Por demanda |
+
+**Prazo até o beta:** cerca de 5 meses. **Até abrir para todos:** de 7 a 9 meses.
+
+---
+
+## 10. Decisões do dono do produto
+
+Em 21/11/2026 o dono do produto aprovou o plano inteiro ("tudo mais que aprovado"). Fica registrado assim:
+
+| # | Decisão | Estado |
+|---|---|---|
+| 1 | Lista de sinais permitidos e proibidos (seções 3.1 e 3.2). Os proibidos são exigência legal | **Aprovada** |
+| 2 | Personalização **só com aceite (opt-in)**: sem aceite, só anúncios por contexto | **Aprovada** |
+| 3 | Perguntar **data de nascimento** e **gênero** no cadastro (detalhes abaixo) | **Aprovada** |
+| 4 | Carga máxima de 1 anúncio a cada 8 itens do feed; grupo de controle de 5% sem anúncios | Aprovada como sugerida |
+| 5 | Empresas que recebem relatos podem anunciar, sem o anúncio aparecer perto dos relatos contra elas e sem efeito em nota ou Score | Aprovada como sugerida |
+| 6 | Pagamento: Asaas (Pix e boleto) e Stripe (cartão) | Aprovada como sugerida |
+| 7 | IA no Google Cloud (BigQuery e Vertex AI), junto com a mudança para São Paulo | Aprovada como sugerida |
+| 8 | Equipe: **só o dono do produto e o Claude**. O Claude escreve todo o código. O dono revisa, testa, decide e faz o que depende dele (contas no Google Cloud, Asaas, advogado, contratos). As etapas da seção 9 viram uma fila, uma de cada vez | **Aprovada** |
+
+**Como ficam a data de nascimento e o gênero (decisão 3):**
+- **Data de nascimento:** guardada como data (`birth_date`), não como idade. Reforça a regra de 18 anos que o cadastro já tem (`confirmAge18`, `MIN_AGE`). Fora do cadastro, só circula como faixa etária.
+- **Gênero:** opcional, com as opções Mulher, Homem, Outro e Prefiro não dizer. Sem texto livre. Nunca aparece no perfil público.
+- **Finalidade dita na tela,** em português simples: "Usamos para mostrar anúncios mais adequados, se você permitir. Não aparece no seu perfil." Uso só para anúncios com permissão, a menos que outra finalidade seja aprovada depois.
+- **Quem já tem conta:** pedido não obrigatório no próximo acesso e campos em Configurações > Perfil.
+- **Menores de idade:** o Votz já exige 18 anos. Mesmo assim, o servidor de anúncios bloqueia personalização para qualquer data que indique menos de 18 anos. O ECA Digital (Lei 15.211/2025, em vigor desde 17/03/2026) proíbe perfilamento para publicidade dirigida a crianças e adolescentes.
+- **Entra em:** exportação e exclusão da LGPD, e lista fechada de sinais (`ADS_FEATURE_ALLOWLIST`). Web e celular juntos. O cadastro do celular é só JavaScript (`eas update`).
+
+---
+
+## 11. Riscos
+
+| Risco | Como tratamos |
+|---|---|
+| Pouco dado no início deixa a previsão fraca | Modelos pré-treinados, valores de partida por semelhança, exploração controlada, anúncios do próprio Votz no beta |
+| Anúncio atrapalha o uso cívico | Grupo de controle permanente, carga máxima, métricas de proteção com volta automática |
+| Vazamento de dado sensível para o perfil | Muro técnico (3.3), lista fechada com teste, auditoria, RIPD |
+| Perda de credibilidade | Biblioteca pública, regras de distância, Score intocável, categorias proibidas |
+| Fraude e cliques falsos | Antifraude em camadas, sem cobrança de tráfego inválido |
+| Custo de IA | Vetores pré-calculados e modelo rodando dentro do servidor (sem chamada paga por exibição). O modelo multimodal só é chamado na revisão e no cadastro do anúncio |
+| Erro de cobrança | Livro-caixa de dupla entrada, fechamento por hora, conciliação diária, testes de carga |

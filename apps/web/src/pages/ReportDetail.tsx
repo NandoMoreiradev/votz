@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { HandsClapping, UsersThree, Flag, LinkSimple } from '@phosphor-icons/react'
+import { HandsClapping, UsersThree, Flag, LinkSimple, FileText } from '@phosphor-icons/react'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
-import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType } from '@votz/shared-types'
+import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType, legacyMediaItems } from '@votz/shared-types'
+import { MediaCarousel } from '../components/media/MediaCarousel'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
@@ -25,7 +26,6 @@ import { uploadReportMedia } from '../lib/report-upload'
 import { TimelineEvent } from '../types/api'
 import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
-import { videoPosterUrl } from '../lib/video-poster'
 import { thumbUrl } from '../lib/image-thumb'
 
 const Page = styled.div`
@@ -202,44 +202,36 @@ function GalleryImage({ url }: { url: string }) {
   return <img src={src} alt="" loading="lazy" onError={() => src !== url && setSrc(url)} />
 }
 
-const MediaGallery = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
-`
+const isVisualUrl = (url: string) => /\.(jpe?g|png|webp|gif|mp4|mov|m4v|webm)(\?|#|$)/i.test(url)
 
-const MediaItem = styled.div`
-  display: block;
-  aspect-ratio: 1;
-  border-radius: ${({ theme }) => theme.radii.md};
-  overflow: hidden;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  background: ${({ theme }) => theme.colors.neutral};
-  cursor: pointer;
-  position: relative;
-  transition: opacity 0.15s;
+function documentLabel(url: string, index: number) {
+  if (/\.pdf(\?|#|$)/i.test(url)) return `Documento ${index + 1} (PDF)`
+  if (/\.(mp3|m4a|ogg|wav|webm)(\?|#|$)/i.test(url)) return `Áudio ${index + 1}`
+  return `Arquivo ${index + 1}`
+}
 
-  &:hover { opacity: 0.88; }
-
-  img, video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    pointer-events: none;
-  }
-`
-
-const VideoPlayOverlay = styled.div`
-  position: absolute;
-  inset: 0;
+const DocumentList = styled.ul`
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
+const DocumentButton = styled.button`
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.32);
-  color: #fff;
-  font-size: 1.5rem;
-  pointer-events: none;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surface};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  cursor: pointer;
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+  &:focus-visible { outline: 2px solid ${({ theme }) => theme.colors.action}; }
 `
 
 const Description = styled.p`
@@ -1034,34 +1026,35 @@ export function ReportDetail() {
                 return <AdvocacyBanner advocates={advocates} />
               })()}
 
-              {report.media && report.media.length > 0 && (
-                <>
-                <SectionLabel>Fotos, vídeos e documentos</SectionLabel>
-                <MediaGallery>
-                  {report.media.map((url, i) => {
-                    const isVideo = /\.(mp4|mov|webm)$/i.test(url)
-                    return (
-                      <MediaItem
-                        key={url}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openMedia(report.media.map((u) => ({ url: u })), i)}
-                        onKeyDown={(e) => e.key === 'Enter' && openMedia(report.media.map((u) => ({ url: u })), i)}
-                      >
-                        {isVideo ? (
-                          <>
-                            <video src={url} poster={videoPosterUrl(url)} muted playsInline preload="metadata" />
-                            <VideoPlayOverlay>▶</VideoPlayOverlay>
-                          </>
-                        ) : (
-                          <GalleryImage url={url} />
-                        )}
-                      </MediaItem>
-                    )
-                  })}
-                </MediaGallery>
-                </>
-              )}
+              {report.media && report.media.length > 0 && (() => {
+                // Foto de relato é prova: aparece inteira na moldura padrão (fundo desfocado), nunca recortada.
+                const visual = report.mediaItems ?? legacyMediaItems(report.media.filter(isVisualUrl))
+                const visualUrls = new Set(visual.map((item) => item.url))
+                const documents = report.media.filter((url) => !visualUrls.has(url) && !isVisualUrl(url))
+                return (
+                  <>
+                    <SectionLabel>{documents.length ? 'Fotos, vídeos e documentos' : 'Fotos e vídeos'}</SectionLabel>
+                    {visual.length > 0 && (
+                      <MediaCarousel
+                        items={visual}
+                        label="Fotos e vídeos do relato"
+                        onOpen={(i) => openMedia(visual.map((item) => ({ url: item.fullUrl ?? item.url ?? '', type: item.kind === 'VIDEO' ? 'video' : 'image' })), i)}
+                      />
+                    )}
+                    {documents.length > 0 && (
+                      <DocumentList>
+                        {documents.map((url, i) => (
+                          <li key={url}>
+                            <DocumentButton type="button" onClick={() => openMedia(documents.map((u) => ({ url: u })), i)}>
+                              <FileText size={18} aria-hidden /> {documentLabel(url, i)}
+                            </DocumentButton>
+                          </li>
+                        ))}
+                      </DocumentList>
+                    )}
+                  </>
+                )
+              })()}
             </Card>
 
             {report.timeline && report.timeline.length > 0 && (

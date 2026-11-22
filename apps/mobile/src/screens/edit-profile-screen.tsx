@@ -4,9 +4,12 @@ import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import Camera from 'lucide-react-native/icons/camera'
 import { Redirect, router } from 'expo-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PROFILE_DEMOGRAPHICS_PURPOSE, USER_GENDERS, USER_GENDER_LABELS, type UserGender } from '@votz/shared-types'
 import { Avatar, Button, ErrorText, Field, State } from '../components/ui'
 import { FormScroll, Screen, Toolbar } from '../components/screen'
+import { ChoiceSheet } from '../components/choice-sheet'
+import { birthDateError, birthDateFromIso, birthDateToIso, maskBirthDate } from '../lib/birth-date'
 import { useDetail } from '../hooks/use-content'
 import { ApiError, api, errorMessage, uploadFile } from '../lib/api'
 import { mimeFromName } from '../lib/report-media'
@@ -31,8 +34,24 @@ export default function EditProfileScreen() {
   const initialized = useRef(false)
   const client = useQueryClient()
   useEffect(() => { if (profile.data && !initialized.current) { setName(profile.data.name || ''); setUsername(profile.data.username || ''); setBio(profile.data.bio || ''); initialized.current = true } }, [profile.data])
-  const save = useMutation({ mutationFn: () => api<PublicProfile>(`/users/${user!.id}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim(), ...(username.trim() ? { username: username.trim().replace(/^@/, '').toLowerCase() } : {}), bio: bio.trim() }) }), onSuccess: async (updated) => {
+  // Data de nascimento e gênero: opcionais, nunca públicos (plano de anúncios, decisão 3). Vêm dos dados privados.
+  const privateData = useQuery({ queryKey: ['users', 'me', 'private'], queryFn: () => api<{ birthDate: string | null; gender: UserGender | null }>('/users/me'), enabled: !!user })
+  const savedBirthDate = birthDateFromIso(privateData.data?.birthDate)
+  const savedGender = privateData.data?.gender ?? null
+  const [birthDate, setBirthDate] = useState<string | null>(null)
+  const [gender, setGender] = useState<UserGender | null | undefined>(undefined)
+  const [genderSheet, setGenderSheet] = useState(false)
+  const shownBirthDate = birthDate ?? savedBirthDate
+  const shownGender = gender === undefined ? savedGender : gender
+  const birthDateProblem = birthDateError(shownBirthDate)
+  const save = useMutation({ mutationFn: () => api<PublicProfile>(`/users/${user!.id}`, { method: 'PATCH', body: JSON.stringify({
+    name: name.trim(), ...(username.trim() ? { username: username.trim().replace(/^@/, '').toLowerCase() } : {}), bio: bio.trim(),
+    // Vazio apaga (null); sem mudança, não envia.
+    ...(birthDate !== null && birthDate !== savedBirthDate ? { birthDate: birthDateToIso(birthDate) } : {}),
+    ...(gender !== undefined && gender !== savedGender ? { gender } : {}),
+  }) }), onSuccess: async (updated) => {
     client.setQueryData(['users', user!.id], updated)
+    await client.invalidateQueries({ queryKey: ['users', 'me', 'private'] })
     const current = useSession.getState().user
     if (current) useSession.setState({ user: { ...current, name: updated.name || current.name, username: updated.username, bio: updated.bio } })
     await client.invalidateQueries({ queryKey: ['posts'] })
@@ -63,7 +82,7 @@ export default function EditProfileScreen() {
   })
   if (!user) return <Redirect href="/login" />
   const cleanUsername = username.replace(/^@/, '').toLowerCase()
-  const valid = name.trim().length >= 2 && (cleanUsername ? /^[a-z0-9_]{3,30}$/.test(cleanUsername) : !profile.data?.username)
+  const valid = name.trim().length >= 2 && (cleanUsername ? /^[a-z0-9_]{3,30}$/.test(cleanUsername) : !profile.data?.username) && !birthDateProblem
   return <Screen><Toolbar title="Editar perfil" back right={<Button title="Salvar" loading={save.isPending} disabled={!profile.data || !valid} onPress={() => save.mutate()} />} />
     {!profile.data ? <State loading={profile.isPending} title={profile.isPending ? 'Carregando perfil…' : 'Não foi possível carregar'} retry={() => { void profile.refetch() }} /> : <FormScroll>
       <View>
@@ -83,7 +102,19 @@ export default function EditProfileScreen() {
       <Text style={{ color: theme.colors.muted, fontSize: 12 }}>De 3 a 30 caracteres: letras, números e sublinhado.</Text>
       <Field label="Bio" value={bio} onChangeText={setBio} placeholder="Como você participa da sua comunidade?" multiline maxLength={300} editable={!save.isPending} />
       <Text style={{ textAlign: 'right', color: theme.colors.muted, fontSize: 12 }}>{bio.length}/300</Text>
+      <View style={{ gap: 10, paddingTop: 6 }}>
+        <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: theme.colors.primary }}>Sobre você</Text>
+        <Text style={{ color: theme.colors.muted, fontSize: 12, lineHeight: 18 }}>{PROFILE_DEMOGRAPHICS_PURPOSE}</Text>
+        <Field label="Data de nascimento (opcional)" value={shownBirthDate} onChangeText={(value) => setBirthDate(maskBirthDate(value))} placeholder="DD/MM/AAAA" keyboardType="number-pad" maxLength={10} editable={!save.isPending && !privateData.isPending} accessibilityHint="Opcional. Não aparece no seu perfil." />
+        <ErrorText message={birthDateProblem ?? undefined} />
+        <Pressable accessibilityRole="button" accessibilityLabel={`Gênero (opcional): ${shownGender ? USER_GENDER_LABELS[shownGender] : 'não informado'}`} disabled={save.isPending || privateData.isPending} onPress={() => setGenderSheet(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' }}>
+          <Text style={{ color: theme.colors.muted, fontSize: 12 }}>Gênero (opcional)</Text>
+          <Text style={{ color: theme.colors.primary, fontSize: 15 }}>{shownGender ? USER_GENDER_LABELS[shownGender] : 'Não informar'}</Text>
+        </Pressable>
+        {!!shownGender && <Button secondary title="Não informar gênero" disabled={save.isPending} onPress={() => setGender(null)} />}
+      </View>
       <ErrorText message={save.isError ? errorMessage(save.error) : undefined} />
     </FormScroll>}
+    <ChoiceSheet visible={genderSheet} title="Gênero" options={USER_GENDERS.map((value) => ({ value, label: USER_GENDER_LABELS[value] }))} value={shownGender} onChange={(value) => setGender(value)} onClose={() => setGenderSheet(false)} />
   </Screen>
 }

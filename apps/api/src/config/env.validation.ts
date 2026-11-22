@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common'
+import { isPrivateNetworkMatrixUrl } from './matrix-url'
 
 const logger = new Logger('EnvValidation')
 const MIN_SECRET_LENGTH = 32
@@ -22,7 +23,8 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     if (readString(config, 'CHAT_MATRIX_REGISTRATION_SECRET').length < MIN_SECRET_LENGTH) issues.push('CHAT_MATRIX_REGISTRATION_SECRET must be at least 32 characters')
     if (readString(config, 'CHAT_MATRIX_JWT_SECRET') === readString(config, 'JWT_SECRET')) issues.push('Matrix login secret must be independent of the Votz access token secret')
     if (!readString(config, 'CHAT_MATRIX_SERVER_NAME')) issues.push('CHAT_MATRIX_SERVER_NAME is required')
-    if (readString(config, 'NODE_ENV') === 'production' && !readString(config, 'CHAT_MATRIX_URL').startsWith('https://')) issues.push('CHAT_MATRIX_URL must use HTTPS in production')
+    const matrixUrl = readString(config, 'CHAT_MATRIX_URL')
+    if (readString(config, 'NODE_ENV') === 'production' && !matrixUrl.startsWith('https://') && !isPrivateNetworkMatrixUrl(matrixUrl)) issues.push('CHAT_MATRIX_URL must use HTTPS in production (or a http://*.railway.internal private network address)')
   }
 
   const jwtSecret = readString(config, 'JWT_SECRET')

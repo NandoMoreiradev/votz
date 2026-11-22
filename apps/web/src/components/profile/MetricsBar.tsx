@@ -9,20 +9,20 @@ const Grid = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.md};
   overflow: hidden;
-  margin: 16px 0 0;
+  margin: 12px 0 0;
 `
 
 const Cell = styled.div`
   background: ${({ theme }) => theme.colors.white};
-  padding: 12px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
 `
 
 const Value = styled.span<{ $color?: string }>`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-size: 1rem;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ $color, theme }) => $color ?? theme.colors.text};
 `

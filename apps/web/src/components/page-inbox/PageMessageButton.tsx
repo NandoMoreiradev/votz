@@ -2,20 +2,11 @@ import { useEffect } from 'react'
 import styled from 'styled-components'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
+import { profileActionOutline } from '../profile/profile-actions'
 import type { OrgType } from '../../hooks/useOrgMemberships'
 
 const Btn = styled.button`
-  padding: 8px 18px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  border: 1.5px solid ${({ theme }) => theme.colors.primary};
-  background: transparent;
-  color: ${({ theme }) => theme.colors.primary};
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  font-size: ${({ theme }) => theme.fontSizes.sm};
-  cursor: pointer;
-  &:hover {
-    background: ${({ theme }) => theme.colors.neutral};
-  }
+  ${profileActionOutline}
 `
 
 /** Endereço da conversa do cidadão com a página, dentro da caixa unificada. */

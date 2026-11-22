@@ -16,6 +16,8 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator'
+import { POST_MEDIA_MAX_ITEMS } from '@votz/shared-types'
+import { PostMediaInputDto } from '../../media/dto/media.dto'
 
 export class CreatePostPollDto {
   @ApiPropertyOptional({ maxLength: 280 })
@@ -49,12 +51,27 @@ export class CreatePostDto {
   @MaxLength(2000)
   content?: string
 
-  @ApiPropertyOptional({ type: [String], description: 'URLs de mídia enviadas via /storage/upload/post-media (máx. 4)' })
+  @ApiPropertyOptional({
+    type: [String],
+    deprecated: true,
+    description: 'Apps antigos: URLs enviadas via /storage/upload/post-media (máx. 4), sem formato. Use `mediaAssets`.',
+  })
   @IsOptional()
   @IsArray()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false }, { each: true })
   @ArrayMaxSize(4)
   media?: string[]
+
+  @ApiPropertyOptional({
+    type: [PostMediaInputDto],
+    description: 'Fotos e vídeos enviados em /media/uploads, com formato e enquadramento (máx. 4, todos no mesmo formato)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(POST_MEDIA_MAX_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => PostMediaInputDto)
+  mediaAssets?: PostMediaInputDto[]
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -38,5 +38,9 @@ export interface AuthenticatedUser extends PublicUser {
     country?: string;
     latitude?: number | null;
     longitude?: number | null;
+    /** Só em `GET /users/me` e na edição do próprio perfil; nunca no perfil público. AAAA-MM-DD (vem como data ISO). */
+    birthDate?: string | null;
+    /** Só para a própria pessoa; nunca no perfil público. Valores de `USER_GENDERS`. */
+    gender?: 'FEMALE' | 'MALE' | 'OTHER' | 'UNDISCLOSED' | null;
 }
 //# sourceMappingURL=user.d.ts.map

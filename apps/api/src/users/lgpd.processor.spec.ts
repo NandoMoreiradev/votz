@@ -27,6 +27,7 @@ describe('LgpdProcessor', () => {
       apiKey: { findMany: jest.fn().mockResolvedValue([]) },
       registrationRequest: { findMany: jest.fn().mockResolvedValue([]) },
       accessLog: { findMany: jest.fn().mockResolvedValue([]) },
+      adUserPreference: { findUnique: jest.fn().mockResolvedValue({ personalizationConsent: true, consentAt: null, consentVersion: '2026-11-21', interests: ['sports'], updatedAt: null }) },
     }
     storage = {
       uploadJson: jest.fn().mockResolvedValue(undefined),
@@ -144,6 +145,9 @@ describe('LgpdProcessor', () => {
       total: 1,
       items: [{ event: 'LOGIN', ip: '187.10.20.30', createdAt: now }],
     })
+
+    // Preferências de anúncios entram na exportação (LGPD: acesso e portabilidade)
+    expect(payload.adPreferences).toEqual(expect.objectContaining({ personalizationConsent: true, interests: ['sports'] }))
 
     // Ensure no secret fields are selected or exported
     const serialized = JSON.stringify(payload)

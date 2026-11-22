@@ -18,7 +18,8 @@ import {
   UserPlus,
   UserCheck,
 } from '@phosphor-icons/react'
-import { FlagTargetType, PostKind, UserType } from '@votz/shared-types'
+import { FlagTargetType, PostKind, UserType, legacyMediaItems } from '@votz/shared-types'
+import { MediaCarousel } from '../media/MediaCarousel'
 import { PostAuthorInfo, PostDto } from '../../types/api'
 import {
   useDeletePost,
@@ -33,7 +34,6 @@ import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
 import { ConfirmDialog, OptionsMenu, copyLink, type MenuItem } from '../ui/OptionsMenu'
 import { socialRow } from '../ui/social'
-import { videoPosterUrl } from '../../lib/video-poster'
 
 interface PostCardProps {
   post: PostDto
@@ -214,41 +214,6 @@ const TopicLink = styled(Link)`
   color: ${({ theme }) => theme.colors.action};
   font-weight: 600;
   &:hover { text-decoration: underline; }
-`
-
-const MediaGrid = styled.div<{ $count: number }>`
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-  border-radius: ${({ theme }) => theme.radii.lg};
-  overflow: hidden;
-  grid-template-columns: ${({ $count }) => ($count === 1 ? '1fr' : 'repeat(2, 1fr)')};
-`
-
-const MediaTile = styled.div<{ $single?: boolean }>`
-  position: relative;
-  background: ${({ theme }) => theme.colors.neutral};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  overflow: hidden;
-  max-height: ${({ $single }) => ($single ? '520px' : '260px')};
-  aspect-ratio: ${({ $single }) => ($single ? 'auto' : '4 / 3')};
-
-  img {
-    width: 100%;
-    height: 100%;
-    max-height: ${({ $single }) => ($single ? '520px' : '260px')};
-    object-fit: cover;
-    display: block;
-    cursor: pointer;
-  }
-
-  video {
-    width: 100%;
-    max-height: 460px;
-    display: block;
-    background: #0d0d0d;
-  }
 `
 
 const PollBox = styled.div`
@@ -455,10 +420,6 @@ function renderContentWithTopics(text: string) {
   })
 }
 
-function isVideoUrl(url: string) {
-  return /\.(mp4|mov|webm|mkv)(\?|$)/i.test(url)
-}
-
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const h = Math.floor(diff / 3_600_000)
@@ -471,6 +432,8 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const { open: openMedia } = useMediaViewer()
+  // Padrão de formatos; publicação de API antiga (sem `mediaItems`) cai nos links, medidos ao carregar.
+  const mediaItems = post.mediaItems?.length ? post.mediaItems : legacyMediaItems(post.media)
 
   const [flagOpen, setFlagOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -575,28 +538,19 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
 
       {post.content && <BodyText $detail={detail}>{renderContentWithTopics(post.content)}</BodyText>}
 
-      {post.media.length > 0 && (
-        <MediaGrid $count={post.media.length}>
-          {post.media.map((url, idx) => (
-            <MediaTile key={url} $single={post.media.length === 1}>
-              {isVideoUrl(url) ? (
-                <video src={url} poster={videoPosterUrl(url)} controls playsInline preload="metadata" />
-              ) : (
-                <img
-                  src={url}
-                  alt={`Mídia ${idx + 1}`}
-                  loading="lazy"
-                  onClick={() =>
-                    openMedia(
-                      post.media.map((m) => ({ url: m, type: isVideoUrl(m) ? 'video' : 'image' })),
-                      idx,
-                    )
-                  }
-                />
-              )}
-            </MediaTile>
-          ))}
-        </MediaGrid>
+      {mediaItems.length > 0 && (
+        <MediaCarousel
+          items={mediaItems}
+          label="Fotos e vídeos da publicação"
+          onOpen={(idx) =>
+            openMedia(
+              mediaItems
+                .filter((item) => item.status === 'READY' && item.fullUrl)
+                .map((item) => ({ url: item.fullUrl!, type: item.kind === 'VIDEO' ? 'video' : 'image' })),
+              mediaItems.slice(0, idx).filter((item) => item.status === 'READY' && item.fullUrl).length,
+            )
+          }
+        />
       )}
 
       {post.poll && (

@@ -13,4 +13,6 @@ export * from './formatters';
 export * from './sla';
 export * from './post';
 export * from './conversation';
+export * from './media';
+export * from './ads';
 //# sourceMappingURL=index.d.ts.map

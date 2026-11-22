@@ -33,6 +33,10 @@ import { PublicApiModule } from './public-api/public-api.module'
 import { StorageModule } from './storage/storage.module'
 import { HealthModule } from './health/health.module'
 import { CompaniesModule } from './companies/companies.module'
+import { AdsPreferencesModule } from './ads/ads-preferences/ads-preferences.module'
+import { AdsCampaignsModule } from './ads/ads-campaigns/ads-campaigns.module'
+import { AdsBillingModule } from './ads/ads-billing/ads-billing.module'
+import { AdsDeliveryModule } from './ads/ads-delivery/ads-delivery.module'
 import { CamaraSyncModule } from './camara-sync/camara-sync.module'
 import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
 import { SenadoSyncModule } from './senado-sync/senado-sync.module'
@@ -139,6 +143,10 @@ import { SecurityModule } from './common/security/security.module'
     PublicApiModule,
     HealthModule,
     CompaniesModule,
+    AdsPreferencesModule,
+    AdsCampaignsModule,
+    AdsBillingModule,
+    AdsDeliveryModule,
     CamaraSyncModule,
     IbgeSyncModule,
     SenadoSyncModule,

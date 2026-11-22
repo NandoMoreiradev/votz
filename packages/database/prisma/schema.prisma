@@ -141,6 +141,8 @@ enum OrgPermission {
   MANAGE_BILLING
   READ_MESSAGES
   REPLY_MESSAGES
+  MANAGE_ADS // anúncios: criar e editar campanhas (plano de anúncios, seção 4)
+  VIEW_ADS // anúncios: só ver campanhas e resultados
 }
 
 enum PageConversationStatus {
@@ -186,6 +188,8 @@ enum NotificationType {
   POST_COMMENT
   POST_REPOST
   POST_MENTION
+  AD_APPROVED
+  AD_REJECTED
 }
 
 enum SlaState {
@@ -318,6 +322,10 @@ model User {
   termsVersion             String?
   privacyVersion           String?
   ageConfirmedAt           DateTime?
+  // Opcionais (plano de anúncios, decisão 3). Nunca aparecem no perfil público; para anúncios só circulam
+  // como faixa de idade e só com a personalização ligada (ver ADS_FEATURE_ALLOWLIST em @votz/shared-types).
+  birthDate                DateTime?   @map("birth_date") @db.Date
+  gender                   UserGender?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -348,6 +356,7 @@ model User {
   debateMessages       DebateMessage[]
   debatePollVotes      DebatePollVote[]
   moderationActions    ModerationAction[] @relation("ModerationActor")
+  adReviews            AdReview[]         @relation("AdReviewer")
   contentFlags         ContentFlag[]      @relation("FlagReporter")
   refreshTokens        RefreshToken[]
   platformSuggestions      PlatformSuggestion[]     @relation("SuggestionAuthor")
@@ -366,6 +375,9 @@ model User {
   chatDeviceLinks          ChatDeviceLink[]
   chatPrivacy              ChatPrivacy?
   chatStorage              ChatStorage?
+  adPreference               AdUserPreference?
+  adImpressions              AdImpression[]
+  adHiddenAdvertisers        AdHiddenAdvertiser[]
   chatKeyBackup            ChatKeyBackup?
   chatHistoryTransfers     ChatHistoryTransfer[]
   chatReceipts             ChatReceipt[]
@@ -433,6 +445,7 @@ model ChatDevice {
   pushTokenUpdatedAt DateTime? @map("push_token_updated_at")
   createdAt DateTime @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at")
+
   @@index([userId, revokedAt])
   @@map("chat_devices")
 }
@@ -452,6 +465,7 @@ model ChatDeviceLink {
   decidedAt DateTime? @map("decided_at")
   approved Boolean?
   decidedByDeviceId String? @map("decided_by_device_id")
+
   @@index([userId, expiresAt])
   @@map("chat_device_links")
 }
@@ -463,6 +477,7 @@ model ChatStorage {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   quotaMb   Int      @map("quota_mb")
   updatedAt DateTime @updatedAt @map("updated_at")
+
   @@map("chat_storage")
 }
 
@@ -484,6 +499,7 @@ model ChatPrivacy {
   fontScale             String    @default("MEDIUM") @map("font_scale")
   wallpaper             String    @default("DEFAULT") @map("wallpaper")
   updatedAt             DateTime  @updatedAt @map("updated_at")
+
   @@map("chat_privacy")
 }
 
@@ -495,6 +511,7 @@ model ChatReceipt {
   recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
   deliveredAt DateTime @default(now()) @map("delivered_at")
   readAt DateTime? @map("read_at")
+
   @@id([conversationId, eventId, recipientUserId])
   @@index([conversationId, recipientUserId])
   @@map("chat_receipts")
@@ -514,6 +531,7 @@ model ChatAttachment {
   // Nulo = sem prazo: o limite é a cota de armazenamento de quem enviou (mais antigos saem primeiro).
   expiresAt      DateTime?    @map("expires_at")
   deletedAt      DateTime?    @map("deleted_at")
+
   @@index([conversationId, createdAt])
   @@index([expiresAt, deletedAt])
   @@index([uploaderId, deletedAt, createdAt])
@@ -530,6 +548,7 @@ model ChatKeyBackup {
   version   Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+
   @@map("chat_key_backups")
 }
 
@@ -544,6 +563,7 @@ model ChatHistoryTransfer {
   sizeBytes    Int      @map("size_bytes")
   expiresAt    DateTime @map("expires_at")
   createdAt    DateTime @default(now()) @map("created_at")
+
   @@index([userId, expiresAt])
   @@map("chat_history_transfers")
 }
@@ -626,6 +646,7 @@ model ReportMedia {
   processing        String    @default("NONE")
   createdAt         DateTime  @default(now()) @map("created_at")
   attachedAt        DateTime? @map("attached_at")
+
   @@index([attachedAt, createdAt])
   @@index([processing, createdAt])
   @@index([uploaderId, createdAt])
@@ -832,6 +853,8 @@ model Company {
   website   String?
   followers UserCompanyFollower[]
   branches  Branch[]
+  adAccounts           AdAccount[]
+  adHiddenBy           AdHiddenAdvertiser[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -1428,7 +1451,7 @@ model RecurrenceCell {
   cityKey    String   @map("city_key")
   cell7      String
   category   Category
-  windowEnd  DateTime @db.Date @map("window_end")
+  windowEnd  DateTime @map("window_end") @db.Date
   count90d   Int      @map("count_90d")
   firstSeen  DateTime @map("first_seen")
   lastSeen   DateTime @map("last_seen")
@@ -1744,6 +1767,8 @@ model Post {
   reposts              PostRepost[]
   comments             PostComment[]
   topics               PostTopic[]
+  // Fotos e vídeos no padrão de formatos (docs/dev/padrao-de-midia-plano-2026-11-21.md), na ordem de `position`.
+  mediaAssets MediaAsset[]
 
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
@@ -2083,4 +2108,459 @@ model PageConversationRead {
 
   @@unique([conversationId, userId])
   @@map("page_conversation_reads")
+}
+
+// ─── Padrão de fotos e vídeos (publicações e, depois, criativos de anúncio) ───────────────────────
+// docs/dev/padrao-de-midia-plano-2026-11-21.md. Relatos continuam em `report_media` (sem recorte: foto é prova).
+
+enum MediaAssetPurpose {
+  POST
+  AD_CREATIVE
+}
+
+enum MediaAssetKind {
+  IMAGE
+  VIDEO
+  GIF
+}
+
+// UPLOADING: envio direto ao bucket ainda não confirmado. UPLOADED: arquivo recebido, ainda sem publicação.
+// PROCESSING: vídeo sendo recortado e convertido. READY: pronto para mostrar. FAILED: não deu para processar.
+enum MediaAssetStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MediaFormat {
+  SQUARE
+  PORTRAIT
+  LANDSCAPE
+}
+
+model MediaAsset {
+  id              String            @id @default(uuid())
+  uploaderId      String            @map("uploader_id")
+  purpose         MediaAssetPurpose @default(POST)
+  kind            MediaAssetKind
+  status          MediaAssetStatus
+  // Original privado (pasta media-src/, sem metadados da câmera na foto). Nulo nos arquivos antigos e depois de
+  // o vídeo ficar pronto (o original é apagado para não pagar armazenamento duas vezes).
+  sourceKey       String?           @unique @map("source_key")
+  sourceMime      String            @map("source_mime")
+  sourceSizeBytes Int               @map("source_size_bytes")
+  // Tamanho do original como a pessoa vê (já girado).
+  sourceWidth     Int?              @map("source_width")
+  sourceHeight    Int?              @map("source_height")
+  durationMs      Int?              @map("duration_ms")
+  // Moldura e recorte escolhidos ao publicar (frações de 0 a 1 do original). Nulos em GIF e nos antigos.
+  format          MediaFormat?
+  cropX           Float?            @map("crop_x")
+  cropY           Float?            @map("crop_y")
+  cropW           Float?            @map("crop_w")
+  cropH           Float?            @map("crop_h")
+  // Arquivos públicos gerados: versão cheia (`key`), do feed, miniatura e capa do vídeo.
+  key             String?           @unique
+  feedKey         String?           @map("feed_key")
+  thumbKey        String?           @map("thumb_key")
+  posterKey       String?           @map("poster_key")
+  width           Int?
+  height          Int?
+  sizeBytes       Int?              @map("size_bytes")
+  // Publicação de antes do padrão: aparece inteira na moldura mais próxima, com fundo desfocado.
+  legacy          Boolean           @default(false)
+  failureReason   String?           @map("failure_reason")
+  postId          String?           @map("post_id")
+  post            Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  position        Int?
+  attachedAt      DateTime?         @map("attached_at")
+  processedAt     DateTime?         @map("processed_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  @@index([postId, position])
+  @@index([uploaderId, createdAt])
+  @@index([status, createdAt])
+  @@index([attachedAt, createdAt])
+  @@map("media_assets")
+}
+
+// Gênero informado pela pessoa no cadastro (opcional). Mesma lista de USER_GENDERS em @votz/shared-types.
+enum UserGender {
+  FEMALE
+  MALE
+  OTHER
+  UNDISCLOSED
+}
+
+// Preferências de anúncios da pessoa (plano de anúncios, seção 3.4). A personalização só vale com
+// `personalization_consent = true` (opt-in: padrão desligado). `interests` guarda ids de AD_INTERESTS.
+model AdUserPreference {
+  userId                 String    @id @map("user_id")
+  personalizationConsent Boolean   @default(false) @map("personalization_consent")
+  consentAt              DateTime? @map("consent_at")
+  consentVersion         String?   @map("consent_version")
+  interests              String[]  @default([])
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ad_user_preferences")
+}
+
+// ── Anúncios: plataforma do anunciante (plano de anúncios, Etapa 1) ─────────
+// Conta de anúncios → campanha → conjunto (público e orçamento) → anúncio (usa um criativo).
+
+enum AdObjective {
+  AWARENESS // reconhecimento: cobrado por mil exibições
+  TRAFFIC // tráfego: cobrado por clique
+  CONVERSIONS // conversões: cobrado por mil exibições, otimizado para conversão
+}
+
+enum AdStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AdReviewStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AdAccount {
+  id           String       @id @default(uuid())
+  companyId    String       @map("company_id")
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  currency     String       @default("BRL")
+  timezone     String       @default("America/Sao_Paulo")
+  // Saldo pré-pago em centavos. Só muda pelo livro-caixa (AdLedgerEntry), na mesma transação do lançamento.
+  balanceCents Int          @default(0) @map("balance_cents")
+  // Gasto que ainda não completou um centavo (milésimos de centavo). Vira lançamento SPEND quando passa de 1.000.
+  pendingSpendMillicents Int @default(0) @map("pending_spend_millicents")
+  createdById  String       @map("created_by_id")
+  campaigns    AdCampaign[]
+  creatives    AdCreative[]
+  topUps       AdTopUp[]
+  ledger       AdLedgerEntry[]
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("ad_accounts")
+}
+
+model AdCampaign {
+  id        String      @id @default(uuid())
+  accountId String      @map("account_id")
+  account   AdAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  objective AdObjective
+  status    AdStatus    @default(DRAFT)
+  adSets    AdSet[]
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@index([accountId, status])
+  @@map("ad_campaigns")
+}
+
+// Público e orçamento. Só sinais permitidos: região, interesses de AD_INTERESTS, faixas de idade, gênero.
+model AdSet {
+  id                String       @id @default(uuid())
+  campaignId        String       @map("campaign_id")
+  campaign          AdCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name              String
+  status            AdStatus     @default(DRAFT)
+  dailyBudgetCents  Int          @map("daily_budget_cents")
+  // Lance máximo em centavos (por mil exibições ou por clique, conforme o objetivo). Nulo: o Votz decide.
+  bidCapCents       Int?         @map("bid_cap_cents")
+  startAt           DateTime     @map("start_at")
+  endAt             DateTime?    @map("end_at")
+  states            String[]     @default([])
+  cities            String[]     @default([])
+  interests         String[]     @default([])
+  ageBands          String[]     @default([]) @map("age_bands")
+  genders           UserGender[] @default([])
+  // Público automático: a IA encontra o público (só objetivo e região contam).
+  automaticAudience Boolean      @default(false) @map("automatic_audience")
+  ads               Ad[]
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([campaignId])
+  @@map("ad_sets")
+}
+
+model AdCreative {
+  id             String    @id @default(uuid())
+  accountId      String    @map("account_id")
+  account        AdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  headline       String
+  body           String
+  ctaLabel       String    @map("cta_label")
+  destinationUrl String    @map("destination_url")
+  ads            Ad[]
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@map("ad_creatives")
+}
+
+model Ad {
+  id           String         @id @default(uuid())
+  adSetId      String         @map("ad_set_id")
+  adSet        AdSet          @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  creativeId   String         @map("creative_id")
+  creative     AdCreative     @relation(fields: [creativeId], references: [id], onDelete: Restrict)
+  name         String
+  status       AdStatus       @default(DRAFT)
+  reviewStatus AdReviewStatus @default(NOT_SUBMITTED) @map("review_status")
+  reviewNote   String?        @map("review_note")
+  submittedAt  DateTime?      @map("submitted_at")
+  reviewedAt   DateTime?      @map("reviewed_at")
+  reviews      AdReview[]
+  aiAnalyses   AdAiAnalysis[]
+  impressions  AdImpression[]
+  events       AdEvent[]
+  dailyStats   AdDailyStat[]
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@index([adSetId])
+  @@index([reviewStatus, submittedAt])
+  @@map("ads")
+}
+
+// Leitura do anúncio pela IA (Gemini) antes da fila humana. É um parecer para o moderador; só vira decisão
+// (AdReview com source AI) quando ADS_AI_AUTO_APPROVE está ligado e todas as condições de segurança passam.
+model AdAiAnalysis {
+  id           String   @id @default(uuid())
+  adId         String   @map("ad_id")
+  ad           Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  // Categoria de interesse sugerida (lista fechada de AD_INTERESTS) ou null.
+  category     String?
+  // Categoria restrita detectada (saúde, educação, financeiro, imóveis, bebida) ou null.
+  restricted   String?
+  // [{ id: categoria proibida, confidence: 0..1 }], inclui os achados da checagem por palavras.
+  violations   Json
+  sensitive    Boolean
+  confidence   Float
+  explanation  String
+  model        String
+  // A IA estava apta a aprovar sozinha (sem problema e confiança alta) e o modo automático estava ligado.
+  autoApproved Boolean  @default(false) @map("auto_approved")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([adId, createdAt])
+  @@map("ad_ai_analyses")
+}
+
+// ── Anúncios: revisão e faturamento (plano de anúncios, Etapa 1, parte 2) ───
+
+enum AdReviewSource {
+  HUMAN // fila da moderação
+  AI // revisão automática (vem depois)
+}
+
+// Cada decisão sobre um anúncio. Nunca é editada nem apagada: é o histórico para recurso e auditoria.
+model AdReview {
+  id               String         @id @default(uuid())
+  adId             String         @map("ad_id")
+  ad               Ad             @relation(fields: [adId], references: [id], onDelete: Cascade)
+  decision         AdReviewStatus // APPROVED ou REJECTED
+  source           AdReviewSource @default(HUMAN)
+  reviewerId       String?        @map("reviewer_id")
+  reviewer         User?          @relation("AdReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reason           String?
+  // Como o anúncio estava no momento da decisão (texto, botão e link).
+  creativeSnapshot Json           @map("creative_snapshot")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@index([adId, createdAt])
+  @@index([reviewerId])
+  @@map("ad_reviews")
+}
+
+enum AdTopUpMethod {
+  PIX
+  BOLETO
+  CARD
+}
+
+enum AdPaymentProvider {
+  TEST // modo de teste local: não chama serviço externo
+  ASAAS // Pix e boleto
+  STRIPE // cartão
+}
+
+enum AdTopUpStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELED
+}
+
+// Pedido de recarga de saldo. Só vira dinheiro na conta quando passa de PENDING para PAID (com lançamento no livro-caixa).
+model AdTopUp {
+  id          String            @id @default(uuid())
+  adAccountId String            @map("ad_account_id")
+  adAccount   AdAccount         @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  amountCents Int               @map("amount_cents")
+  method      AdTopUpMethod
+  provider    AdPaymentProvider
+  status      AdTopUpStatus     @default(PENDING)
+  // Identificador da cobrança no provedor e o que a pessoa usa para pagar (Pix copia e cola, linha do boleto, link).
+  externalId  String?           @map("external_id")
+  paymentCode String?           @map("payment_code")
+  checkoutUrl String?           @map("checkout_url")
+  expiresAt   DateTime          @map("expires_at")
+  paidAt      DateTime?         @map("paid_at")
+  createdById String            @map("created_by_id")
+  ledger      AdLedgerEntry[]
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@unique([provider, externalId])
+  @@index([adAccountId, createdAt])
+  @@index([status, expiresAt])
+  @@map("ad_top_ups")
+}
+
+// Contas do livro-caixa (partidas dobradas). CUSTOMER_BALANCE é passivo: o saldo do anunciante é a soma dos créditos menos os débitos.
+enum AdLedgerAccount {
+  CUSTOMER_BALANCE // saldo que o Votz deve ao anunciante
+  PAYMENTS_RECEIVED // dinheiro recebido dos provedores (Asaas, Stripe, teste)
+  AD_REVENUE // receita de anúncios (gasto das campanhas)
+  PROMO_FUND // crédito dado pelo Votz (ajuste manual)
+}
+
+enum AdLedgerSide {
+  DEBIT
+  CREDIT
+}
+
+enum AdLedgerEntryType {
+  TOPUP
+  SPEND
+  REFUND
+  ADJUSTMENT
+}
+
+// Livro-caixa de dupla entrada. Toda transação (transactionId) tem lançamentos cujos débitos somam igual aos créditos.
+// Nunca é editado nem apagado: correção é um lançamento novo, no sentido contrário.
+model AdLedgerEntry {
+  id            String            @id @default(uuid())
+  adAccountId   String            @map("ad_account_id")
+  adAccount     AdAccount         @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  transactionId String            @map("transaction_id")
+  ledger        AdLedgerAccount
+  side          AdLedgerSide
+  amountCents   Int               @map("amount_cents")
+  type          AdLedgerEntryType
+  description   String
+  topUpId       String?           @map("top_up_id")
+  topUp         AdTopUp?          @relation(fields: [topUpId], references: [id], onDelete: SetNull)
+  createdById   String?           @map("created_by_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  @@index([adAccountId, createdAt])
+  @@index([transactionId])
+  @@index([topUpId])
+  @@map("ad_ledger_entries")
+}
+
+// ── Anúncios: entrega, eventos e medição (plano de anúncios, Etapa 2) ───────
+
+enum AdChargeOn {
+  VIEWABLE_IMPRESSION // reconhecimento e conversões: por exibição visível
+  CLICK // tráfego: por clique
+}
+
+enum AdEventStatus {
+  ACCEPTED
+  INVALID // não é cobrado; o motivo fica em `reason`
+}
+
+// Uma vez que o Votz entrega um anúncio a uma pessoa. O preço (em milésimos de centavo) é fixado aqui, na entrega.
+// Os carimbos viewable_at, clicked_at e hidden_at só mudam de nulo para data uma vez: é isso que impede cobrar duas vezes.
+model AdImpression {
+  id               String     @id @default(uuid())
+  adId             String     @map("ad_id")
+  ad               Ad         @relation(fields: [adId], references: [id], onDelete: Cascade)
+  userId           String     @map("user_id")
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  surface          String
+  position         Int        @default(0)
+  chargeOn         AdChargeOn @map("charge_on")
+  // Quanto custa UMA unidade cobrada (uma exibição visível ou um clique), em milésimos de centavo.
+  chargeMillicents Int        @map("charge_millicents")
+  servedAt         DateTime   @default(now()) @map("served_at")
+  viewableAt       DateTime?  @map("viewable_at")
+  clickedAt        DateTime?  @map("clicked_at")
+  hiddenAt         DateTime?  @map("hidden_at")
+  events           AdEvent[]
+
+  @@index([userId, adId, servedAt])
+  @@index([adId, servedAt])
+  @@map("ad_impressions")
+}
+
+// Cada evento que o aparelho mandou. `event_id` único evita contar duas vezes. Evento inválido fica guardado
+// (para medir tráfego inválido), mas nunca é cobrado.
+model AdEvent {
+  id           String        @id @default(uuid())
+  eventId      String        @unique @map("event_id")
+  impressionId String        @map("impression_id")
+  impression   AdImpression  @relation(fields: [impressionId], references: [id], onDelete: Cascade)
+  adId         String        @map("ad_id")
+  ad           Ad            @relation(fields: [adId], references: [id], onDelete: Cascade)
+  type         String
+  status       AdEventStatus
+  reason       String?
+  visibleMs    Int?          @map("visible_ms")
+  occurredAt   DateTime      @map("occurred_at")
+  receivedAt   DateTime      @default(now()) @map("received_at")
+
+  @@index([impressionId])
+  @@index([adId, receivedAt])
+  @@map("ad_events")
+}
+
+// Contagem por anúncio e dia (fuso de São Paulo). Base dos relatórios. Gasto em milésimos de centavo.
+model AdDailyStat {
+  id                  String   @id @default(uuid())
+  adId                String   @map("ad_id")
+  ad                  Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  adSetId             String   @map("ad_set_id")
+  day                 DateTime @db.Date
+  impressions         Int      @default(0)
+  viewableImpressions Int      @default(0) @map("viewable_impressions")
+  clicks              Int      @default(0)
+  hides               Int      @default(0)
+  invalidEvents       Int      @default(0) @map("invalid_events")
+  spendMillicents     Int      @default(0) @map("spend_millicents")
+
+  @@unique([adId, day])
+  @@index([adSetId, day])
+  @@map("ad_daily_stats")
+}
+
+// "Esconder todos desta empresa": a pessoa não vê mais anúncios dela.
+model AdHiddenAdvertiser {
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, companyId])
+  @@map("ad_hidden_advertisers")
 }

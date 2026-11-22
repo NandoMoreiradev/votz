@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import { VoteType } from '@votz/shared-types'
+import { VoteType, type UserGender } from '@votz/shared-types'
 
 const PUBLIC_USER_SELECT = {
   id: true,
@@ -36,6 +36,9 @@ const ME_USER_SELECT = {
   country: true,
   latitude: true,
   longitude: true,
+  // Só para a própria pessoa (perfil e configurações); nunca no perfil público.
+  birthDate: true,
+  gender: true,
   _count: {
     select: { reports: true, votes: true, comments: true },
   },
@@ -148,6 +151,8 @@ export class UsersRepository {
     state?: string
     latitude?: number
     longitude?: number
+    birthDate?: Date | null
+    gender?: UserGender | null
   }) {
     return this.prisma.user.update({
       where: { id },
@@ -167,6 +172,8 @@ export class UsersRepository {
         country: true,
         latitude: true,
         longitude: true,
+        birthDate: true,
+        gender: true,
       },
     })
   }

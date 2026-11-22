@@ -1,4 +1,5 @@
 import { Category, PostCommentMediaType, PostKind, ReportStatus, UserType } from './enums';
+import type { MediaItemDto } from './media';
 export type FeedSortMode = 'for_you' | 'trending' | 'following' | 'recent';
 export interface PostAuthorInfo {
     userId: string;
@@ -101,6 +102,8 @@ export interface PostQuoteDto {
     content: string;
     kind: PostKind;
     media: string[];
+    /** Fotos e vídeos no padrão de formatos (veja `media.ts`). */
+    mediaItems?: MediaItemDto[];
     createdAt: string;
     author: PostAuthorInfo;
 }
@@ -119,6 +122,8 @@ export interface PostDto {
     content: string;
     kind: PostKind;
     media: string[];
+    /** Fotos e vídeos no padrão de formatos (veja `media.ts`), na ordem da publicação. Clientes antigos continuam lendo `media`. */
+    mediaItems: MediaItemDto[];
     city: string | null;
     state: string | null;
     likesCount: number;

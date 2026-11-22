@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled, { useTheme } from 'styled-components'
 import {
   AnalyticsMetricKey,
@@ -14,7 +14,67 @@ const Card = styled.section`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[5]};
+  padding: 18px 20px;
+`
+
+/** Barras horizontais (HTML): rótulo à esquerda, barra no meio, valor à direita. */
+const HBarList = styled.ul`
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`
+
+const HBarRow = styled.li`
+  display: grid;
+  grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+
+  @media (max-width: 560px) { grid-template-columns: 90px minmax(0, 1fr) auto; gap: 8px; }
+`
+
+const HBarLabel = styled.span`
+  color: ${({ theme }) => theme.colors.text};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const HBarTrack = styled.span`
+  display: block;
+  height: 14px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.neutral};
+  overflow: hidden;
+`
+
+const HBarFill = styled.span<{ $pct: number; $muted?: boolean }>`
+  display: block;
+  height: 100%;
+  width: ${({ $pct }) => $pct}%;
+  min-width: ${({ $pct }) => ($pct > 0 ? '4px' : '0')};
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ $muted, theme }) => ($muted ? theme.colors.border : theme.colors.primary)};
+  transition: width 0.4s ease;
+`
+
+const HBarValue = styled.span`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.text};
+  white-space: nowrap;
+
+  small {
+    font-size: 0.6875rem;
+    color: ${({ theme }) => theme.colors.muted};
+  }
 `
 
 const Header = styled.div`
@@ -43,7 +103,7 @@ const Title = styled.h3`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: ${({ theme }) => theme.fontSizes.md};
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  color: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme }) => theme.colors.text};
 `
 
 const Subtitle = styled.p`
@@ -147,7 +207,8 @@ interface MetricChartProps {
   whatItShows: string
   metricKey: AnalyticsMetricKey
   data: ChartDatum[]
-  variant?: 'line' | 'bar'
+  /** `hbar`: barras horizontais com rótulo legível (bom para categorias). */
+  variant?: 'line' | 'bar' | 'hbar'
   unit?: string
   emptyMessage?: string
 }
@@ -171,9 +232,22 @@ export function MetricChart({
   const hasVisibleData = numericValues.length > 0
   const maxVal = hasVisibleData ? Math.max(...numericValues, 1) : 1
 
-  const svgWidth = 640
-  const svgHeight = 200
-  const padLeft = 42
+  // O gráfico usa a largura real do cartão (sem sobras laterais em telas largas).
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [wrapW, setWrapW] = useState(640)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      setWrapW(Math.max(320, Math.round(entry.contentRect.width)))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [hasVisibleData, variant])
+
+  const svgWidth = wrapW
+  const svgHeight = 240
+  const padLeft = 46
   const padRight = 16
   const padTop = 16
   const padBottom = 28
@@ -219,6 +293,12 @@ export function MetricChart({
     if (unit === '%') return formatPercentPtBr(val, 2)
     return unit ? `${formatDecimalPtBr(val, 1)}${unit}` : formatDecimalPtBr(val, 1)
   }
+  /** Número do eixo: sem casas para valores grandes, uma casa para pequenos, % quando for taxa. */
+  const formatAxis = (val: number) => {
+    const n = maxVal <= 5 ? formatDecimalPtBr(val, 1) : formatCountPtBr(Math.round(val))
+    return unit === '%' ? `${n}%` : n
+  }
+  const hbarMax = hasVisibleData ? Math.max(...numericValues, 1) : 1
 
   return (
     <Card>
@@ -243,18 +323,38 @@ export function MetricChart({
 
       {!hasVisibleData ? (
         <EmptyNotice>{emptyMessage}</EmptyNotice>
+      ) : variant === 'hbar' ? (
+        <HBarList aria-label={title}>
+          {data.map((d) => {
+            const hidden = d.suppressed || d.value === null
+            const pct = hidden ? 0 : Math.round(((d.value ?? 0) / hbarMax) * 100)
+            return (
+              <HBarRow key={d.label}>
+                <HBarLabel title={d.label}>{d.label}</HBarLabel>
+                <HBarTrack>
+                  <HBarFill $pct={pct} $muted={hidden} />
+                </HBarTrack>
+                <HBarValue>
+                  {hidden ? 'Suprimido (<10)' : formatCountPtBr(d.value ?? 0)}
+                  {d.extra && !hidden && <small>{d.extra}</small>}
+                </HBarValue>
+              </HBarRow>
+            )
+          })}
+        </HBarList>
       ) : (
-        <ChartWrap>
+        <ChartWrap ref={wrapRef}>
           <svg
             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-            width="100%"
-            style={{ minWidth: 320, maxHeight: 220, display: 'block' }}
+            width={svgWidth}
+            height={svgHeight}
+            style={{ display: 'block', maxWidth: '100%' }}
             role="img"
             aria-label={`${title}. O que isso mostra: ${whatItShows}`}
           >
-            {[0, 0.5, 1].map((frac) => {
+            {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
               const y = padTop + innerH * (1 - frac)
-              const val = Math.round(maxVal * frac)
+              const val = maxVal * frac
               return (
                 <g key={frac}>
                   <line
@@ -269,11 +369,11 @@ export function MetricChart({
                     x={padLeft - 6}
                     y={y + 3}
                     textAnchor="end"
-                    fontSize="10"
+                    fontSize="11"
                     fill={theme.colors.muted}
                     fontFamily={theme.fonts.mono}
                   >
-                    {formatCountPtBr(val)}
+                    {formatAxis(val)}
                   </text>
                 </g>
               )
@@ -281,7 +381,7 @@ export function MetricChart({
 
             {variant === 'bar'
               ? data.map((d, idx) => {
-                  const barW = Math.max(8, Math.min(36, barStep * 0.65))
+                  const barW = Math.max(8, Math.min(64, barStep * 0.6))
                   const x = padLeft + idx * barStep + (barStep - barW) / 2
                   const h = d.suppressed || d.value === null ? 0 : (d.value / maxVal) * innerH
                   const y = padTop + innerH - h
@@ -299,6 +399,18 @@ export function MetricChart({
                           {formatMonthOrDateBr(d.label)}: {formatVal(d.value, d.suppressed)}
                         </title>
                       </rect>
+                      {data.length <= 14 && !d.suppressed && d.value !== null && (
+                        <text
+                          x={x + barW / 2}
+                          y={y - 5}
+                          textAnchor="middle"
+                          fontSize="11"
+                          fill={theme.colors.text}
+                          fontFamily={theme.fonts.mono}
+                        >
+                          {formatCountPtBr(d.value)}
+                        </text>
+                      )}
                     </g>
                   )
                 })
@@ -373,7 +485,7 @@ export function MetricChart({
                   x={x}
                   y={svgHeight - 8}
                   textAnchor="middle"
-                  fontSize="10"
+                  fontSize="11"
                   fill={theme.colors.muted}
                   fontFamily={theme.fonts.mono}
                 >

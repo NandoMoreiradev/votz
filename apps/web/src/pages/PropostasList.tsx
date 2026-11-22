@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { CategoryBadge, PropostaStatusBadge } from '../components/ui/Badge'
 import { usePropostas } from '../hooks/usePropostas'
 import { Category } from '@votz/shared-types'
@@ -228,7 +228,7 @@ export function PropostasList() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <Header>
           <Title>Propostas Políticas</Title>

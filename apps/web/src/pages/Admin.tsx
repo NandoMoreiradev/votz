@@ -19,6 +19,8 @@ import {
   useUpdateSuggestionStatus,
 } from '../hooks/useSuggestions'
 import { SUGGESTION_CATEGORY_LABEL, SUGGESTION_STATUS_META } from './Sugestoes'
+import { AdReviewQueue } from '../components/ads/AdReviewQueue'
+import { useAdReviewQueue } from '../hooks/useAds'
 
 function extractApiError(err: unknown, fallback: string): string {
   const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
@@ -1147,7 +1149,7 @@ function SuggestionsTab() {
   )
 }
 
-type TabId = 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
+type TabId = 'ads' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
@@ -1155,6 +1157,7 @@ export function Admin() {
   const { data: stats } = useAdminStats()
   const canAccess = Boolean(user && ALLOWED.has(user.type))
   const { data: openFlags } = useAdminFlags(FlagStatus.OPEN, 1, canAccess)
+  const { data: pendingAds } = useAdReviewQueue('PENDING', 1, canAccess)
 
   if (!user || !ALLOWED.has(user.type)) return <Navigate to="/" replace />
 
@@ -1198,6 +1201,10 @@ export function Admin() {
             Sinalizações
             {openCount > 0 && <TabCount>{openCount}</TabCount>}
           </Tab>
+          <Tab $active={tab === 'ads'} onClick={() => setTab('ads')}>
+            Anúncios
+            {(pendingAds?.meta.pendingCount ?? 0) > 0 && <TabCount>{pendingAds?.meta.pendingCount}</TabCount>}
+          </Tab>
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
@@ -1207,6 +1214,7 @@ export function Admin() {
 
         {tab === 'requests'    && <RequestsTab />}
         {tab === 'flags'       && <FlagsTab />}
+        {tab === 'ads'         && <AdReviewQueue />}
         {tab === 'entities'    && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
         {tab === 'reports'     && <ReportsTab />}

@@ -1,0 +1,164 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { Type } from 'class-transformer'
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator'
+import {
+  AD_CTA_LABELS,
+  AD_INTEREST_IDS,
+  AD_LIMITS,
+  AD_OBJECTIVES,
+  AGE_BANDS,
+  USER_GENDERS,
+  type AdCtaLabel,
+  type AdInterestId,
+  type AdObjective,
+  type AgeBand,
+  type UserGender,
+} from '@votz/shared-types'
+
+export class CreateAdAccountDto {
+  @ApiProperty({ example: 'Conta principal' })
+  @IsString()
+  @MinLength(2, { message: 'Dê um nome à conta.' })
+  @MaxLength(AD_LIMITS.NAME_MAX)
+  name: string
+}
+
+export class AdSetInputDto {
+  @ApiProperty({ example: 'Bairro Centro, 25 a 44 anos' })
+  @IsString()
+  @MinLength(2, { message: 'Dê um nome ao público.' })
+  @MaxLength(AD_LIMITS.NAME_MAX)
+  name: string
+
+  @ApiProperty({ description: 'Orçamento por dia, em centavos', example: 2000 })
+  @IsInt()
+  @Min(AD_LIMITS.MIN_DAILY_BUDGET_CENTS, { message: 'O orçamento mínimo é R$ 6,00 por dia.' })
+  @Max(AD_LIMITS.MAX_DAILY_BUDGET_CENTS, { message: 'O orçamento máximo é R$ 10.000,00 por dia.' })
+  dailyBudgetCents: number
+
+  @ApiPropertyOptional({ description: 'Lance máximo em centavos. Vazio: o Votz decide.' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  bidCapCents?: number | null
+
+  @ApiProperty({ example: '2026-12-01' })
+  @IsISO8601({}, { message: 'Data de início inválida.' })
+  startAt: string
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsISO8601({}, { message: 'Data de fim inválida.' })
+  endAt?: string | null
+
+  @ApiProperty({ example: ['SP'], description: 'Siglas dos estados. Vazio com cidades vazias: Brasil todo.' })
+  @IsArray()
+  @ArrayMaxSize(AD_LIMITS.MAX_STATES)
+  @ArrayUnique()
+  @Matches(/^[A-Z]{2}$/, { each: true, message: 'Use a sigla do estado (ex.: SP).' })
+  states: string[]
+
+  @ApiProperty({ example: ['São Paulo'] })
+  @IsArray()
+  @ArrayMaxSize(AD_LIMITS.MAX_CITIES, { message: `Escolha no máximo ${AD_LIMITS.MAX_CITIES} cidades.` })
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  cities: string[]
+
+  @ApiProperty({ enum: AD_INTEREST_IDS, isArray: true })
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(AD_INTEREST_IDS as string[], { each: true, message: 'Um dos interesses não existe na lista.' })
+  interests: AdInterestId[]
+
+  @ApiProperty({ enum: AGE_BANDS, isArray: true })
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(AGE_BANDS as readonly string[] as string[], { each: true, message: 'Faixa de idade inválida.' })
+  ageBands: AgeBand[]
+
+  @ApiProperty({ enum: USER_GENDERS, isArray: true })
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(USER_GENDERS as readonly string[] as string[], { each: true, message: 'Gênero inválido.' })
+  genders: UserGender[]
+
+  @ApiProperty({ description: 'Público automático: a IA encontra quem tem mais chance de se interessar' })
+  @IsBoolean()
+  automaticAudience: boolean
+}
+
+export class AdCreativeInputDto {
+  @ApiProperty({ example: 'Pão quentinho às 7h' })
+  @IsString()
+  @MinLength(2, { message: 'Escreva o título.' })
+  @MaxLength(AD_LIMITS.HEADLINE_MAX, { message: `O título pode ter até ${AD_LIMITS.HEADLINE_MAX} letras.` })
+  headline: string
+
+  @ApiProperty({ example: 'Padaria do bairro com entrega em 30 minutos.' })
+  @IsString()
+  @MinLength(2, { message: 'Escreva o texto do anúncio.' })
+  @MaxLength(AD_LIMITS.BODY_MAX, { message: `O texto pode ter até ${AD_LIMITS.BODY_MAX} letras.` })
+  body: string
+
+  @ApiProperty({ enum: AD_CTA_LABELS })
+  @IsIn(AD_CTA_LABELS as readonly string[] as string[], { message: 'Escolha um texto de botão da lista.' })
+  ctaLabel: AdCtaLabel
+
+  @ApiProperty({ example: 'https://minhaempresa.com.br/oferta' })
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O link precisa começar com https:// e ser um endereço válido.' })
+  @MaxLength(AD_LIMITS.URL_MAX)
+  destinationUrl: string
+}
+
+export class CreateAdCampaignDto {
+  @ApiProperty({ example: 'Promoção de dezembro' })
+  @IsString()
+  @MinLength(2, { message: 'Dê um nome à campanha.' })
+  @MaxLength(AD_LIMITS.NAME_MAX)
+  name: string
+
+  @ApiProperty({ enum: AD_OBJECTIVES })
+  @IsIn(AD_OBJECTIVES as readonly string[] as string[], { message: 'Escolha um objetivo.' })
+  objective: AdObjective
+
+  @ApiProperty({ type: AdSetInputDto })
+  @ValidateNested()
+  @Type(() => AdSetInputDto)
+  adSet: AdSetInputDto
+
+  @ApiProperty({ type: AdCreativeInputDto })
+  @ValidateNested()
+  @Type(() => AdCreativeInputDto)
+  creative: AdCreativeInputDto
+
+  @ApiPropertyOptional({ description: 'Manda o anúncio para revisão ao salvar' })
+  @IsOptional()
+  @IsBoolean()
+  submitForReview?: boolean
+}
+
+export class SetAdCampaignStatusDto {
+  @ApiProperty({ enum: ['ACTIVE', 'PAUSED', 'ARCHIVED'] })
+  @IsIn(['ACTIVE', 'PAUSED', 'ARCHIVED'], { message: 'Situação inválida.' })
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED'
+}

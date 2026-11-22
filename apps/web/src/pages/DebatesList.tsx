@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { Link } from 'react-router-dom'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { useDebates, useCreateDebate } from '../hooks/useDebates'
 import { useAuthStore } from '../store/auth.store'
 import { usePoliticians } from '../hooks/usePoliticians'
@@ -488,7 +488,7 @@ export default function DebatesList() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <PageHeader>
           <TitleGroup>

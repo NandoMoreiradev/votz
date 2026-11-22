@@ -50,7 +50,7 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
   const requireUser = (action: () => void) => user ? action() : router.push('/login')
   const body = <>
     {!!post.content && <Text numberOfLines={detail ? undefined : 7} style={[styles.text, detail && { fontSize: 18, lineHeight: 27 }]}>{post.content}</Text>}
-    <MediaCarousel urls={post.media} limit={4} />
+    <MediaCarousel urls={post.media} items={post.mediaItems} limit={4} />
     {post.mentionedReport && <Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato mencionado: ${post.mentionedReport.title}`} onPress={(event) => { event.stopPropagation(); router.push({ pathname: '/report/[id]', params: { id: post.mentionedReport!.id } }) }} style={{ borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12, marginTop: 10, gap: 4 }}>
       <Text style={{ fontSize: 11, color: theme.colors.action, fontFamily: theme.fonts.medium }}>RELATO · {statusLabels[post.mentionedReport.status]}</Text><Text style={[styles.text, { fontFamily: theme.fonts.medium }]}>{post.mentionedReport.title}</Text>
     </Pressable>}
@@ -84,7 +84,7 @@ export function ReportCard({ report, detail = false }: { report: Report; detail?
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 4 }}><Text style={{ fontSize: 10, fontFamily: theme.fonts.medium, color: theme.colors.action }}>RELATO</Text><Text style={{ fontSize: 11, color: report.status === 'RESOLVED' ? theme.colors.positive : theme.colors.muted }}>{statusLabels[report.status]}</Text>{!!report.city && <Text numberOfLines={1} style={{ fontSize: 11, color: theme.colors.muted, flexShrink: 1 }}>· {report.city}</Text>}</View>
     <Text style={{ fontFamily: theme.fonts.heading, fontSize: detail ? 23 : 17, lineHeight: detail ? 29 : 23, color: theme.colors.primary }}>{report.title}</Text>
     <Text numberOfLines={detail ? undefined : 3} style={[styles.text, { marginTop: 5 }]}>{report.description}</Text>
-    <MediaCarousel urls={report.media} limit={5} />
+    <MediaCarousel urls={report.media} items={report.mediaItems} limit={5} />
   </>
   return <View style={[{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: detail ? 16 : 4 }, detail ? { borderBottomWidth: 0.5, borderBottomColor: theme.colors.border } : cardShell]}>
     <View style={{ flexDirection: 'row', gap: 10 }}>

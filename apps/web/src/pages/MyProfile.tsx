@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import styled from 'styled-components'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
@@ -7,8 +7,10 @@ import { Button } from '../components/ui/Button'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-import { useMe, useMyProfiles, useMfaSetup, useMfaEnable, useMfaDisable, useMfaResetDevice, useMfaRegenerateBackupCodes } from '../hooks/useAuth'
-import { AuthenticatedUser } from '@votz/shared-types'
+import { useMe, useMyProfiles, useMyPrivateProfile, useMfaSetup, useMfaEnable, useMfaDisable, useMfaResetDevice, useMfaRegenerateBackupCodes } from '../hooks/useAuth'
+import { AuthenticatedUser, type UserGender } from '@votz/shared-types'
+import { DemographicsFields } from '../components/profile/DemographicsFields'
+import { AdPreferencesSection } from '../components/profile/AdPreferencesSection'
 import { MfaSetupResponse } from '../types/api'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -243,6 +245,21 @@ export function MyProfile() {
   const [streetNumber, setStreetNumber] = useState(user?.streetNumber ?? '')
   const [complement, setComplement] = useState(user?.complement ?? '')
 
+  // Data de nascimento e gênero (opcionais, nunca públicos): vêm dos dados privados da própria pessoa.
+  const privateProfile = useMyPrivateProfile(!!user && sessionReady)
+  const savedBirthDate = privateProfile.data?.birthDate?.slice(0, 10) ?? ''
+  const savedGender = privateProfile.data?.gender ?? ''
+  const [demographicsTouched, setDemographicsTouched] = useState(false)
+  const [birthDateDraft, setBirthDate] = useState('')
+  const [genderDraft, setGender] = useState<UserGender | ''>('')
+  const birthDate = demographicsTouched ? birthDateDraft : savedBirthDate
+  const gender = demographicsTouched ? genderDraft : savedGender
+  useEffect(() => {
+    if (demographicsTouched) return
+    setBirthDate(savedBirthDate)
+    setGender(savedGender)
+  }, [savedBirthDate, savedGender, demographicsTouched])
+
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
       const form = new FormData()
@@ -350,6 +367,10 @@ export function MyProfile() {
     }
     if (streetNumber) data.streetNumber = streetNumber
     if (complement !== (currentUser.complement ?? '')) data.complement = complement
+
+    // Vazio apaga (null); igual ao salvo não envia.
+    if (demographicsTouched && birthDate !== savedBirthDate) data.birthDate = birthDate || null
+    if (demographicsTouched && gender !== savedGender) data.gender = gender || null
 
     if (Object.keys(data).length === 0) return navigate(`/perfil/${currentUser.id}`)
     updateMutation.mutate(data as Partial<AuthenticatedUser>)
@@ -465,6 +486,16 @@ export function MyProfile() {
               />
             </Field>
 
+            <Field>
+              <DemographicsFields
+                birthDate={birthDate}
+                gender={gender}
+                onBirthDateChange={(value) => { setBirthDate(value); setDemographicsTouched(true) }}
+                onGenderChange={(value) => { setGender(value); setDemographicsTouched(true) }}
+                disabled={saving}
+              />
+            </Field>
+
             {/* ── Localização ── */}
             <SectionTitle>Localização</SectionTitle>
 
@@ -541,6 +572,7 @@ export function MyProfile() {
         </Card>
 
         <MfaSection />
+        <AdPreferencesSection />
         <PrivacySection />
       </Content>
     </Page>

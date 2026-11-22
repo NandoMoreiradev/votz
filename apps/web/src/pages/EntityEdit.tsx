@@ -3,7 +3,7 @@ import styled from 'styled-components'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { EntityType } from '@votz/shared-types'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../store/auth.store'
 import { useEntity, useUpdateEntity } from '../hooks/useEntities'
@@ -310,7 +310,7 @@ export function EntityEdit() {
   if (isLoading) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <BackLink to={`/entidade/${id}`}>← Voltar</BackLink>
         </Content>
@@ -321,7 +321,7 @@ export function EntityEdit() {
   if (!entity || !canEdit) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <BackLink to={`/entidade/${id}`}>← Voltar</BackLink>
           <ForbiddenBox>
@@ -336,7 +336,7 @@ export function EntityEdit() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <BackLink to={`/entidade/${id}`}>← Voltar ao perfil</BackLink>
         <PageTitle>Editar perfil</PageTitle>

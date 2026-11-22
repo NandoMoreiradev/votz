@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { createHmac, randomBytes } from 'node:crypto'
 import { JwtService } from '@nestjs/jwt'
+import { isPrivateNetworkMatrixUrl } from '../config/matrix-url'
 
 type Json = Record<string, any>
 @Injectable()
@@ -41,6 +42,7 @@ export class ChatMatrixService {
       .replace(/\/$/, '')
     if (
       !base.startsWith('https://') &&
+      !isPrivateNetworkMatrixUrl(base) &&
       !(
         this.config.get('NODE_ENV') !== 'production' &&
         /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base)

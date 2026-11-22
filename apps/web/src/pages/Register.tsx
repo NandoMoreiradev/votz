@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
+import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION, type UserGender } from '@votz/shared-types'
+import { DemographicsFields, maxBirthDate } from '../components/profile/DemographicsFields'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
 import { CepInput, ManualAddressFields, EditLink, type CepAddressResult } from '../components/ui/CepInput'
@@ -184,6 +185,10 @@ export function Register() {
   const [neighborhood, setNeighborhood] = useState('')
   const [acceptedLegal, setAcceptedLegal] = useState(false)
   const [legalError, setLegalError] = useState('')
+  // Opcionais (plano de anúncios, decisão 3): nunca públicos.
+  const [birthDate, setBirthDate] = useState('')
+  const [gender, setGender] = useState<UserGender | ''>('')
+  const [birthDateError, setBirthDateError] = useState('')
 
   useEffect(() => {
     if (user) navigate(redirect, { replace: true })
@@ -224,6 +229,13 @@ export function Register() {
       setLegalError('')
     }
 
+    if (birthDate && birthDate > maxBirthDate()) {
+      setBirthDateError(`É preciso ter ${MIN_AGE} anos ou mais para usar o Votz.`)
+      hasError = true
+    } else {
+      setBirthDateError('')
+    }
+
     if (hasError) return
 
     const payload: RegisterPayload = {
@@ -243,6 +255,8 @@ export function Register() {
       acceptedTermsVersion: TERMS_VERSION,
       acceptedPrivacyVersion: PRIVACY_VERSION,
       confirmAge18: true,
+      ...(birthDate ? { birthDate } : {}),
+      ...(gender ? { gender } : {}),
     }
 
     register_(payload, { onSuccess: () => navigate(redirect, { replace: true }) })
@@ -326,6 +340,17 @@ export function Register() {
               : <Hint>Mínimo 8 caracteres, com maiúscula e número.</Hint>
             }
           </Field>
+
+          {/* ── Sobre você (opcional) ── */}
+          <SectionLabel>Sobre você</SectionLabel>
+          <DemographicsFields
+            birthDate={birthDate}
+            gender={gender}
+            onBirthDateChange={(value) => { setBirthDate(value); setBirthDateError('') }}
+            onGenderChange={setGender}
+            error={birthDateError}
+            disabled={isPending}
+          />
 
           {/* ── Localização ── */}
           <SectionLabel>Localização</SectionLabel>

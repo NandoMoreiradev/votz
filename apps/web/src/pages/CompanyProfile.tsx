@@ -6,11 +6,10 @@ import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
 import { useCompany, useCompanyReports } from '../hooks/useCompanies'
 import { FollowButton, FollowersCount } from '../components/profile/FollowBits'
+import { ProfileLinkBtn } from '../components/profile/profile-actions'
 import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { useAuthStore } from '../store/auth.store'
-import { TeamPanel } from '../components/org/TeamPanel'
 import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
-import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
 import { HandleLine } from '../components/page-inbox/PageInboxUi'
 import { ReportStatus } from '@votz/shared-types'
 import { CategoryStat } from '../types/api'
@@ -43,18 +42,48 @@ const BackLink = styled(Link)`
 
 const TwoCol = styled.div`
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 24px;
   align-items: start;
 
+  @media (max-width: 1100px) { grid-template-columns: minmax(0, 1fr) 300px; }
   @media (max-width: 820px) { grid-template-columns: 1fr; }
 `
 
-const MainCol = styled.div``
+const MainCol = styled.div`
+  min-width: 0;
+`
 const SideCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: sticky;
+  top: 80px;
+
+  @media (max-width: 820px) { position: static; }
+`
+
+const StatsCard = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 18px 20px;
+  margin-bottom: 20px;
+
+  @media (max-width: 480px) { padding: 16px 14px; }
+`
+
+const StatsTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0 0 2px;
+`
+
+const StatsSub = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0 0 12px;
 `
 
 // ── Header ──────────────────────────────────────────────────────────────────
@@ -171,17 +200,7 @@ const CtaRow = styled.div`
   flex-wrap: wrap;
 `
 
-const ReportCta = styled(Link)`
-  padding: 9px 18px;
-  background: ${({ theme }) => theme.colors.action};
-  color: #fff;
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  transition: opacity 0.15s;
-  &:hover { opacity: 0.85; }
-`
+const ReportCta = ProfileLinkBtn
 
 // ── Stats row ────────────────────────────────────────────────────────────────
 
@@ -189,20 +208,22 @@ const StatsRow = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
   @media (max-width: 480px) { grid-template-columns: repeat(2, 1fr); }
 `
 
 const StatBox = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.neutral};
 `
 
 const StatValue = styled.span<{ $color?: string }>`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-size: 1.25rem;
+  line-height: 1.2;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ $color, theme }) => $color ?? theme.colors.text};
 `
@@ -402,9 +423,10 @@ const StatusTab = styled.button<{ $active: boolean }>`
 `
 
 const ReportList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const ReportCard = styled(Link)`
@@ -564,6 +586,7 @@ export function CompanyProfile() {
             <Skeleton style={{ height: 60 }} />
           </HeaderCard>
         ) : company ? (
+          <>
           <HeaderCard $cover={company.coverUrl}>
             {canEdit && <CoverEditButton onClick={() => setImageDialog('cover')} />}
             <HeaderTop>
@@ -604,15 +627,19 @@ export function CompanyProfile() {
                   </MetaRow>
                 )}
                 <CtaRow>
+                  {!canEdit && <FollowButton targetType="COMPANY" targetId={company.id} />}
                   <ReportCta to={`/novo?recipientType=COMPANY&recipientId=${company.id}&recipientName=${encodeURIComponent(company.tradeName)}`}>
                     + Criar relato
                   </ReportCta>
-                  {!canEdit && <FollowButton targetType="COMPANY" targetId={company.id} />}
                   {!canEdit && currentUser && <PageMessageButton orgType="COMPANY" orgId={company.id} />}
                 </CtaRow>
               </HeaderInfo>
             </HeaderTop>
+          </HeaderCard>
 
+          <StatsCard>
+            <StatsTitle>Desempenho</StatsTitle>
+            <StatsSub>Como {company.tradeName} tem respondido aos relatos dos cidadãos.</StatsSub>
             <StatsRow>
               <StatBox>
                 <StatValue>{stats?.total ?? 0}</StatValue>
@@ -634,7 +661,8 @@ export function CompanyProfile() {
                 <MiniBar $pct={resolutionRate} $color="#2DC653" />
               </StatBox>
             </StatsRow>
-          </HeaderCard>
+          </StatsCard>
+          </>
         ) : (
           <Empty>Empresa não encontrada.</Empty>
         )}
@@ -643,12 +671,9 @@ export function CompanyProfile() {
           <TwoCol>
             <MainCol>
               {currentUser && canEdit && (
-                <>
-                  <TeamPanel orgType="COMPANY" orgId={company.id} currentUserId={currentUser.id} />
-                {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
-                  <PageHandlePanel orgType="COMPANY" orgId={company.id} current={(company as { username?: string | null }).username} />
-                )}
-                </>
+                <p style={{ margin: '0 0 16px', fontSize: '0.875rem' }}>
+                  <Link to="/estudio/equipe" style={{ fontWeight: 600 }}>Equipe, @usuário e canais agora ficam no Estúdio →</Link>
+                </p>
               )}
 
               {company.branches.length > 0 && (

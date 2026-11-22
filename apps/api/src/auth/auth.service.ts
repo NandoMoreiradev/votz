@@ -165,14 +165,18 @@ export class AuthService {
     const verificationToken = randomUUID()
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
     const now = new Date()
+    // Teste fechado (ex.: Railway sem SMTP): AUTO_VERIFY_EMAIL=true confirma a conta no cadastro.
+    // Desligado por padrão; nunca ligue em produção aberta ao público.
+    const autoVerifyEmail = this.config.get<string>('AUTO_VERIFY_EMAIL') === 'true'
 
     const created = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
         password: passwordHash,
-        emailVerificationToken: verificationToken,
-        emailVerificationExpires: verificationExpires,
+        emailVerified: autoVerifyEmail,
+        emailVerificationToken: autoVerifyEmail ? null : verificationToken,
+        emailVerificationExpires: autoVerifyEmail ? null : verificationExpires,
         phone: dto.phone,
         zipCode: dto.zipCode,
         streetNumber: dto.streetNumber,
@@ -187,6 +191,9 @@ export class AuthService {
         ageConfirmedAt: now,
         termsVersion: dto.acceptedTermsVersion,
         privacyVersion: dto.acceptedPrivacyVersion,
+        // Opcionais; nunca públicos (plano de anúncios, decisão 3).
+        birthDate: dto.birthDate ? new Date(`${dto.birthDate}T00:00:00Z`) : undefined,
+        gender: dto.gender,
       },
       select: USER_PUBLIC_SELECT,
     })

@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
 import { socialCover } from '../components/ui/social'
 import { FollowButton, FollowersCount } from '../components/profile/FollowBits'
+import { ProfileLinkBtn } from '../components/profile/profile-actions'
 import { COVER_UPLOAD, CoverEditButton, ProfileImageDialog, photoUploadPath, useSaveProfileImage, type ImageKind } from '../components/profile/ProfileImageDialog'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
 import { PressureBar } from '../components/ui/PressureBar'
@@ -11,11 +12,8 @@ import { useEntity, useEntityReports } from '../hooks/useEntities'
 import { useAuthStore } from '../store/auth.store'
 import { useMyProfiles } from '../hooks/useAuth'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
-import { TeamPanel } from '../components/org/TeamPanel'
 import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
-import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
 import { HandleLine } from '../components/page-inbox/PageInboxUi'
-import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
 import { TrustBadge } from '../components/profile/TrustBadge'
@@ -51,20 +49,50 @@ const BackLink = styled(Link)`
 
 const TwoCol = styled.div`
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 24px;
   align-items: start;
 
+  @media (max-width: 1100px) { grid-template-columns: minmax(0, 1fr) 300px; }
   @media (max-width: 820px) {
     grid-template-columns: 1fr;
   }
 `
 
-const MainCol = styled.div``
+const MainCol = styled.div`
+  min-width: 0;
+`
 const SideCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: sticky;
+  top: 80px;
+
+  @media (max-width: 820px) { position: static; }
+`
+
+const StatsCard = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 18px 20px;
+  margin-bottom: 20px;
+
+  @media (max-width: 480px) { padding: 16px 14px; }
+`
+
+const StatsTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0 0 2px;
+`
+
+const StatsSub = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0 0 12px;
 `
 
 // ── Header ──────────────────────────────────────────────────────────────────
@@ -183,17 +211,7 @@ const CtaRow = styled.div`
   flex-wrap: wrap;
 `
 
-const ReportCta = styled(Link)`
-  padding: 9px 18px;
-  background: ${({ theme }) => theme.colors.action};
-  color: #fff;
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  transition: opacity 0.15s;
-  &:hover { opacity: 0.85; }
-`
+const ReportCta = ProfileLinkBtn
 
 // ── Stats row ────────────────────────────────────────────────────────────────
 
@@ -201,8 +219,6 @@ const StatsRow = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
 
   @media (max-width: 480px) { grid-template-columns: repeat(2, 1fr); }
 `
@@ -210,12 +226,16 @@ const StatsRow = styled.div`
 const StatBox = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.neutral};
 `
 
 const StatValue = styled.span<{ $color?: string }>`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-size: 1.25rem;
+  line-height: 1.2;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ $color, theme }) => $color ?? theme.colors.text};
 `
@@ -415,9 +435,10 @@ const StatusTab = styled.button<{ $active: boolean }>`
 `
 
 const ReportList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const ReportCard = styled(Link)`
@@ -628,6 +649,7 @@ export function EntityProfile() {
             <Skeleton style={{ height: 60 }} />
           </HeaderCard>
         ) : entity ? (
+          <>
           <HeaderCard $cover={entity.coverUrl}>
             {isOwner && <CoverEditButton onClick={() => setImageDialog('cover')} />}
             <HeaderTop>
@@ -671,39 +693,30 @@ export function EntityProfile() {
                   )}
                 </MetaRow>
                 <CtaRow>
+                  {!isOwner && <FollowButton targetType="ENTITY" targetId={entity.id} />}
                   <ReportCta to={`/novo?recipientType=ENTITY&recipientId=${entity.id}&recipientName=${encodeURIComponent(entity.legalName)}`}>
                     + Criar relato
                   </ReportCta>
-                  {!isOwner && <FollowButton targetType="ENTITY" targetId={entity.id} />}
                   {!isOwner && currentUser && <PageMessageButton orgType="ENTITY" orgId={entity.id} />}
                   {isOwner && (
-                    <ReportCta
-                      to={`/entidade/${entity.id}/editar`}
-                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
-                    >
+                    <ReportCta to={`/entidade/${entity.id}/editar`} $variant="outline">
                       Editar perfil
                     </ReportCta>
                   )}
                   {isOwner && (
-                    <ReportCta
-                      to="/painel-dados"
-                      style={{ background: '#1A1A2E', color: '#FFFFFF' }}
-                    >
+                    <ReportCta to="/painel-dados" $variant="solid">
                       Painel de dados
                     </ReportCta>
                   )}
                   {isOwner && (
-                    <ReportCta
-                      to="/entidade/prazos"
-                      style={{ background: '#0F172A', color: '#FFFFFF' }}
-                    >
+                    <ReportCta to="/entidade/prazos" $variant="solid">
                       Prazos SLA & Fila
                     </ReportCta>
                   )}
                   {!entity.verified && currentUser && !isOwner && (
                     <ReportCta
                       to={`/reivindicar/entidade/${entity.id}`}
-                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
+                      $variant="outline"
                     >
                       Reivindicar perfil
                     </ReportCta>
@@ -715,7 +728,11 @@ export function EntityProfile() {
                   )}
               </HeaderInfo>
             </HeaderTop>
+          </HeaderCard>
 
+          <StatsCard>
+            <StatsTitle>Desempenho</StatsTitle>
+            <StatsSub>Como {entity.legalName} tem respondido aos relatos dos cidadãos.</StatsSub>
             <StatsRow>
               <StatBox>
                 <StatValue>{stats?.total ?? 0}</StatValue>
@@ -745,7 +762,8 @@ export function EntityProfile() {
               showOwnerPanelLink={isOwner}
               canConfigureSla={canConfigureSla}
             />
-          </HeaderCard>
+          </StatsCard>
+          </>
         ) : (
           <Empty>Entidade não encontrada.</Empty>
         )}
@@ -755,14 +773,10 @@ export function EntityProfile() {
             {/* Main: relatos */}
             <MainCol>
               {currentUser && isOwner && (
-                <>
-                  <TeamPanel orgType="ENTITY" orgId={entity.id} currentUserId={currentUser.id} />
-                {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
-                  <PageHandlePanel orgType="ENTITY" orgId={entity.id} current={(entity as { username?: string | null }).username} />
-                )}
-                </>
+                <p style={{ margin: '0 0 16px', fontSize: '0.875rem' }}>
+                  <Link to="/estudio/equipe" style={{ fontWeight: 600 }}>Equipe, @usuário e canais agora ficam no Estúdio →</Link>
+                </p>
               )}
-              {currentUser && isOwner && <YoutubeChannelsPanel />}
 
               <div style={{ marginTop: currentUser ? 20 : 0 }}>
                 <SectionHeader>

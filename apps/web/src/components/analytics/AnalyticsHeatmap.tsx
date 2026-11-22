@@ -15,7 +15,7 @@ const Card = styled.section`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[5]};
+  padding: 18px 20px;
 `
 
 const Header = styled.div`
@@ -59,7 +59,7 @@ const SuppressionNotice = styled.div`
 
 const MapContainer = styled.div`
   width: 100%;
-  height: 440px;
+  height: clamp(380px, 62vh, 600px);
   border-radius: ${({ theme }) => theme.radii.md};
   overflow: hidden;
   border: 1px solid ${({ theme }) => theme.colors.border};

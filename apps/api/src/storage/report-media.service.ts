@@ -3,6 +3,12 @@ import { Cron } from '@nestjs/schedule'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService, type UploadedFile } from './storage.service'
 import { MediaProcessingService } from './media-processing'
+import { nearestMediaFormat, type MediaItemDto } from '@votz/shared-types'
+import { thumbKeyFor } from './image-normalize'
+import { posterKeyFor } from './video-poster'
+
+const VIDEO_URL = /\.(mp4|mov|m4v|webm)(\?|#|$)/i
+const IMAGE_URL = /\.(jpe?g|png|webp|gif)(\?|#|$)/i
 
 /** Quanto tempo um arquivo enviado para relato espera ser anexado antes de ser apagado. */
 export const REPORT_MEDIA_ORPHAN_DAYS = 7
@@ -54,6 +60,44 @@ export class ReportMediaService {
     } catch (error) {
       this.logger.warn(`Não foi possível anotar o envio ${file.key}: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  /**
+   * Fotos e vídeos do relato com tamanho e moldura, na ordem dos links. Relato NÃO é recortado (foto é prova):
+   * aparece inteiro (`contain`) na moldura do formato mais próximo. PDF e áudio ficam de fora (só em `media`).
+   * Arquivos de antes da tabela `report_media` vêm sem tamanho: o app mede ao carregar.
+   */
+  async itemsFor(urls: string[] | undefined): Promise<MediaItemDto[]> {
+    const list = (urls ?? []).map((url) => ({ url, key: this.storage.extractKeyFromUrl(url) }))
+    const keys = list.map((item) => item.key).filter((key): key is string => !!key)
+    const rows = keys.length
+      ? await this.prisma.reportMedia
+          .findMany({ where: { key: { in: keys } }, select: { key: true, kind: true, width: true, height: true, hasThumb: true, durationMs: true } })
+          .catch(() => [])
+      : []
+    const byKey = new Map(rows.map((row) => [row.key, row]))
+    const items: MediaItemDto[] = []
+    for (const { url, key } of list) {
+      const row = key ? byKey.get(key) : undefined
+      const kind = row?.kind ?? (VIDEO_URL.test(url) ? 'VIDEO' : IMAGE_URL.test(url) ? 'IMAGE' : null)
+      if (kind !== 'IMAGE' && kind !== 'VIDEO') continue
+      const thumbKey = row?.hasThumb && key ? thumbKeyFor(key) : null
+      items.push({
+        id: null,
+        kind: /\.gif(\?|$)/i.test(url) ? 'GIF' : kind,
+        format: nearestMediaFormat(row?.width, row?.height),
+        fit: 'contain',
+        width: row?.width ?? null,
+        height: row?.height ?? null,
+        url,
+        fullUrl: url,
+        thumbUrl: thumbKey ? this.storage.getPublicUrl(thumbKey) : null,
+        posterUrl: kind === 'VIDEO' ? posterKeyFor(url) : null,
+        status: 'READY',
+        durationMs: row?.durationMs ?? null,
+      })
+    }
+    return items
   }
 
   private keysOf(urls: string[] | undefined): string[] {

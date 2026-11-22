@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { ActivityIndicator, FlatList, Modal, Pressable, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import ImagePlus from 'lucide-react-native/icons/image-plus'
 import Check from 'lucide-react-native/icons/check'
-import type { FeedSortMode } from '@votz/shared-types'
+import { AD_DELIVERY_LIMITS, type AdSurface, type FeedSortMode, type SponsoredAdView } from '@votz/shared-types'
 import { PostCard, ReportCard } from '../components/content-row'
 import { Avatar, State, TabStrip } from '../components/ui'
 import { Screen, Toolbar } from '../components/screen'
 import { SuggestedProfilesCard } from '../components/suggested-profiles-card'
 import { FloatingCompose } from '../components/floating-compose'
+import { SponsoredSlot } from '../components/sponsored-card'
+import { isAdSlot, withAdSlots, type AdSlotItem } from '../lib/ad-feed'
+import { trackAdEventOnce } from '../lib/ad-events'
 import { useFeed } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
 import { useSession } from '../lib/session'
@@ -22,18 +25,37 @@ const kindNames: Record<FeedKind, string> = { posts: 'Publicações', reports: '
 const kindHints: Record<FeedKind, string> = { posts: 'Conversa da comunidade', reports: 'Problemas registrados na cidade' }
 
 type SuggestionsItem = { id: '__suggestions__'; suggestions: FeedSuggestions }
+// Anúncio conta como visto com 50% do espaço na tela por 1 segundo (padrão de mercado); a lista mede, o servidor confere.
+const AD_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 50, minimumViewTime: 1000 } as const
 function Feed({ kind, sort }: { kind: FeedKind; sort: FeedSortMode }) {
   const feed = useFeed<PostDto | Report>(kind, sort)
   const user = useSession((s) => s.user)
   const items = feed.data?.pages.flatMap((page) => page.data) ?? []
   // Cartão de perfis sugeridos (só vem do servidor para quem segue poucas contas, na primeira página).
   const first = feed.data?.pages[0]
-  const data: (PostDto | Report | SuggestionsItem)[] = [...items]
+  // 1 anúncio a cada 8 publicações, só para quem entrou (o pedido de anúncio exige login).
+  const withAds = withAdSlots<PostDto | Report>(items, AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD, kind === 'posts' && !!user)
+  const data: (PostDto | Report | SuggestionsItem | AdSlotItem)[] = [...withAds]
   if (kind === 'posts' && first?.suggestions && items.length > 0) data.splice(Math.min(first.suggestionsAfter ?? 3, items.length), 0, { id: '__suggestions__', suggestions: first.suggestions })
+  const surface: AdSurface = sort === 'recent' ? 'FEED_RECENT' : 'FEED_FOR_YOU'
+  // Anúncios já entregues, por espaço: a lista mede a visibilidade e só então manda o evento "visto".
+  const loadedAds = useRef(new Map<string, SponsoredAdView>())
+  const onAdLoaded = useCallback((slotId: string, ad: SponsoredAdView | null) => { if (ad) loadedAds.current.set(slotId, ad); else loadedAds.current.delete(slotId) }, [])
+  const loadedSurface = useRef<AdSurface>(surface)
+  loadedSurface.current = surface
+  const onViewable = useRef(({ viewableItems }: { viewableItems: { item: unknown }[] }) => {
+    for (const { item } of viewableItems) {
+      if (!isAdSlot(item)) continue
+      const ad = loadedAds.current.get(item.id)
+      if (ad) trackAdEventOnce({ type: 'VIEWABLE_IMPRESSION', impressionId: ad.impressionId, adId: ad.adId, surface: loadedSurface.current, position: item.adSlot, visibleMs: AD_VIEWABILITY_CONFIG.minimumViewTime })
+    }
+  })
+  const viewabilityConfig = useRef(AD_VIEWABILITY_CONFIG)
   return <FlatList style={{ backgroundColor: theme.colors.soft }} data={data} keyExtractor={(item) => item.id} contentContainerStyle={{ paddingBottom: 88, flexGrow: 1 }}
     initialNumToRender={5} maxToRenderPerBatch={5} windowSize={7}
+    viewabilityConfig={viewabilityConfig.current} onViewableItemsChanged={onViewable.current}
     ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-    renderItem={({ item }) => item.id === '__suggestions__' ? <SuggestedProfilesCard suggestions={(item as SuggestionsItem).suggestions} /> : kind === 'posts' ? <PostCard post={item as PostDto} /> : <ReportCard report={item as Report} />}
+    renderItem={({ item }) => isAdSlot(item) ? <SponsoredSlot slotId={item.id} surface={surface} position={item.adSlot} onLoaded={onAdLoaded} /> : item.id === '__suggestions__' ? <SuggestedProfilesCard suggestions={(item as SuggestionsItem).suggestions} /> : kind === 'posts' ? <PostCard post={item as PostDto} /> : <ReportCard report={item as Report} />}
     ListHeaderComponent={<Pressable accessibilityRole="button" accessibilityLabel={kind === 'posts' ? 'Escrever publicação' : 'Registrar relato'} onPress={() => router.push(user ? { pathname: '/compose', params: { kind } } : '/login')} style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', backgroundColor: theme.colors.surface, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border, marginBottom: 8 }}><Avatar name={user?.name || 'Votz'} uri={user?.avatarUrl} size={34} /><Text style={{ color: theme.colors.muted, fontFamily: theme.fonts.body, fontSize: 14, flex: 1 }}>{kind === 'posts' ? 'O que está acontecendo?' : 'O que precisa mudar na sua cidade?'}</Text><ImagePlus size={20} color={theme.colors.action} /></Pressable>}
     refreshing={feed.isRefetching && !feed.isFetchingNextPage} onRefresh={() => { void feed.refetch() }}
     onEndReached={() => { if (feed.hasNextPage && !feed.isFetching && !feed.isFetchNextPageError) void feed.fetchNextPage() }} onEndReachedThreshold={0.4}

@@ -1,8 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
 import {
   IsOptional, IsString, IsUrl, MaxLength, MinLength,
-  Matches, IsNumber, Min, Max,
+  Matches, IsNumber, Min, Max, IsIn, ValidateIf,
 } from 'class-validator'
+import { USER_GENDERS, type UserGender } from '@votz/shared-types'
+import { IsAdultBirthDate } from '../../common/validators/birth-date.validator'
 import { Transform } from 'class-transformer'
 import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
 
@@ -117,4 +119,14 @@ export class UpdateProfileDto {
   @Min(-180)
   @Max(180)
   longitude?: number
+
+  @ApiPropertyOptional({ example: '1990-05-17', nullable: true, description: 'Opcional; `null` apaga. Nunca aparece no perfil público.' })
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsAdultBirthDate()
+  birthDate?: string | null
+
+  @ApiPropertyOptional({ enum: USER_GENDERS, nullable: true, description: 'Opcional; `null` apaga. Nunca aparece no perfil público.' })
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsIn(USER_GENDERS as unknown as string[], { message: 'Gênero inválido.' })
+  gender?: UserGender | null
 }

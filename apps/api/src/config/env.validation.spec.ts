@@ -51,6 +51,30 @@ describe('validateEnv', () => {
     expect(() => validateEnv(nonHexKey)).toThrow(/64-character hexadecimal/)
   })
 
+  describe('chat Matrix URL in production', () => {
+    const chatConfig = (url: string) => ({
+      ...validConfig(),
+      CHAT_TEXT_ENABLED: 'true',
+      CHAT_TOKEN_ENCRYPTION_KEY: 'fedcba9876543210'.repeat(4),
+      CHAT_MATRIX_JWT_SECRET: 'c'.repeat(32),
+      CHAT_MATRIX_REGISTRATION_SECRET: 'd'.repeat(32),
+      CHAT_MATRIX_SERVER_NAME: 'chat.votz.app',
+      CHAT_MATRIX_URL: url,
+    })
+
+    it('accepts https and the Railway private network over http', () => {
+      expect(() => validateEnv(chatConfig('https://matrix.example.com'))).not.toThrow()
+      expect(() => validateEnv(chatConfig('http://synapse.railway.internal:8008'))).not.toThrow()
+    })
+
+    it('rejects any other http address', () => {
+      expect(() => validateEnv(chatConfig('http://matrix.example.com:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
+      expect(() => validateEnv(chatConfig('http://127.0.0.1:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
+      expect(() => validateEnv(chatConfig('http://synapse.railway.internal.evil.com:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
+      expect(() => validateEnv(chatConfig('http://evil.com/x.railway.internal:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
+    })
+  })
+
   it('logs a warning instead of throwing in non-production environments', () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
     const config = {

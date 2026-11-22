@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PostCommentMediaType, PostKind, UserType } from '@votz/shared-types'
+import { PostCommentMediaType, PostKind, UserType, type MediaCrop, type MediaFormat } from '@votz/shared-types'
 import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { uploadPostMedia } from '../lib/post-media-upload'
 import { useAuthStore } from '../store/auth.store'
 import {
   FeedSortMode,
@@ -83,7 +84,10 @@ export function usePost(id: string) {
 
 export interface CreatePostPayload {
   content?: string
+  /** Envio antigo, sem formato (avocação). Publicações comuns usam `mediaAssets`. */
   media?: string[]
+  /** Fotos e vídeos enviados em /media/uploads, com formato e enquadramento (todos no mesmo formato). */
+  mediaAssets?: Array<{ id: string; format: MediaFormat; crop?: MediaCrop }>
   city?: string
   state?: string
   mentionedReportId?: string
@@ -227,6 +231,14 @@ export function useVoteDebatePollInline(postId: string, debateId: string, pollId
   })
 }
 
+/** Envia foto, GIF ou vídeo de publicação no padrão de formatos (o recorte vai depois, ao publicar). */
+export function useUploadMediaAsset() {
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (percent: number) => void }) => uploadPostMedia(file, onProgress),
+  })
+}
+
+/** Envio antigo, sem formato. Ainda usado na avocação. */
 export function useUploadPostMedia() {
   return useMutation({
     mutationFn: async (file: File) => {

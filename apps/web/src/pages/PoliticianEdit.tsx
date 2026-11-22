@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import styled from 'styled-components'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../store/auth.store'
 import { usePolitician, useUpdatePolitician, useParties, type Party } from '../hooks/usePoliticians'
@@ -365,7 +365,7 @@ export function PoliticianEdit() {
   if (isLoading) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <BackLink to={`/politico/${id}`}>← Voltar</BackLink>
         </Content>
@@ -376,7 +376,7 @@ export function PoliticianEdit() {
   if (!politician || !canEdit) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <BackLink to={`/politico/${id}`}>← Voltar</BackLink>
           <ForbiddenBox>
@@ -391,7 +391,7 @@ export function PoliticianEdit() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <BackLink to={`/politico/${id}`}>← Voltar ao perfil</BackLink>
         <PageTitle>Editar perfil</PageTitle>

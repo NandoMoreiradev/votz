@@ -75,6 +75,8 @@ export interface Report {
   state: string | null
   neighborhood: string | null
   media: string[]
+  /** Só no detalhe: tamanho e moldura das fotos e vídeos (relato aparece inteiro, sem recorte). PDF e áudio ficam só em `media`. */
+  mediaItems?: MediaItemDto[]
   pressureScore: number
   recipientType: RecipientType | null
   recipientId: string | null
@@ -197,7 +199,7 @@ export interface ProfileMetrics {
 }
 
 export type { EntityPlan, PoliticianPlan } from '@votz/shared-types'
-import type { EntityPlan, PoliticianPlan } from '@votz/shared-types'
+import type { EntityPlan, PoliticianPlan, MediaItemDto } from '@votz/shared-types'
 export type PoliticianStatus = 'ATIVO' | 'ENCERRADO' | 'AFASTADO'
 
 export interface Entity {

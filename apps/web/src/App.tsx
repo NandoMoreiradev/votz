@@ -43,6 +43,13 @@ import { PagamentoSucesso } from './pages/PagamentoSucesso'
 import { PainelDados } from './pages/PainelDados'
 import { EntidadePrazos } from './pages/EntidadePrazos'
 import { MandatoPortal } from './pages/MandatoPortal'
+import { StudioLayout, StudioIfOrg } from './pages/studio/StudioLayout'
+import { StudioTeam } from './pages/studio/StudioTeam'
+import { StudioOverview } from './pages/studio/StudioOverview'
+import { StudioAds } from './pages/studio/StudioAds'
+import { StudioAdsNew } from './pages/studio/StudioAdsNew'
+import { StudioBilling } from './pages/studio/StudioBilling'
+import { StudioAdsReport } from './pages/studio/StudioAdsReport'
 import { PrestacaoPublica } from './pages/PrestacaoPublica'
 import { MandatoPublico } from './pages/MandatoPublico'
 import { DescadastroResumo } from './pages/DescadastroResumo'
@@ -64,7 +71,11 @@ import { MediaViewerProvider } from './components/ui/MediaViewer'
 
 const Conversations = lazy(() => import('./pages/Conversations').then(module => ({ default: module.Conversations })))
 function ConversationsRoute() {
-  return <Suspense fallback={<div role="status" style={{ padding: 24 }}>Carregando conversas…</div>}><Conversations /></Suspense>
+  return (
+    <StudioIfOrg>
+      <Suspense fallback={<div role="status" style={{ padding: 24 }}>Carregando conversas…</div>}><Conversations /></Suspense>
+    </StudioIfOrg>
+  )
 }
 function RouteFooter() {
   return useLocation().pathname.startsWith('/conversas') ? null : <Footer />
@@ -125,9 +136,9 @@ function App() {
               <Route path="/meu-perfil" element={<MyProfile />} />
               <Route path="/entidade/:id" element={<EntityProfile />} />
               <Route path="/politico/:id" element={<PoliticianProfile />} />
-              <Route path="/politico/:id/editar" element={<PoliticianEdit />} />
+              <Route path="/politico/:id/editar" element={<StudioIfOrg><PoliticianEdit /></StudioIfOrg>} />
               <Route path="/reivindicar/:type/:id" element={<ClaimProfile />} />
-              <Route path="/entidade/:id/editar" element={<EntityEdit />} />
+              <Route path="/entidade/:id/editar" element={<StudioIfOrg><EntityEdit /></StudioIfOrg>} />
               <Route path="/mapa" element={<MapView />} />
               <Route path="/buscar" element={<Search />} />
               <Route path="/entidades" element={<EntitiesList />} />
@@ -143,18 +154,29 @@ function App() {
               <Route path="/imprensa" element={<Imprensa />} />
               <Route path="/propostas" element={<PropostasList />} />
               <Route path="/propostas/:id" element={<PropostaDetail />} />
-              <Route path="/proposta/nova" element={<CreateProposta />} />
               <Route path="/planos" element={<Planos />} />
               <Route path="/pagamento/sucesso" element={<PagamentoSucesso />} />
-              <Route path="/painel-dados" element={<PainelDados />} />
-              <Route path="/entidade/prazos" element={<EntidadePrazos />} />
-              <Route path="/mandato" element={<MandatoPortal />} />
-              <Route path="/mandato/alertas" element={<MandatoPortal />} />
-              <Route path="/mandato/modelos" element={<MandatoPortal />} />
-              <Route path="/mandato/prestacao" element={<MandatoPortal />} />
-              <Route path="/mandato/cartoes" element={<MandatoPortal />} />
-              <Route path="/mandato/webhooks" element={<MandatoPortal />} />
-              <Route path="/mandato/resumo" element={<MandatoPortal />} />
+              <Route element={<StudioLayout />}>
+                <Route path="/estudio" element={<StudioOverview />} />
+                <Route path="/estudio/propostas" element={<PropostasList />} />
+                <Route path="/estudio/debates" element={<DebatesList />} />
+                <Route path="/estudio/planos" element={<Planos />} />
+                <Route path="/estudio/equipe" element={<StudioTeam />} />
+                <Route path="/estudio/anuncios" element={<StudioAds />} />
+                <Route path="/estudio/anuncios/nova" element={<StudioAdsNew />} />
+                <Route path="/estudio/anuncios/faturamento" element={<StudioBilling />} />
+                <Route path="/estudio/anuncios/relatorio" element={<StudioAdsReport />} />
+                <Route path="/proposta/nova" element={<CreateProposta />} />
+                <Route path="/painel-dados" element={<PainelDados />} />
+                <Route path="/entidade/prazos" element={<EntidadePrazos />} />
+                <Route path="/mandato" element={<MandatoPortal />} />
+                <Route path="/mandato/alertas" element={<MandatoPortal />} />
+                <Route path="/mandato/modelos" element={<MandatoPortal />} />
+                <Route path="/mandato/prestacao" element={<MandatoPortal />} />
+                <Route path="/mandato/cartoes" element={<MandatoPortal />} />
+                <Route path="/mandato/webhooks" element={<MandatoPortal />} />
+                <Route path="/mandato/resumo" element={<MandatoPortal />} />
+              </Route>
               <Route path="/prestacao/:code" element={<PrestacaoPublica />} />
               <Route path="/p/:slug/mandato" element={<MandatoPublico />} />
               <Route path="/descadastro-resumo" element={<DescadastroResumo />} />

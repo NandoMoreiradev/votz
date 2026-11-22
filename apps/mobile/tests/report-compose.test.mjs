@@ -160,12 +160,13 @@ test('carrossel: classifica anexos pelo link e respeita limite e ordem', async (
   assert.equal(pageIndex(100, 0, 3), 0)
 })
 
-test('carrossel: proporção segue a primeira foto, com limites, sem cortar foto em pé', async () => {
+test('carrossel: a moldura é sempre uma das três do padrão, a mais próxima da primeira foto', async () => {
   const { mediaRatio, DEFAULT_MEDIA_RATIO } = await import('../src/lib/media-kind.ts')
-  assert.equal(mediaRatio(4000, 3000), 0.75) // foto deitada 4:3
-  assert.equal(mediaRatio(3000, 4000), 4 / 3) // foto em pé 3:4 cabe inteira
-  assert.equal(mediaRatio(1000, 3000), 1.35) // muito alta: limite (aparece inteira com faixas)
-  assert.equal(mediaRatio(3000, 500), 0.5625) // muito larga: limite 16:9
+  assert.equal(DEFAULT_MEDIA_RATIO, 1) // quadrado enquanto não se sabe
+  assert.equal(mediaRatio(4000, 3000), 1) // 4:3 deitado fica no meio de 1:1 e 16:9: vale o quadrado
+  assert.equal(mediaRatio(3000, 4000), 1.25) // em pé 3:4 → retrato 4:5 (aparece inteira, com fundo desfocado)
+  assert.equal(mediaRatio(1000, 3000), 1.25) // muito alta: retrato, inteira
+  assert.equal(mediaRatio(3000, 500), 0.5625) // muito larga: paisagem 16:9
   for (const bad of [[0, 10], [10, 0], [NaN, 10], [undefined, 10], [null, null], [-5, 10]]) assert.equal(mediaRatio(...bad), DEFAULT_MEDIA_RATIO)
 })
 

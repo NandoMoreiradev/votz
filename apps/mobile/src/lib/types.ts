@@ -1,4 +1,4 @@
-import type { Category, FeedSuggestions, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
+import type { Category, FeedSuggestions, MediaItemDto, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
 
 export type { PostDto }
 export type User = AuthenticatedUser
@@ -12,6 +12,8 @@ export interface Page<T> {
 export interface Report {
   id: string; title: string; description: string; category: Category; status: ReportStatus
   city: string | null; state: string | null; anonymous: boolean; media: string[]
+  /** Só no detalhe: tamanho e moldura das fotos e vídeos (relato aparece inteiro, sem recorte). */
+  mediaItems?: MediaItemDto[]
   pressureScore: number; createdAt: string
   author: { id: string; name: string; avatarUrl: string | null } | null
   _count: { votes: number; comments: number }

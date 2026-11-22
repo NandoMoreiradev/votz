@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { BullModule } from '@nestjs/bullmq'
 import { GifsModule } from '../gifs/gifs.module'
 import { MailModule } from '../mail/mail.module'
+import { MediaModule } from '../media/media.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { StorageModule } from '../storage/storage.module'
 import { TopicsModule } from '../topics/topics.module'
@@ -16,6 +17,7 @@ import { PostsService } from './posts.service'
   imports: [
     BullModule.registerQueue({ name: FEED_RANKING_QUEUE }),
     StorageModule,
+    MediaModule,
     GifsModule,
     TopicsModule,
     NotificationsModule,

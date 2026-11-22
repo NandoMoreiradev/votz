@@ -47,7 +47,7 @@ const mockPrisma = {
   orgMembership: { findUnique: jest.fn() },
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
-const mockReportMedia = { attach: jest.fn().mockResolvedValue(undefined) }
+const mockReportMedia = { attach: jest.fn().mockResolvedValue(undefined), itemsFor: jest.fn().mockResolvedValue([]) }
 const STORAGE_BASE = 'https://cdn.votz.app'
 const mockStorage = {
   assertOwnStorageUrls: jest.fn((urls: string[] | undefined, folder?: string) => {
@@ -199,7 +199,9 @@ describe('ReportsService', () => {
     it('returns the report when found', async () => {
       const report = makeReport()
       mockRepo.findById.mockResolvedValue(report)
-      await expect(service.findById('report-1')).resolves.toEqual(report)
+      // O detalhe acrescenta o tamanho e a moldura das fotos (`mediaItems`).
+      await expect(service.findById('report-1')).resolves.toEqual({ ...report, mediaItems: [] })
+      expect(mockReportMedia.itemsFor).toHaveBeenCalled()
     })
   })
 

@@ -10,6 +10,8 @@ import { RolesGuard } from '../auth/guards/roles.guard'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { ListFlagsQueryDto } from './dto/list-flags-query.dto'
 import { ResolveFlagDto } from './dto/resolve-flag.dto'
+import { AdReviewDecisionDto, AdReviewQueryDto } from '../ads/ads-review/dto/ads-review.dto'
+import { AdsReviewService } from '../ads/ads-review/ads-review.service'
 import { ModerationService } from './moderation.service'
 
 @ApiTags('moderation')
@@ -60,5 +62,34 @@ export class AdminFlagsController {
     @CurrentUser() actor: { id: string; type: string },
   ) {
     return this.service.resolveFlag(id, actor, dto)
+  }
+}
+
+/**
+ * Fila de revisão de anúncios (plano de anúncios, seção 5). Mesma equipe da moderação: moderador ou admin.
+ * Cada decisão fica gravada em `ad_reviews`, com quem decidiu, o motivo e o texto do anúncio naquele momento.
+ */
+@ApiTags('admin')
+@Controller('admin/ad-reviews')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserType.MODERATOR, UserType.ADMIN)
+@ApiBearerAuth()
+export class AdminAdReviewsController {
+  constructor(private readonly adsReview: AdsReviewService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Fila de revisão de anúncios (mais antigos primeiro)' })
+  list(@Query() query: AdReviewQueryDto) {
+    return this.adsReview.listQueue(query.status, query.page, query.limit)
+  }
+
+  @Post(':adId/decision')
+  @ApiOperation({ summary: 'Aprovar ou recusar um anúncio (recusar exige o motivo)' })
+  decide(
+    @Param('adId', ParseUUIDPipe) adId: string,
+    @Body() dto: AdReviewDecisionDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.adsReview.decide(adId, actor, dto)
   }
 }

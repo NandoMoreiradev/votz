@@ -58,6 +58,7 @@ export class LgpdProcessor extends WorkerHost {
       apiKeys,
       registrationRequests,
       accessLogs,
+      adPreferences,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -69,6 +70,7 @@ export class LgpdProcessor extends WorkerHost {
           country: true, latitude: true, longitude: true,
           emailVerified: true, mfaEnabled: true,
           termsAcceptedAt: true, termsVersion: true, privacyVersion: true, ageConfirmedAt: true,
+          birthDate: true, gender: true,
           lastLoginAt: true, createdAt: true,
         },
       }),
@@ -167,6 +169,11 @@ export class LgpdProcessor extends WorkerHost {
         select: { event: true, ip: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
       }),
+      // Preferências de anúncios (aceite da personalização e interesses escolhidos).
+      this.prisma.adUserPreference.findUnique({
+        where: { userId },
+        select: { personalizationConsent: true, consentAt: true, consentVersion: true, interests: true, updatedAt: true },
+      }),
     ])
 
     let decryptedCpf: string | null = null
@@ -197,6 +204,7 @@ export class LgpdProcessor extends WorkerHost {
       apiKeys: { total: apiKeys.length, items: apiKeys },
       registrationRequests: { total: registrationRequests.length, items: registrationRequests },
       accessLogs: { total: accessLogs.length, items: accessLogs },
+      adPreferences,
     }
 
     const key = `exports/${userId}/${randomUUID()}.json`

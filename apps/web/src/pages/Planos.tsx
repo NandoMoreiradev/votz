@@ -18,7 +18,7 @@ import {
   PoliticianPriceTier,
   getMaxMembers,
 } from '@votz/shared-types'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
 
@@ -201,7 +201,7 @@ export function Planos() {
 
   return (
     <PageShell>
-      <Navbar />
+      <PageNavbar />
       <Page>
         <Hero>
           <HeroLabel>Planos transparentes</HeroLabel>

@@ -94,7 +94,7 @@ export function transcodeArgs(inputPath: string, outputPath: string): string[] {
   ]
 }
 
-function runFfmpeg(
+export function runFfmpeg(
   binary: string,
   args: string[],
   timeoutMs: number,
@@ -129,7 +129,7 @@ function runFfmpeg(
 }
 
 /** `ffmpeg -i arquivo` sem saída sempre "falha", mas o cabeçalho com os dados do vídeo vem no começo da mensagem. */
-async function probe(binary: string, path: string): Promise<VideoInfo | null> {
+export async function probe(binary: string, path: string): Promise<VideoInfo | null> {
   const { stderr } = await runFfmpeg(binary, ['-hide_banner', '-i', path], PROBE_TIMEOUT_MS, 'head')
   return parseVideoInfo(stderr)
 }

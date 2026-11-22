@@ -1,4 +1,5 @@
 import { Category, RecipientType, ReportStatus } from './enums'
+import type { MediaItemDto } from './media'
 
 export interface PublicReport {
   id: string
@@ -14,6 +15,8 @@ export interface PublicReport {
   state?: string
   neighborhood?: string
   media: string[]
+  /** Só no detalhe: tamanho e moldura das fotos e vídeos (relato aparece inteiro, sem recorte). PDF e áudio ficam só em `media`. */
+  mediaItems?: MediaItemDto[]
   pressureScore: number
   recipientType?: RecipientType
   recipientId?: string

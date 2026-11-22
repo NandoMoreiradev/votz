@@ -14,6 +14,7 @@ import { ActingUser, resolveOptionalActingOrg } from '../auth/acting-org'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
 import { GifsService } from '../gifs/gifs.service'
 import { MailService } from '../mail/mail.service'
+import { MediaAssetsService, type PreparedPostMedia } from '../media/media-assets.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService, isPostCommentMediaKey } from '../storage/storage.service'
@@ -51,16 +52,21 @@ export class PostsService {
     private readonly ranking: FeedRankingService,
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
-    @Optional() private readonly unused?: unknown,
+    @Optional() private readonly mediaAssets?: MediaAssetsService,
   ) {}
 
   async create(dto: CreatePostDto, user: ActingUser & { emailVerified?: boolean }) {
     const cleanContent = DOMPurify.sanitize(dto.content ?? '').trim()
-    const media = dto.media ?? []
+    const legacyMedia = dto.media ?? []
+    const mediaInputs = dto.mediaAssets ?? []
+    if (legacyMedia.length && mediaInputs.length)
+      throw new BadRequestException('Envie as fotos e vídeos só em `mediaAssets` (ou só em `media`, nos apps antigos).')
+    if (mediaInputs.length && !this.mediaAssets) throw new BadRequestException('Envio de mídia indisponível no momento.')
 
     if (
       cleanContent.length === 0 &&
-      media.length === 0 &&
+      legacyMedia.length === 0 &&
+      mediaInputs.length === 0 &&
       !dto.poll &&
       !dto.mentionedReportId &&
       !dto.mentionedDebateId &&
@@ -71,10 +77,7 @@ export class PostsService {
       throw new BadRequestException('A publicação precisa de texto, mídia, enquete ou menção.')
     }
 
-    this.storage.assertOwnStorageUrls(media, 'posts')
-    const mediaKeys = media
-      .map((url) => this.storage.extractKeyFromUrl(url))
-      .filter((k): k is string => !!k)
+    this.storage.assertOwnStorageUrls(legacyMedia, 'posts')
 
     const actingOrg = await resolveOptionalActingOrg(this.prisma, user, [
       'POLITICIAN',
@@ -101,6 +104,15 @@ export class PostsService {
         ? PostKind.QUOTE
         : PostKind.STANDARD
 
+    // Fotos e vídeos no padrão: confere dono e recorte e já gera as versões das fotos (vídeo vai para a fila).
+    // Fica por último entre as conferências, para não gerar arquivo se a publicação for recusada por outro motivo.
+    let prepared: PreparedPostMedia | null = null
+    if (mediaInputs.length && this.mediaAssets) prepared = await this.mediaAssets.prepareForPost(user.id, mediaInputs)
+    const media = prepared ? prepared.media : legacyMedia
+    const mediaKeys = prepared
+      ? prepared.mediaKeys
+      : legacyMedia.map((url) => this.storage.extractKeyFromUrl(url)).filter((k): k is string => !!k)
+
     const { hotScore } = computePostScores({
       kind,
       likesCount: 0,
@@ -108,7 +120,7 @@ export class PostsService {
       uniqueCommenters: 0,
       repostsCount: 0,
       pollVotesCount: 0,
-      hasMedia: media.length > 0,
+      hasMedia: media.length > 0 || (prepared?.items.length ?? 0) > 0,
       hasReportMention: !!dto.mentionedReportId,
       hasDebateMention: !!dto.mentionedDebateId,
       hasPropostaMention: !!dto.mentionedPropostaId,
@@ -122,31 +134,44 @@ export class PostsService {
       ? new Date(Date.now() + (dto.poll.durationHours ?? 24) * 3_600_000)
       : undefined
 
-    const created = await this.repo.createPost({
-      content: cleanContent,
-      kind,
-      media,
-      mediaKeys,
-      authorUserId: user.id,
-      authorOrgType: actingOrg ? (actingOrg.orgType as OrgType) : null,
-      authorOrgId: actingOrg?.orgId ?? null,
-      city,
-      cityKey: toCityKey(city),
-      state,
-      mentionedReportId: dto.mentionedReportId,
-      mentionedDebateId: dto.mentionedDebateId,
-      mentionedPropostaId: dto.mentionedPropostaId,
-      mentionedDebatePollId: dto.mentionedDebatePollId,
-      quotePostId: dto.quotePostId,
-      hotScore,
-      poll: dto.poll
-        ? {
-            question: dto.poll.question ? DOMPurify.sanitize(dto.poll.question).trim() : null,
-            expiresAt: pollExpiresAt!,
-            options: dto.poll.options.map((opt) => DOMPurify.sanitize(opt).trim()),
-          }
-        : undefined,
-    })
+    let created: Awaited<ReturnType<PostsRepository['createPost']>>
+    try {
+      created = await this.repo.createPost({
+        content: cleanContent,
+        kind,
+        media,
+        mediaKeys,
+        authorUserId: user.id,
+        authorOrgType: actingOrg ? (actingOrg.orgType as OrgType) : null,
+        authorOrgId: actingOrg?.orgId ?? null,
+        city,
+        cityKey: toCityKey(city),
+        state,
+        mentionedReportId: dto.mentionedReportId,
+        mentionedDebateId: dto.mentionedDebateId,
+        mentionedPropostaId: dto.mentionedPropostaId,
+        mentionedDebatePollId: dto.mentionedDebatePollId,
+        quotePostId: dto.quotePostId,
+        hotScore,
+        poll: dto.poll
+          ? {
+              question: dto.poll.question ? DOMPurify.sanitize(dto.poll.question).trim() : null,
+              expiresAt: pollExpiresAt!,
+              options: dto.poll.options.map((opt) => DOMPurify.sanitize(opt).trim()),
+            }
+          : undefined,
+      })
+    } catch (error) {
+      if (prepared) await this.mediaAssets!.releaseForPost(prepared)
+      throw error
+    }
+
+    if (prepared) {
+      // A publicação já existe: se a ligação falhar, ela continua com os links (Post.media), só sem os dados de formato.
+      await this.mediaAssets!.finalizeForPost(created.id, prepared).catch((error) =>
+        this.logger.error(`Mídia da publicação ${created.id} não foi ligada: ${error instanceof Error ? error.message : String(error)}`),
+      )
+    }
 
     if (cleanContent) {
       await this.topics.syncPostTopics(created.id, cleanContent).catch(() => null)

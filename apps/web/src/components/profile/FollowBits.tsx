@@ -1,6 +1,7 @@
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth.store'
+import { profileActionOutline, profileActionSolid } from './profile-actions'
 import { useIsFollowingTarget, useToggleFollowTarget, type FollowTargetType } from '../../hooks/useFollow'
 
 /** "1.234 seguidores", "1 seguidor". */
@@ -32,18 +33,7 @@ export function FollowersCount({ count }: { count?: number }) {
 }
 
 const Btn = styled.button<{ $following: boolean }>`
-  min-height: 36px;
-  padding: 0 18px;
-  border-radius: 9999px;
-  border: 1.5px solid ${({ theme }) => theme.colors.primary};
-  background: ${({ $following, theme }) => ($following ? 'transparent' : theme.colors.primary)};
-  color: ${({ $following, theme }) => ($following ? theme.colors.primary : theme.colors.white)};
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  &:disabled { opacity: 0.5; cursor: default; }
-  &:focus-visible { outline: 2px solid ${({ theme }) => theme.colors.action}; outline-offset: 2px; }
+  ${({ $following }) => ($following ? profileActionOutline : profileActionSolid)}
 `
 /** Seguir / Seguindo. Quem não entrou vai para o login. */
 export function FollowButton({ targetType, targetId }: { targetType: FollowTargetType; targetId: string }) {

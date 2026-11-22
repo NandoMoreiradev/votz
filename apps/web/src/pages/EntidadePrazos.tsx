@@ -16,7 +16,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { MetricInfoModal } from '../components/analytics/MetricInfoModal'
 import { PlanLockedPreview } from '../components/analytics/PlanLockedPreview'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { extractPlanRequired } from '../hooks/useAnalytics'
 import { useAccountabilityReports, useCreateAccountabilityReport } from '../hooks/useMandate'
@@ -416,7 +416,7 @@ export function EntidadePrazos() {
   if (!user) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Container>
           <Card>
             <Title>Painel de prazos e fila da entidade</Title>
@@ -433,7 +433,7 @@ export function EntidadePrazos() {
   if (activeContext?.type !== 'ENTITY') {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Container>
           <Card>
             <Title>Painel de prazos e fila da entidade</Title>
@@ -448,7 +448,7 @@ export function EntidadePrazos() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Container>
         <Header>
           <div>

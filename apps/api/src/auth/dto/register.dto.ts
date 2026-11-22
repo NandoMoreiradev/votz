@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
   IsEmail, IsString, MinLength, Matches, IsOptional,
-  IsNumber, Min, Max, MaxLength, IsBoolean, Equals,
+  IsNumber, Min, Max, MaxLength, IsBoolean, Equals, IsIn,
 } from 'class-validator'
 import { Transform } from 'class-transformer'
 import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
-import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE } from '@votz/shared-types'
+import { TERMS_VERSION, PRIVACY_VERSION, MIN_AGE, USER_GENDERS, type UserGender } from '@votz/shared-types'
+import { IsAdultBirthDate } from '../../common/validators/birth-date.validator'
 
 function normalizePhone(value: unknown): string {
   const raw = String(value ?? '').trim()
@@ -99,6 +100,16 @@ export class RegisterDto {
   @Min(-180)
   @Max(180)
   longitude?: number
+
+  @ApiPropertyOptional({ example: '1990-05-17', description: 'Opcional. Nunca aparece no perfil; para anúncios vira só faixa de idade, com permissão.' })
+  @IsOptional()
+  @IsAdultBirthDate()
+  birthDate?: string
+
+  @ApiPropertyOptional({ enum: USER_GENDERS, description: 'Opcional. Nunca aparece no perfil.' })
+  @IsOptional()
+  @IsIn(USER_GENDERS as unknown as string[], { message: 'Gênero inválido.' })
+  gender?: UserGender
 
   @ApiProperty({ example: TERMS_VERSION, description: 'Versão dos Termos de Uso aceitos' })
   @IsString()

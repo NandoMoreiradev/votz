@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { Button } from '../components/ui/Button'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { useCriarProposta } from '../hooks/usePropostas'
@@ -235,7 +235,7 @@ export function CreateProposta() {
   if (!user) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <AccessDenied>
             <p>Você precisa estar logado para criar uma proposta.</p>
@@ -251,7 +251,7 @@ export function CreateProposta() {
   if (!isPolitician) {
     return (
       <Page>
-        <Navbar />
+        <PageNavbar />
         <Content>
           <AccessDenied>
             {politicianOrg ? (
@@ -270,7 +270,7 @@ export function CreateProposta() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Content>
         <BackLink to="/propostas">← Propostas</BackLink>
         <PageTitle>Nova Proposta</PageTitle>

@@ -84,6 +84,9 @@ export class UsersService {
       state: dto.state,
       latitude: dto.latitude,
       longitude: dto.longitude,
+      // `null` apaga; ausente não muda. Data só (sem hora), como a pessoa informou.
+      birthDate: dto.birthDate === undefined ? undefined : dto.birthDate === null ? null : new Date(`${dto.birthDate}T00:00:00Z`),
+      gender: dto.gender,
     })
   }
 

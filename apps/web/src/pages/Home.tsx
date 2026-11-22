@@ -4,13 +4,14 @@ import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Fire, Flag, HandsClapping, LinkSimple, UsersThree } from '@phosphor-icons/react'
-import { Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
+import { AD_DELIVERY_LIMITS, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
 import { AdvocacyBanner, ShieldCheckIcon } from '../components/ui/AdvocacyBanner'
 import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
+import { SponsoredSlot } from '../components/ads/SponsoredSlot'
 import { SuggestedProfilesCard } from '../components/posts/SuggestedProfilesCard'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
@@ -1538,6 +1539,15 @@ export function Home() {
                   />
                   {postsData?.suggestions && index + 1 === Math.min(postsData.suggestionsAfter ?? 3, postsData.data.length) && (
                     <SuggestedProfilesCard suggestions={postsData.suggestions} />
+                  )}
+                  {/* 1 anúncio a cada 8 publicações, só para quem entrou (decisão 4 do plano de anúncios) */}
+                  {user && (index + 1) % AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD === 0 && (
+                    <SponsoredSlot
+                      surface={city ? 'FEED_CITY' : postSort === 'recent' ? 'FEED_RECENT' : 'FEED_FOR_YOU'}
+                      position={index + 1}
+                      state={uf || undefined}
+                      city={city || undefined}
+                    />
                   )}
                 </Fragment>
               ))}

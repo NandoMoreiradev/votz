@@ -3,7 +3,6 @@ import styled from 'styled-components'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowUp, ChatCircle, MagnifyingGlass, SealCheck, X } from '@phosphor-icons/react'
 import { Navbar } from '../components/layout/Navbar'
-import { socialRow, socialTab } from '../components/ui/social'
 import { useReports } from '../hooks/useReports'
 import { usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
@@ -30,27 +29,27 @@ const Page = styled.div`
   background: ${({ theme }) => theme.colors.neutral};
 `
 const Column = styled.main`
-  max-width: 680px;
+  max-width: 1480px;
   margin: 0 auto;
-  background: ${({ theme }) => theme.colors.white};
-  border-left: 1px solid ${({ theme }) => theme.colors.border};
-  border-right: 1px solid ${({ theme }) => theme.colors.border};
-  min-height: calc(100vh - 56px);
-  @media (max-width: 720px) {
-    border-left: none;
-    border-right: none;
-  }
+  padding: 24px 32px 64px;
+  @media (max-width: 820px) { padding: 16px 16px 48px; }
+`
+const Header = styled.div`
+  margin-bottom: 20px;
+`
+const Title = styled.h1`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 4px;
+`
+const Subtitle = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.muted};
 `
 const SearchBar = styled.form`
-  position: sticky;
-  top: 56px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: ${({ theme }) => theme.colors.white};
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  margin-bottom: 16px;
 `
 const Field = styled.label`
   flex: 1;
@@ -58,10 +57,11 @@ const Field = styled.label`
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 42px;
-  padding: 0 14px;
+  height: 52px;
+  padding: 0 18px;
   border-radius: ${({ theme }) => theme.radii.full};
-  background: ${({ theme }) => theme.colors.neutral};
+  border: 1.5px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.white};
   color: ${({ theme }) => theme.colors.muted};
   &:focus-within {
     outline: 2px solid ${({ theme }) => theme.colors.action};
@@ -94,22 +94,53 @@ const ClearBtn = styled.button`
 `
 const Tabs = styled.div`
   display: flex;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
 `
 const Tab = styled.button<{ $active: boolean }>`
-  ${socialTab}
+  padding: 8px 18px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1.5px solid ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.border)};
+  background: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.white)};
+  color: ${({ $active, theme }) => ($active ? '#fff' : theme.colors.text)};
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover { border-color: ${({ theme }) => theme.colors.primary}; }
+`
+const Summary = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-bottom: 14px;
+`
+const Results = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 const Row = styled(Link)`
-  ${socialRow}
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
+  padding: 18px 20px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
   color: inherit;
   text-decoration: none;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  &:hover {
+    box-shadow: ${({ theme }) => theme.shadows.md};
+    border-color: ${({ theme }) => theme.colors.primary}40;
+  }
 `
 const Avatar = styled.div<{ $src?: string | null }>`
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
   border-radius: 50%;
   display: grid;
@@ -241,6 +272,11 @@ export function Search() {
     <Page>
       <Navbar />
       <Column>
+        <Header>
+          <Title>Buscar</Title>
+          <Subtitle>Encontre relatos, políticos, entidades e empresas.</Subtitle>
+        </Header>
+
         <SearchBar role="search" onSubmit={(event) => event.preventDefault()}>
           <Field>
             <MagnifyingGlass size={18} aria-hidden="true" />
@@ -269,10 +305,17 @@ export function Search() {
           ))}
         </Tabs>
 
+        {!active.isLoading && !active.isError && !!meta && meta.total > 0 && (
+          <Summary>
+            {meta.total.toLocaleString('pt-BR')} {meta.total === 1 ? 'resultado' : 'resultados'}
+            {debounced ? ` para “${debounced}”` : ''}
+          </Summary>
+        )}
         {active.isLoading && <Notice>Buscando…</Notice>}
         {active.isError && <Notice>Não foi possível buscar agora. Tente de novo em instantes.</Notice>}
         {!active.isLoading && !active.isError && meta?.total === 0 && <Notice>{tab.empty}</Notice>}
 
+        <Results>
         {kind === 'relatos' && reports.data?.data.map((report) => (
           <Row key={report.id} to={`/relatos/${report.id}`}>
             <Body>
@@ -327,6 +370,8 @@ export function Search() {
             </Body>
           </Row>
         ))}
+
+        </Results>
 
         {meta && meta.totalPages > 1 && (
           <Pager>

@@ -12,13 +12,10 @@ import { usePoliticianPropostas, PublicProposta } from '../hooks/usePropostas'
 import { useDebates } from '../hooks/useDebates'
 import { useAuthStore } from '../store/auth.store'
 import { useMyProfiles } from '../hooks/useAuth'
-import { Button } from '../components/ui/Button'
+import { ProfileLinkBtn } from '../components/profile/profile-actions'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
-import { TeamPanel } from '../components/org/TeamPanel'
 import { PageMessageButton } from '../components/page-inbox/PageMessageButton'
-import { PageHandlePanel } from '../components/page-inbox/PageHandlePanel'
 import { HandleLine } from '../components/page-inbox/PageInboxUi'
-import { YoutubeChannelsPanel } from '../components/org/YoutubeChannelsPanel'
 import { PropostaStatusBadge } from '../components/ui/Badge'
 import { VolumeChart } from '../components/profile/VolumeChart'
 import { MetricsBar } from '../components/profile/MetricsBar'
@@ -55,18 +52,25 @@ const BackLink = styled(Link)`
 
 const TwoCol = styled.div`
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 24px;
   align-items: start;
 
+  @media (max-width: 1100px) { grid-template-columns: minmax(0, 1fr) 300px; }
   @media (max-width: 820px) { grid-template-columns: 1fr; }
 `
 
-const MainCol = styled.div``
+const MainCol = styled.div`
+  min-width: 0;
+`
 const SideCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: sticky;
+  top: 80px;
+
+  @media (max-width: 820px) { position: static; }
 `
 
 // ── Header ──────────────────────────────────────────────────────────────────
@@ -187,17 +191,7 @@ const CtaRow = styled.div`
   flex-wrap: wrap;
 `
 
-const ReportCta = styled(Link)`
-  padding: 9px 18px;
-  background: ${({ theme }) => theme.colors.action};
-  color: #fff;
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  transition: opacity 0.15s;
-  &:hover { opacity: 0.85; }
-`
+const ReportCta = ProfileLinkBtn
 
 // Mandate progress bar
 const MandateProgress = styled.div`
@@ -232,22 +226,43 @@ const ProgressTrack = styled.div<{ $pct: number }>`
 
 // ── Mandatômetro ─────────────────────────────────────────────────────────────
 
+const MandCard = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  padding: 18px 20px;
+  margin-bottom: 20px;
+
+  @media (max-width: 480px) { padding: 16px 14px; }
+`
+
+const MandTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0 0 2px;
+`
+
+const MandSub = styled.p`
+  font-size: 0.8125rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin: 0 0 12px;
+`
+
 const MGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
-  margin-top: 16px;
 
-  @media (max-width: 480px) { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 1000px) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 520px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 `
 
 const MCard = styled.div<{ $color: string }>`
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px;
+  gap: 2px;
+  padding: 10px 12px;
   border-radius: ${({ theme }) => theme.radii.md};
   background: ${({ $color }) => $color + '10'};
   border: 1px solid ${({ $color }) => $color + '25'};
@@ -255,7 +270,8 @@ const MCard = styled.div<{ $color: string }>`
 
 const MValue = styled.span<{ $color: string }>`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-size: 1.25rem;
+  line-height: 1.2;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ $color }) => $color};
 `
@@ -380,7 +396,12 @@ const StatusTab = styled.button<{ $active: boolean }>`
   &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ $active, theme }) => $active ? '#fff' : theme.colors.primary}; }
 `
 
-const ReportList = styled.div` display: flex; flex-direction: column; gap: 10px; `
+const ReportList = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
+`
 const ReportCard = styled(Link)`
   display: block;
   background: ${({ theme }) => theme.colors.white};
@@ -627,6 +648,7 @@ export function PoliticianProfile() {
             <Skeleton style={{ height: 80 }} />
           </HeaderCard>
         ) : politician ? (
+          <>
           <HeaderCard $cover={politician.coverUrl}>
             {canEdit && <CoverEditButton onClick={() => setImageDialog('cover')} onPhoto={() => setImageDialog('photo')} />}
             <HeaderTop>
@@ -674,6 +696,7 @@ export function PoliticianProfile() {
                   Mandato: {formatDate(politician.termStart)} → {formatDate(politician.termEnd)}
                 </Term>
                 <CtaRow>
+                  {!canEdit && <FollowButton targetType="POLITICIAN" targetId={politician.id} />}
                   {politician.status === 'ATIVO' ? (
                     <ReportCta to={`/novo?recipientType=POLITICIAN&recipientId=${politician.id}&recipientName=${encodeURIComponent(politician.name)}`}>
                       + Criar relato
@@ -688,42 +711,29 @@ export function PoliticianProfile() {
                     </ReportCta>
                   )}
                   {canEdit && (
-                    <Button
-                      as={Link as any}
-                      to={`/politico/${politician.id}/editar`}
-                      variant="outline"
-                      size="sm"
-                    >
+                    <ReportCta to={`/politico/${politician.id}/editar`} $variant="outline">
                       Editar perfil
-                    </Button>
+                    </ReportCta>
                   )}
                   {canEdit && (
-                    <Button
-                      as={Link as any}
-                      to="/painel-dados"
-                      size="sm"
-                    >
+                    <ReportCta to="/painel-dados" $variant="solid">
                       Painel de dados
-                    </Button>
+                    </ReportCta>
                   )}
                   {canEdit && politician.status === 'ATIVO' && (
-                    <ReportCta
-                      to="/proposta/nova"
-                      style={{ background: '#2DC653' }}
-                    >
+                    <ReportCta to="/proposta/nova" $variant="positive">
                       + Nova proposta
                     </ReportCta>
                   )}
+                  {!canEdit && currentUser && <PageMessageButton orgType="POLITICIAN" orgId={politician.id} />}
                   {!politician.verified && currentUser && !canEdit && (
                     <ReportCta
                       to={`/reivindicar/politico/${politician.id}`}
-                      style={{ background: 'transparent', color: '#1A1A2E', border: '1.5px solid #1A1A2E' }}
+                      $variant="outline"
                     >
                       Reivindicar perfil
                     </ReportCta>
                   )}
-                  {!canEdit && <FollowButton targetType="POLITICIAN" targetId={politician.id} />}
-                  {!canEdit && currentUser && <PageMessageButton orgType="POLITICIAN" orgId={politician.id} />}
                 </CtaRow>
                 {!canEdit &&
                   profiles?.orgs.some((o) => o.type === 'POLITICIAN' && o.id === politician.id) && (
@@ -753,7 +763,11 @@ export function PoliticianProfile() {
               <ProgressTrack $pct={termPct} />
             </MandateProgress>
 
-            {/* Mandatômetro */}
+          </HeaderCard>
+
+          <MandCard>
+            <MandTitle>Mandatômetro</MandTitle>
+            <MandSub>Como {politician.name} tem respondido aos relatos dos cidadãos.</MandSub>
             <MGrid>
               <MCard $color="#6B7280">
                 <MValue $color="#6B7280">{m?.total ?? 0}</MValue>
@@ -785,7 +799,8 @@ export function PoliticianProfile() {
               orgId={politician.id}
               showOwnerPanelLink={canEdit}
             />
-          </HeaderCard>
+          </MandCard>
+          </>
         ) : (
           <Empty>Político não encontrado.</Empty>
         )}
@@ -795,14 +810,10 @@ export function PoliticianProfile() {
             {/* Main */}
             <MainCol>
               {currentUser && canEdit && (
-                <>
-                  <TeamPanel orgType="POLITICIAN" orgId={politician.id} currentUserId={currentUser.id} />
-                {activeContext?.permissions?.includes('MANAGE_PROFILE') && (
-                  <PageHandlePanel orgType="POLITICIAN" orgId={politician.id} current={(politician as { username?: string | null }).username} />
-                )}
-                </>
+                <p style={{ margin: '0 0 16px', fontSize: '0.875rem' }}>
+                  <Link to="/estudio/equipe" style={{ fontWeight: 600 }}>Equipe, @usuário e canais agora ficam no Estúdio →</Link>
+                </p>
               )}
-              {currentUser && canEdit && <YoutubeChannelsPanel />}
 
               <div style={{ marginTop: currentUser ? 20 : 0 }}>
                 {/* Abas principais: Relatos / Propostas */}
@@ -966,7 +977,7 @@ export function PoliticianProfile() {
                         Nenhum debate registrado ainda.
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
                         {debates.data.map((d) => (
                           <Link
                             key={d.id}

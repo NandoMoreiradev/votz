@@ -78,6 +78,7 @@ describe('PostsService', () => {
       ranking as never,
       notifications as never,
       mail as never,
+      overrides.media as never,
     )
 
     return { service, repo, prisma, storage, gifs }
@@ -227,5 +228,61 @@ describe('PostsService', () => {
       findFeedCandidates: jest.fn().mockResolvedValue({ posts: [{ id: 'p1' }], total: 1 }),
     } })
     expect((await service.listFeed({ sort: 'recent' })).data[0].repost).toBeNull()
+  })
+})
+
+describe('PostsService.create com fotos e vídeos no padrão de formatos', () => {
+  const ID = '11111111-1111-4111-8111-111111111111'
+  const prepared = { items: [{ id: ID, kind: 'IMAGE', position: 0 }], media: ['https://cdn.votz.local/posts/a.feed.jpeg'], mediaKeys: ['posts/a.jpeg', 'posts/a.feed.jpeg'], renderedKeys: ['posts/a.jpeg'] }
+
+  function build(createPost: jest.Mock) {
+    const media = {
+      prepareForPost: jest.fn().mockResolvedValue(prepared),
+      finalizeForPost: jest.fn().mockResolvedValue(undefined),
+      releaseForPost: jest.fn().mockResolvedValue(undefined),
+    }
+    const repo = { createPost, findRawById: jest.fn().mockResolvedValue({ id: 'p1' }), hydratePosts: jest.fn().mockResolvedValue([{ id: 'p1' }]) }
+    const prisma = { user: { findUnique: jest.fn().mockResolvedValue({ city: 'São Paulo', state: 'SP' }) } }
+    const storage = { assertOwnStorageUrls: jest.fn(), extractKeyFromUrl: jest.fn() }
+    const service = new PostsService(
+      repo as never,
+      prisma as never,
+      storage as never,
+      {} as never,
+      { syncPostTopics: jest.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      media as never,
+    )
+    return { service, media, repo }
+  }
+
+  it('prepara antes, grava os links e as chaves gerados e liga os arquivos à publicação criada', async () => {
+    const { service, media, repo } = build(jest.fn().mockResolvedValue({ id: 'p1' }))
+    await service.create({ mediaAssets: [{ id: ID, format: 'PORTRAIT' }] }, { id: 'u1', type: 'CITIZEN', ctx: null } as never)
+    expect(media.prepareForPost).toHaveBeenCalledWith('u1', [{ id: ID, format: 'PORTRAIT' }])
+    expect(repo.createPost.mock.calls[0][0]).toMatchObject({ media: prepared.media, mediaKeys: prepared.mediaKeys })
+    expect(media.finalizeForPost).toHaveBeenCalledWith('p1', prepared)
+    expect(media.releaseForPost).not.toHaveBeenCalled()
+  })
+
+  it('se a publicação não for criada, desfaz a preparação', async () => {
+    const { service, media } = build(jest.fn().mockRejectedValue(new Error('db fora')))
+    await expect(
+      service.create({ mediaAssets: [{ id: ID, format: 'SQUARE' }] }, { id: 'u1', type: 'CITIZEN', ctx: null } as never),
+    ).rejects.toThrow('db fora')
+    expect(media.releaseForPost).toHaveBeenCalledWith(prepared)
+    expect(media.finalizeForPost).not.toHaveBeenCalled()
+  })
+
+  it('não aceita misturar o envio antigo (media) com o novo (mediaAssets)', async () => {
+    const { service } = build(jest.fn())
+    await expect(
+      service.create(
+        { media: ['https://cdn.votz.local/posts/x.jpeg'], mediaAssets: [{ id: ID, format: 'SQUARE' }] },
+        { id: 'u1', type: 'CITIZEN', ctx: null } as never,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException)
   })
 })

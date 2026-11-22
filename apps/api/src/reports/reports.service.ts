@@ -192,7 +192,9 @@ export class ReportsService {
   async findById(id: string) {
     const report = await this.repository.findById(id)
     if (!report) throw new NotFoundException('Report not found')
-    return report
+    // Tamanho e moldura de cada foto e vídeo (o relato aparece inteiro, sem recorte: é prova).
+    const mediaItems = this.reportMedia ? await this.reportMedia.itemsFor(report.media) : []
+    return { ...report, mediaItems }
   }
 
   async findAll(filters: {

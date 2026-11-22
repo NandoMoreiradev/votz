@@ -251,3 +251,34 @@ describe('ReportMediaService.attach: conferência de dono', () => {
     await expect(service.attach([`${BASE}/reports/a.jpeg`], 'u1')).resolves.toBeUndefined()
   })
 })
+
+describe('ReportMediaService.itemsFor: moldura das fotos do relato (sem recorte)', () => {
+  const storage = {
+    extractKeyFromUrl: (url: string) => (url.startsWith(`${BASE}/`) ? url.slice(BASE.length + 1) : null),
+    getPublicUrl: (key: string) => `${BASE}/${key}`,
+  }
+
+  it('foto aparece inteira na moldura mais próxima, com miniatura; vídeo com capa; PDF fica de fora', async () => {
+    const prisma = {
+      reportMedia: {
+        findMany: jest.fn().mockResolvedValue([
+          { key: 'reports/a.jpeg', kind: 'IMAGE', width: 1536, height: 2048, hasThumb: true, durationMs: null },
+          { key: 'reports/b.mp4', kind: 'VIDEO', width: 1920, height: 1080, hasThumb: false, durationMs: 4200 },
+          { key: 'reports/c.pdf', kind: 'PDF', width: null, height: null, hasThumb: false, durationMs: null },
+        ]),
+      },
+    }
+    const service = new ReportMediaService(prisma as never, storage as never)
+    const items = await service.itemsFor([`${BASE}/reports/a.jpeg`, `${BASE}/reports/b.mp4`, `${BASE}/reports/c.pdf`])
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ kind: 'IMAGE', format: 'PORTRAIT', fit: 'contain', width: 1536, height: 2048, thumbUrl: `${BASE}/reports/a.thumb.webp` })
+    expect(items[1]).toMatchObject({ kind: 'VIDEO', format: 'LANDSCAPE', fit: 'contain', posterUrl: `${BASE}/reports/b.poster.jpg`, durationMs: 4200 })
+  })
+
+  it('arquivo antigo (sem linha) vem sem tamanho: o app mede ao carregar', async () => {
+    const prisma = { reportMedia: { findMany: jest.fn().mockResolvedValue([]) } }
+    const service = new ReportMediaService(prisma as never, storage as never)
+    const [item] = await service.itemsFor([`${BASE}/reports/velho.jpeg`])
+    expect(item).toMatchObject({ kind: 'IMAGE', format: null, width: null, thumbUrl: null, fit: 'contain' })
+  })
+})

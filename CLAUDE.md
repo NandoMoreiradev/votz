@@ -1,5 +1,12 @@
 # Votz — Infraestrutura de Accountability Cívico
 
+## Trabalho em andamento (leia antes de começar)
+O trabalho passa por muitas sessões, e cada sessão começa sem lembrar da anterior. Por isso:
+- **Ao abrir uma sessão**, leia `docs/dev/EM-ANDAMENTO.md`: lista as frentes abertas, o estado de cada uma e onde está o "Como retomar". Quando o dono pedir para "continuar" algo, abra o documento da frente e confira o estado real no código (`git status`, testes) antes de seguir. Se o documento e o código discordarem, o código vale e o documento é corrigido.
+- **Cada frente grande** tem um documento em `docs/dev/` com a seção "Como retomar" no topo: estado, o que foi e o que **não** foi verificado, próximo passo, arquivos principais e decisões que só o dono muda.
+- **Ao terminar cada etapa** (ou quando a conversa ficar longa), atualize o "Como retomar" e a linha da frente em `EM-ANDAMENTO.md`, com data. Frente nova entra no índice no mesmo dia.
+- **Commits só quando o dono pedir** (ele faz os próprios). Há trabalho dele sem commit na árvore: nunca desfazer nem misturar com o seu.
+
 ## Visão do Produto
 Plataforma que transforma reclamação em registro, registro em pressão e pressão em ação.
 Conecta cidadãos, entidades públicas, políticos e empresas privadas.

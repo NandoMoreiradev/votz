@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import { PlanLockedPreview } from '../components/analytics/PlanLockedPreview'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import { CATEGORY_CONFIG } from '../components/ui/Badge'
 import { extractPlanRequired } from '../hooks/useAnalytics'
 import {
@@ -61,9 +61,24 @@ const Page = styled.main`
 `
 
 const Container = styled.div`
-  max-width: 1180px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: ${({ theme }) => theme.spacing[6]} ${({ theme }) => theme.spacing[4]};
+  padding: 24px 32px;
+
+  @media (max-width: 820px) { padding: 16px; }
+`
+
+/** Lista de cartões em colunas (alertas, modelos, relatos...). */
+const ItemsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: ${({ theme }) => theme.spacing[4]};
+  margin-bottom: ${({ theme }) => theme.spacing[4]};
+  align-items: start;
+
+  & > section { margin-bottom: 0; }
+
+  @media (max-width: 560px) { grid-template-columns: minmax(0, 1fr); }
 `
 
 const Header = styled.header`
@@ -77,8 +92,9 @@ const Header = styled.header`
 
 const Title = styled.h1`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes['3xl']};
-  color: ${({ theme }) => theme.colors.primary};
+  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
 `
 
 const Subtitle = styled.p`
@@ -95,8 +111,8 @@ const NavTabs = styled.nav`
 `
 
 const TabLink = styled(Link)<{ $active: boolean }>`
-  padding: ${({ theme }) => theme.spacing[2]} ${({ theme }) => theme.spacing[4]};
-  border-radius: ${({ theme }) => theme.radii.md};
+  padding: 8px 16px;
+  border-radius: ${({ theme }) => theme.radii.full};
   border: 1px solid
     ${({ theme, $active }) => ($active ? theme.colors.primary : theme.colors.border)};
   background: ${({ theme, $active }) =>
@@ -117,16 +133,18 @@ const Card = styled.section`
 
 const KpiGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: ${({ theme }) => theme.spacing[4]};
-  margin-bottom: ${({ theme }) => theme.spacing[5]};
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: ${({ theme }) => theme.spacing[4]};
+
+  @media (max-width: 820px) { grid-template-columns: minmax(0, 1fr); }
 `
 
 const KpiBox = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: ${({ theme }) => theme.spacing[4]};
+  padding: 14px 16px;
 `
 
 const KpiLabel = styled.div`
@@ -137,7 +155,8 @@ const KpiLabel = styled.div`
 
 const KpiValue = styled.div`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: ${({ theme }) => theme.fontSizes['3xl']};
+  font-size: 1.5rem;
+  line-height: 1.2;
   font-weight: 700;
   color: ${({ theme }) => theme.colors.primary};
   margin-top: ${({ theme }) => theme.spacing[1]};
@@ -576,7 +595,7 @@ export function MandatoPortal() {
 
   return (
     <Page>
-      <Navbar />
+      <PageNavbar />
       <Container>
         <Header>
           <div>
@@ -787,14 +806,16 @@ export function MandatoPortal() {
                   {inboxQuery.data.items.length === 0 ? (
                     <Card>Nenhum relato encontrado neste recorte territorial.</Card>
                   ) : (
-                    inboxQuery.data.items.map((item) => (
-                      <ReportInboxCard
-                        key={item.id}
-                        item={item}
-                        canUseTemplates={inboxQuery.data.capabilities.replyTemplates}
-                        templates={templatesQuery.data?.items ?? []}
-                      />
-                    ))
+                    <ItemsGrid>
+                      {inboxQuery.data.items.map((item) => (
+                        <ReportInboxCard
+                          key={item.id}
+                          item={item}
+                          canUseTemplates={inboxQuery.data.capabilities.replyTemplates}
+                          templates={templatesQuery.data?.items ?? []}
+                        />
+                      ))}
+                    </ItemsGrid>
                   )}
                 </>
               )
@@ -880,6 +901,7 @@ export function MandatoPortal() {
                   </Row>
                 </Card>
 
+                <ItemsGrid>
                 {alertsQuery.data?.rules.map((r) => (
                   <Card key={r.id}>
                     <Row style={{ justifyContent: 'space-between' }}>
@@ -912,6 +934,7 @@ export function MandatoPortal() {
                     </Row>
                   </Card>
                 ))}
+                </ItemsGrid>
 
                 {alertHistoryQuery.data && alertHistoryQuery.data.length > 0 && (
                   <Card>
@@ -982,6 +1005,7 @@ export function MandatoPortal() {
                   </Row>
                 </Card>
 
+                <ItemsGrid>
                 {templatesQuery.data?.items.map((tpl) => (
                   <Card key={tpl.id}>
                     <Row style={{ justifyContent: 'space-between' }}>
@@ -1000,6 +1024,7 @@ export function MandatoPortal() {
                     </Row>
                   </Card>
                 ))}
+                </ItemsGrid>
               </>
             )}
           </>
@@ -1056,6 +1081,7 @@ export function MandatoPortal() {
                   </Row>
                 </Card>
 
+                <ItemsGrid>
                 {accQuery.data?.items.map((rep) => (
                   <Card key={rep.id}>
                     <Row style={{ justifyContent: 'space-between' }}>
@@ -1085,6 +1111,7 @@ export function MandatoPortal() {
                     </Row>
                   </Card>
                 ))}
+                </ItemsGrid>
               </>
             )}
           </>
@@ -1152,6 +1179,7 @@ export function MandatoPortal() {
                   </Row>
                 </Card>
 
+                <ItemsGrid>
                 {shareCardsQuery.data?.items.map((c) => (
                   <Card key={c.id}>
                     <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1176,6 +1204,7 @@ export function MandatoPortal() {
                     </Row>
                   </Card>
                 ))}
+                </ItemsGrid>
               </>
             )}
           </>
@@ -1263,6 +1292,7 @@ export function MandatoPortal() {
                   </Row>
                 </Card>
 
+                <ItemsGrid>
                 {webhooksQuery.data?.endpoints.map((ep) => (
                   <Card key={ep.id}>
                     <Row style={{ justifyContent: 'space-between' }}>
@@ -1310,6 +1340,7 @@ export function MandatoPortal() {
                     )}
                   </Card>
                 ))}
+                </ItemsGrid>
               </>
             )}
           </>

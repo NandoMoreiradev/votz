@@ -9,8 +9,19 @@ import {
   Plus,
   X,
 } from '@phosphor-icons/react'
+import { isAxiosError } from 'axios'
+import {
+  DEFAULT_MEDIA_FORMAT,
+  MEDIA_FORMATS,
+  POST_MEDIA_MAX_ITEMS,
+  nearestMediaFormat,
+  type MediaAssetKind,
+  type MediaFormat,
+} from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
-import { useCreatePost, useUploadPostMedia } from '../../hooks/usePosts'
+import { useCreatePost, useUploadMediaAsset } from '../../hooks/usePosts'
+import { discardPostMedia } from '../../lib/post-media-upload'
+import { CroppedMedia, INITIAL_VIEW, MediaCropEditor, cropOf, type CropView } from '../media/MediaCropEditor'
 import { useTopicSearch } from '../../hooks/useTopics'
 import { PostDto } from '../../types/api'
 import { MentionPickerModal, SelectedMention } from './MentionPickerModal'
@@ -119,20 +130,52 @@ const MediaPreviewGrid = styled.div`
   margin: 8px 0 10px;
 `
 
-const MediaThumb = styled.div`
+const MediaThumb = styled.div<{ $ratio: string }>`
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: ${({ $ratio }) => $ratio};
   border-radius: ${({ theme }) => theme.radii.md};
   overflow: hidden;
   border: 1px solid ${({ theme }) => theme.colors.border};
-  background: ${({ theme }) => theme.colors.neutral};
+  background: ${({ theme }) => theme.colors.primary};
+`
 
-  img, video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
+const ThumbButton = styled.button`
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid ${({ theme }) => theme.colors.action}; outline-offset: -2px; }
+`
+
+const ThumbStatus = styled.span`
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  text-align: center;
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.white};
+  background: ${({ theme }) => `${theme.colors.primary}99`};
+  pointer-events: none;
+`
+
+const FormatHint = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surface};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  cursor: pointer;
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
 `
 
 const RemoveBtn = styled.button`
@@ -249,10 +292,59 @@ const PublishBtn = styled.button`
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
 
+/** Arquivo escolhido para a publicação: prévia local enquanto envia; o recorte é aplicado pelo servidor ao publicar. */
+interface ComposerMedia {
+  key: string
+  previewUrl: string
+  kind: MediaAssetKind
+  width: number
+  height: number
+  view: CropView
+  status: 'uploading' | 'ready' | 'error'
+  progress: number
+  assetId?: string
+}
+
+function kindOfFile(file: File): MediaAssetKind | null {
+  if (file.type === 'image/gif') return 'GIF'
+  if (['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return 'IMAGE'
+  if (['video/mp4', 'video/quicktime'].includes(file.type)) return 'VIDEO'
+  return null
+}
+
+/** Tamanho como a pessoa vê (o navegador já aplica a rotação da câmera), lido do arquivo local. */
+function measureLocal(url: string, kind: MediaAssetKind): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    if (kind === 'VIDEO') {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => resolve({ width: video.videoWidth || 1, height: video.videoHeight || 1 })
+      video.onerror = () => resolve({ width: 1, height: 1 })
+      video.src = url
+      return
+    }
+    const image = new Image()
+    image.onload = () => resolve({ width: image.naturalWidth || 1, height: image.naturalHeight || 1 })
+    image.onerror = () => resolve({ width: 1, height: 1 })
+    image.src = url
+  })
+}
+
+function apiMessage(error: unknown, fallback: string): string {
+  if (isAxiosError(error)) {
+    const message = (error.response?.data as { message?: unknown } | undefined)?.message
+    if (typeof message === 'string' && message.trim()) return message
+    if (Array.isArray(message) && typeof message[0] === 'string') return message[0]
+  }
+  return fallback
+}
+
 export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated }: PostComposerProps) {
   const { user, activeContext } = useAuthStore()
   const [content, setContent] = useState(initialTopic ? `#${initialTopic} ` : '')
-  const [media, setMedia] = useState<Array<{ url: string; isVideo: boolean }>>([])
+  const [media, setMedia] = useState<ComposerMedia[]>([])
+  const [format, setFormat] = useState<MediaFormat>(DEFAULT_MEDIA_FORMAT)
+  const [editor, setEditor] = useState<{ open: boolean; start: number }>({ open: false, start: 0 })
   const [pollOpen, setPollOpen] = useState(false)
   const [pollQuestion, setPollQuestion] = useState('')
   const [pollOptions, setPollOptions] = useState(['', ''])
@@ -262,8 +354,17 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
-  const uploadMedia = useUploadPostMedia()
+  const uploadMedia = useUploadMediaAsset()
   const createPost = useCreatePost()
+  const mediaRef = useRef(media)
+  mediaRef.current = media
+  // Ao sair da tela: libera as prévias locais e apaga no servidor o que foi enviado e não publicado.
+  useEffect(() => () => {
+    for (const item of mediaRef.current) {
+      URL.revokeObjectURL(item.previewUrl)
+      if (item.assetId) discardPostMedia(item.assetId)
+    }
+  }, [])
 
   // Autocomplete para #pauta com debounce de 300ms para evitar excesso de requisições
   const activeTagMatch = content.match(/(?:^|\s)#([\p{L}\p{N}_]{1,30})$/u)
@@ -292,19 +393,54 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
   const displayName = activeContext?.name ?? user.name
   const displayAvatar = activeContext?.logoUrl ?? user.avatarUrl
 
+  const patchMedia = (key: string, patch: Partial<ComposerMedia>) =>
+    setMedia((prev) => prev.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+
   async function handleFiles(files: FileList | null) {
     if (!files) return
     setErrorMsg(null)
-    const remaining = 4 - media.length
-    const list = Array.from(files).slice(0, remaining)
+    const remaining = POST_MEDIA_MAX_ITEMS - media.length
+    const accepted = Array.from(files).filter((file) => kindOfFile(file))
+    if (accepted.length < files.length) setErrorMsg('Use foto (JPEG, PNG, WebP), GIF ou vídeo (MP4, MOV).')
+    const list = accepted.slice(0, remaining)
+    if (!list.length) return
+
+    const added: ComposerMedia[] = []
     for (const file of list) {
-      try {
-        const res = await uploadMedia.mutateAsync(file)
-        setMedia((prev) => [...prev, { url: res.url, isVideo: file.type.startsWith('video/') }])
-      } catch {
-        setErrorMsg('Falha no upload de uma mídia (use imagem até 10MB ou vídeo MP4/MOV até 100MB).')
-      }
+      const kind = kindOfFile(file)!
+      const previewUrl = URL.createObjectURL(file)
+      const size = await measureLocal(previewUrl, kind)
+      added.push({ key: `${Date.now()}-${Math.random().toString(36).slice(2)}`, previewUrl, kind, ...size, view: INITIAL_VIEW, status: 'uploading', progress: 0 })
     }
+    const first = media.length === 0
+    setMedia((prev) => [...prev, ...added])
+    // O primeiro arquivo sugere o formato (o mais próximo do tamanho dele); a pessoa troca no editor.
+    if (first) setFormat(nearestMediaFormat(added[0].width, added[0].height) ?? DEFAULT_MEDIA_FORMAT)
+    setEditor({ open: true, start: media.length })
+
+    await Promise.all(
+      added.map(async (item, position) => {
+        try {
+          const asset = await uploadMedia.mutateAsync({ file: list[position], onProgress: (progress) => patchMedia(item.key, { progress }) })
+          // O tamanho que vale é o do servidor (igual ao local na prática; o recorte é calculado sobre ele).
+          patchMedia(item.key, { status: 'ready', assetId: asset.id, width: asset.width, height: asset.height, progress: 100 })
+        } catch (error) {
+          patchMedia(item.key, { status: 'error' })
+          setErrorMsg(apiMessage(error, 'Não foi possível enviar um dos arquivos. Use foto até 10 MB ou vídeo MP4/MOV até 100 MB.'))
+        }
+      }),
+    )
+  }
+
+  function removeMedia(key: string) {
+    setMedia((prev) => {
+      const item = prev.find((entry) => entry.key === key)
+      if (item) {
+        URL.revokeObjectURL(item.previewUrl)
+        if (item.assetId) discardPostMedia(item.assetId)
+      }
+      return prev.filter((entry) => entry.key !== key)
+    })
   }
 
   function insertTopicSuggestion(tag: string) {
@@ -322,10 +458,17 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
       return
     }
 
+    if (media.some((item) => item.status === 'error')) {
+      setErrorMsg('Um dos arquivos não foi enviado. Remova-o ou tente de novo.')
+      return
+    }
+
     createPost.mutate(
       {
         content: content.trim(),
-        media: media.length > 0 ? media.map((m) => m.url) : undefined,
+        mediaAssets: media.length > 0
+          ? media.map((item) => ({ id: item.assetId!, format, crop: cropOf(item, format) }))
+          : undefined,
         mentionedReportId: mention?.type === 'report' ? mention.id : undefined,
         mentionedDebateId: mention?.type === 'debate' ? mention.id : undefined,
         mentionedPropostaId: mention?.type === 'proposta' ? mention.id : undefined,
@@ -342,7 +485,10 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
       {
         onSuccess: (created) => {
           setContent(initialTopic ? `#${initialTopic} ` : '')
+          // Publicado: os arquivos agora são da publicação (não apagar no servidor), só libera as prévias locais.
+          for (const item of media) URL.revokeObjectURL(item.previewUrl)
           setMedia([])
+          setFormat(DEFAULT_MEDIA_FORMAT)
           setPollOpen(false)
           setPollQuestion('')
           setPollOptions(['', ''])
@@ -350,17 +496,19 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
           onClearQuote?.()
           onCreated?.(created)
         },
-        onError: () => {
-          setErrorMsg('Não foi possível publicar. Verifique os campos e tente novamente.')
+        onError: (error) => {
+          setErrorMsg(apiMessage(error, 'Não foi possível publicar. Verifique os campos e tente novamente.'))
         },
       },
     )
   }
 
+  const uploading = media.some((item) => item.status === 'uploading')
   const canSubmit =
     !createPost.isPending &&
-    !uploadMedia.isPending &&
+    !uploading &&
     (content.trim().length > 0 || media.length > 0 || pollOpen || !!mention || !!quotePost)
+  const frame = MEDIA_FORMATS[format]
 
   return (
     <Box>
@@ -417,20 +565,38 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
           )}
 
           {media.length > 0 && (
-            <MediaPreviewGrid>
-              {media.map((m) => (
-                <MediaThumb key={m.url}>
-                  {m.isVideo ? <video src={m.url} muted /> : <img src={m.url} alt="Prévia" />}
-                  <RemoveBtn
-                    type="button"
-                    onClick={() => setMedia((prev) => prev.filter((item) => item.url !== m.url))}
-                  >
-                    <X size={12} />
-                  </RemoveBtn>
-                </MediaThumb>
-              ))}
-            </MediaPreviewGrid>
+            <>
+              <MediaPreviewGrid>
+                {media.map((item, position) => (
+                  <MediaThumb key={item.key} $ratio={`${frame.width} / ${frame.height}`}>
+                    <CroppedMedia item={item} format={format} label={`Prévia ${position + 1}`} />
+                    <ThumbButton type="button" aria-label={`Ajustar enquadramento do item ${position + 1}`} onClick={() => setEditor({ open: true, start: position })} />
+                    {item.status !== 'ready' && (
+                      <ThumbStatus role="status">
+                        {item.status === 'error' ? 'Falhou' : `Enviando ${item.progress}%`}
+                      </ThumbStatus>
+                    )}
+                    <RemoveBtn type="button" aria-label={`Remover item ${position + 1}`} onClick={() => removeMedia(item.key)}>
+                      <X size={12} />
+                    </RemoveBtn>
+                  </MediaThumb>
+                ))}
+              </MediaPreviewGrid>
+              <FormatHint type="button" onClick={() => setEditor({ open: true, start: 0 })}>
+                Formato: <b>{frame.label} ({frame.ratioLabel})</b> · Ajustar
+              </FormatHint>
+            </>
           )}
+
+          <MediaCropEditor
+            open={editor.open}
+            items={media}
+            format={format}
+            startIndex={editor.start}
+            onFormatChange={setFormat}
+            onViewChange={(key, view) => patchMedia(key, { view })}
+            onClose={() => setEditor((prev) => ({ ...prev, open: false }))}
+          />
 
           {pollOpen && (
             <PollBuilder>
@@ -494,11 +660,11 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
               type="button"
               aria-label="Adicionar foto ou vídeo"
               title="Adicionar foto ou vídeo"
-              disabled={uploadMedia.isPending || media.length >= 4}
+              disabled={media.length >= POST_MEDIA_MAX_ITEMS}
               onClick={() => fileRef.current?.click()}
             >
               <ImageIcon size={15} />
-              {uploadMedia.isPending ? 'Enviando...' : 'Foto / Vídeo'}
+              {uploading ? 'Enviando...' : 'Foto / Vídeo'}
             </ToolBtn>
             <input
               ref={fileRef}
@@ -506,7 +672,7 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
               accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime"
               multiple
               style={{ display: 'none' }}
-              onChange={(e) => handleFiles(e.target.files)}
+              onChange={(e) => { void handleFiles(e.target.files); e.target.value = '' }}
             />
 
             <ToolBtn type="button" aria-label="Adicionar ou remover enquete" title="Enquete" aria-pressed={pollOpen} $active={pollOpen} onClick={() => setPollOpen((v) => !v)}>

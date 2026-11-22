@@ -35,7 +35,7 @@ import {
   type ConversationSummary,
 } from '@votz/shared-types'
 import { useChatPreview } from '../hooks/useChatPreview'
-import { Navbar } from '../components/layout/Navbar'
+import { PageNavbar } from '../components/layout/StudioEmbed'
 import {
   useConversation,
   useConversationAction,
@@ -718,7 +718,7 @@ function PageContextInbox({ context }: { context: ActiveContext }) {
   const sub = create || !!id
   return (
     <>
-      <Navbar />
+      <PageNavbar />
       <Backdrop>
         <Shell data-split-layout>
           <Sidebar $hiddenOnMobile={sub}>
@@ -873,7 +873,7 @@ function PersonalConversations() {
   }, [scope.user?.id, scope.activeContext])
   return (
     <>
-      <Navbar />
+      <PageNavbar />
       <Backdrop>
       <Shell data-split-layout>
         <Sidebar $hiddenOnMobile={!!sub}>

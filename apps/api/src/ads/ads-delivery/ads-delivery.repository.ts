@@ -1,0 +1,239 @@
+import { Injectable } from '@nestjs/common'
+import type { AdChargeOn, AdEventStatus, Prisma } from '@prisma/client'
+import { PrismaService } from '../../prisma/prisma.service'
+import { AdsBillingRepository } from '../ads-billing/ads-billing.repository'
+import { spendLines } from '../ads-billing/ledger'
+import { dayAsDate, splitSpend } from './delivery-rules'
+
+/** A cada quanto gasto (em millicents) o fechamento lança no livro-caixa: R$ 1,00. O resto fecha de hora em hora. */
+export const SETTLE_THRESHOLD_MILLICENTS = 100_000
+
+const CANDIDATE_INCLUDE = {
+  creative: true,
+  adSet: {
+    include: {
+      campaign: {
+        include: {
+          account: { select: { id: true, balanceCents: true, pendingSpendMillicents: true, companyId: true, company: { select: { id: true, tradeName: true, username: true, logoUrl: true } } } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.AdInclude
+
+export type AdCandidateRecord = Prisma.AdGetPayload<{ include: typeof CANDIDATE_INCLUDE }>
+
+export interface EventEffect {
+  eventId: string
+  impressionId: string
+  adId: string
+  adSetId: string
+  accountId: string
+  companyId: string
+  userId: string
+  type: 'IMPRESSION' | 'VIEWABLE_IMPRESSION' | 'CLICK' | 'HIDE' | 'HIDE_ADVERTISER' | 'REPORT'
+  occurredAt: Date
+  visibleMs: number | null
+  status: AdEventStatus
+  reason: string | null
+  now: Date
+  day: string
+}
+
+/**
+ * Só tabelas de anúncio, as colunas liberadas de `users` (cidade, estado, nascimento, gênero) e o cadastro da empresa.
+ * Nada de relatos, votos ou atividade política (teste do muro). O saldo só muda por `AdsBillingRepository.postLedger`.
+ */
+@Injectable()
+export class AdsDeliveryRepository {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billing: AdsBillingRepository,
+  ) {}
+
+  // ── Entrega ──────────────────────────────────────────────────────────────────────────────────
+
+  findViewerFacts(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { city: true, state: true, birthDate: true, gender: true, adPreference: { select: { personalizationConsent: true, interests: true } } },
+    })
+  }
+
+  async hiddenCompanyIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.adHiddenAdvertiser.findMany({ where: { userId }, select: { companyId: true } })
+    return rows.map((row) => row.companyId)
+  }
+
+  /** Anúncios que a pessoa escondeu, ou que já passaram do limite de exibições nas últimas 24 horas. */
+  async excludedAdIds(userId: string, since: Date, maxPerDay: number): Promise<string[]> {
+    const [hidden, counts] = await Promise.all([
+      this.prisma.adImpression.findMany({ where: { userId, hiddenAt: { not: null } }, select: { adId: true }, distinct: ['adId'] }),
+      this.prisma.adImpression.groupBy({ by: ['adId'], where: { userId, servedAt: { gte: since } }, _count: { _all: true } }),
+    ])
+    return [...new Set([...hidden.map((row) => row.adId), ...counts.filter((row) => row._count._all >= maxPerDay).map((row) => row.adId)])]
+  }
+
+  findCandidates(now: Date, excludeCompanyIds: string[], excludeAdIds: string[], take: number): Promise<AdCandidateRecord[]> {
+    return this.prisma.ad.findMany({
+      where: {
+        reviewStatus: 'APPROVED',
+        status: { notIn: ['PAUSED', 'ARCHIVED'] },
+        id: { notIn: excludeAdIds },
+        adSet: {
+          status: { notIn: ['PAUSED', 'ARCHIVED'] },
+          startAt: { lte: now },
+          OR: [{ endAt: null }, { endAt: { gt: now } }],
+          campaign: { status: 'ACTIVE', account: { balanceCents: { gt: 0 }, companyId: { notIn: excludeCompanyIds } } },
+        },
+      },
+      include: CANDIDATE_INCLUDE,
+      take,
+    })
+  }
+
+  /** Gasto de hoje por conjunto (millicents), para respeitar o orçamento diário. */
+  async spentTodayByAdSet(adSetIds: string[], day: string): Promise<Map<string, number>> {
+    if (!adSetIds.length) return new Map()
+    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adSetId'], where: { adSetId: { in: adSetIds }, day: dayAsDate(day) }, _sum: { spendMillicents: true } })
+    return new Map(rows.map((row) => [row.adSetId, row._sum.spendMillicents ?? 0]))
+  }
+
+  /** Grava a entrega e conta a exibição do dia, juntas. */
+  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; day: string }) {
+    const { adSetId, day, ...impression } = data
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.adImpression.create({ data: impression })
+      await tx.adDailyStat.upsert({
+        where: { adId_day: { adId: data.adId, day: dayAsDate(day) } },
+        create: { adId: data.adId, adSetId, day: dayAsDate(day), impressions: 1 },
+        update: { impressions: { increment: 1 } },
+      })
+      return created
+    })
+  }
+
+  // ── Eventos ──────────────────────────────────────────────────────────────────────────────────
+
+  findImpression(impressionId: string) {
+    return this.prisma.adImpression.findUnique({
+      where: { id: impressionId },
+      include: { ad: { select: { id: true, adSetId: true, adSet: { select: { campaign: { select: { accountId: true, account: { select: { companyId: true } } } } } } } } },
+    })
+  }
+
+  /** Cliques já cobrados da pessoa neste anúncio desde `since` (limite do antifraude). */
+  countClicks(userId: string, adId: string, since: Date) {
+    return this.prisma.adImpression.count({ where: { userId, adId, clickedAt: { gte: since } } })
+  }
+
+  /**
+   * Aplica um evento de uma vez só (transação): grava o evento, atualiza as contagens do dia e, se houver cobrança,
+   * soma o gasto na conta. Devolve `false` se o `eventId` já tinha sido recebido (nada é aplicado de novo).
+   * Cada carimbo (visível, clique, esconder) só passa de nulo para data uma vez, e só quem passa cobra.
+   */
+  applyEvent(effect: EventEffect): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const day = dayAsDate(effect.day)
+      const stat = (data: Prisma.AdDailyStatUpdateInput) =>
+        tx.adDailyStat.upsert({
+          where: { adId_day: { adId: effect.adId, day } },
+          create: { adId: effect.adId, adSetId: effect.adSetId, day },
+          update: data,
+        })
+
+      const stored = await tx.adEvent.createMany({
+        data: [{ eventId: effect.eventId, impressionId: effect.impressionId, adId: effect.adId, type: effect.type, status: effect.status, reason: effect.reason, visibleMs: effect.visibleMs, occurredAt: effect.occurredAt }],
+        skipDuplicates: true,
+      })
+      if (stored.count === 0) return false
+
+      if (effect.status === 'INVALID') {
+        await stat({ invalidEvents: { increment: 1 } })
+        return true
+      }
+
+      const stamp = async (field: 'viewableAt' | 'clickedAt' | 'hiddenAt') => {
+        const moved = await tx.adImpression.updateMany({ where: { id: effect.impressionId, [field]: null }, data: { [field]: effect.now } })
+        return moved.count === 1
+      }
+
+      if (effect.type === 'VIEWABLE_IMPRESSION' && (await stamp('viewableAt'))) {
+        await stat({ viewableImpressions: { increment: 1 } })
+        const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
+        if (impression.chargeOn === 'VIEWABLE_IMPRESSION') await this.charge(tx, effect, impression.chargeMillicents, stat)
+      } else if (effect.type === 'CLICK' && (await stamp('clickedAt'))) {
+        await stat({ clicks: { increment: 1 } })
+        const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
+        if (impression.chargeOn === 'CLICK') await this.charge(tx, effect, impression.chargeMillicents, stat)
+      } else if (effect.type === 'HIDE' || effect.type === 'HIDE_ADVERTISER') {
+        if (await stamp('hiddenAt')) await stat({ hides: { increment: 1 } })
+        // "Esconder todos desta empresa" vale mesmo se a pessoa já tinha escondido só este anúncio.
+        if (effect.type === 'HIDE_ADVERTISER') {
+          await tx.adHiddenAdvertiser.upsert({
+            where: { userId_companyId: { userId: effect.userId, companyId: effect.companyId } },
+            create: { userId: effect.userId, companyId: effect.companyId },
+            update: {},
+          })
+        }
+      }
+      return true
+    })
+  }
+
+  /** Soma o gasto na conta e fecha no livro-caixa quando juntar R$ 1,00. Sem saldo, as campanhas da conta pausam. */
+  private async charge(tx: Prisma.TransactionClient, effect: EventEffect, millicents: number, stat: (data: Prisma.AdDailyStatUpdateInput) => Promise<unknown>) {
+    await stat({ spendMillicents: { increment: millicents } })
+    const account = await tx.adAccount.update({
+      where: { id: effect.accountId },
+      data: { pendingSpendMillicents: { increment: millicents } },
+      select: { id: true, balanceCents: true, pendingSpendMillicents: true },
+    })
+    if (account.pendingSpendMillicents >= SETTLE_THRESHOLD_MILLICENTS) await this.settleSpend(tx, account.id)
+    else await this.pauseIfBroke(tx, account.id)
+  }
+
+  /** Passa o gasto acumulado (só centavos inteiros) para o livro-caixa. O que passar do saldo é absorvido pelo Votz. */
+  private async settleSpend(tx: Prisma.TransactionClient, accountId: string) {
+    const account = await tx.adAccount.findUniqueOrThrow({ where: { id: accountId }, select: { balanceCents: true, pendingSpendMillicents: true } })
+    const { cents, remainderMillicents } = splitSpend(account.pendingSpendMillicents)
+    if (cents <= 0) return this.pauseIfBroke(tx, accountId)
+    const debit = Math.min(cents, Math.max(account.balanceCents, 0))
+    if (debit > 0) await this.billing.postLedger(tx, { adAccountId: accountId, type: 'SPEND', description: 'Gasto com anúncios', lines: spendLines(debit) })
+    await tx.adAccount.update({ where: { id: accountId }, data: { pendingSpendMillicents: remainderMillicents } })
+    await this.pauseIfBroke(tx, accountId)
+  }
+
+  /** O saldo disponível é o saldo menos o gasto ainda não lançado. Chegou a zero: pausa as campanhas ligadas. */
+  private async pauseIfBroke(tx: Prisma.TransactionClient, accountId: string) {
+    const account = await tx.adAccount.findUniqueOrThrow({ where: { id: accountId }, select: { balanceCents: true, pendingSpendMillicents: true } })
+    if (account.balanceCents * 1000 - account.pendingSpendMillicents > 0) return
+    await tx.adCampaign.updateMany({ where: { accountId, status: 'ACTIVE' }, data: { status: 'PAUSED' } })
+  }
+
+  // ── Fechamento de hora em hora ───────────────────────────────────────────────────────────────
+
+  accountsWithPendingSpend() {
+    return this.prisma.adAccount.findMany({ where: { pendingSpendMillicents: { gte: 1000 } }, select: { id: true } })
+  }
+
+  closeSpend(accountId: string) {
+    return this.prisma.$transaction((tx) => this.settleSpend(tx, accountId))
+  }
+
+  // ── Relatório ────────────────────────────────────────────────────────────────────────────────
+
+  findAccount(accountId: string) {
+    return this.prisma.adAccount.findUnique({ where: { id: accountId }, select: { id: true, companyId: true } })
+  }
+
+  /** Contagem diária somada dos anúncios da conta. */
+  async listAccountDailyStats(accountId: string, since: Date) {
+    return this.prisma.adDailyStat.groupBy({
+      by: ['day'],
+      where: { day: { gte: since }, ad: { adSet: { campaign: { accountId } } } },
+      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true },
+      orderBy: { day: 'asc' },
+    })
+  }
+}

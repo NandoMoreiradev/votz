@@ -12,6 +12,13 @@ export function notificationContent(notification: AppNotification): { label: str
   if (Object.prototype.hasOwnProperty.call(postLabels, type)) {
     return { label: postLabels[type], href: postId ? `/publicacoes/${encodeURIComponent(postId)}${type === 'POST_COMMENT' ? '#responder' : ''}` : null }
   }
+  if (type === 'AD_APPROVED' || type === 'AD_REJECTED') {
+    const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'Seu anúncio'
+    const label = type === 'AD_APPROVED'
+      ? `${name} foi aprovado. Já pode ligar a campanha.`
+      : `${name} foi recusado. Abra para ler o motivo e corrigir.`
+    return { label, href: '/estudio/anuncios' }
+  }
   const href = report?.id ? `/relatos/${encodeURIComponent(report.id)}` : null
   const title = report?.title ? `"${report.title}"` : 'um relato'
   if (type === 'NEW_COMMENT') return { label: `Novo comentário em ${title}.`, href }

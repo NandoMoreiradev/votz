@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { UserGender } from '@votz/shared-types'
 import { api } from '../lib/api'
 import { clearLastOrgContext, saveLastOrgContext } from '../lib/org-context-storage'
 import { useAuthStore } from '../store/auth.store'
@@ -50,6 +51,9 @@ export interface RegisterPayload {
   acceptedTermsVersion: string
   acceptedPrivacyVersion: string
   confirmAge18: boolean
+  /** Opcionais (AAAA-MM-DD e lista USER_GENDERS); nunca públicos. */
+  birthDate?: string
+  gender?: UserGender
 }
 
 export interface AcceptConsentPayload {
@@ -153,6 +157,16 @@ export function useMe() {
     queryFn: () => api.get<AuthUser>('/auth/me').then((r) => r.data),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
+  })
+}
+
+/** Dados privados da própria pessoa (`GET /users/me`): só o que a tela de perfil precisa e a sessão não traz. */
+export function useMyPrivateProfile(enabled: boolean) {
+  return useQuery<{ birthDate: string | null; gender: UserGender | null }>({
+    queryKey: ['users/me/private'],
+    queryFn: () => api.get<{ birthDate: string | null; gender: UserGender | null }>('/users/me').then((r) => r.data),
+    enabled,
+    staleTime: 60_000,
   })
 }
 
