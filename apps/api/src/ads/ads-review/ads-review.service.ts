@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { NotificationsService } from '../../notifications/notifications.service'
 import * as DOMPurify from 'isomorphic-dompurify'
-import { AD_REVIEW_LIMITS, type AdInterestId, type AdLandingCheckView, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
+import { AD_REVIEW_LIMITS, type AdAiMediaScope, type AdInterestId, type AdLandingCheckView, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
 import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsReviewRepository, type QueueAd } from './ads-review.repository'
@@ -86,8 +86,9 @@ export class AdsReviewService {
   async approveByAi(adId: string, note: string): Promise<boolean> {
     const ad = await this.repo.findForReview(adId)
     if (!ad || ad.reviewStatus !== 'PENDING') return false
-    // A IA hoje lê só o texto: anúncio com foto ou vídeo sempre passa por uma pessoa.
-    if (ad.creative.media) return false
+    // A IA lê o texto e a foto, mas não ouve o som do vídeo: anúncio com vídeo (ou mídia que não está pronta) sempre
+    // passa por uma pessoa. A política de aprovação (`canAutoApprove`) já exigiu que a foto tenha sido lida.
+    if (ad.creative.media && (ad.creative.media.kind !== 'IMAGE' || ad.creative.media.status !== 'READY')) return false
     const ok = await this.repo.decide({
       adId,
       decision: 'APPROVED',
@@ -185,6 +186,9 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
           confidence: ai.confidence,
           explanation: ai.explanation,
           autoApproved: ai.autoApproved,
+          mediaScope: (ai.mediaScope as AdAiMediaScope | null) ?? null,
+          mediaSummary: ai.mediaSummary,
+          mediaText: ai.mediaText,
           createdAt: ai.createdAt.toISOString(),
         }
       : null,

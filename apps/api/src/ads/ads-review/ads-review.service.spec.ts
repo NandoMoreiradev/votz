@@ -167,8 +167,15 @@ describe('AdsReviewService', () => {
         await expect(service.decide('ad1', { id: 'mod1' }, { decision: 'REJECTED', reason: 'Imagem com promessa de cura.' })).resolves.toEqual({ adId: 'ad1', decision: 'REJECTED' })
       })
 
-      it('a IA nunca aprova sozinha anúncio com foto ou vídeo (ela lê só o texto)', async () => {
-        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ kind: 'IMAGE' })))
+      it('a IA pode aprovar anúncio com foto pronta (a política já exigiu que ela lesse a foto)', async () => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ kind: 'IMAGE', status: 'READY' })))
+        repo.decide.mockResolvedValue(true)
+        await expect(service.approveByAi('ad1', 'Sem problema.')).resolves.toBe(true)
+        expect(repo.decide).toHaveBeenCalledWith(expect.objectContaining({ source: 'AI', creativeSnapshot: expect.objectContaining({ media: expect.objectContaining({ kind: 'IMAGE' }) }) }))
+      })
+
+      it.each([['VIDEO', 'READY'], ['GIF', 'READY'], ['IMAGE', 'PROCESSING'], ['IMAGE', 'FAILED']])('a IA nunca aprova sozinha mídia %s com status %s', async (kind, status) => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ kind, status })))
         await expect(service.approveByAi('ad1', 'Sem problema.')).resolves.toBe(false)
         expect(repo.decide).not.toHaveBeenCalled()
       })

@@ -2375,6 +2375,12 @@ model AdAiAnalysis {
   model        String
   // A IA estava apta a aprovar sozinha (sem problema e confiança alta) e o modo automático estava ligado.
   autoApproved Boolean  @default(false) @map("auto_approved")
+  // O que a IA leu da foto ou do vídeo: IMAGE (a foto), VIDEO_FRAMES (alguns quadros, sem o som),
+  // UNREADABLE (tinha mídia, mas não deu para ler) ou null (anúncio só de texto).
+  mediaScope   String?  @map("media_scope")
+  // O que se vê na mídia, em uma ou duas frases, e o texto escrito nela (para o moderador).
+  mediaSummary String?  @map("media_summary")
+  mediaText    String?  @map("media_text")
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([adId, createdAt])

@@ -165,6 +165,9 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR'
 
 const labelOf = (list: readonly { id: string; label: string }[], id: string) => list.find((entry) => entry.id === id)?.label ?? id
 
+/** O resumo da IA sem o ponto final (a frase seguinte já começa com o dela). */
+const seen = (summary: string | null) => (summary ? summary.replace(/[.\s]+$/, '') : 'não descreveu')
+
 /** O que a IA achou, em texto simples para o moderador. Parecer, não decisão: quem decide é a pessoa. */
 function AiOpinion({ ai }: { ai: AdAiAnalysisView }) {
   const flags = ai.violations.filter((v) => v.confidence >= 0.2)
@@ -173,6 +176,12 @@ function AiOpinion({ ai }: { ai: AdAiAnalysisView }) {
     <AiNote $alert={alert} aria-label="Parecer da IA">
       <strong>{ai.autoApproved ? 'Aprovado pela IA' : 'Parecer da IA'} · certeza da leitura {Math.round(ai.confidence * 100)}%</strong>
       {ai.explanation}
+      {ai.mediaScope === 'IMAGE' && <div>Na foto, a IA viu: {seen(ai.mediaSummary)}</div>}
+      {ai.mediaScope === 'VIDEO_FRAMES' && (
+        <div>Nos quadros do vídeo, a IA viu: {seen(ai.mediaSummary)}. Ela não ouve o som: assista e ouça antes de aprovar.</div>
+      )}
+      {ai.mediaScope === 'UNREADABLE' && <div>A IA não conseguiu ler a foto ou o vídeo. Confira você mesmo.</div>}
+      {ai.mediaText && <div>Texto escrito na imagem: “{ai.mediaText}”</div>}
       {ai.category && <div>Tema: {labelOf(AD_INTERESTS, ai.category)}</div>}
       {ai.restricted && <div>Categoria restrita: {labelOf(AD_RESTRICTED_CATEGORIES, ai.restricted)}. Só uma pessoa pode aprovar.</div>}
       {ai.sensitive && <div>Fala de tema sensível.</div>}

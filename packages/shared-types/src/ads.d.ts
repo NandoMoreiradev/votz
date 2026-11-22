@@ -529,8 +529,15 @@ export interface AdAiAnalysisView {
     confidence: number;
     explanation: string;
     autoApproved: boolean;
+    /** O que a IA leu da mídia: a foto, alguns quadros do vídeo (sem o som), "não deu para ler" ou nada (anúncio só de texto). */
+    mediaScope: AdAiMediaScope | null;
+    /** O que se vê na foto ou nos quadros do vídeo, em poucas palavras. */
+    mediaSummary: string | null;
+    /** Texto escrito dentro da foto ou do vídeo, como a IA leu. */
+    mediaText: string | null;
     createdAt: string;
 }
+export type AdAiMediaScope = 'IMAGE' | 'VIDEO_FRAMES' | 'UNREADABLE';
 /** Última conferência da página para onde o botão do anúncio leva. */
 export interface AdLandingCheckView {
     status: 'OK' | 'BAD_STATUS' | 'UNREACHABLE' | 'BLOCKED';

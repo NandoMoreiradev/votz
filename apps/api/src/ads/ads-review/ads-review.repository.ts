@@ -47,6 +47,9 @@ export class AdsReviewRepository {
     explanation: string
     model: string
     autoApproved: boolean
+    mediaScope: string | null
+    mediaSummary: string | null
+    mediaText: string | null
   }) {
     return this.prisma.adAiAnalysis.create({ data })
   }

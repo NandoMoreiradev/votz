@@ -14,6 +14,10 @@ export interface AiAnalysisResult {
   sensitive: boolean
   confidence: number
   explanation: string
+  /** O que a IA viu na foto ou nos quadros do vídeo (nulo se o anúncio não tem mídia ou a IA não descreveu). */
+  mediaSummary: string | null
+  /** Texto escrito dentro da mídia. */
+  mediaText: string | null
 }
 
 /** Só com confiança igual ou acima disso a IA pode aprovar sozinha. */
@@ -21,6 +25,8 @@ export const AI_AUTO_APPROVE_MIN_CONFIDENCE = 0.9
 /** Qualquer suspeita de violação com confiança acima disso já manda para a pessoa. */
 export const AI_VIOLATION_FLOOR = 0.2
 export const AI_EXPLANATION_MAX = 400
+export const AI_MEDIA_SUMMARY_MAX = 400
+export const AI_MEDIA_TEXT_MAX = 500
 
 const PROHIBITED_IDS = new Set<string>(AD_PROHIBITED_CATEGORIES.map((c) => c.id))
 const RESTRICTED_IDS = new Set<string>(AD_RESTRICTED_CATEGORIES.map((c) => c.id))
@@ -47,7 +53,17 @@ export function sanitizeAnalysis(raw: unknown): AiAnalysisResult | null {
   const explanation = data.explanation.replace(/\s+/g, ' ').trim().slice(0, AI_EXPLANATION_MAX)
   if (!explanation) return null
 
-  return { category, restricted, violations, sensitive: data.sensitive, confidence: clamp01(data.confidence), explanation }
+  const mediaSummary = cleanText(data.mediaSummary, AI_MEDIA_SUMMARY_MAX)
+  const mediaText = cleanText(data.mediaText, AI_MEDIA_TEXT_MAX)
+
+  return { category, restricted, violations, sensitive: data.sensitive, confidence: clamp01(data.confidence), explanation, mediaSummary, mediaText }
+}
+
+/** Texto curto do modelo: sem quebras de linha, limitado, e vazio vira nulo. */
+function cleanText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.replace(/\s+/g, ' ').trim().slice(0, max)
+  return text || null
 }
 
 // Tira os acentos: o intervalo entre colchetes são as marcas combinantes U+0300 a U+036F.
@@ -84,11 +100,23 @@ export function mergeViolations(
   return [...best.entries()].map(([id, confidence]) => ({ id, confidence }))
 }
 
+/** A mídia do anúncio como a IA a enxergou: o tipo e se ela leu de fato (descreveu o que viu). */
+export interface AiMediaStatus {
+  kind: 'IMAGE' | 'VIDEO'
+  read: boolean
+}
+
 /**
  * A IA só aprova sozinha quando TUDO isto vale: nenhuma suspeita de violação, tema não sensível, fora das categorias
  * restritas (que sempre passam por pessoa) e confiança alta. Qualquer dúvida segue para a fila humana.
+ *
+ * Mídia: anúncio só de texto passa pela regra normal. Com **foto**, só se a IA leu a foto de fato. Com **vídeo**,
+ * nunca: ela vê quadros espaçados e não ouve o som, então uma pessoa sempre assiste e escuta.
  */
-export function canAutoApprove(analysis: AiAnalysisResult): boolean {
+export function canAutoApprove(analysis: AiAnalysisResult, media: AiMediaStatus | null = null): boolean {
+  if (media) {
+    if (media.kind !== 'IMAGE' || !media.read) return false
+  }
   if (analysis.violations.some((v) => v.confidence >= AI_VIOLATION_FLOOR)) return false
   if (analysis.sensitive) return false
   if (analysis.restricted) return false
