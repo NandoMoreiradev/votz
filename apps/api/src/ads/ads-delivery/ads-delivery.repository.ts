@@ -102,11 +102,11 @@ export class AdsDeliveryRepository {
     return new Map(rows.map((row) => [row.adSetId, row._sum.spendMillicents ?? 0]))
   }
 
-  /** Exibições vistas e cliques por anúncio desde `since` (a chance de clique medida). Só contagem, nada de pessoa. */
-  async clickStatsByAd(adIds: string[], since: Date): Promise<Map<string, { viewable: number; clicks: number }>> {
+  /** Exibições, exibições vistas, cliques e "esconder" por anúncio desde `since` (chance de clique e qualidade). Só contagem, nada de pessoa. */
+  async clickStatsByAd(adIds: string[], since: Date): Promise<Map<string, { impressions: number; viewable: number; clicks: number; hides: number }>> {
     if (!adIds.length) return new Map()
-    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: adIds }, day: { gte: since } }, _sum: { viewableImpressions: true, clicks: true } })
-    return new Map(rows.map((row) => [row.adId, { viewable: row._sum.viewableImpressions ?? 0, clicks: row._sum.clicks ?? 0 }]))
+    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: adIds }, day: { gte: since } }, _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true } })
+    return new Map(rows.map((row) => [row.adId, { impressions: row._sum.impressions ?? 0, viewable: row._sum.viewableImpressions ?? 0, clicks: row._sum.clicks ?? 0, hides: row._sum.hides ?? 0 }]))
   }
 
   /** Exibições vistas e cliques de toda a plataforma desde `since`: de onde vem a chance de partida dos anúncios novos. */

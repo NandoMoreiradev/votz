@@ -153,6 +153,33 @@ export function auctionClickRate(rate: ClickRate, viewable: number, random: () =
   return viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE ? sampleBeta(rate.alpha, rate.beta, random) : rate.mean
 }
 
+// ─── Qualidade: o que as pessoas rejeitam ──────────────────────────────────────────────────────
+
+/**
+ * Penalidade por rejeição prevista (plano 6.5). Anúncio que muita gente esconde perde valor no leilão, para o feed não
+ * ficar cheio do que incomoda. Mede esconder sobre exibições entregues, suavizado como a chance de clique; só pesa o que
+ * passa da taxa normal (`BASELINE`), então anúncio novo não é penalizado.
+ */
+export const QUALITY = {
+  /** Taxa de esconder que consideramos normal. */
+  BASELINE: 0.02,
+  /** Exibições "imaginárias" na taxa de partida. */
+  PRIOR_STRENGTH: 200,
+  /** Cada ponto de esconder acima da taxa normal tira este tanto do valor. */
+  WEIGHT: 5,
+  /** Nunca tira mais que isto: o anunciante ainda pode vencer pagando mais. */
+  MAX_PENALTY: 0.5,
+} as const
+
+/** Multiplicador do valor no leilão, de 1 (sem problema) até `1 - MAX_PENALTY`. */
+export function qualityFactor(hides: number, impressions: number): number {
+  const safeImpressions = Math.max(impressions || 0, 0)
+  const safeHides = Math.min(Math.max(hides || 0, 0), safeImpressions)
+  const rate = (QUALITY.BASELINE * QUALITY.PRIOR_STRENGTH + safeHides) / (QUALITY.PRIOR_STRENGTH + safeImpressions)
+  const penalty = Math.min(QUALITY.MAX_PENALTY, QUALITY.WEIGHT * Math.max(0, rate - QUALITY.BASELINE))
+  return 1 - penalty
+}
+
 // ─── Ritmo do orçamento (pacing) ───────────────────────────────────────────────────────────────
 
 export const PACING = {
@@ -191,6 +218,8 @@ export interface AuctionCandidate {
   bidCapCents: number | null
   /** Chance de clique que vale neste leilão (média ou sorteio). Sem ela, vale a de partida. */
   clickRate?: number
+  /** Multiplicador de qualidade (1 = sem penalidade). Veja `qualityFactor`. */
+  quality?: number
 }
 
 export interface AuctionResult {
@@ -200,11 +229,13 @@ export interface AuctionResult {
 }
 
 const rateOf = (candidate: AuctionCandidate) => Math.max(candidate.clickRate ?? PRIOR_CTR, 1e-6)
+const qualityOf = (candidate: AuctionCandidate) => Math.min(Math.max(candidate.quality ?? 1, 0.01), 1)
 
 /** Quanto vale o lance por mil exibições (eCPM, em centavos). Clique vira exibição com a chance de clique do anúncio. */
 function ecpm(candidate: AuctionCandidate): number {
   const bid = candidate.bidCapCents ?? adFloorCents(candidate.objective)
-  return adChargeUnit(candidate.objective) === 'CLICK' ? bid * 1000 * rateOf(candidate) : bid
+  const value = adChargeUnit(candidate.objective) === 'CLICK' ? bid * 1000 * rateOf(candidate) : bid
+  return value * qualityOf(candidate)
 }
 
 /** Lance abaixo do piso da própria unidade não entra. */
@@ -228,7 +259,8 @@ export function runAuction(candidates: AuctionCandidate[], random: () => number 
   let toBeat = floor
   if (ranked.length > 1) {
     const second = ranked[1].value
-    const inWinnerUnit = adChargeUnit(winner.objective) === 'CLICK' ? second / (1000 * rateOf(winner)) : second
+    const perUnit = adChargeUnit(winner.objective) === 'CLICK' ? 1000 * rateOf(winner) : 1
+    const inWinnerUnit = second / (perUnit * qualityOf(winner))
     toBeat = Math.max(floor, Math.ceil(inWinnerUnit))
   }
   return { winner, priceCents: Math.min(bid, toBeat) }

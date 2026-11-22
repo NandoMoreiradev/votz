@@ -21,6 +21,7 @@ import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.re
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
   CTR_MODEL,
+  qualityFactor,
   PRIOR_CTR,
   auctionClickRate,
   clickRatePosterior,
@@ -104,11 +105,12 @@ export class AdsDeliveryService {
     const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
     const [stats, prior] = await Promise.all([this.repo.clickStatsByAd(paced.map((ad) => ad.id), ctrSince), this.priorClickRate(ctrSince, now)])
     const candidates: (AuctionCandidate & { record: AdCandidateRecord })[] = paced.map((record) => {
-      const seen = stats.get(record.id) ?? { viewable: 0, clicks: 0 }
+      const seen = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0 }
       return {
         adId: record.id,
         objective: record.adSet.campaign.objective,
         bidCapCents: record.adSet.bidCapCents,
+        quality: qualityFactor(seen.hides, seen.impressions),
         clickRate: auctionClickRate(clickRatePosterior(seen.clicks, seen.viewable, prior), seen.viewable, random),
         record,
       }
