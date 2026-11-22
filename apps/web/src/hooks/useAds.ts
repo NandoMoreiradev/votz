@@ -3,6 +3,8 @@ import type {
   AdAccountView,
   AdBillingView,
   AdCampaignView,
+  AdConversionKeyCreated,
+  AdConversionKeyView,
   AdDailyStatView,
   AdReviewDecisionInput,
   AdReviewQueueResponse,
@@ -164,6 +166,8 @@ export interface SponsoredAdParams {
   position: number
   state?: string
   city?: string
+  /** Publicações em volta do espaço: anúncio de empresa alvo de relato citado ali não entra (regra do Votz). */
+  nearPostIds?: string[]
   /** Só busca quando o espaço está perto da tela: não gasta exibição à toa. */
   enabled: boolean
 }
@@ -172,12 +176,14 @@ export interface SponsoredAdParams {
  * Pede o anúncio da vez para um espaço do feed. Uma vez entregue, o anúncio fica o mesmo enquanto a pessoa
  * navega (`staleTime` infinito), para não pedir de novo e contar outra exibição.
  */
-export function useSponsoredAd({ surface, position, state, city, enabled }: SponsoredAdParams) {
+export function useSponsoredAd({ surface, position, state, city, nearPostIds, enabled }: SponsoredAdParams) {
+  const near = nearPostIds?.length ? nearPostIds.join(',') : ''
   return useQuery({
-    queryKey: ['ads', 'next', surface, position, state ?? '', city ?? ''],
+    // Os vizinhos entram na chave: se o que está em volta do espaço mudar, o anúncio é conferido de novo.
+    queryKey: ['ads', 'next', surface, position, state ?? '', city ?? '', near],
     queryFn: () =>
       api
-        .get<{ ad: SponsoredAdView | null }>('/ads/next', { params: { surface, position, state: state || undefined, city: city || undefined } })
+        .get<{ ad: SponsoredAdView | null }>('/ads/next', { params: { surface, position, state: state || undefined, city: city || undefined, nearPostIds: near || undefined } })
         .then((r) => r.data.ad),
     enabled,
     staleTime: Infinity,
@@ -195,4 +201,39 @@ export function useAdStats(companyId: string, accountId: string | undefined, day
     enabled: !!companyId && !!accountId,
     refetchInterval: 60_000,
   })
+}
+
+// ─── Conversões (chaves da API de conversões) ───────────────────────────────────────────────────
+
+const conversionKeysKey = (companyId: string, accountId: string) => ['ads', companyId, 'accounts', accountId, 'conversion-keys'] as const
+
+export function useAdConversionKeys(companyId: string, accountId: string | undefined) {
+  return useQuery({
+    queryKey: conversionKeysKey(companyId, accountId ?? ''),
+    queryFn: () => api.get<AdConversionKeyView[]>(`${base(companyId)}/accounts/${accountId}/conversion-keys`).then((r) => r.data),
+    enabled: !!companyId && !!accountId,
+  })
+}
+
+/** A resposta traz a chave inteira uma vez só: quem usa precisa mostrar na hora e não guardar. */
+export function useCreateAdConversionKey(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.post<AdConversionKeyCreated>(`${base(companyId)}/accounts/${accountId}/conversion-keys`, { name }).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: conversionKeysKey(companyId, accountId) }),
+  })
+}
+
+export function useRevokeAdConversionKey(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (keyId: string) => api.post(`${base(companyId)}/accounts/${accountId}/conversion-keys/${keyId}/revoke`).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: conversionKeysKey(companyId, accountId) }),
+  })
+}
+
+/** Endereço completo da API de conversões, para o exemplo que a empresa copia. */
+export function conversionsEndpoint(): string {
+  const apiBase = String(api.defaults.baseURL ?? '/api/v1')
+  return `${new URL(apiBase, window.location.origin).toString().replace(/\/+$/, '')}/ads/conversions`
 }

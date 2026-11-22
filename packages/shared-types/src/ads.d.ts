@@ -200,6 +200,23 @@ export declare const AD_DELIVERY_LIMITS: {
     /** Menor grupo de pessoas que um relatório ou estimativa de alcance pode mostrar. */
     readonly MIN_AUDIENCE_SIZE: 100;
 };
+/**
+ * Vizinhança do espaço de anúncio. Nenhum anúncio aparece perto de relato contra o próprio anunciante: o site e o
+ * celular dizem ao servidor quais itens estão em volta do espaço (até 3 antes e 3 depois) e o servidor tira da
+ * disputa as empresas que são alvo de relato nesses itens. `MAX_IDS` é o teto de cada lista no pedido.
+ */
+export declare const AD_ADJACENCY: {
+    readonly BEFORE: 3;
+    readonly AFTER: 3;
+    readonly MAX_IDS: 8;
+};
+/**
+ * Ids dos itens do feed ao redor de um espaço de anúncio. `position` é quantos itens vieram antes do espaço, então
+ * o espaço fica entre `items[position - 1]` e `items[position]`. Só olha o que já foi carregado.
+ */
+export declare function adNeighborIds(items: readonly {
+    id: string;
+}[], position: number): string[];
 export type AdSignalConsent = 'NONE' | 'PERSONALIZATION';
 export interface AdSignalSpec {
     /** Descrição em português simples (aparece no "Por que estou vendo isto?" e na política). */
@@ -651,17 +668,72 @@ export interface AdClientEvent {
     /** Só em VIEWABLE_IMPRESSION: quanto tempo ficou visível. */
     visibleMs?: number;
 }
-/** Conversão enviada pelo anunciante (API de conversões): só o identificador do clique, nada da pessoa. */
+export declare const AD_CONVERSION_EVENT_NAMES: readonly ["PURCHASE", "LEAD", "SIGNUP", "CONTACT", "OTHER"];
+export type AdConversionEventName = (typeof AD_CONVERSION_EVENT_NAMES)[number];
+/**
+ * Conversão enviada pelo anunciante (API de conversões, `POST /ads/conversions`): só o identificador do clique
+ * (`votz_click_id`, que o Votz põe no link do anúncio), o que aconteceu e quando. Nada da pessoa.
+ */
 export interface AdConversionEvent {
     clickId: string;
-    eventName: 'PURCHASE' | 'LEAD' | 'SIGNUP' | 'CONTACT' | 'OTHER';
+    eventName: AdConversionEventName;
+    /** Valor em centavos (opcional; só faz sentido para compra). */
     valueCents?: number;
     occurredAt: string;
-    /** Para não contar a mesma conversão duas vezes. */
+    /** Para não contar a mesma conversão duas vezes. Vale por conta de anúncios. */
     dedupeKey: string;
 }
 /** Janela de atribuição: conversão até 7 dias depois do clique. */
 export declare const AD_ATTRIBUTION_WINDOW_DAYS = 7;
+export declare const AD_CONVERSIONS: {
+    /** Eventos por chamada. */
+    readonly MAX_BATCH: 100;
+    /** Conversões que um mesmo clique pode ter (várias compras, sim; milhares, não). */
+    readonly MAX_PER_CLICK: 20;
+    /** Maior valor aceito por conversão: R$ 1.000.000,00. */
+    readonly MAX_VALUE_CENTS: 100000000;
+    /** Chaves ativas por conta de anúncios. */
+    readonly MAX_ACTIVE_KEYS: 5;
+    /** O relógio do anunciante pode errar um pouco para o futuro. */
+    readonly MAX_CLOCK_SKEW_MS: number;
+    readonly KEY_PREFIX: "vzc_";
+    /** Nome do parâmetro que o Votz põe no link do anunciante. */
+    readonly CLICK_PARAM: "votz_click_id";
+    /** Tamanho do identificador do clique (16 bytes em base64url). */
+    readonly CLICK_TOKEN_LENGTH: 22;
+};
+export type AdConversionRejection = 'UNKNOWN_CLICK' | 'OUTSIDE_WINDOW' | 'IN_THE_FUTURE' | 'TOO_MANY_FOR_CLICK';
+export type AdConversionOutcome = {
+    dedupeKey: string;
+    status: 'ACCEPTED';
+} | {
+    dedupeKey: string;
+    status: 'DUPLICATE';
+} | {
+    dedupeKey: string;
+    status: 'REJECTED';
+    reason: AdConversionRejection;
+};
+export interface AdConversionsResult {
+    accepted: number;
+    duplicates: number;
+    rejected: number;
+    results: AdConversionOutcome[];
+}
+/** Chave de conversões como o Estúdio mostra (nunca com o segredo inteiro). */
+export interface AdConversionKeyView {
+    id: string;
+    name: string;
+    /** Começo da chave, para reconhecer qual é. */
+    prefix: string;
+    createdAt: string;
+    lastUsedAt: string | null;
+    revokedAt: string | null;
+}
+/** Resposta de criar a chave: o segredo aparece só desta vez. */
+export interface AdConversionKeyCreated extends AdConversionKeyView {
+    key: string;
+}
 /** Lote máximo de eventos por envio do aparelho. */
 export declare const AD_EVENTS_MAX_BATCH = 50;
 /**
@@ -711,6 +783,11 @@ export interface SponsoredAdView {
     body: string;
     ctaLabel: string;
     destinationUrl: string;
+    /**
+     * O que o botão abre: passa pelo Votz (`votz.app/c/<id>`), que leva ao `destinationUrl` com o `votz_click_id` no
+     * link. É isso que deixa o anunciante contar conversões sem rastrear a pessoa.
+     */
+    clickUrl: string;
     /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
     media: MediaItemDto | null;
     advertiser: {
@@ -735,6 +812,10 @@ export interface AdDailyStatView {
     clicks: number;
     hides: number;
     spendCents: number;
+    /** Conversões que o anunciante contou para os cliques deste dia (API de conversões). */
+    conversions: number;
+    /** Soma dos valores das conversões, em centavos. */
+    conversionValueCents: number;
 }
 export declare const AD_REPORT_PERIODS: readonly [7, 30, 90];
 export type AdReportPeriod = (typeof AD_REPORT_PERIODS)[number];
@@ -744,6 +825,10 @@ export interface AdReportTotals {
     clicks: number;
     hides: number;
     spendCents: number;
+    conversions: number;
+    conversionValueCents: number;
+    /** Custo por conversão, em centavos. Nulo se não houve conversão. */
+    cpaCents: number | null;
     /** Cliques sobre exibições vistas, em %. Nulo se ninguém viu ainda. */
     ctrPercent: number | null;
     /** Custo por mil exibições vistas, em centavos. */

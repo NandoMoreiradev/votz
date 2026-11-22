@@ -5,10 +5,11 @@ import { useAuthStore } from '../../store/auth.store'
 import { adsErrorMessage, formatBRL, useAdAccounts, useAdStats } from '../../hooks/useAds'
 import { Card, CardTitle, Chip, Chips, ErrorMsg, Field, Head, Hint, Label, Mono, Select, Sub, Title } from '../../components/ads/ads-ui'
 
-type Metric = 'viewableImpressions' | 'clicks' | 'spendCents'
+type Metric = 'viewableImpressions' | 'clicks' | 'conversions' | 'spendCents'
 const METRICS: { value: Metric; label: string }[] = [
   { value: 'viewableImpressions', label: 'Exibições vistas' },
   { value: 'clicks', label: 'Cliques' },
+  { value: 'conversions', label: 'Conversões' },
   { value: 'spendCents', label: 'Gasto' },
 ]
 
@@ -162,6 +163,11 @@ function Report({ companyId, accountId }: { companyId: string; accountId: string
             <Tile><TileLabel>Cliques</TileLabel><TileValue>{number(totals.clicks)}</TileValue><Hint>taxa de cliques {percent(totals.ctrPercent)}</Hint></Tile>
             <Tile><TileLabel>Gasto</TileLabel><TileValue>{formatBRL(totals.spendCents)}</TileValue><Hint>por mil exibições {money(totals.cpmCents)}</Hint></Tile>
             <Tile><TileLabel>Custo por clique</TileLabel><TileValue>{money(totals.cpcCents)}</TileValue><Hint>{totals.hides === 1 ? '1 pessoa escondeu o anúncio' : `${number(totals.hides)} pessoas esconderam o anúncio`}</Hint></Tile>
+            <Tile>
+              <TileLabel>Conversões</TileLabel>
+              <TileValue>{number(totals.conversions)}</TileValue>
+              <Hint>{totals.conversions > 0 ? `${formatBRL(totals.conversionValueCents)} em valor · ${money(totals.cpaCents)} por conversão` : 'Ligue em Conversões para contar'}</Hint>
+            </Tile>
           </Tiles>
 
           <Card>
@@ -179,7 +185,7 @@ function Report({ companyId, accountId }: { companyId: string; accountId: string
             <TableWrap>
               <Table>
                 <thead>
-                  <tr><th>Dia</th><th>Entregues</th><th>Vistas</th><th>Cliques</th><th>Escondidos</th><th>Gasto</th></tr>
+                  <tr><th>Dia</th><th>Entregues</th><th>Vistas</th><th>Cliques</th><th>Conversões</th><th>Escondidos</th><th>Gasto</th></tr>
                 </thead>
                 <tbody>
                   {[...rows].reverse().map((row) => (
@@ -188,6 +194,7 @@ function Report({ companyId, accountId }: { companyId: string; accountId: string
                       <td><Mono>{number(row.impressions)}</Mono></td>
                       <td><Mono>{number(row.viewableImpressions)}</Mono></td>
                       <td><Mono>{number(row.clicks)}</Mono></td>
+                      <td><Mono>{number(row.conversions)}</Mono></td>
                       <td><Mono>{number(row.hides)}</Mono></td>
                       <td><Mono>{formatBRL(row.spendCents)}</Mono></td>
                     </tr>

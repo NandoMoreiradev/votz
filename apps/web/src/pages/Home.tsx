@@ -4,7 +4,7 @@ import styled, { keyframes, css } from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Fire, Flag, HandsClapping, LinkSimple, UsersThree } from '@phosphor-icons/react'
-import { AD_DELIVERY_LIMITS, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
+import { AD_DELIVERY_LIMITS, adNeighborIds, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
@@ -1547,6 +1547,7 @@ export function Home() {
                       position={index + 1}
                       state={uf || undefined}
                       city={city || undefined}
+                      nearPostIds={adNeighborIds(postsData?.data ?? [], index + 1)}
                     />
                   )}
                 </Fragment>

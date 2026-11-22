@@ -27,6 +27,16 @@
 	@html not path /assets/*
 	header @html Cache-Control "no-cache"
 
-	try_files {path} /index.html
-	file_server
+	# Clique no anúncio (`/c/<id>`): quem responde é a API, que leva à página do anunciante.
+	# Sem API_ORIGIN, a rota responde 404 e o site segue funcionando.
+	@adclick path /c/*
+	handle @adclick {
+		rewrite * /api/v1/ads{uri}
+		reverse_proxy {$API_ORIGIN:https://api.invalid}
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 }

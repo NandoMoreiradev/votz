@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import ImagePlus from 'lucide-react-native/icons/image-plus'
 import Check from 'lucide-react-native/icons/check'
-import { AD_DELIVERY_LIMITS, type AdSurface, type FeedSortMode, type SponsoredAdView } from '@votz/shared-types'
+import { AD_DELIVERY_LIMITS, adNeighborIds, type AdSurface, type FeedSortMode, type SponsoredAdView } from '@votz/shared-types'
 import { PostCard, ReportCard } from '../components/content-row'
 import { Avatar, State, TabStrip } from '../components/ui'
 import { Screen, Toolbar } from '../components/screen'
@@ -34,7 +34,7 @@ function Feed({ kind, sort }: { kind: FeedKind; sort: FeedSortMode }) {
   // Cartão de perfis sugeridos (só vem do servidor para quem segue poucas contas, na primeira página).
   const first = feed.data?.pages[0]
   // 1 anúncio a cada 8 publicações, só para quem entrou (o pedido de anúncio exige login).
-  const withAds = withAdSlots<PostDto | Report>(items, AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD, kind === 'posts' && !!user)
+  const withAds = withAdSlots<PostDto | Report>(items, AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD, kind === 'posts' && !!user, adNeighborIds)
   const data: (PostDto | Report | SuggestionsItem | AdSlotItem)[] = [...withAds]
   if (kind === 'posts' && first?.suggestions && items.length > 0) data.splice(Math.min(first.suggestionsAfter ?? 3, items.length), 0, { id: '__suggestions__', suggestions: first.suggestions })
   const surface: AdSurface = sort === 'recent' ? 'FEED_RECENT' : 'FEED_FOR_YOU'
@@ -55,7 +55,7 @@ function Feed({ kind, sort }: { kind: FeedKind; sort: FeedSortMode }) {
     initialNumToRender={5} maxToRenderPerBatch={5} windowSize={7}
     viewabilityConfig={viewabilityConfig.current} onViewableItemsChanged={onViewable.current}
     ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-    renderItem={({ item }) => isAdSlot(item) ? <SponsoredSlot slotId={item.id} surface={surface} position={item.adSlot} onLoaded={onAdLoaded} /> : item.id === '__suggestions__' ? <SuggestedProfilesCard suggestions={(item as SuggestionsItem).suggestions} /> : kind === 'posts' ? <PostCard post={item as PostDto} /> : <ReportCard report={item as Report} />}
+    renderItem={({ item }) => isAdSlot(item) ? <SponsoredSlot slotId={item.id} surface={surface} position={item.adSlot} near={item.near} onLoaded={onAdLoaded} /> : item.id === '__suggestions__' ? <SuggestedProfilesCard suggestions={(item as SuggestionsItem).suggestions} /> : kind === 'posts' ? <PostCard post={item as PostDto} /> : <ReportCard report={item as Report} />}
     ListHeaderComponent={<Pressable accessibilityRole="button" accessibilityLabel={kind === 'posts' ? 'Escrever publicação' : 'Registrar relato'} onPress={() => router.push(user ? { pathname: '/compose', params: { kind } } : '/login')} style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', backgroundColor: theme.colors.surface, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border, marginBottom: 8 }}><Avatar name={user?.name || 'Votz'} uri={user?.avatarUrl} size={34} /><Text style={{ color: theme.colors.muted, fontFamily: theme.fonts.body, fontSize: 14, flex: 1 }}>{kind === 'posts' ? 'O que está acontecendo?' : 'O que precisa mudar na sua cidade?'}</Text><ImagePlus size={20} color={theme.colors.action} /></Pressable>}
     refreshing={feed.isRefetching && !feed.isFetchingNextPage} onRefresh={() => { void feed.refetch() }}
     onEndReached={() => { if (feed.hasNextPage && !feed.isFetching && !feed.isFetchNextPageError) void feed.fetchNextPage() }} onEndReachedThreshold={0.4}

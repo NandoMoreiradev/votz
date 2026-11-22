@@ -2252,6 +2252,8 @@ model AdAccount {
   creatives    AdCreative[]
   topUps       AdTopUp[]
   ledger       AdLedgerEntry[]
+  conversionKeys AdConversionKey[]
+  conversions  AdConversion[]
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 
@@ -2511,7 +2513,13 @@ model AdImpression {
   viewableAt       DateTime?  @map("viewable_at")
   clickedAt        DateTime?  @map("clicked_at")
   hiddenAt         DateTime?  @map("hidden_at")
+  // Identificador do clique (`votz_click_id`): sorteado na entrega, vai no link do botão e para o anunciante.
+  // Não é a exibição nem a pessoa: o anunciante não consegue chegar em nenhuma das duas por ele.
+  clickToken       String?    @unique @map("click_token")
+  // Primeira vez que alguém abriu o link do botão (`/c/<id>`): é de onde conta a janela de atribuição.
+  landedAt         DateTime?  @map("landed_at")
   events           AdEvent[]
+  conversions      AdConversion[]
 
   @@index([userId, adId, servedAt])
   @@index([adId, servedAt])
@@ -2552,10 +2560,55 @@ model AdDailyStat {
   hides               Int      @default(0)
   invalidEvents       Int      @default(0) @map("invalid_events")
   spendMillicents     Int      @default(0) @map("spend_millicents")
+  // Conversões contadas pelo anunciante (API de conversões), no dia em que aconteceram.
+  conversions         Int      @default(0)
+  conversionValueCents BigInt  @default(0) @map("conversion_value_cents")
 
   @@unique([adId, day])
   @@index([adSetId, day])
   @@map("ad_daily_stats")
+}
+
+// Chave que o anunciante usa para mandar conversões (`POST /ads/conversions`). Só o hash (SHA-256) fica guardado;
+// a chave inteira aparece uma vez, na criação. Vale para uma conta de anúncios.
+model AdConversionKey {
+  id          String    @id @default(uuid())
+  accountId   String    @map("account_id")
+  account     AdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String
+  keyHash     String    @unique @map("key_hash")
+  createdById String    @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  conversions AdConversion[]
+
+  @@index([accountId])
+  @@map("ad_conversion_keys")
+}
+
+// Uma conversão (compra, contato, cadastro) que o anunciante ligou a um clique. Sem dado pessoal. `dedupe_key` é do
+// anunciante e vale por conta: mandar de novo a mesma não conta duas vezes.
+model AdConversion {
+  id           String          @id @default(uuid())
+  impressionId String          @map("impression_id")
+  impression   AdImpression    @relation(fields: [impressionId], references: [id], onDelete: Cascade)
+  adId         String          @map("ad_id")
+  accountId    String          @map("account_id")
+  account      AdAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  keyId        String?         @map("key_id")
+  key          AdConversionKey? @relation(fields: [keyId], references: [id], onDelete: SetNull)
+  eventName    String          @map("event_name")
+  valueCents   Int             @default(0) @map("value_cents")
+  occurredAt   DateTime        @map("occurred_at")
+  receivedAt   DateTime        @default(now()) @map("received_at")
+  dedupeKey    String          @map("dedupe_key")
+
+  @@unique([accountId, dedupeKey])
+  @@index([impressionId])
+  @@index([adId, occurredAt])
+  @@map("ad_conversions")
 }
 
 // "Esconder todos desta empresa": a pessoa não vê mais anúncios dela.

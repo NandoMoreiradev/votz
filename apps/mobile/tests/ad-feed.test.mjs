@@ -27,8 +27,17 @@ test('sem login (ou menos de 8 itens), nenhum espaço', () => {
   assert.equal(withAdSlots(posts(20), 0, true).filter(isAdSlot).length, 0)
 })
 
+test('cada espaço leva os itens em volta (3 antes e 3 depois) para o pedido do anúncio', () => {
+  // mesma regra do adNeighborIds do shared-types, aqui só para provar que a lista passa os vizinhos certos
+  const around = (items, position) => items.slice(Math.max(0, position - 3), position + 3).map((item) => item.id)
+  const slot = withAdSlots(posts(20), 8, true, around).find(isAdSlot)
+  assert.deepEqual(slot.near, ['p6', 'p7', 'p8', 'p9', 'p10', 'p11'])
+  // sem a função, o espaço existe e vai sem vizinhos (o servidor não restringe nada)
+  assert.deepEqual(withAdSlots(posts(20), 8, true).find(isAdSlot).near, [])
+})
+
 test('isAdSlot só aceita o espaço', () => {
   assert.equal(isAdSlot({ id: 'p1' }), false)
   assert.equal(isAdSlot(null), false)
-  assert.equal(isAdSlot({ id: '__ad__8', adSlot: 8 }), true)
+  assert.equal(isAdSlot({ id: '__ad__8', adSlot: 8, near: [] }), true)
 })

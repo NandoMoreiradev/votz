@@ -1,7 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
+import { Transform, Type } from 'class-transformer'
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateNested } from 'class-validator'
-import { AD_EVENTS_MAX_BATCH, AD_SURFACES, type AdSurface } from '@votz/shared-types'
+import { AD_ADJACENCY, AD_EVENTS_MAX_BATCH, AD_SURFACES, type AdSurface } from '@votz/shared-types'
+
+/** Lista no endereço: ids separados por vírgula (ex.: nearPostIds=a,b,c). */
+const commaList = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.split(',').map((item) => item.trim()).filter(Boolean) : value
 
 const CLIENT_EVENT_TYPES = ['IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT'] as const
 
@@ -30,6 +34,22 @@ export class NextAdQueryDto {
   @IsString()
   @Length(2, 80)
   city?: string
+
+  @ApiPropertyOptional({ description: 'Publicações em volta do espaço, separadas por vírgula (até 8). Anúncio de empresa alvo de relato citado ali não entra.' })
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @ArrayMaxSize(AD_ADJACENCY.MAX_IDS)
+  @IsUUID('all', { each: true })
+  nearPostIds?: string[]
+
+  @ApiPropertyOptional({ description: 'Relatos em volta do espaço, separados por vírgula (até 8)' })
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @ArrayMaxSize(AD_ADJACENCY.MAX_IDS)
+  @IsUUID('all', { each: true })
+  nearReportIds?: string[]
 }
 
 export class AdClientEventDto {

@@ -21,10 +21,12 @@ type CardState = 'shown' | 'hidden' | 'advertiserHidden' | 'reported'
  * perto da tela), e fica o mesmo enquanto a lista o mantém: refazer o pedido contaria outra exibição.
  * `onLoaded` avisa a lista, que mede a visibilidade (50% por 1 segundo) e manda o evento.
  */
-export function SponsoredSlot({ slotId, surface, position, onLoaded }: { slotId: string; surface: AdSurface; position: number; onLoaded: (slotId: string, ad: SponsoredAdView | null) => void }) {
+export function SponsoredSlot({ slotId, surface, position, near, onLoaded }: { slotId: string; surface: AdSurface; position: number; near: string[]; onLoaded: (slotId: string, ad: SponsoredAdView | null) => void }) {
+  const nearParam = near.join(',')
   const query = useQuery({
-    queryKey: ['ads', 'next', surface, position],
-    queryFn: ({ signal }) => api<{ ad: SponsoredAdView | null }>(`/ads/next?surface=${surface}&position=${position}`, { signal }).then((response) => response.ad),
+    // Os vizinhos entram na chave: se o que está em volta do espaço mudar, o anúncio é conferido de novo.
+    queryKey: ['ads', 'next', surface, position, nearParam],
+    queryFn: ({ signal }) => api<{ ad: SponsoredAdView | null }>(`/ads/next?surface=${surface}&position=${position}${nearParam ? `&nearPostIds=${nearParam}` : ''}`, { signal }).then((response) => response.ad),
     staleTime: Infinity, retry: false, refetchOnWindowFocus: false,
   })
   const ad = query.data ?? null
@@ -54,7 +56,7 @@ export function SponsoredCard({ ad, surface, position }: { ad: SponsoredAdView; 
 
   const open = () => {
     trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })
-    void Linking.openURL(ad.destinationUrl).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.'))
+    void Linking.openURL(ad.clickUrl).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.'))
   }
   return <View accessibilityLabel="Anúncio patrocinado" style={{ backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>

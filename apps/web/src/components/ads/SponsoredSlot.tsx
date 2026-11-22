@@ -9,13 +9,15 @@ interface SponsoredSlotProps {
   position: number
   state?: string
   city?: string
+  /** Publicações em volta do espaço (para não pôr anúncio perto de relato contra o anunciante). */
+  nearPostIds?: string[]
 }
 
 /**
  * Espaço de anúncio no feed. Só pede o anúncio quando chega perto da tela, para não gastar uma exibição (nem o
  * limite de 3 por pessoa) com espaço que a pessoa nem rolou até ver. Sem anúncio, não ocupa lugar nenhum.
  */
-export function SponsoredSlot({ surface, position, state, city }: SponsoredSlotProps) {
+export function SponsoredSlot({ surface, position, state, city, nearPostIds }: SponsoredSlotProps) {
   const holder = useRef<HTMLDivElement | null>(null)
   const [near, setNear] = useState(false)
 
@@ -32,7 +34,7 @@ export function SponsoredSlot({ surface, position, state, city }: SponsoredSlotP
     return () => observer.disconnect()
   }, [near])
 
-  const { data: ad } = useSponsoredAd({ surface, position, state, city, enabled: near })
+  const { data: ad } = useSponsoredAd({ surface, position, state, city, nearPostIds, enabled: near })
 
   return (
     <div ref={holder}>

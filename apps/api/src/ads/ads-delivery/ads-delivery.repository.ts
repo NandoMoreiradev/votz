@@ -103,7 +103,7 @@ export class AdsDeliveryRepository {
   }
 
   /** Grava a entrega e conta a exibição do dia, juntas. */
-  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; day: string }) {
+  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string }) {
     const { adSetId, day, ...impression } = data
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.adImpression.create({ data: impression })
@@ -235,7 +235,7 @@ export class AdsDeliveryRepository {
     return this.prisma.adDailyStat.groupBy({
       by: ['day'],
       where: { day: { gte: since }, ad: { adSet: { campaign: { accountId } } } },
-      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true },
+      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true, conversions: true, conversionValueCents: true },
       orderBy: { day: 'asc' },
     })
   }

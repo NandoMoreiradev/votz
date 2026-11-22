@@ -50,6 +50,7 @@ import { StudioAds } from './pages/studio/StudioAds'
 import { StudioAdsNew } from './pages/studio/StudioAdsNew'
 import { StudioBilling } from './pages/studio/StudioBilling'
 import { StudioAdsReport } from './pages/studio/StudioAdsReport'
+import { StudioAdsConversions } from './pages/studio/StudioAdsConversions'
 import { PrestacaoPublica } from './pages/PrestacaoPublica'
 import { MandatoPublico } from './pages/MandatoPublico'
 import { DescadastroResumo } from './pages/DescadastroResumo'
@@ -166,6 +167,7 @@ function App() {
                 <Route path="/estudio/anuncios/nova" element={<StudioAdsNew />} />
                 <Route path="/estudio/anuncios/faturamento" element={<StudioBilling />} />
                 <Route path="/estudio/anuncios/relatorio" element={<StudioAdsReport />} />
+                <Route path="/estudio/anuncios/conversoes" element={<StudioAdsConversions />} />
                 <Route path="/proposta/nova" element={<CreateProposta />} />
                 <Route path="/painel-dados" element={<PainelDados />} />
                 <Route path="/entidade/prazos" element={<EntidadePrazos />} />

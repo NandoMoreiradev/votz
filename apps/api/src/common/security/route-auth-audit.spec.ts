@@ -21,6 +21,8 @@ import { AppModule } from '../../app.module'
 
 const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /accountability/public/:code',
+  // Clique no anúncio (leva ao anunciante): quem clica já saiu do Votz. Sem dado de sessão; só um identificador sorteado.
+  'GET /ads/c/:token',
   'GET /alerts',
   'GET /alerts/:id',
   'GET /analytics/public/entities/:id',
@@ -36,6 +38,8 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /api-publica/tendencias',
   'GET /auth/google',
   'GET /auth/google/callback',
+  // API de conversões: não usa login de pessoa; o ConversionKeyGuard confere a chave do anunciante (hash SHA-256).
+  'POST /ads/conversions',
   'POST /auth/login',
   'POST /auth/mobile/login',
   'POST /auth/mobile/refresh',

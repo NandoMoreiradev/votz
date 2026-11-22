@@ -114,6 +114,23 @@ export const AD_DELIVERY_LIMITS = {
   MIN_AUDIENCE_SIZE: 100,
 } as const
 
+/**
+ * Vizinhança do espaço de anúncio. Nenhum anúncio aparece perto de relato contra o próprio anunciante: o site e o
+ * celular dizem ao servidor quais itens estão em volta do espaço (até 3 antes e 3 depois) e o servidor tira da
+ * disputa as empresas que são alvo de relato nesses itens. `MAX_IDS` é o teto de cada lista no pedido.
+ */
+export const AD_ADJACENCY = { BEFORE: 3, AFTER: 3, MAX_IDS: 8 } as const
+
+/**
+ * Ids dos itens do feed ao redor de um espaço de anúncio. `position` é quantos itens vieram antes do espaço, então
+ * o espaço fica entre `items[position - 1]` e `items[position]`. Só olha o que já foi carregado.
+ */
+export function adNeighborIds(items: readonly { id: string }[], position: number): string[] {
+  const from = Math.max(0, position - AD_ADJACENCY.BEFORE)
+  const to = Math.min(items.length, position + AD_ADJACENCY.AFTER)
+  return items.slice(from, to).map((item) => item.id)
+}
+
 // ─── Sinais que a IA pode usar (lista fechada) ─────────────────────────────────────────────────
 
 export type AdSignalConsent = 'NONE' | 'PERSONALIZATION'
@@ -590,18 +607,73 @@ export interface AdClientEvent {
   visibleMs?: number
 }
 
-/** Conversão enviada pelo anunciante (API de conversões): só o identificador do clique, nada da pessoa. */
+export const AD_CONVERSION_EVENT_NAMES = ['PURCHASE', 'LEAD', 'SIGNUP', 'CONTACT', 'OTHER'] as const
+export type AdConversionEventName = (typeof AD_CONVERSION_EVENT_NAMES)[number]
+
+/**
+ * Conversão enviada pelo anunciante (API de conversões, `POST /ads/conversions`): só o identificador do clique
+ * (`votz_click_id`, que o Votz põe no link do anúncio), o que aconteceu e quando. Nada da pessoa.
+ */
 export interface AdConversionEvent {
   clickId: string
-  eventName: 'PURCHASE' | 'LEAD' | 'SIGNUP' | 'CONTACT' | 'OTHER'
+  eventName: AdConversionEventName
+  /** Valor em centavos (opcional; só faz sentido para compra). */
   valueCents?: number
   occurredAt: string
-  /** Para não contar a mesma conversão duas vezes. */
+  /** Para não contar a mesma conversão duas vezes. Vale por conta de anúncios. */
   dedupeKey: string
 }
 
 /** Janela de atribuição: conversão até 7 dias depois do clique. */
 export const AD_ATTRIBUTION_WINDOW_DAYS = 7
+
+export const AD_CONVERSIONS = {
+  /** Eventos por chamada. */
+  MAX_BATCH: 100,
+  /** Conversões que um mesmo clique pode ter (várias compras, sim; milhares, não). */
+  MAX_PER_CLICK: 20,
+  /** Maior valor aceito por conversão: R$ 1.000.000,00. */
+  MAX_VALUE_CENTS: 100_000_000,
+  /** Chaves ativas por conta de anúncios. */
+  MAX_ACTIVE_KEYS: 5,
+  /** O relógio do anunciante pode errar um pouco para o futuro. */
+  MAX_CLOCK_SKEW_MS: 5 * 60_000,
+  KEY_PREFIX: 'vzc_',
+  /** Nome do parâmetro que o Votz põe no link do anunciante. */
+  CLICK_PARAM: 'votz_click_id',
+  /** Tamanho do identificador do clique (16 bytes em base64url). */
+  CLICK_TOKEN_LENGTH: 22,
+} as const
+
+export type AdConversionRejection = 'UNKNOWN_CLICK' | 'OUTSIDE_WINDOW' | 'IN_THE_FUTURE' | 'TOO_MANY_FOR_CLICK'
+
+export type AdConversionOutcome =
+  | { dedupeKey: string; status: 'ACCEPTED' }
+  | { dedupeKey: string; status: 'DUPLICATE' }
+  | { dedupeKey: string; status: 'REJECTED'; reason: AdConversionRejection }
+
+export interface AdConversionsResult {
+  accepted: number
+  duplicates: number
+  rejected: number
+  results: AdConversionOutcome[]
+}
+
+/** Chave de conversões como o Estúdio mostra (nunca com o segredo inteiro). */
+export interface AdConversionKeyView {
+  id: string
+  name: string
+  /** Começo da chave, para reconhecer qual é. */
+  prefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+}
+
+/** Resposta de criar a chave: o segredo aparece só desta vez. */
+export interface AdConversionKeyCreated extends AdConversionKeyView {
+  key: string
+}
 /** Lote máximo de eventos por envio do aparelho. */
 export const AD_EVENTS_MAX_BATCH = 50
 
@@ -675,6 +747,11 @@ export interface SponsoredAdView {
   body: string
   ctaLabel: string
   destinationUrl: string
+  /**
+   * O que o botão abre: passa pelo Votz (`votz.app/c/<id>`), que leva ao `destinationUrl` com o `votz_click_id` no
+   * link. É isso que deixa o anunciante contar conversões sem rastrear a pessoa.
+   */
+  clickUrl: string
   /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
   media: MediaItemDto | null
   advertiser: { id: string; name: string; username: string | null; logoUrl: string | null }
@@ -696,6 +773,10 @@ export interface AdDailyStatView {
   clicks: number
   hides: number
   spendCents: number
+  /** Conversões que o anunciante contou para os cliques deste dia (API de conversões). */
+  conversions: number
+  /** Soma dos valores das conversões, em centavos. */
+  conversionValueCents: number
 }
 
 // ─── Relatório do anunciante ───────────────────────────────────────────────────────────────────
@@ -709,6 +790,10 @@ export interface AdReportTotals {
   clicks: number
   hides: number
   spendCents: number
+  conversions: number
+  conversionValueCents: number
+  /** Custo por conversão, em centavos. Nulo se não houve conversão. */
+  cpaCents: number | null
   /** Cliques sobre exibições vistas, em %. Nulo se ninguém viu ainda. */
   ctrPercent: number | null
   /** Custo por mil exibições vistas, em centavos. */
@@ -724,12 +809,16 @@ export function summarizeAdStats(rows: readonly AdDailyStatView[]): AdReportTota
   const clicks = sum((row) => row.clicks)
   const hides = sum((row) => row.hides)
   const spendCents = sum((row) => row.spendCents)
+  const conversions = sum((row) => row.conversions)
   return {
     impressions,
     viewableImpressions,
     clicks,
     hides,
     spendCents,
+    conversions,
+    conversionValueCents: sum((row) => row.conversionValueCents),
+    cpaCents: conversions > 0 ? Math.round(spendCents / conversions) : null,
     ctrPercent: viewableImpressions > 0 ? Math.round((clicks / viewableImpressions) * 10_000) / 100 : null,
     cpmCents: viewableImpressions > 0 ? Math.round((spendCents / viewableImpressions) * 1000) : null,
     cpcCents: clicks > 0 ? Math.round(spendCents / clicks) : null,
@@ -743,7 +832,7 @@ export function fillAdStatDays(rows: readonly AdDailyStatView[], days: number, t
   const result: AdDailyStatView[] = []
   for (let offset = days - 1; offset >= 0; offset -= 1) {
     const day = new Date(end - offset * 86_400_000).toISOString().slice(0, 10)
-    result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0 })
+    result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0 })
   }
   return result
 }

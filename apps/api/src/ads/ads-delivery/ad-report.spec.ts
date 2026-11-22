@@ -1,6 +1,6 @@
 import { fillAdStatDays, summarizeAdStats, type AdDailyStatView } from '@votz/shared-types'
 
-const row = (day: string, patch: Partial<AdDailyStatView> = {}): AdDailyStatView => ({ day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, ...patch })
+const row = (day: string, patch: Partial<AdDailyStatView> = {}): AdDailyStatView => ({ day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0, ...patch })
 
 describe('relatório do anunciante', () => {
   it('completa os dias sem movimento, do mais antigo até hoje', () => {
@@ -30,5 +30,15 @@ describe('relatório do anunciante', () => {
     expect(totals.ctrPercent).toBeNull()
     expect(totals.cpmCents).toBeNull()
     expect(totals.cpcCents).toBeNull()
+    expect(totals.cpaCents).toBeNull()
+    expect(totals.conversions).toBe(0)
+  })
+
+  it('soma conversões e valor, e calcula o custo por conversão', () => {
+    const totals = summarizeAdStats([
+      row('2026-11-21', { spendCents: 300, conversions: 1, conversionValueCents: 2500 }),
+      row('2026-11-22', { spendCents: 450, conversions: 2, conversionValueCents: 4000 }),
+    ])
+    expect(totals).toMatchObject({ conversions: 3, conversionValueCents: 6500, cpaCents: 250 })
   })
 })

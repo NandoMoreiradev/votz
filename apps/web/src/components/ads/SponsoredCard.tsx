@@ -257,7 +257,7 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
       <Body>{ad.body}</Body>
       <AdMedia media={ad.media} />
       <Cta
-        href={ad.destinationUrl}
+        href={ad.clickUrl}
         target="_blank"
         rel="noopener noreferrer sponsored"
         onClick={() => trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })}

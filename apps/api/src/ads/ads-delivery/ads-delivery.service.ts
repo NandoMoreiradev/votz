@@ -12,8 +12,11 @@ import {
   type AdEventsResult,
   type SponsoredAdView,
 } from '@votz/shared-types'
+import { ContentAdjacencyService } from '../../content-adjacency/content-adjacency.service'
 import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
+import { AdsClickLinkService } from '../ads-conversions/ads-click-link.service'
+import { newClickToken } from '../ads-conversions/conversion-rules'
 import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.repository'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
@@ -41,6 +44,8 @@ export class AdsDeliveryService {
   constructor(
     private readonly repo: AdsDeliveryRepository,
     private readonly storage: StorageService,
+    private readonly clickLinks: AdsClickLinkService,
+    private readonly adjacency: ContentAdjacencyService,
   ) {}
 
   /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. */
@@ -56,7 +61,11 @@ export class AdsDeliveryService {
       this.repo.hiddenCompanyIds(userId),
       this.repo.excludedAdIds(userId, since, AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY),
     ])
-    const pool = await this.repo.findCandidates(now, hiddenCompanies, excludedAds, CANDIDATE_POOL)
+    // Nenhum anúncio perto de relato contra o próprio anunciante. Se não deu para conferir a vizinhança, não mostra:
+    // errar para o lado de não exibir custa uma exibição; errar para o outro lado, a confiança no Votz.
+    const nearCompanies = await this.companiesNextToSlot(query)
+    if (!nearCompanies) return null
+    const pool = await this.repo.findCandidates(now, [...new Set([...hiddenCompanies, ...nearCompanies])], excludedAds, CANDIDATE_POOL)
     if (!pool.length) return null
 
     const day = saoPauloDay(now)
@@ -85,6 +94,7 @@ export class AdsDeliveryService {
 
     const { record } = result.winner as (typeof candidates)[number]
     const objective = record.adSet.campaign.objective
+    const clickToken = newClickToken()
     const impression = await this.repo.createImpression({
       adId: record.id,
       adSetId: record.adSetId,
@@ -93,6 +103,7 @@ export class AdsDeliveryService {
       position: query.position ?? 0,
       chargeOn: adChargeUnit(objective),
       chargeMillicents: adChargeMillicents(objective, result.priceCents),
+      clickToken,
       day,
     })
 
@@ -104,9 +115,21 @@ export class AdsDeliveryService {
       body: record.creative.body,
       ctaLabel: record.creative.ctaLabel,
       destinationUrl: record.creative.destinationUrl,
+      clickUrl: this.clickLinks.build(clickToken),
       media: creativeMediaItem(record.creative.media, (key) => this.storage.getPublicUrl(key)),
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
+    }
+  }
+
+  /** Empresas que são alvo de relato nos itens em volta do espaço. `null` se a conferência falhou. */
+  private async companiesNextToSlot(query: NextAdQueryDto): Promise<string[] | null> {
+    if (!query.nearPostIds?.length && !query.nearReportIds?.length) return []
+    try {
+      return await this.adjacency.companiesTargetedNear({ postIds: query.nearPostIds, reportIds: query.nearReportIds })
+    } catch (error) {
+      this.logger.error(`Não consegui conferir o que está perto do espaço de anúncio: ${error instanceof Error ? error.message : String(error)}`)
+      return null
     }
   }
 
@@ -167,6 +190,8 @@ export class AdsDeliveryService {
       clicks: row._sum.clicks ?? 0,
       hides: row._sum.hides ?? 0,
       spendCents: Math.round((row._sum.spendMillicents ?? 0) / 1000),
+      conversions: row._sum.conversions ?? 0,
+      conversionValueCents: Number(row._sum.conversionValueCents ?? 0),
     }))
   }
 

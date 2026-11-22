@@ -8,8 +8,9 @@
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
+exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
 exports.isAdInterestId = isAdInterestId;
+exports.adNeighborIds = adNeighborIds;
 exports.assertAllowedAdFeatures = assertAllowedAdFeatures;
 exports.adFeaturesForConsent = adFeaturesForConsent;
 exports.ageOn = ageOn;
@@ -103,6 +104,21 @@ exports.AD_DELIVERY_LIMITS = {
     /** Menor grupo de pessoas que um relatório ou estimativa de alcance pode mostrar. */
     MIN_AUDIENCE_SIZE: 100,
 };
+/**
+ * Vizinhança do espaço de anúncio. Nenhum anúncio aparece perto de relato contra o próprio anunciante: o site e o
+ * celular dizem ao servidor quais itens estão em volta do espaço (até 3 antes e 3 depois) e o servidor tira da
+ * disputa as empresas que são alvo de relato nesses itens. `MAX_IDS` é o teto de cada lista no pedido.
+ */
+exports.AD_ADJACENCY = { BEFORE: 3, AFTER: 3, MAX_IDS: 8 };
+/**
+ * Ids dos itens do feed ao redor de um espaço de anúncio. `position` é quantos itens vieram antes do espaço, então
+ * o espaço fica entre `items[position - 1]` e `items[position]`. Só olha o que já foi carregado.
+ */
+function adNeighborIds(items, position) {
+    const from = Math.max(0, position - exports.AD_ADJACENCY.BEFORE);
+    const to = Math.min(items.length, position + exports.AD_ADJACENCY.AFTER);
+    return items.slice(from, to).map((item) => item.id);
+}
 /**
  * ÚNICOS atributos que os modelos e o servidor de anúncios podem usar (seção 3.1 do plano). Um teste falha se
  * aparecer qualquer outro. Para mudar: aval do dono do produto, revisão do advogado e atualização do RIPD.
@@ -322,8 +338,26 @@ exports.AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
 exports.AD_VIEWABILITY = { MIN_VISIBLE_RATIO: 0.5, MIN_VISIBLE_MS: 1000 };
 exports.AD_SURFACES = ['FEED_FOR_YOU', 'FEED_RECENT', 'FEED_CITY'];
+exports.AD_CONVERSION_EVENT_NAMES = ['PURCHASE', 'LEAD', 'SIGNUP', 'CONTACT', 'OTHER'];
 /** Janela de atribuição: conversão até 7 dias depois do clique. */
 exports.AD_ATTRIBUTION_WINDOW_DAYS = 7;
+exports.AD_CONVERSIONS = {
+    /** Eventos por chamada. */
+    MAX_BATCH: 100,
+    /** Conversões que um mesmo clique pode ter (várias compras, sim; milhares, não). */
+    MAX_PER_CLICK: 20,
+    /** Maior valor aceito por conversão: R$ 1.000.000,00. */
+    MAX_VALUE_CENTS: 100_000_000,
+    /** Chaves ativas por conta de anúncios. */
+    MAX_ACTIVE_KEYS: 5,
+    /** O relógio do anunciante pode errar um pouco para o futuro. */
+    MAX_CLOCK_SKEW_MS: 5 * 60_000,
+    KEY_PREFIX: 'vzc_',
+    /** Nome do parâmetro que o Votz põe no link do anunciante. */
+    CLICK_PARAM: 'votz_click_id',
+    /** Tamanho do identificador do clique (16 bytes em base64url). */
+    CLICK_TOKEN_LENGTH: 22,
+};
 /** Lote máximo de eventos por envio do aparelho. */
 exports.AD_EVENTS_MAX_BATCH = 50;
 // ─── Preço, antifraude e entrega (Etapa 2) ─────────────────────────────────────────────────────
@@ -379,12 +413,16 @@ function summarizeAdStats(rows) {
     const clicks = sum((row) => row.clicks);
     const hides = sum((row) => row.hides);
     const spendCents = sum((row) => row.spendCents);
+    const conversions = sum((row) => row.conversions);
     return {
         impressions,
         viewableImpressions,
         clicks,
         hides,
         spendCents,
+        conversions,
+        conversionValueCents: sum((row) => row.conversionValueCents),
+        cpaCents: conversions > 0 ? Math.round(spendCents / conversions) : null,
         ctrPercent: viewableImpressions > 0 ? Math.round((clicks / viewableImpressions) * 10_000) / 100 : null,
         cpmCents: viewableImpressions > 0 ? Math.round((spendCents / viewableImpressions) * 1000) : null,
         cpcCents: clicks > 0 ? Math.round(spendCents / clicks) : null,
@@ -397,7 +435,7 @@ function fillAdStatDays(rows, days, today) {
     const result = [];
     for (let offset = days - 1; offset >= 0; offset -= 1) {
         const day = new Date(end - offset * 86_400_000).toISOString().slice(0, 10);
-        result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0 });
+        result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0 });
     }
     return result;
 }
