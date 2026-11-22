@@ -192,6 +192,7 @@ enum NotificationType {
   AD_REJECTED
   AD_LOW_BALANCE
   AD_PAUSED_NO_BALANCE
+  AD_INVALID_TRAFFIC
 }
 
 enum SlaState {
@@ -2345,6 +2346,7 @@ model Ad {
   impressions  AdImpression[]
   events       AdEvent[]
   dailyStats   AdDailyStat[]
+  fraudFlags   AdFraudFlag[]
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
@@ -2628,4 +2630,48 @@ model AdHiddenAdvertiser {
 
   @@id([userId, companyId])
   @@map("ad_hidden_advertisers")
+}
+
+// ── Anúncios: tráfego inválido (plano de anúncios, seção 7) ─────────────────
+// Uma linha por anúncio e dia em que o job de hora em hora achou sinal de tráfego inválido. Cliques além do plausível
+// são creditados ao anunciante (só em anúncio cobrado por clique) e o caso vai para a fila da moderação.
+
+enum AdFraudLevel {
+  REVIEW // só vai para a revisão humana (e crédito, se cobrado por clique)
+  EXTREME // além disso o anúncio é pausado
+}
+
+enum AdFraudStatus {
+  OPEN
+  CONFIRMED // a moderação confirmou: o tráfego era inválido
+  DISMISSED // a moderação descartou: era tráfego normal (o anúncio pausado volta; o crédito fica)
+}
+
+model AdFraudFlag {
+  id                  String        @id @default(uuid())
+  adId                String        @map("ad_id")
+  ad                  Ad            @relation(fields: [adId], references: [id], onDelete: Cascade)
+  accountId           String        @map("account_id")
+  day                 DateTime      @db.Date
+  level               AdFraudLevel
+  // Nomes dos sinais: CTR_ABNORMAL, CLICKS_WITHOUT_VIEW.
+  signals             String[]
+  viewable            Int
+  clicks              Int
+  clicksWithoutView   Int           @map("clicks_without_view")
+  invalidClicks       Int           @map("invalid_clicks")
+  // Já devolvido ao anunciante por este caso (milésimos de centavo). Só cresce.
+  creditedMillicents  Int           @default(0) @map("credited_millicents")
+  pausedAd            Boolean       @default(false) @map("paused_ad")
+  status              AdFraudStatus @default(OPEN)
+  resolvedById        String?       @map("resolved_by_id")
+  resolvedAt          DateTime?     @map("resolved_at")
+  resolutionNote      String?       @map("resolution_note")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@unique([adId, day])
+  @@index([status, createdAt])
+  @@index([accountId])
+  @@map("ad_fraud_flags")
 }

@@ -27,8 +27,9 @@ import { CamaraSyncController } from '../../camara-sync/camara-sync.controller'
 import { CAMARA_SYNC_QUEUE, CamaraSyncService } from '../../camara-sync/camara-sync.service'
 import { IbgeSyncController } from '../../ibge-sync/ibge-sync.controller'
 import { IBGE_SYNC_QUEUE, IbgeSyncService } from '../../ibge-sync/ibge-sync.service'
-import { AdminAdReviewsController, AdminFlagsController } from '../../moderation/moderation.controller'
+import { AdminAdFraudController, AdminAdReviewsController, AdminFlagsController } from '../../moderation/moderation.controller'
 import { AdsReviewService } from '../../ads/ads-review/ads-review.service'
+import { AdsFraudService } from '../../ads/ads-fraud/ads-fraud.service'
 import { ModerationService } from '../../moderation/moderation.service'
 import { PrismaService } from '../../prisma/prisma.service'
 import { RegistrationRequestsController } from '../../registration-requests/registration-requests.controller'
@@ -144,6 +145,16 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     body: { decision: 'APPROVED' },
   },
 
+  // AdminAdFraudController (tráfego suspeito em anúncios)
+  { method: 'GET', pattern: '/admin/ad-fraud-flags', requestPath: '/admin/ad-fraud-flags', allowedRoles: MOD_AND_ADMIN },
+  {
+    method: 'POST',
+    pattern: '/admin/ad-fraud-flags/:flagId/resolve',
+    requestPath: `/admin/ad-fraud-flags/${SAMPLE_UUID}/resolve`,
+    allowedRoles: MOD_AND_ADMIN,
+    body: { resolution: 'CONFIRMED' },
+  },
+
   // RegistrationRequestsController (citizen + review routes all accounted for)
   { method: 'POST', pattern: '/registration-requests', requestPath: '/registration-requests', allowedRoles: ALL_ROLES, body: {} },
   { method: 'GET', pattern: '/registration-requests/mine', requestPath: '/registration-requests/mine', allowedRoles: ALL_ROLES },
@@ -184,6 +195,7 @@ const AUDITED_CONTROLLERS = [
   AdminController,
   AdminFlagsController,
   AdminAdReviewsController,
+  AdminAdFraudController,
   RegistrationRequestsController,
   CamaraSyncController,
   SenadoSyncController,
@@ -288,6 +300,7 @@ describe('Role × Route Authorization Matrix (real JwtAuthGuard + RolesGuard)', 
         { provide: AdminService, useValue: proxyService() },
         { provide: ModerationService, useValue: proxyService() },
         { provide: AdsReviewService, useValue: proxyService() },
+        { provide: AdsFraudService, useValue: proxyService() },
         { provide: RegistrationRequestsService, useValue: proxyService() },
         { provide: CamaraSyncService, useValue: proxyService() },
         { provide: getQueueToken(CAMARA_SYNC_QUEUE), useValue: proxyService() },

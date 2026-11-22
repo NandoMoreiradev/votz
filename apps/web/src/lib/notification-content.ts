@@ -27,6 +27,14 @@ export function notificationContent(notification: AppNotification): { label: str
       : `As campanhas da conta ${account} foram pausadas porque o saldo acabou. Recarregue e ligue as campanhas de novo.`
     return { label, href: '/estudio/anuncios/faturamento' }
   }
+  if (type === 'AD_INVALID_TRAFFIC') {
+    const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'seu anúncio'
+    const credit = typeof metadata?.creditCents === 'number' && metadata.creditCents > 0 ? ` Devolvemos R$ ${(metadata.creditCents / 100).toFixed(2).replace('.', ',')} ao seu saldo.` : ''
+    const label = metadata?.paused === true
+      ? `Achamos cliques suspeitos em ${name} e pausamos o anúncio para você não pagar por eles.${credit} Veja se está tudo certo e ligue de novo.`
+      : `Achamos cliques suspeitos em ${name}.${credit} Você não paga por cliques inválidos.`
+    return { label, href: '/estudio/anuncios/relatorio' }
+  }
   const href = report?.id ? `/relatos/${encodeURIComponent(report.id)}` : null
   const title = report?.title ? `"${report.title}"` : 'um relato'
   if (type === 'NEW_COMMENT') return { label: `Novo comentário em ${title}.`, href }

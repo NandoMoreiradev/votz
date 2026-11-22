@@ -12,6 +12,8 @@ import { ListFlagsQueryDto } from './dto/list-flags-query.dto'
 import { ResolveFlagDto } from './dto/resolve-flag.dto'
 import { AdReviewDecisionDto, AdReviewQueryDto } from '../ads/ads-review/dto/ads-review.dto'
 import { AdsReviewService } from '../ads/ads-review/ads-review.service'
+import { AdsFraudService } from '../ads/ads-fraud/ads-fraud.service'
+import { AdFraudQueryDto, AdFraudResolveDto } from '../ads/ads-fraud/dto/ads-fraud.dto'
 import { ModerationService } from './moderation.service'
 
 @ApiTags('moderation')
@@ -91,5 +93,34 @@ export class AdminAdReviewsController {
     @CurrentUser() actor: { id: string },
   ) {
     return this.adsReview.decide(adId, actor, dto)
+  }
+}
+
+/**
+ * Tráfego suspeito nos anúncios (antifraude). O anúncio com cliques fora do normal já teve o clique inválido devolvido
+ * ao anunciante; aqui a moderação confirma que era inválido ou descarta (e o anúncio pausado pelo caso volta).
+ */
+@ApiTags('admin')
+@Controller('admin/ad-fraud-flags')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserType.MODERATOR, UserType.ADMIN)
+@ApiBearerAuth()
+export class AdminAdFraudController {
+  constructor(private readonly adsFraud: AdsFraudService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Casos de tráfego suspeito em anúncios (extremos e mais antigos primeiro)' })
+  list(@Query() query: AdFraudQueryDto) {
+    return this.adsFraud.listQueue(query.status, query.page, query.limit)
+  }
+
+  @Post(':flagId/resolve')
+  @ApiOperation({ summary: 'Confirmar que o tráfego era inválido ou descartar o caso' })
+  resolve(
+    @Param('flagId', ParseUUIDPipe) flagId: string,
+    @Body() dto: AdFraudResolveDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.adsFraud.resolve(flagId, actor, dto)
   }
 }

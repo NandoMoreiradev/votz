@@ -9,7 +9,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adSpendBand = exports.AD_IMPRESSION_BANDS = exports.AD_SPEND_BANDS = exports.AD_LIBRARY = exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
-exports.adImpressionBand = void 0;
+exports.AD_FRAUD_SIGNAL_LABELS = exports.adImpressionBand = void 0;
 exports.isAdInterestId = isAdInterestId;
 exports.adNeighborIds = adNeighborIds;
 exports.assertAllowedAdFeatures = assertAllowedAdFeatures;
@@ -490,4 +490,9 @@ function adDestinationHost(url) {
         return null;
     }
 }
+// ─── Tráfego inválido (antifraude) ─────────────────────────────────────────────────────────────
+exports.AD_FRAUD_SIGNAL_LABELS = {
+    CTR_ABNORMAL: 'Taxa de cliques muito acima do normal',
+    CLICKS_WITHOUT_VIEW: 'Cliques sem o anúncio ter sido visto antes',
+};
 //# sourceMappingURL=ads.js.map

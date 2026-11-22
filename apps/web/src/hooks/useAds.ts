@@ -6,6 +6,9 @@ import type {
   AdConversionKeyCreated,
   AdConversionKeyView,
   AdDailyStatView,
+  AdFraudQueueResponse,
+  AdFraudResolveInput,
+  AdFraudStatus,
   AdReviewDecisionInput,
   AdReviewQueueResponse,
   AdTopUpMethod,
@@ -156,6 +159,25 @@ export function useDecideAd() {
     mutationFn: ({ adId, ...input }: { adId: string } & AdReviewDecisionInput) =>
       api.post(`/admin/ad-reviews/${adId}/decision`, input).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-ad-reviews'] }),
+  })
+}
+
+// ─── Tráfego suspeito (moderação) ──────────────────────────────────────────────────────────────
+
+export function useAdFraudQueue(status: AdFraudStatus, page: number, enabled = true) {
+  return useQuery({
+    queryKey: ['admin-ad-fraud', status, page],
+    queryFn: () => api.get<AdFraudQueueResponse>('/admin/ad-fraud-flags', { params: { status, page, limit: 20 } }).then((r) => r.data),
+    enabled,
+  })
+}
+
+export function useResolveAdFraud() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ flagId, ...input }: { flagId: string } & AdFraudResolveInput) =>
+      api.post(`/admin/ad-fraud-flags/${flagId}/resolve`, input).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-ad-fraud'] }),
   })
 }
 

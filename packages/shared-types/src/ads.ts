@@ -924,3 +924,50 @@ export function adDestinationHost(url: string): string | null {
     return null
   }
 }
+
+// ─── Tráfego inválido (antifraude) ─────────────────────────────────────────────────────────────
+
+export const AD_FRAUD_SIGNAL_LABELS = {
+  CTR_ABNORMAL: 'Taxa de cliques muito acima do normal',
+  CLICKS_WITHOUT_VIEW: 'Cliques sem o anúncio ter sido visto antes',
+} as const
+export type AdFraudSignal = keyof typeof AD_FRAUD_SIGNAL_LABELS
+
+export type AdFraudStatus = 'OPEN' | 'CONFIRMED' | 'DISMISSED'
+export type AdFraudLevel = 'REVIEW' | 'EXTREME'
+
+/** Um caso de tráfego suspeito na fila da moderação: um anúncio num dia. */
+export interface AdFraudFlagItem {
+  id: string
+  status: AdFraudStatus
+  level: AdFraudLevel
+  /** "AAAA-MM-DD" (fuso de São Paulo). */
+  day: string
+  signals: AdFraudSignal[]
+  viewable: number
+  clicks: number
+  clicksWithoutView: number
+  invalidClicks: number
+  /** Taxa de cliques do dia, em %. Nulo se ninguém viu. */
+  ctrPercent: number | null
+  /** Já devolvido ao anunciante, em centavos. */
+  creditedCents: number
+  pausedAd: boolean
+  ad: { id: string; name: string; headline: string; status: AdStatus }
+  campaignName: string
+  objective: AdObjective
+  company: { id: string; name: string }
+  resolvedAt: string | null
+  resolutionNote: string | null
+  createdAt: string
+}
+
+export interface AdFraudQueueResponse {
+  data: AdFraudFlagItem[]
+  meta: { total: number; openCount: number; page: number; limit: number; totalPages: number }
+}
+
+export interface AdFraudResolveInput {
+  resolution: 'CONFIRMED' | 'DISMISSED'
+  note?: string
+}
