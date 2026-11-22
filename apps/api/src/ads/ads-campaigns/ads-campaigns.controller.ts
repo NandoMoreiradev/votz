@@ -22,7 +22,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator'
 import { MEDIA_VIDEO_MAX_BYTES, PresignMediaUploadDto } from '../../media/dto/media.dto'
 import { OrgPermissionGuard, RequireOrgPermission } from '../../org-memberships/org-memberships.guard'
 import { AdsCampaignsService } from './ads-campaigns.service'
-import { CreateAdAccountDto, CreateAdCampaignDto, SetAdCampaignStatusDto } from './dto/ads-campaigns.dto'
+import { CreateAdAccountDto, CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 
 /**
  * Gerenciador de anúncios do Estúdio. Só perfis de empresa (`orgType` = COMPANY). O guard confere se a pessoa é
@@ -139,6 +139,47 @@ export class AdsCampaignsController {
   ) {
     onlyCompany(orgType)
     return this.service.setCampaignStatus(orgId, campaignId, dto)
+  }
+
+  @Patch('ads/:adId')
+  @RequireOrgPermission(OrgPermission.MANAGE_ADS)
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 30, ttl: 60_000 }, long: { limit: 300, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Edita título, texto, botão e link do anúncio. Aprovado ou em revisão volta para a revisão.' })
+  updateAd(
+    @Param('orgType') orgType: string,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('adId', ParseUUIDPipe) adId: string,
+    @Body() dto: UpdateAdDto,
+  ) {
+    onlyCompany(orgType)
+    return this.service.updateAd(orgId, adId, dto)
+  }
+
+  @Patch('ad-sets/:adSetId')
+  @RequireOrgPermission(OrgPermission.MANAGE_ADS)
+  @Throttle({ short: { limit: 5, ttl: 1_000 }, medium: { limit: 30, ttl: 60_000 }, long: { limit: 300, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Edita público e orçamento do conjunto (não precisa de nova revisão). Devolve a campanha.' })
+  updateAdSet(
+    @Param('orgType') orgType: string,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('adSetId', ParseUUIDPipe) adSetId: string,
+    @Body() dto: UpdateAdSetDto,
+  ) {
+    onlyCompany(orgType)
+    return this.service.updateAdSet(orgId, adSetId, dto)
+  }
+
+  @Post('campaigns/:campaignId/duplicate')
+  @RequireOrgPermission(OrgPermission.MANAGE_ADS)
+  @Throttle({ short: { limit: 2, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 }, long: { limit: 100, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Copia a campanha como rascunho (sem foto ou vídeo e sem revisão)' })
+  duplicateCampaign(
+    @Param('orgType') orgType: string,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+  ) {
+    onlyCompany(orgType)
+    return this.service.duplicateCampaign(orgId, campaignId)
   }
 
   @Post('ads/:adId/submit')

@@ -39,6 +39,10 @@ export class AdsReviewService {
     if (dto.decision === 'REJECTED' && reason.length < AD_REVIEW_LIMITS.REASON_MIN) {
       throw new BadRequestException(`Para recusar, explique o motivo em pelo menos ${AD_REVIEW_LIMITS.REASON_MIN} letras. O anunciante vai ler.`)
     }
+    // Ninguém decide sobre um texto que não leu: se o anunciante editou depois de a tela carregar, a pessoa precisa ler de novo.
+    if (dto.expectedSubmittedAt !== undefined && (dto.expectedSubmittedAt ?? null) !== (ad.submittedAt?.toISOString() ?? null)) {
+      throw new ConflictException('O anunciante mudou este anúncio depois que você abriu a fila. Atualize a tela e leia o texto novo antes de decidir.')
+    }
     // Ninguém aprova o que não viu: vídeo ainda sendo preparado (ou que falhou) só pode ser recusado.
     if (dto.decision === 'APPROVED' && !creativeMediaReady(ad.creative.media)) {
       throw new BadRequestException(
@@ -54,6 +58,7 @@ export class AdsReviewService {
       reason: reason || null,
       reviewerId: reviewer.id,
       creativeSnapshot: creativeSnapshot(ad.creative),
+      expectedSubmittedAt: ad.submittedAt,
     })
     if (!ok) throw new ConflictException('Outra pessoa da moderação decidiu este anúncio agora há pouco.')
     await this.notifyAdvertiser(ad.adSet.campaign.account.companyId, {
@@ -90,6 +95,7 @@ export class AdsReviewService {
       reviewerId: null,
       source: 'AI',
       creativeSnapshot: creativeSnapshot(ad.creative),
+      expectedSubmittedAt: ad.submittedAt,
     })
     if (ok) await this.notifyAdvertiser(ad.adSet.campaign.account.companyId, { adId, campaignName: ad.adSet.campaign.name, decision: 'APPROVED', reason: null })
     return ok

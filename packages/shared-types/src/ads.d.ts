@@ -596,6 +596,11 @@ export interface AdReviewQueueResponse {
 }
 export interface AdReviewDecisionInput {
     decision: 'APPROVED' | 'REJECTED';
+    /**
+     * O `submittedAt` do anúncio como a tela mostrava. Se o anunciante mudou o anúncio depois, o servidor recusa a decisão
+     * (a pessoa não aprova um texto que não leu).
+     */
+    expectedSubmittedAt?: string | null;
     /** Obrigatório ao recusar (o anunciante lê este motivo). */
     reason?: string;
 }
@@ -967,4 +972,29 @@ export interface AdFraudResolveInput {
     resolution: 'CONFIRMED' | 'DISMISSED';
     note?: string;
 }
+/** Só o que veio no corpo muda. Mudar o texto, o botão ou o link de anúncio aprovado ou em revisão manda de volta para revisão. */
+export interface UpdateAdInput {
+    headline?: string;
+    body?: string;
+    ctaLabel?: AdCtaLabel;
+    destinationUrl?: string;
+}
+/** Público e orçamento do conjunto. A data de início não muda depois de criada. Não precisa de nova revisão. */
+export interface UpdateAdSetInput {
+    name?: string;
+    dailyBudgetCents?: number;
+    bidCapCents?: number | null;
+    endAt?: string | null;
+    states?: string[];
+    cities?: string[];
+    interests?: AdInterestId[];
+    ageBands?: AgeBand[];
+    genders?: UserGender[];
+    automaticAudience?: boolean;
+}
+export declare const AD_EDIT_COPY: {
+    readonly REVIEW_AGAIN: "Ao salvar, o anúncio volta para a revisão e para de rodar até ser aprovado de novo.";
+    readonly REVIEW_PENDING: "O anúncio já está em revisão. Ao salvar, a moderação passa a ver o texto novo.";
+    readonly DUPLICATE_NO_MEDIA: "A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.";
+};
 //# sourceMappingURL=ads.d.ts.map

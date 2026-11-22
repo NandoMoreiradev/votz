@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
 import {
+  AD_EDIT_COPY,
   AD_INTERESTS,
   AD_OBJECTIVE_LABELS,
   AD_REVIEW_STATUS_LABELS,
@@ -13,6 +14,7 @@ import {
   type AdStatus,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
+import { AdEditForm, AdSetEditForm } from '../../components/ads/AdEditForms'
 import { AdMedia } from '../../components/ads/AdMedia'
 import {
   adsErrorMessage,
@@ -20,6 +22,7 @@ import {
   useAdAccounts,
   useAdCampaigns,
   useCreateAdAccount,
+  useDuplicateAdCampaign,
   useSetAdCampaignStatus,
   useSubmitAd,
 } from '../../hooks/useAds'
@@ -209,6 +212,9 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
   const [open, setOpen] = useState(false)
   const setStatus = useSetAdCampaignStatus(companyId, accountId)
   const submit = useSubmitAd(companyId, accountId)
+  const duplicate = useDuplicateAdCampaign(companyId, accountId)
+  const [editingSet, setEditingSet] = useState<string | null>(null)
+  const [editingAd, setEditingAd] = useState<string | null>(null)
   const budget = campaign.adSets.reduce((sum, set) => sum + set.dailyBudgetCents, 0)
   const archived = campaign.status === 'ARCHIVED'
 
@@ -222,14 +228,16 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
         <span><Badge $tone={statusTone(campaign.status)}>{AD_STATUS_LABELS[campaign.status]}</Badge></span>
       </CampaignHead>
 
-      {canManage && !archived && (
+      {canManage && (
         <Row style={{ marginTop: 12 }}>
-          {campaign.status === 'ACTIVE'
+          {!archived && (campaign.status === 'ACTIVE'
             ? <SecondaryButton type="button" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ campaignId: campaign.id, status: 'PAUSED' })}>Pausar</SecondaryButton>
-            : <SecondaryButton type="button" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ campaignId: campaign.id, status: 'ACTIVE' })}>Ligar</SecondaryButton>}
-          <SecondaryButton type="button" disabled={setStatus.isPending} onClick={() => { if (window.confirm('Arquivar esta campanha? Ela não poderá ser ligada de novo.')) setStatus.mutate({ campaignId: campaign.id, status: 'ARCHIVED' }) }}>Arquivar</SecondaryButton>
+            : <SecondaryButton type="button" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ campaignId: campaign.id, status: 'ACTIVE' })}>Ligar</SecondaryButton>)}
+          <SecondaryButton type="button" disabled={duplicate.isPending} onClick={() => { if (window.confirm(`Criar uma cópia desta campanha como rascunho? ${AD_EDIT_COPY.DUPLICATE_NO_MEDIA}`)) duplicate.mutate(campaign.id) }}>{duplicate.isPending ? 'Copiando…' : 'Duplicar'}</SecondaryButton>
+          {!archived && <SecondaryButton type="button" disabled={setStatus.isPending} onClick={() => { if (window.confirm('Arquivar esta campanha? Ela não poderá ser ligada de novo.')) setStatus.mutate({ campaignId: campaign.id, status: 'ARCHIVED' }) }}>Arquivar</SecondaryButton>}
         </Row>
       )}
+      {duplicate.isError && <ErrorMsg role="alert">{adsErrorMessage(duplicate.error)}</ErrorMsg>}
       {setStatus.isError && <ErrorMsg role="alert">{adsErrorMessage(setStatus.error)}</ErrorMsg>}
 
       {open && campaign.adSets.map((set) => (
@@ -238,6 +246,10 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
           <CampaignName as="p">{set.name}</CampaignName>
           <Hint>{audienceSummary(set)}</Hint>
           <Hint>{formatBRL(set.dailyBudgetCents)} por dia · de {day(set.startAt)}{set.endAt ? ` até ${day(set.endAt)}` : ' sem data para acabar'}</Hint>
+          {canManage && !archived && editingSet !== set.id && (
+            <Row style={{ marginTop: 8 }}><SecondaryButton type="button" onClick={() => setEditingSet(set.id)}>Editar público e orçamento</SecondaryButton></Row>
+          )}
+          {editingSet === set.id && <AdSetEditForm set={set} companyId={companyId} accountId={accountId} onDone={() => setEditingSet(null)} />}
 
           {set.ads.map((ad) => (
             <AdBox key={ad.id}>
@@ -250,6 +262,10 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
               <AdMedia media={ad.creative.media} maxWidth={240} />
               <Hint>Botão "{ad.creative.ctaLabel}" → {ad.creative.destinationUrl}</Hint>
               {ad.reviewNote && <ErrorMsg>Motivo: {ad.reviewNote}</ErrorMsg>}
+              {canManage && !archived && editingAd !== ad.id && (
+                <Row style={{ marginTop: 10 }}><SecondaryButton type="button" onClick={() => setEditingAd(ad.id)}>Editar anúncio</SecondaryButton></Row>
+              )}
+              {editingAd === ad.id && <AdEditForm ad={ad} companyId={companyId} accountId={accountId} onDone={() => setEditingAd(null)} />}
               {canManage && !archived && (ad.reviewStatus === 'NOT_SUBMITTED' || ad.reviewStatus === 'REJECTED') && (
                 <Row style={{ marginTop: 10 }}>
                   <SecondaryButton type="button" disabled={submit.isPending} onClick={() => submit.mutate(ad.id)}>

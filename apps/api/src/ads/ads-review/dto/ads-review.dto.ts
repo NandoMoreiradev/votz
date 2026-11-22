@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform, Type } from 'class-transformer'
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
+import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { AD_REVIEW_LIMITS } from '@votz/shared-types'
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value)
@@ -31,6 +31,11 @@ export class AdReviewDecisionDto {
   @ApiProperty({ enum: ['APPROVED', 'REJECTED'] })
   @IsIn(['APPROVED', 'REJECTED'], { message: 'Escolha aprovar ou recusar.' })
   decision: 'APPROVED' | 'REJECTED'
+
+  @ApiPropertyOptional({ description: 'O submittedAt que a tela mostrava. Se o anunciante mudou o anúncio depois, a decisão é recusada (409).' })
+  @IsOptional()
+  @IsISO8601()
+  expectedSubmittedAt?: string | null
 
   @ApiPropertyOptional({ maxLength: AD_REVIEW_LIMITS.REASON_MAX, description: 'Obrigatório ao recusar: o anunciante lê este motivo.' })
   @IsOptional()

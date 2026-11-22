@@ -110,6 +110,41 @@ describe('AdsReviewService', () => {
       })
     })
 
+
+    describe('anunciante editou o anúncio depois de a fila carregar', () => {
+      const submitted = new Date('2026-11-22T14:00:00.000Z')
+      const edited = { ...pendingAd, submittedAt: new Date('2026-11-22T14:30:00.000Z') }
+
+      it('recusa a decisão (409) se o envio foi renovado, para ninguém aprovar o texto que não leu', async () => {
+        repo.findForReview.mockResolvedValue(edited)
+        await expect(service.decide('ad1', { id: 'mod1' }, { decision: 'APPROVED', expectedSubmittedAt: submitted.toISOString() })).rejects.toBeInstanceOf(ConflictException)
+        expect(repo.decide).not.toHaveBeenCalled()
+        expect(notifications.notify).not.toHaveBeenCalled()
+      })
+
+      it('aceita quando a tela mostrava o envio atual, e a gravação só vale para esse envio', async () => {
+        repo.findForReview.mockResolvedValue({ ...pendingAd, submittedAt: submitted })
+        repo.decide.mockResolvedValue(true)
+        await service.decide('ad1', { id: 'mod1' }, { decision: 'APPROVED', expectedSubmittedAt: submitted.toISOString() })
+        expect(repo.decide).toHaveBeenCalledWith(expect.objectContaining({ expectedSubmittedAt: submitted }))
+      })
+
+      it('sem a data da tela (cliente antigo) vale a leitura do servidor, que também é conferida na gravação', async () => {
+        repo.findForReview.mockResolvedValue({ ...pendingAd, submittedAt: submitted })
+        repo.decide.mockResolvedValue(true)
+        await service.decide('ad1', { id: 'mod1' }, { decision: 'REJECTED', reason: 'Texto com promessa de cura.' })
+        expect(repo.decide).toHaveBeenCalledWith(expect.objectContaining({ expectedSubmittedAt: submitted }))
+      })
+
+      it('a IA também não aprova se o texto mudou entre a leitura e a gravação (a gravação é condicional ao envio lido)', async () => {
+        repo.findForReview.mockResolvedValue({ ...pendingAd, submittedAt: submitted })
+        repo.decide.mockResolvedValue(false)
+        await expect(service.approveByAi('ad1', 'Sem problema.')).resolves.toBe(false)
+        expect(repo.decide).toHaveBeenCalledWith(expect.objectContaining({ source: 'AI', expectedSubmittedAt: submitted }))
+        expect(notifications.notify).not.toHaveBeenCalled()
+      })
+    })
+
     describe('com foto ou vídeo', () => {
       it('aprova com a mídia pronta e guarda qual arquivo foi revisado', async () => {
         repo.findForReview.mockResolvedValue(adWithMedia(mediaRow()))

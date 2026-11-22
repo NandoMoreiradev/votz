@@ -172,3 +172,103 @@ export class SetAdCampaignStatusDto {
   @IsIn(['ACTIVE', 'PAUSED', 'ARCHIVED'], { message: 'Situação inválida.' })
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED'
 }
+
+/** Edição do anúncio: só o que vier no corpo muda. */
+export class UpdateAdDto {
+  @ApiPropertyOptional({ example: 'Pão quentinho às 7h' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2, { message: 'Escreva o título.' })
+  @MaxLength(AD_LIMITS.HEADLINE_MAX, { message: `O título pode ter até ${AD_LIMITS.HEADLINE_MAX} letras.` })
+  headline?: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(2, { message: 'Escreva o texto do anúncio.' })
+  @MaxLength(AD_LIMITS.BODY_MAX, { message: `O texto pode ter até ${AD_LIMITS.BODY_MAX} letras.` })
+  body?: string
+
+  @ApiPropertyOptional({ enum: AD_CTA_LABELS })
+  @IsOptional()
+  @IsIn(AD_CTA_LABELS as readonly string[] as string[], { message: 'Escolha um texto de botão da lista.' })
+  ctaLabel?: AdCtaLabel
+
+  @ApiPropertyOptional({ example: 'https://minhaempresa.com.br/oferta' })
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O link precisa começar com https:// e ser um endereço válido.' })
+  @MaxLength(AD_LIMITS.URL_MAX)
+  destinationUrl?: string
+}
+
+/** Edição do público e do orçamento: só o que vier no corpo muda. A data de início não muda. */
+export class UpdateAdSetDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(2, { message: 'Dê um nome ao público.' })
+  @MaxLength(AD_LIMITS.NAME_MAX)
+  name?: string
+
+  @ApiPropertyOptional({ description: 'Orçamento por dia, em centavos' })
+  @IsOptional()
+  @IsInt()
+  @Min(AD_LIMITS.MIN_DAILY_BUDGET_CENTS, { message: 'O orçamento mínimo é R$ 6,00 por dia.' })
+  @Max(AD_LIMITS.MAX_DAILY_BUDGET_CENTS, { message: 'O orçamento máximo é R$ 10.000,00 por dia.' })
+  dailyBudgetCents?: number
+
+  @ApiPropertyOptional({ description: 'Lance máximo em centavos. null: o Votz decide.' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  bidCapCents?: number | null
+
+  @ApiPropertyOptional({ description: 'Data de fim. null: sem data para acabar.' })
+  @IsOptional()
+  @IsISO8601({}, { message: 'Data de fim inválida.' })
+  endAt?: string | null
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(AD_LIMITS.MAX_STATES)
+  @ArrayUnique()
+  @Matches(/^[A-Z]{2}$/, { each: true, message: 'Use a sigla do estado (ex.: SP).' })
+  states?: string[]
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(AD_LIMITS.MAX_CITIES, { message: `Escolha no máximo ${AD_LIMITS.MAX_CITIES} cidades.` })
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  cities?: string[]
+
+  @ApiPropertyOptional({ enum: AD_INTEREST_IDS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(AD_INTEREST_IDS as string[], { each: true, message: 'Um dos interesses não existe na lista.' })
+  interests?: AdInterestId[]
+
+  @ApiPropertyOptional({ enum: AGE_BANDS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(AGE_BANDS as readonly string[] as string[], { each: true, message: 'Faixa de idade inválida.' })
+  ageBands?: AgeBand[]
+
+  @ApiPropertyOptional({ enum: USER_GENDERS, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(USER_GENDERS as readonly string[] as string[], { each: true, message: 'Gênero inválido.' })
+  genders?: UserGender[]
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  automaticAudience?: boolean
+}

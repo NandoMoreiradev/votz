@@ -72,10 +72,12 @@ export class AdsReviewRepository {
     reviewerId: string | null
     source?: AdReviewSource
     creativeSnapshot: Prisma.InputJsonValue
+    /** O `submittedAt` lido antes de decidir: se o anunciante editou no meio (o que renova o envio), a decisão não vale. */
+    expectedSubmittedAt?: Date | null
   }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.ad.updateMany({
-        where: { id: params.adId, reviewStatus: 'PENDING' },
+        where: { id: params.adId, reviewStatus: 'PENDING', ...(params.expectedSubmittedAt !== undefined ? { submittedAt: params.expectedSubmittedAt } : {}) },
         data: { reviewStatus: params.decision, reviewNote: params.decision === 'REJECTED' ? params.reason : null, reviewedAt: new Date() },
       })
       if (updated.count === 0) return false

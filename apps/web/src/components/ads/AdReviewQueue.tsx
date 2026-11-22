@@ -206,7 +206,7 @@ export function AdReviewQueue() {
 
   const approve = (item: AdReviewQueueItem) => {
     setError(null)
-    decide.mutate({ adId: item.adId, decision: 'APPROVED' }, { onError: (err) => setError(adsErrorMessage(err)) })
+    decide.mutate({ adId: item.adId, decision: 'APPROVED', expectedSubmittedAt: item.submittedAt }, { onError: (err) => setError(adsErrorMessage(err)) })
   }
 
   const fraudOpen = fraud.data?.meta.openCount ?? 0
@@ -303,7 +303,7 @@ export function AdReviewQueue() {
         onConfirm={(reason) => {
           if (!rejecting) return
           decide.mutate(
-            { adId: rejecting.adId, decision: 'REJECTED', reason },
+            { adId: rejecting.adId, decision: 'REJECTED', reason, expectedSubmittedAt: rejecting.submittedAt },
             { onSuccess: () => { setRejecting(null); setError(null) }, onError: (err) => setError(adsErrorMessage(err)) },
           )
         }}

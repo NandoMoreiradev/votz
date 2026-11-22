@@ -17,6 +17,8 @@ import type {
   AdView,
   CreateAdCampaignInput,
   SponsoredAdView,
+  UpdateAdInput,
+  UpdateAdSetInput,
 } from '@votz/shared-types'
 import { api } from '../lib/api'
 import { uploadAdMedia } from '../lib/post-media-upload'
@@ -82,6 +84,31 @@ export function useSubmitAd(companyId: string, accountId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (adId: string) => api.post<AdView>(`${base(companyId)}/ads/${adId}/submit`).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
+  })
+}
+
+export function useUpdateAd(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ adId, ...input }: { adId: string } & UpdateAdInput) => api.patch<AdView>(`${base(companyId)}/ads/${adId}`, input).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
+  })
+}
+
+export function useUpdateAdSet(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ adSetId, ...input }: { adSetId: string } & UpdateAdSetInput) =>
+      api.patch<AdCampaignView>(`${base(companyId)}/ad-sets/${adSetId}`, input).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
+  })
+}
+
+export function useDuplicateAdCampaign(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (campaignId: string) => api.post<AdCampaignView>(`${base(companyId)}/campaigns/${campaignId}/duplicate`).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
   })
 }

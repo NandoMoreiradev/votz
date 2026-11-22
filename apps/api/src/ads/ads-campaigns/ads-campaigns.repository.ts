@@ -107,6 +107,74 @@ export class AdsCampaignsRepository {
     })
   }
 
+  /** Anúncio com o que a edição precisa: criativo, mídia e a campanha (situação e empresa). */
+  findAdForEdit(adId: string) {
+    return this.prisma.ad.findUnique({
+      where: { id: adId },
+      include: {
+        creative: CREATIVE_WITH_MEDIA,
+        adSet: { select: { campaign: { select: { id: true, status: true, account: { select: { companyId: true } } } } } },
+      },
+    })
+  }
+
+  /**
+   * Edita o texto, o botão e o link do criativo. A troca só vale se o anúncio ainda está na situação de revisão lida
+   * (`expectedReviewStatus`): se a moderação decidiu no meio, devolve `null` e nada muda. `backToReview` renova o envio
+   * (`submittedAt`), que é o que impede a moderação de aprovar o texto antigo.
+   */
+  updateAd(
+    adId: string,
+    params: { expectedReviewStatus: AdReviewStatus; backToReview: boolean; name?: string; creative: { headline?: string; body?: string; ctaLabel?: string; destinationUrl?: string } },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.ad.updateMany({
+        where: { id: adId, reviewStatus: params.expectedReviewStatus },
+        data: {
+          // Sempre toca algum campo: `updateMany` sem nada para gravar não conta a linha e a edição viraria conflito.
+          updatedAt: new Date(),
+          ...(params.name ? { name: params.name } : {}),
+          ...(params.backToReview ? { reviewStatus: 'PENDING', submittedAt: new Date(), reviewNote: null, reviewedAt: null } : {}),
+        },
+      })
+      if (claimed.count === 0) return null
+      const ad = await tx.ad.findUniqueOrThrow({ where: { id: adId }, select: { creativeId: true } })
+      await tx.adCreative.update({ where: { id: ad.creativeId }, data: params.creative })
+      return tx.ad.findUniqueOrThrow({ where: { id: adId }, include: { creative: CREATIVE_WITH_MEDIA } })
+    })
+  }
+
+  findAdSetForEdit(adSetId: string) {
+    return this.prisma.adSet.findUnique({
+      where: { id: adSetId },
+      include: { campaign: { select: { id: true, status: true, account: { select: { companyId: true } } } } },
+    })
+  }
+
+  updateAdSet(adSetId: string, data: Prisma.AdSetUpdateInput) {
+    return this.prisma.adSet.update({ where: { id: adSetId }, data })
+  }
+
+  /** Copia a campanha como rascunho: cada conjunto e cada anúncio com criativo novo (sem foto ou vídeo), tudo sem revisão. */
+  duplicateCampaign(data: {
+    accountId: string
+    name: string
+    objective: AdObjective
+    adSets: { set: Omit<NewCampaignData['adSet'], never>; ads: { name: string; creative: NewCampaignData['creative'] }[] }[]
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const campaign = await tx.adCampaign.create({ data: { accountId: data.accountId, name: data.name, objective: data.objective } })
+      for (const { set, ads } of data.adSets) {
+        const adSet = await tx.adSet.create({ data: { ...set, campaignId: campaign.id } })
+        for (const ad of ads) {
+          const creative = await tx.adCreative.create({ data: { accountId: data.accountId, ...ad.creative } })
+          await tx.ad.create({ data: { adSetId: adSet.id, creativeId: creative.id, name: ad.name } })
+        }
+      }
+      return tx.adCampaign.findUniqueOrThrow({ where: { id: campaign.id }, include: CAMPAIGN_TREE })
+    })
+  }
+
   submitAd(adId: string) {
     return this.prisma.ad.update({
       where: { id: adId },
