@@ -27,11 +27,19 @@ export function notificationContent(notification: AppNotification): { label: str
       : `As campanhas da conta ${account} foram pausadas porque o saldo acabou. Recarregue e ligue as campanhas de novo.`
     return { label, href: '/estudio/anuncios/faturamento' }
   }
+  if (type === 'AD_LANDING_PAGE') {
+    const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'sua campanha'
+    const host = typeof metadata?.host === 'string' && metadata.host ? ` (${metadata.host})` : ''
+    const label = metadata?.status === 'BLOCKED'
+      ? `Pausamos ${name}: o link do anúncio${host} leva para um endereço que não é permitido em anúncios. Troque o anúncio por um com o endereço do seu site.`
+      : `Pausamos ${name}: a página do anúncio${host} não abriu nas duas últimas conferências. Quando o site voltar, ligue a campanha de novo.`
+    return { label, href: '/estudio/anuncios' }
+  }
   if (type === 'AD_INVALID_TRAFFIC') {
     const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'seu anúncio'
     const credit = typeof metadata?.creditCents === 'number' && metadata.creditCents > 0 ? ` Devolvemos R$ ${(metadata.creditCents / 100).toFixed(2).replace('.', ',')} ao seu saldo.` : ''
     const label = metadata?.paused === true
-      ? `Achamos cliques suspeitos em ${name} e pausamos o anúncio para você não pagar por eles.${credit} Veja se está tudo certo e ligue de novo.`
+      ? `Achamos cliques suspeitos em ${name} e pausamos o anúncio para você não pagar por eles.${credit} A moderação vai conferir e religar o anúncio.`
       : `Achamos cliques suspeitos em ${name}.${credit} Você não paga por cliques inválidos.`
     return { label, href: '/estudio/anuncios/relatorio' }
   }

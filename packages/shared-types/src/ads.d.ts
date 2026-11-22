@@ -531,7 +531,25 @@ export interface AdAiAnalysisView {
     autoApproved: boolean;
     createdAt: string;
 }
+/** Última conferência da página para onde o botão do anúncio leva. */
+export interface AdLandingCheckView {
+    status: 'OK' | 'BAD_STATUS' | 'UNREACHABLE' | 'BLOCKED';
+    httpStatus: number | null;
+    /** Site em que o link terminou, depois dos redirecionamentos. */
+    finalHost: string | null;
+    problems: string[];
+    checkedAt: string;
+}
+export declare const AD_LANDING_STATUS_LABELS: {
+    readonly OK: "A página abre normalmente";
+    readonly BAD_STATUS: "A página responde com erro";
+    readonly UNREACHABLE: "A página não abriu";
+    readonly BLOCKED: "O link leva para um endereço não permitido";
+};
+export declare const AD_LANDING_PROBLEM_LABELS: Record<string, string>;
 export interface AdReviewQueueItem {
+    /** Conferência da página de destino; nula enquanto não foi feita. */
+    landing: AdLandingCheckView | null;
     adId: string;
     reviewStatus: AdReviewStatus;
     submittedAt: string | null;

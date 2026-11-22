@@ -193,6 +193,7 @@ enum NotificationType {
   AD_LOW_BALANCE
   AD_PAUSED_NO_BALANCE
   AD_INVALID_TRAFFIC
+  AD_LANDING_PAGE
 }
 
 enum SlaState {
@@ -2347,6 +2348,7 @@ model Ad {
   events       AdEvent[]
   dailyStats   AdDailyStat[]
   fraudFlags   AdFraudFlag[]
+  landingChecks AdLandingCheck[]
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
@@ -2674,4 +2676,27 @@ model AdFraudFlag {
   @@index([status, createdAt])
   @@index([accountId])
   @@map("ad_fraud_flags")
+}
+
+// ── Anúncios: página de destino (plano de anúncios, seção 5.3) ──────────────
+// Cada conferência da página para onde o botão do anúncio leva: ao enviar, toda semana e na nova tentativa depois de uma falha.
+// `status`: OK, BAD_STATUS (a página responde erro), UNREACHABLE (não abre) ou BLOCKED (foi para domínio proibido, rede interna ou http).
+
+model AdLandingCheck {
+  id         String   @id @default(uuid())
+  adId       String   @map("ad_id")
+  ad         Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  // SUBMIT, WEEKLY ou RETRY.
+  trigger    String
+  status     String
+  httpStatus Int?     @map("http_status")
+  // Site em que o link terminou depois dos redirecionamentos (só o domínio).
+  finalHost  String?  @map("final_host")
+  redirects  Int      @default(0)
+  // REDIRECT_OFF_SITE, TOO_MANY_REDIRECTS, REDIRECT_TO_HTTP, BLOCKED_DOMAIN, PRIVATE_ADDRESS.
+  problems   String[]
+  checkedAt  DateTime @default(now()) @map("checked_at")
+
+  @@index([adId, checkedAt])
+  @@map("ad_landing_checks")
 }

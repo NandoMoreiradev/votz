@@ -54,6 +54,7 @@ describe('AdsReviewService', () => {
             campaign: { name: 'Dezembro', objective: 'TRAFFIC', account: { name: 'Conta principal', company: { id: 'co1', tradeName: 'Padaria', verified: true } } },
           },
           aiAnalyses: [{ category: 'food-drink', restricted: null, violations: [{ id: 'gambling', confidence: 0.3 }], sensitive: false, confidence: 0.8, explanation: 'Texto comum.', autoApproved: false, createdAt: now }],
+          landingChecks: [{ status: 'OK', httpStatus: 200, finalHost: 'padaria.com.br', problems: ['REDIRECT_OFF_SITE'], checkedAt: now }],
           reviews: [{ decision: 'REJECTED', reason: 'Link quebrado', source: 'HUMAN', reviewer: { name: 'Moderadora' }, createdAt: now }],
         }],
       })
@@ -66,6 +67,7 @@ describe('AdsReviewService', () => {
         campaignName: 'Dezembro',
         creative: { headline: 'Pão quente', media: { kind: 'VIDEO', status: 'READY', url: 'https://cdn.test/posts/m1.mp4', posterUrl: 'https://cdn.test/posts/m1.poster.jpg' } },
         history: [{ decision: 'REJECTED', reviewerName: 'Moderadora' }],
+        landing: { status: 'OK', httpStatus: 200, finalHost: 'padaria.com.br', problems: ['REDIRECT_OFF_SITE'] },
       })
     })
   })

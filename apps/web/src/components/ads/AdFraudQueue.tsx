@@ -121,7 +121,7 @@ function Case({ item, busy, onResolve }: { item: AdFraudFlagItem; busy: boolean;
         <div><dt>Contados como inválidos</dt><dd>{item.invalidClicks}</dd></div>
         <div><dt>Já devolvido</dt><dd>{formatBRL(item.creditedCents)}</dd></div>
       </Numbers>
-      {item.pausedAd && <Meta>{item.status === 'DISMISSED' ? 'O anúncio tinha sido pausado por este caso e foi religado.' : 'O anúncio foi pausado por este caso.'}</Meta>}
+      {item.pausedAd && <Meta>{item.status === 'OPEN' ? 'O anúncio foi pausado por este caso e volta quando você resolver.' : 'O anúncio tinha sido pausado por este caso e foi religado.'}</Meta>}
       {item.status === 'OPEN' ? (
         <Actions>
           <ActionBtn type="button" $variant="confirm" disabled={busy} onClick={() => onResolve('CONFIRMED')}>Era tráfego inválido</ActionBtn>
@@ -136,8 +136,8 @@ function Case({ item, busy, onResolve }: { item: AdFraudFlagItem; busy: boolean;
 
 /**
  * Tráfego suspeito nos anúncios. O clique inválido já foi devolvido ao anunciante (só em anúncio cobrado por clique);
- * aqui a moderação confirma que era inválido ou descarta. Descartar religa o anúncio que o próprio caso pausou, mas
- * o crédito fica com o anunciante.
+ * aqui a moderação confirma que era inválido ou descarta. Resolver religa o anúncio que o próprio caso pausou; o crédito
+ * fica com o anunciante. Confirmado, o caso segue devolvendo o que passar do plausível naquele dia; descartado, para.
  */
 export function AdFraudQueue() {
   const [status, setStatus] = useState<AdFraudStatus>('OPEN')

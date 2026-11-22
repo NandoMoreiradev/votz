@@ -2,6 +2,8 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import {
   AD_INTERESTS,
+  AD_LANDING_PROBLEM_LABELS,
+  AD_LANDING_STATUS_LABELS,
   AD_OBJECTIVE_LABELS,
   AD_PROHIBITED_CATEGORIES,
   AD_RESTRICTED_CATEGORIES,
@@ -251,6 +253,14 @@ export function AdReviewQueue() {
               <Cta>{item.creative.ctaLabel}</Cta>
               <Url href={item.creative.destinationUrl} target="_blank" rel="noopener noreferrer nofollow">{item.creative.destinationUrl}</Url>
             </Preview>
+
+            {item.landing && (
+              <AiNote $alert={item.landing.status !== 'OK' || item.landing.problems.length > 0} aria-label="Página de destino">
+                <strong>Página de destino · conferida em {when(item.landing.checkedAt)}</strong>
+                {AD_LANDING_STATUS_LABELS[item.landing.status]}{item.landing.httpStatus ? ` (resposta ${item.landing.httpStatus})` : ''}{item.landing.finalHost ? ` · termina em ${item.landing.finalHost}` : ''}
+                {item.landing.problems.map((problem) => <div key={problem}>{AD_LANDING_PROBLEM_LABELS[problem] ?? problem}</div>)}
+              </AiNote>
+            )}
 
             {item.aiAnalysis && <AiOpinion ai={item.aiAnalysis} />}
 

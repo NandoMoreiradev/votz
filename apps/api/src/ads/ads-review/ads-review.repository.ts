@@ -8,6 +8,7 @@ const QUEUE_INCLUDE = {
   adSet: { include: { campaign: { include: { account: { include: { company: { select: { id: true, tradeName: true, verified: true } } } } } } } },
   reviews: { orderBy: { createdAt: 'desc' as const }, take: 5, include: { reviewer: { select: { name: true } } } },
   aiAnalyses: { orderBy: { createdAt: 'desc' as const }, take: 1 },
+  landingChecks: { orderBy: { checkedAt: 'desc' as const }, take: 1 },
 } satisfies Prisma.AdInclude
 
 export type QueueAd = Prisma.AdGetPayload<{ include: typeof QUEUE_INCLUDE }>

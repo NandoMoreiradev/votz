@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { NotificationsService } from '../../notifications/notifications.service'
 import * as DOMPurify from 'isomorphic-dompurify'
-import { AD_REVIEW_LIMITS, type AdInterestId, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
+import { AD_REVIEW_LIMITS, type AdInterestId, type AdLandingCheckView, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
 import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsReviewRepository, type QueueAd } from './ads-review.repository'
@@ -139,8 +139,12 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
   const { campaign } = adSet
   const { account } = campaign
   const ai = ad.aiAnalyses[0]
+  const landing = ad.landingChecks[0]
   return {
     adId: ad.id,
+    landing: landing
+      ? { status: landing.status as AdLandingCheckView['status'], httpStatus: landing.httpStatus, finalHost: landing.finalHost, problems: landing.problems, checkedAt: landing.checkedAt.toISOString() }
+      : null,
     reviewStatus: ad.reviewStatus,
     submittedAt: ad.submittedAt?.toISOString() ?? null,
     reviewedAt: ad.reviewedAt?.toISOString() ?? null,

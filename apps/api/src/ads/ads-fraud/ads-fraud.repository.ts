@@ -110,7 +110,9 @@ export class AdsFraudRepository {
   applyFinding(day: DayFacts, verdict: IvtVerdict, clicksWithoutView: number): Promise<FindingResult | null> {
     return this.prisma.$transaction(async (tx) => {
       let flag = await tx.adFraudFlag.findUnique({ where: { adId_day: { adId: day.adId, day: day.day } } })
-      if (flag && flag.status !== 'OPEN') return null
+      // Descartado pela moderação: era tráfego normal, nada mais a fazer. Confirmado: continua devolvendo o que passar do plausível, sem pausar de novo.
+      if (flag?.status === 'DISMISSED') return null
+      const confirmed = flag?.status === 'CONFIRMED'
       const created = !flag
 
       const base = {
@@ -124,7 +126,7 @@ export class AdsFraudRepository {
       if (!flag) {
         flag = await tx.adFraudFlag.create({ data: { adId: day.adId, day: day.day, level: verdict.level, ...base } })
       } else {
-        // O nível só sobe; sinal que sumiu depois não rebaixa o caso aberto.
+        // O nível só sobe; sinal que sumiu depois não rebaixa o caso.
         flag = await tx.adFraudFlag.update({ where: { id: flag.id }, data: { ...base, level: verdict.level === 'EXTREME' ? 'EXTREME' : flag.level } })
       }
 
@@ -142,8 +144,9 @@ export class AdsFraudRepository {
       }
 
       let pausedNow = false
-      if (flag.level === 'EXTREME' && !flag.pausedAd) {
-        const paused = await tx.ad.updateMany({ where: { id: day.adId, status: 'ACTIVE' }, data: { status: 'PAUSED' } })
+      if (!confirmed && flag.level === 'EXTREME' && !flag.pausedAd) {
+        // Anúncio criado pelo passo a passo nasce como rascunho (DRAFT) e já entrega: pausa qualquer um que não esteja parado ou arquivado.
+        const paused = await tx.ad.updateMany({ where: { id: day.adId, status: { notIn: ['PAUSED', 'ARCHIVED'] } }, data: { status: 'PAUSED' } })
         if (paused.count === 1) {
           await tx.adFraudFlag.update({ where: { id: flag.id }, data: { pausedAd: true } })
           pausedNow = true
@@ -206,7 +209,7 @@ export class AdsFraudRepository {
     return this.prisma.adFraudFlag.findUnique({ where: { id: flagId }, include: FLAG_INCLUDE })
   }
 
-  /** Fecha o caso (só se ainda aberto). Descartar religa o anúncio que o próprio caso pausou. */
+  /** Fecha o caso (só se ainda aberto). Em qualquer resolução o anúncio que o próprio caso pausou volta: a pausa só segura até uma pessoa olhar. */
   resolveFlag(params: { flagId: string; resolution: 'CONFIRMED' | 'DISMISSED'; resolvedById: string; note: string | null; now: Date }): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const flag = await tx.adFraudFlag.findUnique({ where: { id: params.flagId }, select: { adId: true, pausedAd: true } })
@@ -216,7 +219,7 @@ export class AdsFraudRepository {
         data: { status: params.resolution, resolvedById: params.resolvedById, resolvedAt: params.now, resolutionNote: params.note },
       })
       if (closed.count !== 1) return false
-      if (params.resolution === 'DISMISSED' && flag.pausedAd) await tx.ad.updateMany({ where: { id: flag.adId, status: 'PAUSED' }, data: { status: 'ACTIVE' } })
+      if (flag.pausedAd) await tx.ad.updateMany({ where: { id: flag.adId, status: 'PAUSED' }, data: { status: 'ACTIVE' } })
       return true
     })
   }

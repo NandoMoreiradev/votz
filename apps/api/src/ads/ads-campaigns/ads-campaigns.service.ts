@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import * as DOMPurify from 'isomorphic-dompurify'
 import type { Ad, AdAccount, AdCampaign, AdCreative, AdSet } from '@prisma/client'
 import type {
@@ -14,6 +15,8 @@ import type { MediaAssetView } from '../../media/media-items'
 import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem } from '../ad-creative-media'
 import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
+import { AdsLandingService } from '../ads-landing/ads-landing.service'
+import { parseBlockedDomains, staticLinkProblem } from '../ads-landing/landing-rules'
 import { AdsCampaignsRepository } from './ads-campaigns.repository'
 import { CreateAdCampaignDto, SetAdCampaignStatusDto } from './dto/ads-campaigns.dto'
 
@@ -33,6 +36,8 @@ export class AdsCampaignsService {
     private readonly aiReview: AdsAiReviewService,
     private readonly mediaAssets: MediaAssetsService,
     private readonly storage: StorageService,
+    private readonly landing: AdsLandingService,
+    private readonly config: ConfigService,
   ) {}
 
   private readonly publicUrl = (key: string) => this.storage.getPublicUrl(key)
@@ -89,6 +94,10 @@ export class AdsCampaignsService {
     const texts = { name: clean(dto.name), setName: clean(adSet.name), headline: clean(creative.headline), body: clean(creative.body) }
     if (Object.values(texts).some((text) => text.length < 2)) throw new BadRequestException('Preencha nome, título e texto do anúncio.')
 
+    // O link precisa ser de um site público, sem encurtador, rede interna nem domínio proibido (a página em si é conferida depois do envio).
+    const linkProblem = staticLinkProblem(creative.destinationUrl, parseBlockedDomains(this.config.get<string>('ADS_BLOCKED_DOMAINS')))
+    if (linkProblem) throw new BadRequestException(linkProblem)
+
     // Público automático: a IA escolhe; só objetivo e região contam (plano, seção 6.3).
     const automatic = adSet.automaticAudience
     const submit = !!dto.submitForReview
@@ -132,7 +141,7 @@ export class AdsCampaignsService {
     // (a tarefa horária recoloca na fila o vídeo parado).
     if (prepared) await this.mediaAssets.afterAttach(prepared)
     const ads = campaign.adSets.flatMap((set) => set.ads)
-    if (submit) await Promise.all(ads.map((ad) => this.aiReview.enqueue(ad.id)))
+    if (submit) await Promise.all(ads.flatMap((ad) => [this.aiReview.enqueue(ad.id), this.landing.enqueue(ad.id, 'SUBMIT')]))
     // Relê a árvore para devolver a mídia já ligada (foto pronta; vídeo "preparando").
     const saved = prepared ? await this.repo.findCampaign(campaign.id) : campaign
     return toCampaignView(saved ?? campaign, this.publicUrl)
@@ -165,7 +174,7 @@ export class AdsCampaignsService {
       throw new BadRequestException('O vídeo deste anúncio não pôde ser preparado. Crie o anúncio de novo com outro arquivo.')
     }
     const submitted = await this.repo.submitAd(adId)
-    await this.aiReview.enqueue(adId)
+    await Promise.all([this.aiReview.enqueue(adId), this.landing.enqueue(adId, 'SUBMIT')])
     return toAdView(submitted, this.publicUrl)
   }
 

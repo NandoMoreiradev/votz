@@ -9,7 +9,9 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { AdsCampaignsService, MAX_AD_ACCOUNTS_PER_COMPANY } from './ads-campaigns.service'
+import { ConfigService } from '@nestjs/config'
 import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
+import { AdsLandingService } from '../ads-landing/ads-landing.service'
 import { MediaAssetsService } from '../../media/media-assets.service'
 import { StorageService } from '../../storage/storage.service'
 import { AdsCampaignsRepository } from './ads-campaigns.repository'
@@ -55,6 +57,8 @@ const validCampaign = (): CreateAdCampaignDto => ({
 })
 
 const aiReview = { enqueue: jest.fn() }
+const landing = { enqueue: jest.fn() }
+const config = { get: jest.fn() }
 const mediaAssets = {
   upload: jest.fn(),
   presign: jest.fn(),
@@ -84,12 +88,48 @@ describe('AdsCampaignsService', () => {
         { provide: AdsAiReviewService, useValue: aiReview },
         { provide: MediaAssetsService, useValue: mediaAssets },
         { provide: StorageService, useValue: storage },
+        { provide: AdsLandingService, useValue: landing },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile()
     service = module.get(AdsCampaignsService)
     aiReview.enqueue.mockResolvedValue(undefined)
+    landing.enqueue.mockResolvedValue(undefined)
+    config.get.mockReturnValue(undefined)
     mediaAssets.afterAttach.mockResolvedValue(undefined)
     mediaAssets.releaseForPost.mockResolvedValue(undefined)
+  })
+
+  describe('link do anúncio', () => {
+    const withLink = (destinationUrl: string): CreateAdCampaignDto => ({ ...validCampaign(), creative: { ...validCampaign().creative, destinationUrl } })
+
+    it.each(['https://bit.ly/abc', 'https://192.168.0.1/x', 'https://prefeitura.sp.gov.br/x', 'https://localhost/x'])('recusa %s antes de criar qualquer coisa', async (url) => {
+      repo.findAccount.mockResolvedValue(account)
+      await expect(service.createCampaign('co1', 'acc1', withLink(url), 'u1')).rejects.toBeInstanceOf(BadRequestException)
+      expect(repo.createCampaign).not.toHaveBeenCalled()
+      expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+    })
+
+    it('recusa domínio da lista do dono (ADS_BLOCKED_DOMAINS)', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      config.get.mockImplementation((key: string) => (key === 'ADS_BLOCKED_DOMAINS' ? 'golpe.com.br' : undefined))
+      await expect(service.createCampaign('co1', 'acc1', withLink('https://loja.golpe.com.br/x'), 'u1')).rejects.toThrow('não pode ser usado')
+    })
+
+    it('ao enviar para revisão, põe a conferência da página na fila junto com a da IA', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      repo.createCampaign.mockResolvedValue(tree())
+      await service.createCampaign('co1', 'acc1', { ...validCampaign(), submitForReview: true }, 'u1')
+      expect(landing.enqueue).toHaveBeenCalledWith('ad1', 'SUBMIT')
+      expect(aiReview.enqueue).toHaveBeenCalledWith('ad1')
+    })
+
+    it('como rascunho, não confere a página ainda', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      repo.createCampaign.mockResolvedValue(tree())
+      await service.createCampaign('co1', 'acc1', validCampaign(), 'u1')
+      expect(landing.enqueue).not.toHaveBeenCalled()
+    })
   })
 
   describe('foto e vídeo do anúncio', () => {
