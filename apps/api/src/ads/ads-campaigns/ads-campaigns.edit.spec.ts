@@ -43,6 +43,14 @@ const repo = {
   submitAd: jest.fn(),
 }
 const aiReview = { enqueue: jest.fn() }
+const mediaAssets = {
+  prepareForAdCreative: jest.fn(),
+  attachToAdCreative: jest.fn(),
+  removeAdCreativeMedia: jest.fn(),
+  afterAttach: jest.fn(),
+  dropKeys: jest.fn(),
+  releaseForPost: jest.fn(),
+}
 const landing = { enqueue: jest.fn() }
 const config = { get: jest.fn() }
 const storage = { getPublicUrl: (k: string) => `https://cdn.test/${k}` }
@@ -52,7 +60,11 @@ function build() {
   aiReview.enqueue.mockResolvedValue(undefined)
   landing.enqueue.mockResolvedValue(undefined)
   config.get.mockReturnValue(undefined)
-  return new AdsCampaignsService(repo as never, aiReview as never, {} as never, storage as never, landing as never, config as never)
+  mediaAssets.afterAttach.mockResolvedValue(undefined)
+  mediaAssets.dropKeys.mockResolvedValue(undefined)
+  mediaAssets.releaseForPost.mockResolvedValue(undefined)
+  mediaAssets.removeAdCreativeMedia.mockResolvedValue([])
+  return new AdsCampaignsService(repo as never, aiReview as never, mediaAssets as never, storage as never, landing as never, config as never)
 }
 
 describe('editar anúncio', () => {
@@ -241,5 +253,125 @@ describe('duplicar campanha', () => {
     repo.findCampaign.mockResolvedValueOnce(tree({ status: 'ARCHIVED' }))
     repo.duplicateCampaign.mockResolvedValue(tree())
     await expect(service.duplicateCampaign('co1', 'camp1')).resolves.toBeDefined()
+  })
+})
+
+describe('trocar a foto ou o vídeo do anúncio', () => {
+  const tx = { tx: true }
+  const prepared = { items: [{ id: 'm2', kind: 'IMAGE', position: 0 }], media: [], mediaKeys: ['k2'], renderedKeys: ['k2'] }
+  const withMedia = (status = 'APPROVED') => ({ ...adRow(status), creative: creative({ media: { id: 'm1', status: 'READY', kind: 'IMAGE', format: 'SQUARE' } }) })
+  const input = { id: 'm2', format: 'SQUARE' } as never
+
+  /** O repositório de verdade roda a função da transação; aqui rodamos com um tx falso e devolvemos o anúncio. */
+  const runTx = (result: unknown) =>
+    repo.updateAd.mockImplementation(async (_id: string, params: { inTransaction?: (t: unknown, c: string) => Promise<void> }) => {
+      await params.inTransaction?.(tx, 'cr1')
+      return result
+    })
+
+  it('troca: tira a antiga, liga a nova na mesma transação e só depois apaga os arquivos antigos', async () => {
+    const service = build()
+    const order: string[] = []
+    repo.findAdForEdit.mockResolvedValue(withMedia('APPROVED'))
+    mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+    mediaAssets.removeAdCreativeMedia.mockImplementation(async () => { order.push('remove'); return ['old.jpg', 'old.feed.jpg'] })
+    mediaAssets.attachToAdCreative.mockImplementation(async () => { order.push('attach') })
+    mediaAssets.afterAttach.mockImplementation(async () => { order.push('afterAttach') })
+    mediaAssets.dropKeys.mockImplementation(async () => { order.push('dropKeys') })
+    runTx({ ...adRow('PENDING'), creative: creative() })
+    const view = await service.updateAdMedia('co1', 'ad1', 'u1', input)
+    expect(order).toEqual(['remove', 'attach', 'afterAttach', 'dropKeys'])
+    expect(mediaAssets.removeAdCreativeMedia).toHaveBeenCalledWith(tx, 'cr1')
+    expect(mediaAssets.attachToAdCreative).toHaveBeenCalledWith(tx, 'cr1', prepared)
+    expect(mediaAssets.dropKeys).toHaveBeenCalledWith(['old.jpg', 'old.feed.jpg'])
+    expect(repo.updateAd).toHaveBeenCalledWith('ad1', expect.objectContaining({ expectedReviewStatus: 'APPROVED', backToReview: true, creative: {} }))
+    expect(aiReview.enqueue).toHaveBeenCalledWith('ad1')
+    expect(landing.enqueue).toHaveBeenCalledWith('ad1', 'SUBMIT')
+    expect(view.id).toBe('ad1')
+  })
+
+  it('tirar a mídia deixa o anúncio só de texto (sem preparar arquivo novo) e volta para a revisão', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(withMedia('APPROVED'))
+    mediaAssets.removeAdCreativeMedia.mockResolvedValue(['old.jpg'])
+    runTx(adRow('PENDING'))
+    await service.updateAdMedia('co1', 'ad1', 'u1', null)
+    expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+    expect(mediaAssets.attachToAdCreative).not.toHaveBeenCalled()
+    expect(mediaAssets.dropKeys).toHaveBeenCalledWith(['old.jpg'])
+    expect(aiReview.enqueue).toHaveBeenCalled()
+  })
+
+  it('tirar a mídia de anúncio que já é só texto não faz nada', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(adRow('APPROVED'))
+    await service.updateAdMedia('co1', 'ad1', 'u1', null)
+    expect(repo.updateAd).not.toHaveBeenCalled()
+    expect(aiReview.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('anúncio sem mídia que ganha uma: liga a nova (nada para apagar)', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(adRow('NOT_SUBMITTED'))
+    mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+    runTx(adRow('NOT_SUBMITTED'))
+    await service.updateAdMedia('co1', 'ad1', 'u1', input)
+    expect(mediaAssets.attachToAdCreative).toHaveBeenCalled()
+    expect(mediaAssets.dropKeys).toHaveBeenCalledWith([])
+    expect(repo.updateAd).toHaveBeenCalledWith('ad1', expect.objectContaining({ backToReview: false }))
+    expect(aiReview.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('arquivo recusado pelas regras de anúncio (ex.: foto estreita): nada muda', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(withMedia())
+    mediaAssets.prepareForAdCreative.mockRejectedValue(new BadRequestException('Essa foto é pequena demais para anúncio.'))
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toThrow('pequena demais')
+    expect(repo.updateAd).not.toHaveBeenCalled()
+    expect(mediaAssets.dropKeys).not.toHaveBeenCalled()
+  })
+
+  it('moderação decidiu no meio: 409, o arquivo novo é liberado e o antigo NÃO é apagado', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(withMedia('PENDING'))
+    mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+    repo.updateAd.mockResolvedValue(null)
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toBeInstanceOf(ConflictException)
+    expect(mediaAssets.releaseForPost).toHaveBeenCalledWith(prepared)
+    expect(mediaAssets.dropKeys).not.toHaveBeenCalled()
+    expect(aiReview.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('falha na transação: libera o arquivo novo, mantém o antigo e repassa o erro', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(withMedia())
+    mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+    repo.updateAd.mockRejectedValue(new Error('banco caiu'))
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toThrow('banco caiu')
+    expect(mediaAssets.releaseForPost).toHaveBeenCalledWith(prepared)
+    expect(mediaAssets.dropKeys).not.toHaveBeenCalled()
+  })
+
+  it('empresa errada, anúncio inexistente e campanha arquivada', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValueOnce(adRow('APPROVED', 'ACTIVE', 'outra'))
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toBeInstanceOf(NotFoundException)
+    repo.findAdForEdit.mockResolvedValueOnce(null)
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toBeInstanceOf(NotFoundException)
+    repo.findAdForEdit.mockResolvedValueOnce(adRow('APPROVED', 'ARCHIVED'))
+    await expect(service.updateAdMedia('co1', 'ad1', 'u1', input)).rejects.toThrow('arquivada')
+    expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+  })
+
+  it('rascunho e recusado: só trocam, sem ir para a revisão', async () => {
+    for (const status of ['NOT_SUBMITTED', 'REJECTED']) {
+      const service = build()
+      repo.findAdForEdit.mockResolvedValue(withMedia(status))
+      mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+      runTx(adRow(status))
+      await service.updateAdMedia('co1', 'ad1', 'u1', input)
+      expect(repo.updateAd).toHaveBeenCalledWith('ad1', expect.objectContaining({ backToReview: false }))
+      expect(aiReview.enqueue).not.toHaveBeenCalled()
+    }
   })
 })

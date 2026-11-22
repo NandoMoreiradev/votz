@@ -391,6 +391,25 @@ export class MediaAssetsService {
     }
   }
 
+  /**
+   * Tira da transação do anúncio a foto ou o vídeo que ele tinha (a linha some junto) e devolve os arquivos do bucket para
+   * apagar DEPOIS do commit com `dropKeys`: se a troca falhar, nada se perde. Devolve vazio se o anúncio era só texto.
+   */
+  async removeAdCreativeMedia(tx: Prisma.TransactionClient, adCreativeId: string): Promise<string[]> {
+    const old = await tx.mediaAsset.findUnique({
+      where: { adCreativeId },
+      select: { id: true, sourceKey: true, key: true, feedKey: true, thumbKey: true, posterKey: true },
+    })
+    if (!old) return []
+    await tx.mediaAsset.delete({ where: { id: old.id } })
+    return [old.sourceKey, old.key, old.feedKey, old.thumbKey, old.posterKey].filter((key): key is string => !!key)
+  }
+
+  /** Apaga arquivos do bucket sem falhar o chamador (o que sobrar é só registrado). */
+  async dropKeys(keys: readonly string[]): Promise<void> {
+    for (const key of keys) await this.deleteQuietly(key)
+  }
+
   private async finalize(owner: { postId: string }, prepared: PreparedPostMedia): Promise<void> {
     if (!prepared.items.length) return
     const now = new Date()

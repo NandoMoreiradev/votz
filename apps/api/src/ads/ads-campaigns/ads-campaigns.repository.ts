@@ -125,7 +125,14 @@ export class AdsCampaignsRepository {
    */
   updateAd(
     adId: string,
-    params: { expectedReviewStatus: AdReviewStatus; backToReview: boolean; name?: string; creative: { headline?: string; body?: string; ctaLabel?: string; destinationUrl?: string } },
+    params: {
+      expectedReviewStatus: AdReviewStatus
+      backToReview: boolean
+      name?: string
+      creative: { headline?: string; body?: string; ctaLabel?: string; destinationUrl?: string }
+      /** Roda na mesma transação, depois de a situação de revisão ser conferida (usado para trocar a foto ou o vídeo). */
+      inTransaction?: (tx: Prisma.TransactionClient, creativeId: string) => Promise<void>
+    },
   ) {
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.ad.updateMany({
@@ -139,7 +146,8 @@ export class AdsCampaignsRepository {
       })
       if (claimed.count === 0) return null
       const ad = await tx.ad.findUniqueOrThrow({ where: { id: adId }, select: { creativeId: true } })
-      await tx.adCreative.update({ where: { id: ad.creativeId }, data: params.creative })
+      if (Object.keys(params.creative).length) await tx.adCreative.update({ where: { id: ad.creativeId }, data: params.creative })
+      if (params.inTransaction) await params.inTransaction(tx, ad.creativeId)
       return tx.ad.findUniqueOrThrow({ where: { id: adId }, include: { creative: CREATIVE_WITH_MEDIA } })
     })
   }

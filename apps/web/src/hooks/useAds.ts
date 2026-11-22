@@ -23,6 +23,9 @@ import type {
 import { api } from '../lib/api'
 import { uploadAdMedia } from '../lib/post-media-upload'
 
+/** Foto ou vídeo do anúncio como a API recebe (arquivo enviado antes, formato e enquadramento). */
+type PostMediaInput = NonNullable<CreateAdCampaignInput['creative']['media']>
+
 /** Gerenciador de anúncios do Estúdio (só empresas). Rotas em `/ads/COMPANY/:companyId/...`. */
 const base = (companyId: string) => `/ads/COMPANY/${companyId}`
 const accountsKey = (companyId: string) => ['ads', companyId, 'accounts'] as const
@@ -92,6 +95,14 @@ export function useUpdateAd(companyId: string, accountId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ adId, ...input }: { adId: string } & UpdateAdInput) => api.patch<AdView>(`${base(companyId)}/ads/${adId}`, input).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
+  })
+}
+
+export function useUpdateAdMedia(companyId: string, accountId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ adId, media }: { adId: string; media: PostMediaInput | null }) => api.put<AdView>(`${base(companyId)}/ads/${adId}/media`, { media }).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
   })
 }
@@ -185,7 +196,8 @@ export function useDecideAd() {
   return useMutation({
     mutationFn: ({ adId, ...input }: { adId: string } & AdReviewDecisionInput) =>
       api.post(`/admin/ad-reviews/${adId}/decision`, input).then((r) => r.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-ad-reviews'] }),
+    // Também recarrega quando a decisão falha (ex.: o anunciante mudou o texto): o cartão passa a mostrar o texto novo.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin-ad-reviews'] }),
   })
 }
 

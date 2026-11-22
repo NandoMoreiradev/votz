@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -22,7 +23,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator'
 import { MEDIA_VIDEO_MAX_BYTES, PresignMediaUploadDto } from '../../media/dto/media.dto'
 import { OrgPermissionGuard, RequireOrgPermission } from '../../org-memberships/org-memberships.guard'
 import { AdsCampaignsService } from './ads-campaigns.service'
-import { CreateAdAccountDto, CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
+import { CreateAdAccountDto, CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdMediaDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 
 /**
  * Gerenciador de anúncios do Estúdio. Só perfis de empresa (`orgType` = COMPANY). O guard confere se a pessoa é
@@ -153,6 +154,21 @@ export class AdsCampaignsController {
   ) {
     onlyCompany(orgType)
     return this.service.updateAd(orgId, adId, dto)
+  }
+
+  @Put('ads/:adId/media')
+  @RequireOrgPermission(OrgPermission.MANAGE_ADS)
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 20, ttl: 60_000 }, long: { limit: 120, ttl: 3_600_000 } })
+  @ApiOperation({ summary: 'Troca ou tira a foto ou o vídeo do anúncio (arquivo enviado antes em media). Aprovado ou em revisão volta para a revisão.' })
+  updateAdMedia(
+    @Param('orgType') orgType: string,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('adId', ParseUUIDPipe) adId: string,
+    @Body() dto: UpdateAdMediaDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    onlyCompany(orgType)
+    return this.service.updateAdMedia(orgId, adId, user.id, dto.media)
   }
 
   @Patch('ad-sets/:adSetId')

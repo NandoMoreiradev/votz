@@ -994,7 +994,7 @@ export interface UpdateAdSetInput {
 }
 export declare const AD_EDIT_COPY: {
     readonly REVIEW_AGAIN: "Ao salvar, o anúncio volta para a revisão e para de rodar até ser aprovado de novo.";
-    readonly REVIEW_PENDING: "O anúncio já está em revisão. Ao salvar, a moderação passa a ver o texto novo.";
+    readonly REVIEW_PENDING: "O anúncio já está em revisão. Ao salvar, a moderação passa a ver o anúncio novo.";
     readonly DUPLICATE_NO_MEDIA: "A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.";
 };
 //# sourceMappingURL=ads.d.ts.map

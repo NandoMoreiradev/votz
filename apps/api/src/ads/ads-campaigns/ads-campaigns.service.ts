@@ -11,6 +11,7 @@ import type {
   AgeBand,
   UploadedMediaAssetDto,
 } from '@votz/shared-types'
+import type { PostMediaInputDto } from '../../media/dto/media.dto'
 import { MediaAssetsService, type PreparedPostMedia } from '../../media/media-assets.service'
 import type { MediaAssetView } from '../../media/media-items'
 import { StorageService } from '../../storage/storage.service'
@@ -194,9 +195,7 @@ export class AdsCampaignsService {
    * quando quiser. Mudar nada devolve o anúncio como está.
    */
   async updateAd(companyId: string, adId: string, dto: UpdateAdDto): Promise<AdView> {
-    const ad = await this.repo.findAdForEdit(adId)
-    if (!ad || ad.adSet.campaign.account.companyId !== companyId) throw new NotFoundException('Anúncio não encontrado.')
-    if (ad.adSet.campaign.status === 'ARCHIVED') throw new BadRequestException('Campanha arquivada não pode ser editada. Duplique para usar de novo.')
+    const ad = await this.editableAd(companyId, adId)
 
     const next = {
       headline: dto.headline !== undefined ? clean(dto.headline) : ad.creative.headline,
@@ -225,6 +224,54 @@ export class AdsCampaignsService {
     // Texto novo: a leitura da IA e a conferência da página valem para o texto e o link novos.
     if (backToReview) await Promise.all([this.aiReview.enqueue(adId), this.landing.enqueue(adId, 'SUBMIT')])
     return toAdView(saved, this.publicUrl)
+  }
+
+  private async editableAd(companyId: string, adId: string) {
+    const ad = await this.repo.findAdForEdit(adId)
+    if (!ad || ad.adSet.campaign.account.companyId !== companyId) throw new NotFoundException('Anúncio não encontrado.')
+    if (ad.adSet.campaign.status === 'ARCHIVED') throw new BadRequestException('Campanha arquivada não pode ser editada. Duplique para usar de novo.')
+    return ad
+  }
+
+  /**
+   * Troca ou tira a foto ou o vídeo do anúncio. Vale o mesmo caminho do passo a passo (arquivo enviado antes, formato e
+   * enquadramento, exigências de anúncio). Numa transação só: confere que a revisão não mudou, tira a mídia antiga e liga
+   * a nova; os arquivos antigos só são apagados depois. Como qualquer mudança no anúncio, o aprovado ou em revisão volta
+   * para a revisão (e vídeo novo só roda depois de pronto).
+   */
+  async updateAdMedia(companyId: string, adId: string, userId: string, media: PostMediaInputDto | null | undefined): Promise<AdView> {
+    const ad = await this.editableAd(companyId, adId)
+    if (!media && !ad.creative.media) return toAdView(ad, this.publicUrl)
+
+    const prepared: PreparedPostMedia | null = media ? await this.mediaAssets.prepareForAdCreative(userId, media) : null
+    const backToReview = ad.reviewStatus === 'APPROVED' || ad.reviewStatus === 'PENDING'
+    let oldKeys: string[] = []
+    let saved: Awaited<ReturnType<AdsCampaignsRepository['updateAd']>>
+    try {
+      saved = await this.repo.updateAd(adId, {
+        expectedReviewStatus: ad.reviewStatus,
+        backToReview,
+        creative: {},
+        inTransaction: async (tx, creativeId) => {
+          oldKeys = await this.mediaAssets.removeAdCreativeMedia(tx, creativeId)
+          if (prepared) await this.mediaAssets.attachToAdCreative(tx, creativeId, prepared)
+        },
+      })
+    } catch (error) {
+      if (prepared) await this.mediaAssets.releaseForPost(prepared)
+      throw error
+    }
+    if (!saved) {
+      if (prepared) await this.mediaAssets.releaseForPost(prepared)
+      throw new ConflictException('O anúncio mudou agora há pouco (a moderação pode ter decidido). Atualize a tela e tente de novo.')
+    }
+
+    // Depois do commit: o vídeo entra na fila, o original da foto e os arquivos da mídia antiga saem do bucket.
+    if (prepared) await this.mediaAssets.afterAttach(prepared)
+    await this.mediaAssets.dropKeys(oldKeys)
+    if (backToReview) await Promise.all([this.aiReview.enqueue(adId), this.landing.enqueue(adId, 'SUBMIT')])
+    const fresh = await this.repo.findAdForEdit(adId)
+    return toAdView(fresh ?? saved, this.publicUrl)
   }
 
   /** Edita público e orçamento. Não precisa de nova revisão: só vale o que a lista fechada permite. */

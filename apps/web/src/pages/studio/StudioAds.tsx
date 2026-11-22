@@ -15,6 +15,7 @@ import {
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
 import { AdEditForm, AdSetEditForm } from '../../components/ads/AdEditForms'
+import { AdMediaEditForm } from '../../components/ads/AdMediaEditForm'
 import { AdMedia } from '../../components/ads/AdMedia'
 import {
   adsErrorMessage,
@@ -215,6 +216,7 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
   const duplicate = useDuplicateAdCampaign(companyId, accountId)
   const [editingSet, setEditingSet] = useState<string | null>(null)
   const [editingAd, setEditingAd] = useState<string | null>(null)
+  const [editingMedia, setEditingMedia] = useState<string | null>(null)
   const budget = campaign.adSets.reduce((sum, set) => sum + set.dailyBudgetCents, 0)
   const archived = campaign.status === 'ARCHIVED'
 
@@ -262,9 +264,13 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
               <AdMedia media={ad.creative.media} maxWidth={240} />
               <Hint>Botão "{ad.creative.ctaLabel}" → {ad.creative.destinationUrl}</Hint>
               {ad.reviewNote && <ErrorMsg>Motivo: {ad.reviewNote}</ErrorMsg>}
-              {canManage && !archived && editingAd !== ad.id && (
-                <Row style={{ marginTop: 10 }}><SecondaryButton type="button" onClick={() => setEditingAd(ad.id)}>Editar anúncio</SecondaryButton></Row>
+              {canManage && !archived && editingAd !== ad.id && editingMedia !== ad.id && (
+                <Row style={{ marginTop: 10 }}>
+                  <SecondaryButton type="button" onClick={() => setEditingAd(ad.id)}>Editar anúncio</SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => setEditingMedia(ad.id)}>{ad.creative.media ? 'Trocar foto ou vídeo' : 'Adicionar foto ou vídeo'}</SecondaryButton>
+                </Row>
               )}
+              {editingMedia === ad.id && <AdMediaEditForm ad={ad} companyId={companyId} accountId={accountId} onDone={() => setEditingMedia(null)} />}
               {editingAd === ad.id && <AdEditForm ad={ad} companyId={companyId} accountId={accountId} onDone={() => setEditingAd(null)} />}
               {canManage && !archived && (ad.reviewStatus === 'NOT_SUBMITTED' || ad.reviewStatus === 'REJECTED') && (
                 <Row style={{ marginTop: 10 }}>

@@ -1030,6 +1030,6 @@ export interface UpdateAdSetInput {
 
 export const AD_EDIT_COPY = {
   REVIEW_AGAIN: 'Ao salvar, o anúncio volta para a revisão e para de rodar até ser aprovado de novo.',
-  REVIEW_PENDING: 'O anúncio já está em revisão. Ao salvar, a moderação passa a ver o texto novo.',
+  REVIEW_PENDING: 'O anúncio já está em revisão. Ao salvar, a moderação passa a ver o anúncio novo.',
   DUPLICATE_NO_MEDIA: 'A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.',
 } as const

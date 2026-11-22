@@ -272,3 +272,16 @@ export class UpdateAdSetDto {
   @IsBoolean()
   automaticAudience?: boolean
 }
+
+/** Troca (ou tira) a foto ou o vídeo do anúncio. `media` ausente ou nulo tira a mídia: o anúncio passa a ser só texto. */
+export class UpdateAdMediaDto {
+  @ApiPropertyOptional({
+    type: PostMediaInputDto,
+    nullable: true,
+    description: 'Foto ou vídeo novo, enviado antes em POST /ads/COMPANY/:empresa/media, com a moldura e o enquadramento. Nulo: tira a mídia.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PostMediaInputDto)
+  media?: PostMediaInputDto | null
+}
