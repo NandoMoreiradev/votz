@@ -3,13 +3,14 @@ import type { AdChargeOn, AdEventStatus, Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AdsBillingRepository } from '../ads-billing/ads-billing.repository'
 import { spendLines } from '../ads-billing/ledger'
+import { CREATIVE_WITH_MEDIA } from '../ad-creative-media'
 import { dayAsDate, splitSpend } from './delivery-rules'
 
 /** A cada quanto gasto (em millicents) o fechamento lança no livro-caixa: R$ 1,00. O resto fecha de hora em hora. */
 export const SETTLE_THRESHOLD_MILLICENTS = 100_000
 
 const CANDIDATE_INCLUDE = {
-  creative: true,
+  creative: CREATIVE_WITH_MEDIA,
   adSet: {
     include: {
       campaign: {
@@ -80,6 +81,8 @@ export class AdsDeliveryRepository {
         reviewStatus: 'APPROVED',
         status: { notIn: ['PAUSED', 'ARCHIVED'] },
         id: { notIn: excludeAdIds },
+        // Anúncio com vídeo só roda depois de o vídeo ficar pronto: nunca mostramos "preparando" no feed de ninguém.
+        creative: { OR: [{ media: { is: null } }, { media: { is: { status: 'READY' } } }] },
         adSet: {
           status: { notIn: ['PAUSED', 'ARCHIVED'] },
           startAt: { lte: now },

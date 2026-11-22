@@ -15,6 +15,7 @@ import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
 import { theme } from '../theme'
 import { Avatar, styles } from './ui'
+import { FEED_MEDIA_MAX_HEIGHT } from '../lib/media-kind'
 import { MediaCarousel } from './media-carousel'
 import { ContentMenu } from './content-menu'
 
@@ -50,7 +51,7 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
   const requireUser = (action: () => void) => user ? action() : router.push('/login')
   const body = <>
     {!!post.content && <Text numberOfLines={detail ? undefined : 7} style={[styles.text, detail && { fontSize: 18, lineHeight: 27 }]}>{post.content}</Text>}
-    <MediaCarousel urls={post.media} items={post.mediaItems} limit={4} />
+    <MediaCarousel urls={post.media} items={post.mediaItems} limit={4} maxHeight={FEED_MEDIA_MAX_HEIGHT} />
     {post.mentionedReport && <Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato mencionado: ${post.mentionedReport.title}`} onPress={(event) => { event.stopPropagation(); router.push({ pathname: '/report/[id]', params: { id: post.mentionedReport!.id } }) }} style={{ borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12, marginTop: 10, gap: 4 }}>
       <Text style={{ fontSize: 11, color: theme.colors.action, fontFamily: theme.fonts.medium }}>RELATO · {statusLabels[post.mentionedReport.status]}</Text><Text style={[styles.text, { fontFamily: theme.fonts.medium }]}>{post.mentionedReport.title}</Text>
     </Pressable>}

@@ -75,6 +75,18 @@ export function formatHeightRatio(format: MediaFormat): number {
 /** Moldura padrão enquanto não se sabe o formato (quadrado). */
 export const DEFAULT_MEDIA_RATIO = formatHeightRatio('SQUARE')
 
+/** Altura máxima da foto ou do vídeo no feed, em dp (publicações e anúncios). Mesmo valor do site (`FEED_MEDIA_MAX_HEIGHT`). */
+export const FEED_MEDIA_MAX_HEIGHT = 480
+
+/**
+ * Maior largura da moldura para a altura não passar de `maxHeight`, mantendo a proporção (`heightRatio` = altura ÷
+ * largura). Nada é cortado: a moldura só fica mais estreita. Em celular comum (até ~384 dp de conteúdo) o limite não
+ * muda nada; vale em telas largas, como tablet e celular deitado.
+ */
+export function frameMaxWidth(maxHeight: number, heightRatio: number): number {
+  return Math.round(maxHeight / heightRatio)
+}
+
 /** Moldura do conjunto: a do primeiro item que tem formato. */
 export function carouselFormat(items: readonly CarouselItem[]): MediaFormat | null {
   return mediaSetFormat(items)

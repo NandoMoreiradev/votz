@@ -31,6 +31,7 @@ import {
   type AgeBand,
   type UserGender,
 } from '@votz/shared-types'
+import { PostMediaInputDto } from '../../../media/dto/media.dto'
 
 export class CreateAdAccountDto {
   @ApiProperty({ example: 'Conta principal' })
@@ -128,6 +129,15 @@ export class AdCreativeInputDto {
   @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O link precisa começar com https:// e ser um endereço válido.' })
   @MaxLength(AD_LIMITS.URL_MAX)
   destinationUrl: string
+
+  @ApiPropertyOptional({
+    type: PostMediaInputDto,
+    description: 'Foto ou vídeo do anúncio, enviado em POST /ads/COMPANY/:empresa/media, com a moldura e o enquadramento escolhidos. Sem ele, o anúncio é só texto.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PostMediaInputDto)
+  media?: PostMediaInputDto
 }
 
 export class CreateAdCampaignDto {

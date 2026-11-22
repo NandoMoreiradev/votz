@@ -6,6 +6,7 @@
  * idade, gênero e o formato dos eventos. Mudar a lista de sinais ou os temas sensíveis exige aval do dono do
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
+import { type MediaAssetKind, type MediaCrop, type MediaFormat, type MediaItemDto } from './media';
 /**
  * Interesses que a pessoa pode escolher e que o anunciante pode usar para segmentar. Inspirada nas categorias de
  * primeiro nível da IAB Content Taxonomy 3.0, adaptada ao Brasil e ao Votz. Nenhuma categoria sensível (veja
@@ -397,12 +398,35 @@ export interface AdAccountView {
     balanceCents: number;
     createdAt: string;
 }
+/**
+ * Foto ou vídeo do anúncio: mesmas molduras das publicações (1:1, 4:5, 16:9), com exigências a mais (plano do padrão
+ * de mídia, seção 2.3). Quem confere é a API; o site usa a mesma função para avisar antes de enviar.
+ */
+export declare const AD_MEDIA_RULES: {
+    readonly MIN_WIDTH: 1080;
+    readonly MAX_VIDEO_SECONDS: 60;
+    /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
+    readonly RECOMMENDED_FORMATS: readonly ["SQUARE", "PORTRAIT"];
+    /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
+    readonly DURATION_TOLERANCE_MS: 500;
+};
+export interface AdMediaCheckInput {
+    kind: MediaAssetKind;
+    /** Largura em pixels: do arquivo inteiro (`scope: 'file'`) ou só da parte que aparece depois do recorte (`'crop'`). */
+    width: number;
+    durationMs?: number | null;
+    scope: 'file' | 'crop';
+}
+/** Mensagem para o anunciante (português simples) ou null se a mídia serve para anúncio. */
+export declare function adMediaProblem(input: AdMediaCheckInput): string | null;
 export interface AdCreativeView {
     id: string;
     headline: string;
     body: string;
     ctaLabel: string;
     destinationUrl: string;
+    /** Foto ou vídeo do anúncio; null se o anúncio é só texto. */
+    media: MediaItemDto | null;
 }
 export interface AdView {
     id: string;
@@ -458,6 +482,12 @@ export interface CreateAdCampaignInput {
         body: string;
         ctaLabel: AdCtaLabel;
         destinationUrl: string;
+        /** Arquivo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
+        media?: {
+            id: string;
+            format: MediaFormat;
+            crop?: MediaCrop;
+        };
     };
     /** Já manda o anúncio para revisão ao salvar. */
     submitForReview?: boolean;
@@ -681,6 +711,8 @@ export interface SponsoredAdView {
     body: string;
     ctaLabel: string;
     destinationUrl: string;
+    /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
+    media: MediaItemDto | null;
     advertiser: {
         id: string;
         name: string;

@@ -28,8 +28,8 @@ export class MediaRenderProcessor extends WorkerHost {
 
   async process(job: Job<RenderVideoJobData>) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id: job.data.assetId } })
-    // Repetir o trabalho não converte duas vezes; publicação apagada no meio do caminho não gera arquivo.
-    if (!asset || asset.kind !== 'VIDEO' || asset.status !== 'PROCESSING' || !asset.postId) return { status: 'IGNORADO' as const }
+    // Repetir o trabalho não converte duas vezes; publicação ou anúncio apagado no meio do caminho não gera arquivo.
+    if (!asset || asset.kind !== 'VIDEO' || asset.status !== 'PROCESSING' || (!asset.postId && !asset.adCreativeId)) return { status: 'IGNORADO' as const }
     if (!asset.sourceKey || !asset.format || asset.cropX === null || asset.cropY === null || asset.cropW === null || asset.cropH === null)
       return this.fail(asset.id, 'registro sem original ou sem recorte')
 
@@ -76,7 +76,8 @@ export class MediaRenderProcessor extends WorkerHost {
     await this.storage.delete(asset.sourceKey).catch((error) =>
       this.logger.warn(`Original ${asset.sourceKey} ficou no bucket: ${error instanceof Error ? error.message : String(error)}`),
     )
-    await this.media.syncPostMedia(asset.postId)
+    // Só a publicação guarda os links no próprio registro; o anúncio lê direto do arquivo de mídia.
+    if (asset.postId) await this.media.syncPostMedia(asset.postId)
     this.logger.log(`Vídeo ${asset.id} pronto: ${source.byteLength} → ${result.video.byteLength} bytes (${result.width}x${result.height}).`)
     return { status: 'DONE' as const, width: result.width, height: result.height }
   }

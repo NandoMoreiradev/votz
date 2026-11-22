@@ -7,6 +7,15 @@
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
 
+import {
+  AD_MEDIA_MIN_WIDTH,
+  AD_VIDEO_MAX_SECONDS,
+  type MediaAssetKind,
+  type MediaCrop,
+  type MediaFormat,
+  type MediaItemDto,
+} from './media'
+
 // ─── Taxonomia de interesses ───────────────────────────────────────────────────────────────────
 
 /**
@@ -324,12 +333,50 @@ export interface AdAccountView {
   createdAt: string
 }
 
+/**
+ * Foto ou vídeo do anúncio: mesmas molduras das publicações (1:1, 4:5, 16:9), com exigências a mais (plano do padrão
+ * de mídia, seção 2.3). Quem confere é a API; o site usa a mesma função para avisar antes de enviar.
+ */
+export const AD_MEDIA_RULES = {
+  MIN_WIDTH: AD_MEDIA_MIN_WIDTH,
+  MAX_VIDEO_SECONDS: AD_VIDEO_MAX_SECONDS,
+  /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
+  RECOMMENDED_FORMATS: ['SQUARE', 'PORTRAIT'] as const,
+  /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
+  DURATION_TOLERANCE_MS: 500,
+} as const
+
+export interface AdMediaCheckInput {
+  kind: MediaAssetKind
+  /** Largura em pixels: do arquivo inteiro (`scope: 'file'`) ou só da parte que aparece depois do recorte (`'crop'`). */
+  width: number
+  durationMs?: number | null
+  scope: 'file' | 'crop'
+}
+
+/** Mensagem para o anunciante (português simples) ou null se a mídia serve para anúncio. */
+export function adMediaProblem(input: AdMediaCheckInput): string | null {
+  const noun = input.kind === 'VIDEO' ? 'vídeo' : 'foto'
+  if (input.kind === 'GIF') return 'GIF ainda não vale em anúncio. Use uma foto ou um vídeo.'
+  if (input.width < AD_MEDIA_RULES.MIN_WIDTH - 1) {
+    return input.scope === 'file'
+      ? `${input.kind === 'VIDEO' ? 'Esse vídeo é pequeno' : 'Essa foto é pequena'} demais para anúncio. Use ${input.kind === 'VIDEO' ? 'um' : 'uma'} com pelo menos ${AD_MEDIA_RULES.MIN_WIDTH} px de largura.`
+      : `Com esse enquadramento, a parte mostrada fica pequena demais para anúncio (mínimo de ${AD_MEDIA_RULES.MIN_WIDTH} px de largura). Afaste ${input.kind === 'VIDEO' ? 'o' : 'a'} ${noun} ou escolha um arquivo maior.`
+  }
+  if (input.kind === 'VIDEO' && input.durationMs != null && input.durationMs > AD_MEDIA_RULES.MAX_VIDEO_SECONDS * 1000 + AD_MEDIA_RULES.DURATION_TOLERANCE_MS) {
+    return `O vídeo do anúncio pode ter até ${AD_MEDIA_RULES.MAX_VIDEO_SECONDS} segundos.`
+  }
+  return null
+}
+
 export interface AdCreativeView {
   id: string
   headline: string
   body: string
   ctaLabel: string
   destinationUrl: string
+  /** Foto ou vídeo do anúncio; null se o anúncio é só texto. */
+  media: MediaItemDto | null
 }
 
 export interface AdView {
@@ -389,6 +436,8 @@ export interface CreateAdCampaignInput {
     body: string
     ctaLabel: AdCtaLabel
     destinationUrl: string
+    /** Arquivo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
+    media?: { id: string; format: MediaFormat; crop?: MediaCrop }
   }
   /** Já manda o anúncio para revisão ao salvar. */
   submitForReview?: boolean
@@ -626,6 +675,8 @@ export interface SponsoredAdView {
   body: string
   ctaLabel: string
   destinationUrl: string
+  /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
+  media: MediaItemDto | null
   advertiser: { id: string; name: string; username: string | null; logoUrl: string | null }
   /** "Por que estou vendo isto?" em português simples. */
   why: string

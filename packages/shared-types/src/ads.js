@@ -8,17 +8,19 @@
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_REVIEW_LIMITS = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
+exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
 exports.isAdInterestId = isAdInterestId;
 exports.assertAllowedAdFeatures = assertAllowedAdFeatures;
 exports.adFeaturesForConsent = adFeaturesForConsent;
 exports.ageOn = ageOn;
 exports.ageBandOf = ageBandOf;
+exports.adMediaProblem = adMediaProblem;
 exports.adChargeUnit = adChargeUnit;
 exports.adFloorCents = adFloorCents;
 exports.adChargeMillicents = adChargeMillicents;
 exports.summarizeAdStats = summarizeAdStats;
 exports.fillAdStatDays = fillAdStatDays;
+const media_1 = require("./media");
 // ─── Taxonomia de interesses ───────────────────────────────────────────────────────────────────
 /**
  * Interesses que a pessoa pode escolher e que o anunciante pode usar para segmentar. Inspirada nas categorias de
@@ -266,6 +268,33 @@ exports.AD_LIMITS = {
 };
 /** Textos de botão que o anunciante pode escolher (sem texto livre, para não virar isca). */
 exports.AD_CTA_LABELS = ['Saiba mais', 'Comprar', 'Pedir agora', 'Agendar', 'Falar no WhatsApp', 'Ver cardápio', 'Inscrever-se', 'Ver oferta'];
+/**
+ * Foto ou vídeo do anúncio: mesmas molduras das publicações (1:1, 4:5, 16:9), com exigências a mais (plano do padrão
+ * de mídia, seção 2.3). Quem confere é a API; o site usa a mesma função para avisar antes de enviar.
+ */
+exports.AD_MEDIA_RULES = {
+    MIN_WIDTH: media_1.AD_MEDIA_MIN_WIDTH,
+    MAX_VIDEO_SECONDS: media_1.AD_VIDEO_MAX_SECONDS,
+    /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
+    RECOMMENDED_FORMATS: ['SQUARE', 'PORTRAIT'],
+    /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
+    DURATION_TOLERANCE_MS: 500,
+};
+/** Mensagem para o anunciante (português simples) ou null se a mídia serve para anúncio. */
+function adMediaProblem(input) {
+    const noun = input.kind === 'VIDEO' ? 'vídeo' : 'foto';
+    if (input.kind === 'GIF')
+        return 'GIF ainda não vale em anúncio. Use uma foto ou um vídeo.';
+    if (input.width < exports.AD_MEDIA_RULES.MIN_WIDTH - 1) {
+        return input.scope === 'file'
+            ? `${input.kind === 'VIDEO' ? 'Esse vídeo é pequeno' : 'Essa foto é pequena'} demais para anúncio. Use ${input.kind === 'VIDEO' ? 'um' : 'uma'} com pelo menos ${exports.AD_MEDIA_RULES.MIN_WIDTH} px de largura.`
+            : `Com esse enquadramento, a parte mostrada fica pequena demais para anúncio (mínimo de ${exports.AD_MEDIA_RULES.MIN_WIDTH} px de largura). Afaste ${input.kind === 'VIDEO' ? 'o' : 'a'} ${noun} ou escolha um arquivo maior.`;
+    }
+    if (input.kind === 'VIDEO' && input.durationMs != null && input.durationMs > exports.AD_MEDIA_RULES.MAX_VIDEO_SECONDS * 1000 + exports.AD_MEDIA_RULES.DURATION_TOLERANCE_MS) {
+        return `O vídeo do anúncio pode ter até ${exports.AD_MEDIA_RULES.MAX_VIDEO_SECONDS} segundos.`;
+    }
+    return null;
+}
 // ─── Revisão de anúncios (fila da moderação) ───────────────────────────────────────────────────
 exports.AD_REVIEW_LIMITS = { REASON_MIN: 10, REASON_MAX: 500 };
 // ─── Faturamento: saldo pré-pago ───────────────────────────────────────────────────────────────

@@ -7,7 +7,12 @@ import type {
   AdInterestId,
   AdView,
   AgeBand,
+  UploadedMediaAssetDto,
 } from '@votz/shared-types'
+import { MediaAssetsService, type PreparedPostMedia } from '../../media/media-assets.service'
+import type { MediaAssetView } from '../../media/media-items'
+import { StorageService } from '../../storage/storage.service'
+import { creativeMediaItem } from '../ad-creative-media'
 import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
 import { AdsCampaignsRepository } from './ads-campaigns.repository'
 import { CreateAdCampaignDto, SetAdCampaignStatusDto } from './dto/ads-campaigns.dto'
@@ -15,7 +20,7 @@ import { CreateAdCampaignDto, SetAdCampaignStatusDto } from './dto/ads-campaigns
 /** Quantas contas de anúncios uma empresa pode ter. */
 export const MAX_AD_ACCOUNTS_PER_COMPANY = 5
 
-type AdWithCreative = Ad & { creative: AdCreative }
+type AdWithCreative = Ad & { creative: AdCreative & { media: MediaAssetView | null } }
 type CampaignTree = AdCampaign & { adSets: (AdSet & { ads: AdWithCreative[] })[] }
 
 const clean = (text: string) => DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).replace(/\s+/g, ' ').trim()
@@ -26,7 +31,11 @@ export class AdsCampaignsService {
   constructor(
     private readonly repo: AdsCampaignsRepository,
     private readonly aiReview: AdsAiReviewService,
+    private readonly mediaAssets: MediaAssetsService,
+    private readonly storage: StorageService,
   ) {}
+
+  private readonly publicUrl = (key: string) => this.storage.getPublicUrl(key)
 
   // ─── Contas ──────────────────────────────────────────────────────────────
 
@@ -50,10 +59,24 @@ export class AdsCampaignsService {
 
   async listCampaigns(companyId: string, accountId: string): Promise<AdCampaignView[]> {
     await this.ownedAccount(companyId, accountId)
-    return (await this.repo.listCampaigns(accountId)).map(toCampaignView)
+    return (await this.repo.listCampaigns(accountId)).map((campaign) => toCampaignView(campaign, this.publicUrl))
   }
 
-  async createCampaign(companyId: string, accountId: string, dto: CreateAdCampaignDto): Promise<AdCampaignView> {
+  // ─── Foto e vídeo do anúncio (mesmo envio das publicações, com as exigências de anúncio) ───────────
+
+  uploadMedia(userId: string, buffer: Buffer): Promise<UploadedMediaAssetDto> {
+    return this.mediaAssets.upload(userId, buffer, 'AD_CREATIVE')
+  }
+
+  presignMedia(userId: string, input: { mimeType: string; sizeBytes: number }) {
+    return this.mediaAssets.presign(userId, input, 'AD_CREATIVE')
+  }
+
+  completeMedia(userId: string, id: string): Promise<UploadedMediaAssetDto> {
+    return this.mediaAssets.complete(userId, id)
+  }
+
+  async createCampaign(companyId: string, accountId: string, dto: CreateAdCampaignDto, userId: string): Promise<AdCampaignView> {
     await this.ownedAccount(companyId, accountId)
     const { adSet, creative } = dto
 
@@ -70,28 +93,49 @@ export class AdsCampaignsService {
     const automatic = adSet.automaticAudience
     const submit = !!dto.submitForReview
 
-    const campaign = await this.repo.createCampaign({
-      accountId,
-      name: texts.name,
-      objective: dto.objective,
-      adSet: {
-        name: texts.setName,
-        dailyBudgetCents: adSet.dailyBudgetCents,
-        bidCapCents: adSet.bidCapCents ?? null,
-        startAt,
-        endAt,
-        states: [...new Set(adSet.states)],
-        cities: [...new Set(adSet.cities.map(clean).filter(Boolean))],
-        interests: automatic ? [] : [...new Set(adSet.interests)],
-        ageBands: automatic ? [] : [...new Set(adSet.ageBands)],
-        genders: automatic ? [] : [...new Set(adSet.genders)],
-        automaticAudience: automatic,
-      },
-      creative: { headline: texts.headline, body: texts.body, ctaLabel: creative.ctaLabel, destinationUrl: creative.destinationUrl.trim() },
-      ad: { name: texts.headline, reviewStatus: submit ? 'PENDING' : 'NOT_SUBMITTED', submittedAt: submit ? new Date() : null },
-    })
-    if (submit) await Promise.all(campaign.adSets.flatMap((set) => set.ads).map((ad) => this.aiReview.enqueue(ad.id)))
-    return toCampaignView(campaign)
+    // Mídia por último entre as conferências: confere dono, recorte e exigências de anúncio e já gera a foto.
+    // Se a campanha não for criada, os arquivos gerados são apagados e o envio fica livre de novo.
+    const prepared: PreparedPostMedia | null = creative.media ? await this.mediaAssets.prepareForAdCreative(userId, creative.media) : null
+
+    let campaign: Awaited<ReturnType<AdsCampaignsRepository['createCampaign']>>
+    try {
+      campaign = await this.repo.createCampaign(
+        {
+          accountId,
+          name: texts.name,
+          objective: dto.objective,
+          adSet: {
+            name: texts.setName,
+            dailyBudgetCents: adSet.dailyBudgetCents,
+            bidCapCents: adSet.bidCapCents ?? null,
+            startAt,
+            endAt,
+            states: [...new Set(adSet.states)],
+            cities: [...new Set(adSet.cities.map(clean).filter(Boolean))],
+            interests: automatic ? [] : [...new Set(adSet.interests)],
+            ageBands: automatic ? [] : [...new Set(adSet.ageBands)],
+            genders: automatic ? [] : [...new Set(adSet.genders)],
+            automaticAudience: automatic,
+          },
+          creative: { headline: texts.headline, body: texts.body, ctaLabel: creative.ctaLabel, destinationUrl: creative.destinationUrl.trim() },
+          ad: { name: texts.headline, reviewStatus: submit ? 'PENDING' : 'NOT_SUBMITTED', submittedAt: submit ? new Date() : null },
+        },
+        // A mídia entra na mesma transação do criativo: o anúncio nasce com a foto ou o vídeo, ou não nasce.
+        prepared ? (tx, creativeId) => this.mediaAssets.attachToAdCreative(tx, creativeId, prepared) : undefined,
+      )
+    } catch (error) {
+      if (prepared) await this.mediaAssets.releaseForPost(prepared)
+      throw error
+    }
+
+    // Vídeo vai para a fila de conversão; o original da foto é apagado. Se isso falhar a campanha continua válida
+    // (a tarefa horária recoloca na fila o vídeo parado).
+    if (prepared) await this.mediaAssets.afterAttach(prepared)
+    const ads = campaign.adSets.flatMap((set) => set.ads)
+    if (submit) await Promise.all(ads.map((ad) => this.aiReview.enqueue(ad.id)))
+    // Relê a árvore para devolver a mídia já ligada (foto pronta; vídeo "preparando").
+    const saved = prepared ? await this.repo.findCampaign(campaign.id) : campaign
+    return toCampaignView(saved ?? campaign, this.publicUrl)
   }
 
   /**
@@ -101,14 +145,14 @@ export class AdsCampaignsService {
     const campaign = await this.repo.findCampaign(campaignId)
     if (!campaign || campaign.account.companyId !== companyId) throw new NotFoundException('Campanha não encontrada.')
     if (campaign.status === 'ARCHIVED') throw new BadRequestException('Campanha arquivada não pode ser reativada. Duplique para usar de novo.')
-    if (campaign.status === dto.status) return toCampaignView(campaign)
+    if (campaign.status === dto.status) return toCampaignView(campaign, this.publicUrl)
 
     if (dto.status === 'ACTIVE') {
       const approved = campaign.adSets.some((set) => set.ads.some((ad) => ad.reviewStatus === 'APPROVED'))
       if (!approved) throw new BadRequestException('Para ligar a campanha, pelo menos um anúncio precisa estar aprovado.')
       if (campaign.account.balanceCents <= 0) throw new BadRequestException('Para ligar a campanha, a conta precisa ter saldo. Recarregue em Faturamento.')
     }
-    return toCampaignView(await this.repo.setCampaignStatus(campaignId, dto.status))
+    return toCampaignView(await this.repo.setCampaignStatus(campaignId, dto.status), this.publicUrl)
   }
 
   /** Manda (ou reenvia, depois de recusado) um anúncio para revisão. */
@@ -117,9 +161,12 @@ export class AdsCampaignsService {
     if (!ad || ad.adSet.campaign.account.companyId !== companyId) throw new NotFoundException('Anúncio não encontrado.')
     if (ad.reviewStatus === 'PENDING') throw new BadRequestException('Este anúncio já está em revisão.')
     if (ad.reviewStatus === 'APPROVED') throw new BadRequestException('Este anúncio já foi aprovado.')
+    if (ad.creative.media?.status === 'FAILED') {
+      throw new BadRequestException('O vídeo deste anúncio não pôde ser preparado. Crie o anúncio de novo com outro arquivo.')
+    }
     const submitted = await this.repo.submitAd(adId)
     await this.aiReview.enqueue(adId)
-    return toAdView(submitted)
+    return toAdView(submitted, this.publicUrl)
   }
 
   private async ownedAccount(companyId: string, accountId: string) {
@@ -141,7 +188,7 @@ function toAccountView(account: AdAccount): AdAccountView {
   }
 }
 
-function toAdView(ad: AdWithCreative): AdView {
+function toAdView(ad: AdWithCreative, publicUrl: (key: string) => string): AdView {
   return {
     id: ad.id,
     name: ad.name,
@@ -154,11 +201,12 @@ function toAdView(ad: AdWithCreative): AdView {
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
+      media: creativeMediaItem(ad.creative.media, publicUrl),
     },
   }
 }
 
-function toCampaignView(campaign: CampaignTree): AdCampaignView {
+function toCampaignView(campaign: CampaignTree, publicUrl: (key: string) => string): AdCampaignView {
   return {
     id: campaign.id,
     name: campaign.name,
@@ -179,7 +227,7 @@ function toCampaignView(campaign: CampaignTree): AdCampaignView {
       ageBands: set.ageBands as AgeBand[],
       genders: set.genders,
       automaticAudience: set.automaticAudience,
-      ads: set.ads.map(toAdView),
+      ads: set.ads.map((ad) => toAdView(ad, publicUrl)),
     })),
   }
 }

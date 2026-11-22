@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common'
-import { AdObjective, AdReviewStatus, AdStatus, UserGender } from '@prisma/client'
+import { AdObjective, AdReviewStatus, AdStatus, Prisma, UserGender } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CREATIVE_WITH_MEDIA } from '../ad-creative-media'
 
 const CAMPAIGN_TREE = {
   adSets: {
     orderBy: { createdAt: 'asc' as const },
-    include: { ads: { orderBy: { createdAt: 'asc' as const }, include: { creative: true } } },
+    include: { ads: { orderBy: { createdAt: 'asc' as const }, include: { creative: CREATIVE_WITH_MEDIA } } },
   },
 }
 
@@ -70,9 +71,11 @@ export class AdsCampaignsRepository {
     })
   }
 
-  createCampaign(data: NewCampaignData) {
+  /** `attachMedia` roda na mesma transação: a foto ou o vídeo entra junto com o criativo, ou nada é criado. */
+  createCampaign(data: NewCampaignData, attachMedia?: (tx: Prisma.TransactionClient, creativeId: string) => Promise<void>) {
     return this.prisma.$transaction(async (tx) => {
       const creative = await tx.adCreative.create({ data: { accountId: data.accountId, ...data.creative } })
+      if (attachMedia) await attachMedia(tx, creative.id)
       const campaign = await tx.adCampaign.create({
         data: {
           accountId: data.accountId,
@@ -97,7 +100,10 @@ export class AdsCampaignsRepository {
   findAd(adId: string) {
     return this.prisma.ad.findUnique({
       where: { id: adId },
-      include: { adSet: { select: { campaign: { select: { account: { select: { companyId: true } } } } } } },
+      include: {
+        creative: CREATIVE_WITH_MEDIA,
+        adSet: { select: { campaign: { select: { account: { select: { companyId: true } } } } } },
+      },
     })
   }
 
@@ -105,7 +111,7 @@ export class AdsCampaignsRepository {
     return this.prisma.ad.update({
       where: { id: adId },
       data: { reviewStatus: 'PENDING', submittedAt: new Date(), reviewNote: null, reviewedAt: null },
-      include: { creative: true },
+      include: { creative: CREATIVE_WITH_MEDIA },
     })
   }
 }

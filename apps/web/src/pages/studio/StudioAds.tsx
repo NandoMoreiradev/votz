@@ -13,6 +13,7 @@ import {
   type AdStatus,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
+import { AdMedia } from '../../components/ads/AdMedia'
 import {
   adsErrorMessage,
   formatBRL,
@@ -246,6 +247,7 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
               </Row>
               <AdHeadline>{ad.creative.headline}</AdHeadline>
               <Hint>{ad.creative.body}</Hint>
+              <AdMedia media={ad.creative.media} maxWidth={240} />
               <Hint>Botão "{ad.creative.ctaLabel}" → {ad.creative.destinationUrl}</Hint>
               {ad.reviewNote && <ErrorMsg>Motivo: {ad.reviewNote}</ErrorMsg>}
               {canManage && !archived && (ad.reviewStatus === 'NOT_SUBMITTED' || ad.reviewStatus === 'REJECTED') && (

@@ -14,6 +14,7 @@ import type {
   SponsoredAdView,
 } from '@votz/shared-types'
 import { api } from '../lib/api'
+import { uploadAdMedia } from '../lib/post-media-upload'
 
 /** Gerenciador de anúncios do Estúdio (só empresas). Rotas em `/ads/COMPANY/:companyId/...`. */
 const base = (companyId: string) => `/ads/COMPANY/${companyId}`
@@ -41,6 +42,16 @@ export function useAdCampaigns(companyId: string, accountId: string | undefined)
     queryKey: campaignsKey(companyId, accountId ?? ''),
     queryFn: () => api.get<AdCampaignView[]>(`${base(companyId)}/accounts/${accountId}/campaigns`).then((r) => r.data),
     enabled: !!companyId && !!accountId,
+    // Vídeo do anúncio ainda sendo preparado: confere de novo a cada 5 s até ficar pronto (ou falhar).
+    refetchInterval: (query) =>
+      query.state.data?.some((campaign) => campaign.adSets.some((set) => set.ads.some((ad) => ad.creative.media?.status === 'PROCESSING'))) ? 5000 : false,
+  })
+}
+
+/** Envio da foto ou do vídeo do anúncio (a empresa e a permissão são conferidas pelo servidor). */
+export function useUploadAdMedia(companyId: string) {
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (percent: number) => void }) => uploadAdMedia(companyId, file, onProgress),
   })
 }
 

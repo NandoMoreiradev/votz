@@ -10,6 +10,8 @@ import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { AdsCampaignsService, MAX_AD_ACCOUNTS_PER_COMPANY } from './ads-campaigns.service'
 import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
+import { MediaAssetsService } from '../../media/media-assets.service'
+import { StorageService } from '../../storage/storage.service'
 import { AdsCampaignsRepository } from './ads-campaigns.repository'
 import { CreateAdCampaignDto } from './dto/ads-campaigns.dto'
 
@@ -53,7 +55,22 @@ const validCampaign = (): CreateAdCampaignDto => ({
 })
 
 const aiReview = { enqueue: jest.fn() }
+const mediaAssets = {
+  upload: jest.fn(),
+  presign: jest.fn(),
+  complete: jest.fn(),
+  prepareForAdCreative: jest.fn(),
+  attachToAdCreative: jest.fn(),
+  afterAttach: jest.fn(),
+  releaseForPost: jest.fn(),
+}
+const storage = { getPublicUrl: (key: string) => `https://cdn.test/${key}` }
 
+const mediaRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'media-1', kind: 'IMAGE', status: 'READY', format: 'SQUARE', key: 'posts/m1.jpg', feedKey: 'posts/m1.feed.jpg', thumbKey: 'posts/m1.thumb.webp',
+  posterKey: null, width: 1080, height: 1080, sourceWidth: 3000, sourceHeight: 3000, durationMs: null, legacy: false, ...overrides,
+})
+const prepared = { items: [{ id: 'media-1', kind: 'IMAGE', position: 0 }], media: [], mediaKeys: ['posts/m1.jpg'], renderedKeys: ['posts/m1.jpg'] }
 
 describe('AdsCampaignsService', () => {
   let service: AdsCampaignsService
@@ -65,10 +82,97 @@ describe('AdsCampaignsService', () => {
         AdsCampaignsService,
         { provide: AdsCampaignsRepository, useValue: repo },
         { provide: AdsAiReviewService, useValue: aiReview },
+        { provide: MediaAssetsService, useValue: mediaAssets },
+        { provide: StorageService, useValue: storage },
       ],
     }).compile()
     service = module.get(AdsCampaignsService)
     aiReview.enqueue.mockResolvedValue(undefined)
+    mediaAssets.afterAttach.mockResolvedValue(undefined)
+    mediaAssets.releaseForPost.mockResolvedValue(undefined)
+  })
+
+  describe('foto e vídeo do anúncio', () => {
+    const withMedia = (): CreateAdCampaignDto => ({
+      ...validCampaign(),
+      creative: { ...validCampaign().creative, media: { id: 'media-1', format: 'SQUARE' } },
+    })
+    const treeWithMedia = (media: unknown) => {
+      const base = tree()
+      base.adSets[0].ads[0].creative = { ...creative, media } as never
+      return base
+    }
+
+    it('sem foto ou vídeo: não mexe no serviço de mídia e o anúncio é só texto', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      repo.createCampaign.mockResolvedValue(tree())
+      const view = await service.createCampaign('co1', 'acc1', validCampaign(), 'u1')
+      expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+      expect(repo.createCampaign.mock.calls[0][1]).toBeUndefined()
+      expect(view.adSets[0].ads[0].creative.media).toBeNull()
+    })
+
+    it('prepara a mídia como de quem envia e liga ao criativo dentro da transação da campanha', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+      repo.createCampaign.mockResolvedValue(tree())
+      repo.findCampaign.mockResolvedValue(treeWithMedia(mediaRow()))
+      const view = await service.createCampaign('co1', 'acc1', withMedia(), 'u1')
+
+      expect(mediaAssets.prepareForAdCreative).toHaveBeenCalledWith('u1', { id: 'media-1', format: 'SQUARE' })
+      // O 2º argumento do repositório é o "anexar": roda dentro da transação e liga ao criativo recém-criado.
+      const tx = {}
+      await repo.createCampaign.mock.calls[0][1](tx, 'cr1')
+      expect(mediaAssets.attachToAdCreative).toHaveBeenCalledWith(tx, 'cr1', prepared)
+      expect(mediaAssets.afterAttach).toHaveBeenCalledWith(prepared)
+      expect(view.adSets[0].ads[0].creative.media).toMatchObject({ kind: 'IMAGE', status: 'READY', url: 'https://cdn.test/posts/m1.feed.jpg' })
+    })
+
+    it('mídia recusada (pequena demais, vídeo longo, de outra pessoa): a campanha nem é criada', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      mediaAssets.prepareForAdCreative.mockRejectedValue(new BadRequestException('Essa foto é pequena demais para anúncio.'))
+      await expect(service.createCampaign('co1', 'acc1', withMedia(), 'u1')).rejects.toThrow('pequena demais')
+      expect(repo.createCampaign).not.toHaveBeenCalled()
+    })
+
+    it('se a campanha falhar ao salvar, os arquivos gerados são apagados e o envio fica livre', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      mediaAssets.prepareForAdCreative.mockResolvedValue(prepared)
+      repo.createCampaign.mockRejectedValue(new Error('banco fora'))
+      await expect(service.createCampaign('co1', 'acc1', withMedia(), 'u1')).rejects.toThrow('banco fora')
+      expect(mediaAssets.releaseForPost).toHaveBeenCalledWith(prepared)
+      expect(mediaAssets.afterAttach).not.toHaveBeenCalled()
+    })
+
+    it('regras de conferência vêm antes: data no passado não gera nem prepara arquivo', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      const past = withMedia()
+      past.adSet.startAt = '2020-01-01'
+      await expect(service.createCampaign('co1', 'acc1', past, 'u1')).rejects.toThrow('antes de hoje')
+      expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+    })
+
+    it('vídeo preparando aparece como "PROCESSING" (sem endereço) para o anunciante', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      repo.listCampaigns.mockResolvedValue([treeWithMedia(mediaRow({ kind: 'VIDEO', status: 'PROCESSING', key: null, feedKey: null, thumbKey: null }))])
+      const [campaign] = await service.listCampaigns('co1', 'acc1')
+      expect(campaign.adSets[0].ads[0].creative.media).toMatchObject({ kind: 'VIDEO', status: 'PROCESSING', url: null })
+    })
+
+    it('não deixa mandar para revisão anúncio cujo vídeo falhou', async () => {
+      repo.findAd.mockResolvedValue({ ...ad('REJECTED'), creative: { ...creative, media: mediaRow({ kind: 'VIDEO', status: 'FAILED' }) }, adSet: { campaign: { account: { companyId: 'co1' } } } })
+      await expect(service.submitAd('co1', 'ad1')).rejects.toThrow('vídeo')
+      expect(repo.submitAd).not.toHaveBeenCalled()
+    })
+
+    it('o envio do arquivo usa o propósito de anúncio', async () => {
+      mediaAssets.upload.mockResolvedValue({ id: 'media-1' })
+      mediaAssets.presign.mockResolvedValue({ id: 'media-2' })
+      await service.uploadMedia('u1', Buffer.from('x'))
+      await service.presignMedia('u1', { mimeType: 'video/mp4', sizeBytes: 10 })
+      expect(mediaAssets.upload).toHaveBeenCalledWith('u1', expect.any(Buffer), 'AD_CREATIVE')
+      expect(mediaAssets.presign).toHaveBeenCalledWith('u1', { mimeType: 'video/mp4', sizeBytes: 10 }, 'AD_CREATIVE')
+    })
   })
 
   describe('contas', () => {
@@ -98,7 +202,7 @@ describe('AdsCampaignsService', () => {
     it('conta de outra empresa: não encontrada', async () => {
       repo.findAccount.mockResolvedValue({ ...account, companyId: 'outra' })
       await expect(service.listCampaigns('co1', 'acc1')).rejects.toBeInstanceOf(NotFoundException)
-      await expect(service.createCampaign('co1', 'acc1', validCampaign())).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.createCampaign('co1', 'acc1', validCampaign(), 'u1')).rejects.toBeInstanceOf(NotFoundException)
     })
 
     it('cria rascunho com textos limpos e cidades sem repetição', async () => {
@@ -106,7 +210,7 @@ describe('AdsCampaignsService', () => {
       repo.createCampaign.mockResolvedValue(tree())
       const dto = validCampaign()
       dto.adSet.cities = ['São Paulo', ' São Paulo ']
-      await service.createCampaign('co1', 'acc1', dto)
+      await service.createCampaign('co1', 'acc1', dto, 'u1')
       const data = repo.createCampaign.mock.calls[0][0]
       expect(data.name).toBe('Dezembro quente')
       expect(data.creative.body).toBe('Padaria do bairro')
@@ -119,7 +223,7 @@ describe('AdsCampaignsService', () => {
       repo.createCampaign.mockResolvedValue(tree())
       const dto = validCampaign()
       dto.adSet.automaticAudience = true
-      await service.createCampaign('co1', 'acc1', dto)
+      await service.createCampaign('co1', 'acc1', dto, 'u1')
       const { adSet } = repo.createCampaign.mock.calls[0][0]
       expect(adSet).toEqual(expect.objectContaining({ interests: [], ageBands: [], genders: [], automaticAudience: true, states: ['SP'] }))
     })
@@ -127,7 +231,7 @@ describe('AdsCampaignsService', () => {
     it('enviar para revisão já marca o anúncio como em revisão', async () => {
       repo.findAccount.mockResolvedValue(account)
       repo.createCampaign.mockResolvedValue(tree())
-      await service.createCampaign('co1', 'acc1', { ...validCampaign(), submitForReview: true })
+      await service.createCampaign('co1', 'acc1', { ...validCampaign(), submitForReview: true }, 'u1')
       expect(repo.createCampaign.mock.calls[0][0].ad).toEqual(expect.objectContaining({ reviewStatus: 'PENDING', submittedAt: expect.any(Date) }))
       expect(aiReview.enqueue).toHaveBeenCalledTimes(1)
     })
@@ -136,10 +240,10 @@ describe('AdsCampaignsService', () => {
       repo.findAccount.mockResolvedValue(account)
       const past = validCampaign()
       past.adSet.startAt = '2020-01-01'
-      await expect(service.createCampaign('co1', 'acc1', past)).rejects.toThrow('antes de hoje')
+      await expect(service.createCampaign('co1', 'acc1', past, 'u1')).rejects.toThrow('antes de hoje')
       const backwards = validCampaign()
       backwards.adSet.endAt = backwards.adSet.startAt
-      await expect(service.createCampaign('co1', 'acc1', backwards)).rejects.toThrow('depois da data de início')
+      await expect(service.createCampaign('co1', 'acc1', backwards, 'u1')).rejects.toThrow('depois da data de início')
       expect(repo.createCampaign).not.toHaveBeenCalled()
     })
 

@@ -6,6 +6,7 @@ import { AD_VIEWABILITY, type AdSurface, type SponsoredAdView } from '@votz/shar
 import { trackAdEvent, trackAdEventOnce } from '../../lib/ad-events'
 import { socialRow } from '../ui/social'
 import { OptionsMenu, type MenuItem } from '../ui/OptionsMenu'
+import { AdMedia } from './AdMedia'
 
 interface SponsoredCardProps {
   ad: SponsoredAdView
@@ -254,6 +255,7 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
       </Head>
       <Headline>{ad.headline}</Headline>
       <Body>{ad.body}</Body>
+      <AdMedia media={ad.media} />
       <Cta
         href={ad.destinationUrl}
         target="_blank"

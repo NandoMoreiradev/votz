@@ -12,6 +12,7 @@ import {
 } from '@votz/shared-types'
 import { adsErrorMessage, formatBRL, useAdReviewQueue, useDecideAd } from '../../hooks/useAds'
 import { ModerationReasonModal } from '../moderation/ModerationReasonModal'
+import { AdMedia } from './AdMedia'
 
 type Filter = 'PENDING' | 'APPROVED' | 'REJECTED'
 const FILTER_LABEL: Record<Filter, string> = { PENDING: 'Na fila', APPROVED: 'Aprovados', REJECTED: 'Recusados' }
@@ -231,6 +232,9 @@ export function AdReviewQueue() {
               <Tag>Patrocinado</Tag>
               <Headline>{item.creative.headline}</Headline>
               <Body>{item.creative.body}</Body>
+              <AdMedia media={item.creative.media} maxWidth={360} />
+              {item.creative.media?.status === 'PROCESSING' && <Meta>O vídeo ainda está sendo preparado: só dá para aprovar quando ficar pronto.</Meta>}
+              {item.creative.media?.status === 'FAILED' && <Meta>O vídeo não pôde ser preparado: recuse e peça um novo arquivo.</Meta>}
               <Cta>{item.creative.ctaLabel}</Cta>
               <Url href={item.creative.destinationUrl} target="_blank" rel="noopener noreferrer nofollow">{item.creative.destinationUrl}</Url>
             </Preview>

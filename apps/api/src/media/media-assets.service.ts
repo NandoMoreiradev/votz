@@ -12,9 +12,11 @@ import { InjectQueue } from '@nestjs/bullmq'
 import { Cron } from '@nestjs/schedule'
 import type { Queue } from 'bullmq'
 import { randomUUID } from 'crypto'
+import type { MediaAssetPurpose, Prisma } from '@prisma/client'
 import {
   MEDIA_FORMATS,
   POST_MEDIA_MAX_ITEMS,
+  adMediaProblem,
   defaultCrop,
   validateMediaCrop,
   type MediaCrop,
@@ -91,11 +93,15 @@ export class MediaAssetsService {
 
   // ─── Envio ────────────────────────────────────────────────────────────────────────────────────
 
-  /** Recebe o arquivo pela API (até 100 MB). Vídeos grandes devem usar o envio direto (presign/complete). */
-  async upload(userId: string, buffer: Buffer): Promise<UploadedMediaAssetDto> {
+  /**
+   * Recebe o arquivo pela API (até 100 MB). Vídeos grandes devem usar o envio direto (presign/complete).
+   * `AD_CREATIVE` (criativo de anúncio) aplica as exigências de anúncio já aqui, para o anunciante saber na hora.
+   */
+  async upload(userId: string, buffer: Buffer, purpose: MediaAssetPurpose = 'POST'): Promise<UploadedMediaAssetDto> {
     const mime = detectMimeFromBuffer(buffer)
     const kind: Kind | null = IMAGE_MIMES.has(mime) ? 'IMAGE' : mime === 'image/gif' ? 'GIF' : VIDEO_MIMES.has(mime) ? 'VIDEO' : null
     if (!kind) throw new BadRequestException('Envie uma foto (JPEG, PNG ou WebP), um GIF ou um vídeo (MP4 ou MOV).')
+    this.assertAdFile(purpose, kind, null, null)
     const limit = kind === 'VIDEO' ? MEDIA_VIDEO_MAX_BYTES : kind === 'GIF' ? GIF_MAX_BYTES : IMAGE_MAX_BYTES
     if (buffer.byteLength > limit)
       throw new BadRequestException(kind === 'VIDEO' ? 'O vídeo passa de 100 MB.' : kind === 'GIF' ? 'O GIF passa de 10 MB.' : 'A foto passa de 10 MB.')
@@ -106,11 +112,13 @@ export class MediaAssetsService {
       const source = await prepareImageSource(buffer).catch(() => {
         throw new BadRequestException('Não foi possível ler essa foto. Tente outra.')
       })
+      this.assertAdFile(purpose, kind, source.width, null)
       const sourceKey = `${MEDIA_SOURCE_PREFIX}/${id}.${extensionOf(source.mimeType)}`
       await this.storage.uploadBuffer(sourceKey, source.data, source.mimeType, true)
       await this.createRow([sourceKey], {
         id,
         uploaderId: userId,
+        purpose,
         kind,
         status: 'UPLOADED',
         sourceKey,
@@ -148,11 +156,13 @@ export class MediaAssetsService {
     const ext = extensionOf(mime)
     const probe = await probeVideoBuffer(buffer, ext)
     if (!probe) throw new BadRequestException('Não foi possível ler esse vídeo. Tente outro.')
+    this.assertAdFile(purpose, kind, probe.width, probe.durationMs)
     const sourceKey = `${MEDIA_SOURCE_PREFIX}/${id}.${ext}`
     await this.storage.uploadBuffer(sourceKey, buffer, mime, true)
     await this.createRow([sourceKey], {
       id,
       uploaderId: userId,
+      purpose,
       kind,
       status: 'UPLOADED',
       sourceKey,
@@ -171,7 +181,7 @@ export class MediaAssetsService {
   }
 
   /** Endereço para o app mandar o vídeo direto ao bucket (PUT), sem passar os bytes pela API. */
-  async presign(userId: string, input: { mimeType: string; sizeBytes: number }) {
+  async presign(userId: string, input: { mimeType: string; sizeBytes: number }, purpose: MediaAssetPurpose = 'POST') {
     if (!this.directUploadEnabled()) throw new NotFoundException()
     if (!VIDEO_MIMES.has(input.mimeType)) throw new BadRequestException('O envio direto é só para vídeo MP4 ou MOV.')
     if (input.sizeBytes > MEDIA_VIDEO_MAX_BYTES) throw new BadRequestException('O vídeo passa de 100 MB.')
@@ -183,6 +193,7 @@ export class MediaAssetsService {
       data: {
         id,
         uploaderId: userId,
+        purpose,
         kind: 'VIDEO',
         status: 'UPLOADING',
         sourceKey,
@@ -228,6 +239,11 @@ export class MediaAssetsService {
       await this.discardRow(row)
       throw new BadRequestException('Não foi possível ler esse vídeo. Tente outro.')
     }
+    const adProblem = row.purpose === 'AD_CREATIVE' ? adMediaProblem({ kind: 'VIDEO', width: probe.width, durationMs: probe.durationMs, scope: 'file' }) : null
+    if (adProblem) {
+      await this.discardRow(row)
+      throw new BadRequestException(adProblem)
+    }
     await this.prisma.mediaAsset.update({
       where: { id },
       data: { status: 'UPLOADED', sourceWidth: probe.width, sourceHeight: probe.height, durationMs: probe.durationMs },
@@ -237,7 +253,7 @@ export class MediaAssetsService {
 
   /** A pessoa tirou o arquivo antes de publicar. */
   async discard(userId: string, id: string): Promise<void> {
-    const row = await this.prisma.mediaAsset.findFirst({ where: { id, uploaderId: userId, postId: null } })
+    const row = await this.prisma.mediaAsset.findFirst({ where: { id, uploaderId: userId, postId: null, adCreativeId: null } })
     if (!row) throw new NotFoundException('Arquivo não encontrado.')
     if (row.status === 'PROCESSING') throw new BadRequestException('Esse arquivo já está sendo publicado.')
     await this.discardRow(row)
@@ -250,7 +266,22 @@ export class MediaAssetsService {
    * para todos, recorte válido. Reserva os arquivos (ninguém mais publica o mesmo) e já gera as versões das
    * fotos. Se a publicação não for criada, chame `releaseForPost`.
    */
-  async prepareForPost(userId: string, inputs: readonly PostMediaInputDto[]): Promise<PreparedPostMedia> {
+  prepareForPost(userId: string, inputs: readonly PostMediaInputDto[]): Promise<PreparedPostMedia> {
+    return this.prepare(userId, inputs, 'POST')
+  }
+
+  /**
+   * Igual a `prepareForPost`, para o criativo de um anúncio: uma foto ou um vídeo, enviado como `AD_CREATIVE`, com as
+   * exigências de anúncio (largura mínima da parte mostrada, vídeo de até 60 s, sem GIF). Depois de criar o criativo,
+   * chame `finalizeForAdCreative`; se ele não for criado, `releaseForPost`.
+   */
+  prepareForAdCreative(userId: string, input: PostMediaInputDto): Promise<PreparedPostMedia> {
+    return this.prepare(userId, [input], 'AD_CREATIVE')
+  }
+
+  private async prepare(userId: string, inputs: readonly PostMediaInputDto[], purpose: MediaAssetPurpose): Promise<PreparedPostMedia> {
+    const forAd = purpose === 'AD_CREATIVE'
+    if (forAd && inputs.length > 1) throw new BadRequestException('O anúncio aceita uma foto ou um vídeo.')
     if (inputs.length > POST_MEDIA_MAX_ITEMS)
       throw new BadRequestException(`Uma publicação pode ter até ${POST_MEDIA_MAX_ITEMS} fotos ou vídeos.`)
     const ids = inputs.map((input) => input.id)
@@ -263,14 +294,23 @@ export class MediaAssetsService {
     const byId = new Map(rows.map((row) => [row.id, row]))
     const plan = inputs.map((input, position) => {
       const row = byId.get(input.id)
-      if (!row || row.purpose !== 'POST' || row.postId) throw new BadRequestException('Um dos arquivos não está disponível. Envie de novo.')
+      if (!row || row.purpose !== purpose || row.postId || row.adCreativeId) throw new BadRequestException('Um dos arquivos não está disponível. Envie de novo.')
       if (row.status === 'UPLOADING') throw new BadRequestException('Um dos vídeos ainda não terminou de ser enviado. Aguarde e tente de novo.')
       if (row.status !== 'UPLOADED') throw new BadRequestException('Um dos arquivos já foi usado. Envie de novo.')
-      if (row.kind === 'GIF') return { row, position, crop: null as MediaCrop | null }
+      if (row.kind === 'GIF') {
+        const gifProblem = forAd ? adMediaProblem({ kind: 'GIF', width: row.sourceWidth ?? 0, scope: 'file' }) : null
+        if (gifProblem) throw new BadRequestException(gifProblem)
+        return { row, position, crop: null as MediaCrop | null }
+      }
       if (!row.sourceWidth || !row.sourceHeight || !row.sourceKey) throw new BadRequestException('Um dos arquivos não está disponível. Envie de novo.')
       const crop = input.crop ?? defaultCrop(row.sourceWidth, row.sourceHeight, format)
       const problem = validateMediaCrop(row.sourceWidth, row.sourceHeight, format, crop)
       if (problem) throw new BadRequestException(problem)
+      // Anúncio: o que importa é a largura da parte que aparece (o recorte), não a do arquivo inteiro.
+      const adProblem = forAd
+        ? adMediaProblem({ kind: row.kind, width: Math.round(crop.w * row.sourceWidth), durationMs: row.durationMs, scope: 'crop' })
+        : null
+      if (adProblem) throw new BadRequestException(adProblem)
       return { row, position, crop }
     })
 
@@ -329,22 +369,48 @@ export class MediaAssetsService {
   }
 
   /** Liga os arquivos preparados à publicação criada. Foto e GIF ficam prontos; vídeo entra na fila. */
-  async finalizeForPost(postId: string, prepared: PreparedPostMedia): Promise<void> {
+  finalizeForPost(postId: string, prepared: PreparedPostMedia): Promise<void> {
+    return this.finalize({ postId }, prepared)
+  }
+
+  /**
+   * Liga a mídia preparada ao criativo, DENTRO da transação que cria o criativo (o chamador passa o `tx`): ou o
+   * anúncio nasce com a foto ou o vídeo, ou não nasce. Depois do commit, chame `afterAttach`.
+   */
+  async attachToAdCreative(tx: Prisma.TransactionClient, adCreativeId: string, prepared: PreparedPostMedia): Promise<void> {
+    const now = new Date()
+    for (const item of prepared.items) await tx.mediaAsset.update(this.attachArgs({ adCreativeId }, item, now))
+  }
+
+  /** Depois de gravar a ligação: o vídeo entra na fila e o original da foto é apagado. Não falha o chamador (só registra). */
+  async afterAttach(prepared: PreparedPostMedia): Promise<void> {
+    try {
+      await this.afterAttachSteps(prepared)
+    } catch (error) {
+      this.logger.error(`Pós-processamento da mídia falhou: ${errorText(error)}`)
+    }
+  }
+
+  private async finalize(owner: { postId: string }, prepared: PreparedPostMedia): Promise<void> {
     if (!prepared.items.length) return
     const now = new Date()
-    await this.prisma.$transaction(
-      prepared.items.map((item) =>
-        this.prisma.mediaAsset.update({
-          where: { id: item.id },
-          data: {
-            postId,
-            position: item.position,
-            attachedAt: now,
-            ...(item.kind === 'VIDEO' ? {} : { status: 'READY' as const, processedAt: now }),
-          },
-        }),
-      ),
-    )
+    await this.prisma.$transaction(prepared.items.map((item) => this.prisma.mediaAsset.update(this.attachArgs(owner, item, now))))
+    await this.afterAttachSteps(prepared)
+  }
+
+  private attachArgs(owner: { postId: string } | { adCreativeId: string }, item: PreparedPostMedia['items'][number], now: Date) {
+    return {
+      where: { id: item.id },
+      data: {
+        ...owner,
+        position: item.position,
+        attachedAt: now,
+        ...(item.kind === 'VIDEO' ? {} : { status: 'READY' as const, processedAt: now }),
+      },
+    }
+  }
+
+  private async afterAttachSteps(prepared: PreparedPostMedia): Promise<void> {
     for (const item of prepared.items) if (item.kind === 'VIDEO') await this.enqueueVideo(item.id)
     // O original da foto não é mais necessário (as versões já foram geradas): não pagamos armazenamento duas vezes.
     const imageIds = prepared.items.filter((item) => item.kind === 'IMAGE').map((item) => item.id)
@@ -418,6 +484,7 @@ export class MediaAssetsService {
     const rows = await this.prisma.mediaAsset.findMany({
       where: {
         postId: null,
+        adCreativeId: null,
         OR: [
           { status: 'UPLOADED', createdAt: { lt: new Date(now - MEDIA_DRAFT_HOURS * 3_600_000) } },
           { status: 'UPLOADING', createdAt: { lt: new Date(now - MEDIA_STALE_UPLOAD_HOURS * 3_600_000) } },
@@ -434,14 +501,14 @@ export class MediaAssetsService {
     return purged
   }
 
-  /** De hora em hora: vídeo de publicação parado em "processando" volta para a fila (o Redis pode ter caído). */
+  /** De hora em hora: vídeo de publicação ou de anúncio parado em "processando" volta para a fila (o Redis pode ter caído). */
   @Cron('40 * * * *')
   async requeueStuckVideos(): Promise<number> {
     const rows = await this.prisma.mediaAsset.findMany({
       where: {
         kind: 'VIDEO',
         status: 'PROCESSING',
-        postId: { not: null },
+        OR: [{ postId: { not: null } }, { adCreativeId: { not: null } }],
         updatedAt: { lt: new Date(Date.now() - MEDIA_STUCK_MINUTES * 60_000) },
       },
       orderBy: { updatedAt: 'asc' },
@@ -477,6 +544,13 @@ export class MediaAssetsService {
   }
 
   // ─── Internos ─────────────────────────────────────────────────────────────────────────────────
+
+  /** Exigências de anúncio na hora do envio (no arquivo inteiro). Largura e duração vêm nulas quando ainda não se sabe. */
+  private assertAdFile(purpose: MediaAssetPurpose, kind: Kind, width: number | null, durationMs: number | null) {
+    if (purpose !== 'AD_CREATIVE') return
+    const problem = adMediaProblem({ kind, width: width ?? Number.MAX_SAFE_INTEGER, durationMs, scope: 'file' })
+    if (problem) throw new BadRequestException(problem)
+  }
 
   private async assertDraftQuota(userId: string) {
     const drafts = await this.prisma.mediaAsset.count({
@@ -540,13 +614,13 @@ export class MediaAssetsService {
     if (!ids.length) return
     await this.prisma.mediaAsset
       .updateMany({
-        where: { id: { in: [...ids] }, postId: null, status: 'PROCESSING' },
+        where: { id: { in: [...ids] }, postId: null, adCreativeId: null, status: 'PROCESSING' },
         data: { status: 'UPLOADED', format: null, cropX: null, cropY: null, cropW: null, cropH: null },
       })
       .catch((error) => this.logger.warn(`Não foi possível liberar a mídia reservada: ${errorText(error)}`))
     // Fotos voltam sem as versões geradas (que já foram apagadas); GIF mantém o arquivo, que é o próprio original.
     await this.prisma.mediaAsset
-      .updateMany({ where: { id: { in: [...ids] }, postId: null, kind: 'IMAGE' }, data: { key: null, feedKey: null, thumbKey: null, width: null, height: null, sizeBytes: null } })
+      .updateMany({ where: { id: { in: [...ids] }, postId: null, adCreativeId: null, kind: 'IMAGE' }, data: { key: null, feedKey: null, thumbKey: null, width: null, height: null, sizeBytes: null } })
       .catch(() => undefined)
   }
 
@@ -563,7 +637,7 @@ export class MediaAssetsService {
     for (const key of [row.sourceKey, row.key, row.feedKey, row.thumbKey, row.posterKey]) {
       if (key && !(await this.deleteQuietly(key))) return false
     }
-    await this.prisma.mediaAsset.deleteMany({ where: { id: row.id, postId: null } })
+    await this.prisma.mediaAsset.deleteMany({ where: { id: row.id, postId: null, adCreativeId: null } })
     return true
   }
 

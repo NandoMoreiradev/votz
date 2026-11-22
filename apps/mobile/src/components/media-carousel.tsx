@@ -13,7 +13,7 @@ import VolumeX from 'lucide-react-native/icons/volume-x'
 import X from 'lucide-react-native/icons/x'
 import { IconButton } from './ui'
 import type { MediaItemDto } from '@votz/shared-types'
-import { carouselFormat, carouselFromMediaItems, carouselItems, DEFAULT_MEDIA_RATIO, formatHeightRatio, mediaRatio, pageIndex, posterUrlOf, type CarouselItem } from '../lib/media-kind'
+import { carouselFormat, carouselFromMediaItems, carouselItems, DEFAULT_MEDIA_RATIO, formatHeightRatio, frameMaxWidth, mediaRatio, pageIndex, posterUrlOf, type CarouselItem } from '../lib/media-kind'
 import { theme } from '../theme'
 
 const OVERLAY = '#000000AA'
@@ -113,7 +113,7 @@ function Slide({ item, active, started, width, height, onOpenImage, onImageSize,
  * molduras do padrão (1:1, 4:5 ou 16:9). Com `items` (da API), a moldura já vem certa e a tela não pula; só com
  * `urls` (resposta antiga), a moldura é escolhida pela primeira foto ao carregar.
  */
-export function MediaCarousel({ urls, items: mediaItems, limit = 5 }: { urls?: readonly string[] | null; items?: readonly MediaItemDto[] | null; limit?: number }) {
+export function MediaCarousel({ urls, items: mediaItems, limit = 5, maxHeight }: { urls?: readonly string[] | null; items?: readonly MediaItemDto[] | null; limit?: number; maxHeight?: number }) {
   const items = useMemo(
     () => (mediaItems && mediaItems.length ? carouselFromMediaItems(mediaItems, urls, limit) : carouselItems(urls, limit)),
     [mediaItems, urls, limit],
@@ -130,7 +130,7 @@ export function MediaCarousel({ urls, items: mediaItems, limit = 5 }: { urls?: r
   const keyOf = (item: CarouselItem, position: number) => item.url ?? `processando-${position}`
   const firstVisual = items.findIndex((item) => item.kind !== 'pdf')
   return <>
-    <View onLayout={(event) => setWidth(Math.round(event.nativeEvent.layout.width))} style={{ marginTop: 10, width: '100%', aspectRatio: 1 / ratio, borderRadius: 12, overflow: 'hidden', backgroundColor: theme.colors.soft }}>
+    <View onLayout={(event) => setWidth(Math.round(event.nativeEvent.layout.width))} style={{ marginTop: 10, width: '100%', maxWidth: maxHeight ? frameMaxWidth(maxHeight, ratio) : undefined, aspectRatio: 1 / ratio, borderRadius: 12, overflow: 'hidden', backgroundColor: theme.colors.soft }}>
       {width > 0 && <FlatList horizontal pagingEnabled nestedScrollEnabled data={items} keyExtractor={keyOf} showsHorizontalScrollIndicator={false} extraData={`${ratio}-${index}-${started}`}
         getItemLayout={(_, position) => ({ length: width, offset: width * position, index: position })}
         onMomentumScrollEnd={(event) => { const next = pageIndex(event.nativeEvent.contentOffset.x, width, items.length); if (next !== index) { setStarted(null); setIndex(next) } }}

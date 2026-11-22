@@ -22,9 +22,17 @@ interface MediaCarouselProps {
   onOpen?: (index: number) => void
   /** Descreve o conjunto para leitores de tela, ex.: "Fotos da publicação". */
   label?: string
+  /**
+   * Altura máxima da moldura, em px. A proporção do formato não muda (nada é cortado): se a moldura ficaria mais alta
+   * que isso, ela fica mais estreita. Sem o limite, a moldura ocupa a largura toda da coluna.
+   */
+  maxHeight?: number
 }
 
-export function MediaCarousel({ items, onOpen, label = 'Fotos e vídeos' }: MediaCarouselProps) {
+/** Altura máxima da foto ou do vídeo no feed (publicações e anúncios). O retrato 4:5 fica com ~384 px de largura. */
+export const FEED_MEDIA_MAX_HEIGHT = 480
+
+export function MediaCarousel({ items, onOpen, label = 'Fotos e vídeos', maxHeight }: MediaCarouselProps) {
   const [measured, setMeasured] = useState<MediaFormat | null>(null)
   const [index, setIndex] = useState(0)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -54,7 +62,7 @@ export function MediaCarousel({ items, onOpen, label = 'Fotos e vídeos' }: Medi
   const many = items.length > 1
 
   return (
-    <Frame $ratio={`${spec.width} / ${spec.height}`} role="group" aria-roledescription="carrossel" aria-label={label}>
+    <Frame $ratio={`${spec.width} / ${spec.height}`} $maxWidth={maxHeight ? Math.round(maxHeight * spec.ratio) : undefined} role="group" aria-roledescription="carrossel" aria-label={label}>
       <Track
         ref={trackRef}
         onScroll={onScroll}
@@ -161,9 +169,10 @@ export function VideoBadge() {
 
 const spin = keyframes`to { transform: rotate(360deg); }`
 
-const Frame = styled.div<{ $ratio: string }>`
+const Frame = styled.div<{ $ratio: string; $maxWidth?: number }>`
   position: relative;
   width: 100%;
+  max-width: ${({ $maxWidth }) => ($maxWidth ? `${$maxWidth}px` : 'none')};
   aspect-ratio: ${({ $ratio }) => $ratio};
   border-radius: ${({ theme }) => theme.radii.lg};
   overflow: hidden;

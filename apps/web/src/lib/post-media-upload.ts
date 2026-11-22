@@ -13,14 +13,34 @@ interface Presigned {
 
 type Progress = (percent: number) => void
 
+/** Onde o envio acontece: publicações usam `/media/uploads`; o criativo de anúncio usa as rotas da empresa. */
+export interface MediaUploadPaths {
+  upload: string
+  presign: string
+  complete: (id: string) => string
+}
+
+const POST_PATHS: MediaUploadPaths = {
+  upload: '/media/uploads',
+  presign: '/media/uploads/presign',
+  complete: (id) => `/media/uploads/${id}/complete`,
+}
+
+/** Rotas de envio da foto ou do vídeo de um anúncio (só quem gerencia anúncios da empresa). */
+export const adMediaPaths = (companyId: string): MediaUploadPaths => ({
+  upload: `/ads/COMPANY/${companyId}/media`,
+  presign: `/ads/COMPANY/${companyId}/media/presign`,
+  complete: (id) => `/ads/COMPANY/${companyId}/media/${id}/complete`,
+})
+
 const percent = (onProgress?: Progress) => (event: { loaded: number; total?: number }) => {
   if (onProgress && event.total) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
 }
 
-async function uploadThroughApi(file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
+async function uploadThroughApi(paths: MediaUploadPaths, file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
   const form = new FormData()
   form.append('file', file)
-  const { data } = await api.post<UploadedMediaAssetDto>('/media/uploads', form, {
+  const { data } = await api.post<UploadedMediaAssetDto>(paths.upload, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: percent(onProgress),
   })
@@ -32,10 +52,10 @@ async function uploadThroughApi(file: File, onProgress?: Progress): Promise<Uplo
  * não está disponível (recurso desligado, bucket sem CORS, rede), para o chamador enviar pela API. Se o
  * servidor RECUSAR o vídeo na confirmação, o erro sobe: enviar de novo só repetiria a recusa.
  */
-async function uploadDirect(file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto | null> {
+async function uploadDirect(paths: MediaUploadPaths, file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto | null> {
   let presigned: Presigned
   try {
-    presigned = (await api.post<Presigned>('/media/uploads/presign', { mimeType: file.type, sizeBytes: file.size })).data
+    presigned = (await api.post<Presigned>(paths.presign, { mimeType: file.type, sizeBytes: file.size })).data
   } catch {
     return null
   }
@@ -45,20 +65,29 @@ async function uploadDirect(file: File, onProgress?: Progress): Promise<Uploaded
   } catch {
     return null
   }
-  const { data } = await api.post<UploadedMediaAssetDto>(`/media/uploads/${presigned.id}/complete`)
+  const { data } = await api.post<UploadedMediaAssetDto>(paths.complete(presigned.id))
   return data
 }
 
-/** Envia uma foto, GIF ou vídeo de publicação. O formato e o enquadramento vão depois, ao publicar. */
-export async function uploadPostMedia(file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
+async function uploadMedia(paths: MediaUploadPaths, file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
   if (DIRECT_TYPES.has(file.type)) {
-    const direct = await uploadDirect(file, onProgress)
+    const direct = await uploadDirect(paths, file, onProgress)
     if (direct) return direct
   }
-  return uploadThroughApi(file, onProgress)
+  return uploadThroughApi(paths, file, onProgress)
 }
 
-/** A pessoa tirou o arquivo antes de publicar: apaga no servidor (sem travar a tela se falhar). */
+/** Envia uma foto, GIF ou vídeo de publicação. O formato e o enquadramento vão depois, ao publicar. */
+export function uploadPostMedia(file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
+  return uploadMedia(POST_PATHS, file, onProgress)
+}
+
+/** Envia a foto ou o vídeo de um anúncio. O formato e o enquadramento vão ao criar a campanha. */
+export function uploadAdMedia(companyId: string, file: File, onProgress?: Progress): Promise<UploadedMediaAssetDto> {
+  return uploadMedia(adMediaPaths(companyId), file, onProgress)
+}
+
+/** A pessoa tirou o arquivo antes de publicar: apaga no servidor (sem travar a tela se falhar). Vale para publicação e anúncio. */
 export function discardPostMedia(id: string): void {
   void api.delete(`/media/uploads/${id}`).catch(() => undefined)
 }

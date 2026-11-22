@@ -9,13 +9,20 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { AdsReviewService } from './ads-review.service'
 import { AdsReviewRepository } from './ads-review.repository'
 import { NotificationsService } from '../../notifications/notifications.service'
+import { StorageService } from '../../storage/storage.service'
 
 const repo = { listQueue: jest.fn(), findForReview: jest.fn(), decide: jest.fn(), findAdvertiserUserIds: jest.fn() }
 const notifications = { notify: jest.fn() }
+const storage = { getPublicUrl: (key: string) => `https://cdn.test/${key}` }
 
 const now = new Date('2026-11-22T12:00:00Z')
-const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br' }
+const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null }
 const pendingAd = { id: 'ad1', reviewStatus: 'PENDING', creative, adSet: { campaign: { name: 'Dezembro', account: { companyId: 'co1' } } } }
+const mediaRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'media-1', kind: 'VIDEO', status: 'READY', format: 'PORTRAIT', key: 'posts/m1.mp4', feedKey: null, thumbKey: null, posterKey: 'posts/m1.poster.jpg',
+  width: 1080, height: 1350, sourceWidth: 1080, sourceHeight: 1920, durationMs: 20_000, legacy: false, ...overrides,
+})
+const adWithMedia = (media: unknown) => ({ ...pendingAd, creative: { ...creative, media } })
 
 describe('AdsReviewService', () => {
   let service: AdsReviewService
@@ -27,6 +34,7 @@ describe('AdsReviewService', () => {
         AdsReviewService,
         { provide: AdsReviewRepository, useValue: repo },
         { provide: NotificationsService, useValue: notifications },
+        { provide: StorageService, useValue: storage },
       ],
     }).compile()
     service = module.get(AdsReviewService)
@@ -40,7 +48,7 @@ describe('AdsReviewService', () => {
         total: 1,
         pendingCount: 1,
         data: [{
-          id: 'ad1', reviewStatus: 'PENDING', submittedAt: now, reviewedAt: null, reviewNote: null, creative,
+          id: 'ad1', reviewStatus: 'PENDING', submittedAt: now, reviewedAt: null, reviewNote: null, creative: { ...creative, media: mediaRow() },
           adSet: {
             states: ['SP'], cities: [], interests: ['food-drink'], ageBands: ['25-34'], genders: [], automaticAudience: false, dailyBudgetCents: 2000,
             campaign: { name: 'Dezembro', objective: 'TRAFFIC', account: { name: 'Conta principal', company: { id: 'co1', tradeName: 'Padaria', verified: true } } },
@@ -56,7 +64,7 @@ describe('AdsReviewService', () => {
         adId: 'ad1',
         company: { id: 'co1', name: 'Padaria', verified: true },
         campaignName: 'Dezembro',
-        creative: { headline: 'Pão quente' },
+        creative: { headline: 'Pão quente', media: { kind: 'VIDEO', status: 'READY', url: 'https://cdn.test/posts/m1.mp4', posterUrl: 'https://cdn.test/posts/m1.poster.jpg' } },
         history: [{ decision: 'REJECTED', reviewerName: 'Moderadora' }],
       })
     })
@@ -96,7 +104,36 @@ describe('AdsReviewService', () => {
         decision: 'APPROVED',
         reason: null,
         reviewerId: 'mod1',
-        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br' },
+        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null },
+      })
+    })
+
+    describe('com foto ou vídeo', () => {
+      it('aprova com a mídia pronta e guarda qual arquivo foi revisado', async () => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow()))
+        repo.decide.mockResolvedValue(true)
+        await service.decide('ad1', { id: 'mod1' }, { decision: 'APPROVED' })
+        expect(repo.decide).toHaveBeenCalledWith(expect.objectContaining({
+          creativeSnapshot: expect.objectContaining({ media: { id: 'media-1', kind: 'VIDEO', format: 'PORTRAIT' } }),
+        }))
+      })
+
+      it.each(['PROCESSING', 'FAILED'])('não aprova vídeo %s (só recusar)', async (status) => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ status })))
+        await expect(service.decide('ad1', { id: 'mod1' }, { decision: 'APPROVED' })).rejects.toBeInstanceOf(BadRequestException)
+        expect(repo.decide).not.toHaveBeenCalled()
+      })
+
+      it('recusar vídeo que ainda processa é permitido', async () => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ status: 'PROCESSING' })))
+        repo.decide.mockResolvedValue(true)
+        await expect(service.decide('ad1', { id: 'mod1' }, { decision: 'REJECTED', reason: 'Imagem com promessa de cura.' })).resolves.toEqual({ adId: 'ad1', decision: 'REJECTED' })
+      })
+
+      it('a IA nunca aprova sozinha anúncio com foto ou vídeo (ela lê só o texto)', async () => {
+        repo.findForReview.mockResolvedValue(adWithMedia(mediaRow({ kind: 'IMAGE' })))
+        await expect(service.approveByAi('ad1', 'Sem problema.')).resolves.toBe(false)
+        expect(repo.decide).not.toHaveBeenCalled()
       })
     })
 

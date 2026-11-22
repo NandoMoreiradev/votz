@@ -19,7 +19,7 @@ import {
   UserCheck,
 } from '@phosphor-icons/react'
 import { FlagTargetType, PostKind, UserType, legacyMediaItems } from '@votz/shared-types'
-import { MediaCarousel } from '../media/MediaCarousel'
+import { FEED_MEDIA_MAX_HEIGHT, MediaCarousel } from '../media/MediaCarousel'
 import { PostAuthorInfo, PostDto } from '../../types/api'
 import {
   useDeletePost,
@@ -542,6 +542,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
         <MediaCarousel
           items={mediaItems}
           label="Fotos e vídeos da publicação"
+          maxHeight={FEED_MEDIA_MAX_HEIGHT}
           onOpen={(idx) =>
             openMedia(
               mediaItems

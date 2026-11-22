@@ -2,6 +2,10 @@ import { BadRequestException, HttpException } from '@nestjs/common'
 import sharp from 'sharp'
 import { MediaAssetsService, MAX_MEDIA_DRAFTS } from './media-assets.service'
 import { itemsForPost, legacyItemsFromUrls, type MediaAssetView } from './media-items'
+import { probeVideoBuffer } from './media-video'
+
+// Ler vídeo exige o ffmpeg: nos testes só a leitura (probe) é trocada; o resto do módulo é o de verdade.
+jest.mock('./media-video', () => ({ ...jest.requireActual('./media-video'), probeVideoBuffer: jest.fn() }))
 
 const USER = 'user-1'
 const PUBLIC = 'https://cdn.votz.test'
@@ -264,5 +268,190 @@ describe('itens para a tela', () => {
     expect(items.map((item) => item.kind)).toEqual(['IMAGE', 'VIDEO'])
     expect(items[1].posterUrl).toBe(`${PUBLIC}/posts/b.poster.jpg`)
     expect(items.every((item) => item.fit === 'contain' && item.format === null)).toBe(true)
+  })
+})
+
+describe('MediaAssetsService: criativo de anúncio (AD_CREATIVE)', () => {
+  const AD = (overrides: Partial<Row> = {}) => makeRow({ purpose: 'AD_CREATIVE', sourceWidth: 4000, sourceHeight: 3000, ...overrides })
+
+  describe('envio', () => {
+    it('GIF não vale em anúncio e nada é guardado', async () => {
+      const { service, storage, prisma } = setup()
+      const gif = await sharp({ create: { width: 1200, height: 800, channels: 3, background: { r: 1, g: 1, b: 1 } } }).gif().toBuffer()
+      await expect(service.upload(USER, gif, 'AD_CREATIVE')).rejects.toThrow(/GIF/)
+      expect(storage.uploadBuffer).not.toHaveBeenCalled()
+      expect(prisma.mediaAsset.create).not.toHaveBeenCalled()
+    })
+
+    it('foto estreita (menos de 1080 px) é recusada antes de guardar; no envio de publicação a mesma foto passa', async () => {
+      const { service, storage } = setup()
+      await expect(service.upload(USER, await jpeg(800, 600), 'AD_CREATIVE')).rejects.toThrow(/pequena demais para anúncio.*1080/)
+      expect(storage.uploadBuffer).not.toHaveBeenCalled()
+      await expect(service.upload(USER, await jpeg(800, 600))).resolves.toMatchObject({ kind: 'IMAGE' })
+    })
+
+    it('foto de 1080 px ou mais é aceita e fica marcada como de anúncio', async () => {
+      const { service, prisma } = setup()
+      await expect(service.upload(USER, await jpeg(1200, 900), 'AD_CREATIVE')).resolves.toMatchObject({ kind: 'IMAGE', width: 1200 })
+      expect(prisma.mediaAsset.create.mock.calls[0][0].data).toMatchObject({ purpose: 'AD_CREATIVE', uploaderId: USER })
+    })
+
+    it('envio comum continua sendo de publicação', async () => {
+      const { service, prisma } = setup()
+      await service.upload(USER, await jpeg(400, 400))
+      expect(prisma.mediaAsset.create.mock.calls[0][0].data).toMatchObject({ purpose: 'POST' })
+    })
+
+    it('envio direto: o pedido já guarda o propósito de anúncio', async () => {
+      const { service, prisma } = setup()
+      await service.presign(USER, { mimeType: 'video/mp4', sizeBytes: 1000 }, 'AD_CREATIVE')
+      expect(prisma.mediaAsset.create.mock.calls[0][0].data).toMatchObject({ purpose: 'AD_CREATIVE', kind: 'VIDEO', status: 'UPLOADING' })
+    })
+
+    it('envio direto: vídeo de anúncio com mais de 60 s ou estreito é apagado e recusado ao confirmar', async () => {
+      for (const probe of [{ width: 1080, height: 1920, durationMs: 61_000 }, { width: 720, height: 1280, durationMs: 20_000 }]) {
+        const { service, prisma, storage } = setup()
+        prisma.mediaAsset.findFirst.mockResolvedValue(AD({ kind: 'VIDEO', status: 'UPLOADING', sourceKey: `media-src/${ID1}.mp4`, sourceSizeBytes: 5000, sourceWidth: null, sourceHeight: null }))
+        storage.headObjectSize.mockResolvedValue(5000)
+        storage.sniffObjectMime.mockResolvedValue('video/mp4')
+        storage.getObjectBuffer.mockResolvedValue(Buffer.from('video'))
+        ;(probeVideoBuffer as jest.Mock).mockResolvedValue(probe)
+        await expect(service.complete(USER, ID1)).rejects.toBeInstanceOf(BadRequestException)
+        expect(storage.delete).toHaveBeenCalledWith(`media-src/${ID1}.mp4`)
+        expect(prisma.mediaAsset.update).not.toHaveBeenCalled()
+      }
+    })
+
+    it('envio direto: vídeo de anúncio de 60 s com 1080 px de largura é aceito', async () => {
+      const { service, prisma, storage } = setup()
+      prisma.mediaAsset.findFirst.mockResolvedValue(AD({ kind: 'VIDEO', status: 'UPLOADING', sourceKey: `media-src/${ID1}.mp4`, sourceSizeBytes: 5000, sourceWidth: null, sourceHeight: null }))
+      storage.headObjectSize.mockResolvedValue(5000)
+      storage.sniffObjectMime.mockResolvedValue('video/mp4')
+      storage.getObjectBuffer.mockResolvedValue(Buffer.from('video'))
+      ;(probeVideoBuffer as jest.Mock).mockResolvedValue({ width: 1080, height: 1920, durationMs: 60_000 })
+      await expect(service.complete(USER, ID1)).resolves.toMatchObject({ kind: 'VIDEO', width: 1080, durationMs: 60_000 })
+    })
+
+    it('envio direto de PUBLICAÇÃO não ganha as exigências de anúncio (vídeo estreito e longo passa)', async () => {
+      const { service, prisma, storage } = setup()
+      prisma.mediaAsset.findFirst.mockResolvedValue(makeRow({ kind: 'VIDEO', status: 'UPLOADING', sourceKey: `media-src/${ID1}.mp4`, sourceSizeBytes: 5000, sourceWidth: null, sourceHeight: null }))
+      storage.headObjectSize.mockResolvedValue(5000)
+      storage.sniffObjectMime.mockResolvedValue('video/mp4')
+      storage.getObjectBuffer.mockResolvedValue(Buffer.from('video'))
+      ;(probeVideoBuffer as jest.Mock).mockResolvedValue({ width: 720, height: 1280, durationMs: 90_000 })
+      await expect(service.complete(USER, ID1)).resolves.toMatchObject({ kind: 'VIDEO', width: 720 })
+    })
+  })
+
+  describe('prepareForAdCreative', () => {
+    it('só aceita arquivo enviado como anúncio: o de publicação (ou de outra pessoa) é recusado', async () => {
+      const { service, prisma } = setup([makeRow()])
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+      prisma.mediaAsset.findMany.mockResolvedValue([])
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+      expect(prisma.mediaAsset.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('e a publicação não pode usar arquivo de anúncio', async () => {
+      const { service } = setup([AD()])
+      await expect(service.prepareForPost(USER, [{ id: ID1, format: 'SQUARE' }])).rejects.toThrow(/não está disponível/)
+    })
+
+    it('arquivo já ligado a outro criativo não pode ser usado de novo', async () => {
+      const { service } = setup([AD({ adCreativeId: 'cr-outro', status: 'READY' })])
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+    })
+
+    it('arquivo estreito: o que vale é a largura da parte mostrada depois do recorte', async () => {
+      // 1200×800 passa no envio (1200 ≥ 1080), mas o quadrado mostra só 800 px de largura.
+      const { service, prisma, storage } = setup([AD({ sourceWidth: 1200, sourceHeight: 800 })])
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/enquadramento.*1080/)
+      expect(prisma.mediaAsset.updateMany).not.toHaveBeenCalled()
+      // Em paisagem a mesma foto mostra os 1200 px inteiros.
+      storage.getObjectBuffer.mockResolvedValue(await jpeg(1200, 800))
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'LANDSCAPE' })).resolves.toMatchObject({ items: [{ id: ID1 }] })
+    })
+
+    it('zoom que deixa a parte mostrada abaixo de 1080 px é recusado', async () => {
+      const { service } = setup([AD({ sourceWidth: 4000, sourceHeight: 4000 })])
+      // Recorte de 25% de uma foto de 4000 px = 1000 px.
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE', crop: { x: 0, y: 0, w: 0.25, h: 0.25 } })).rejects.toThrow(/1080/)
+    })
+
+    it('vídeo de anúncio com mais de 60 s (arquivo que já estava no banco) é recusado', async () => {
+      const { service } = setup([AD({ kind: 'VIDEO', sourceWidth: 1080, sourceHeight: 1920, durationMs: 75_000, sourceKey: `media-src/${ID1}.mp4` })])
+      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'PORTRAIT' })).rejects.toThrow(/60 segundos/)
+    })
+
+    it('foto boa: reserva, gera as versões e devolve as chaves para apagar se a campanha não for criada', async () => {
+      const { service, prisma, storage } = setup([AD()])
+      storage.getObjectBuffer.mockResolvedValue(await jpeg(4000, 3000))
+      const prepared = await service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })
+      expect(prisma.mediaAsset.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PROCESSING', format: 'SQUARE' }) }))
+      expect(prepared.items).toEqual([{ id: ID1, kind: 'IMAGE', position: 0 }])
+      expect(prepared.renderedKeys.length).toBe(3)
+      await service.releaseForPost(prepared)
+      expect(storage.delete).toHaveBeenCalledTimes(3)
+    })
+  })
+
+  describe('ligar ao criativo', () => {
+    const photo = { items: [{ id: ID1, kind: 'IMAGE' as const, position: 0 }], media: [], mediaKeys: [], renderedKeys: [] }
+    const video = { items: [{ id: ID1, kind: 'VIDEO' as const, position: 0 }], media: [], mediaKeys: [], renderedKeys: [] }
+
+    it('foto fica pronta na hora, ligada ao criativo (e nunca a uma publicação), dentro da transação do chamador', async () => {
+      const { service, prisma } = setup()
+      const tx = { mediaAsset: { update: jest.fn().mockResolvedValue({}) } }
+      await service.attachToAdCreative(tx as never, 'cr-1', photo)
+      expect(tx.mediaAsset.update).toHaveBeenCalledWith({
+        where: { id: ID1 },
+        data: expect.objectContaining({ adCreativeId: 'cr-1', position: 0, status: 'READY' }),
+      })
+      expect(tx.mediaAsset.update.mock.calls[0][0].data).not.toHaveProperty('postId')
+      expect(prisma.mediaAsset.update).not.toHaveBeenCalled()
+    })
+
+    it('vídeo continua "processando" até a fila terminar; depois de ligar, entra na fila', async () => {
+      const { service, queue } = setup()
+      const tx = { mediaAsset: { update: jest.fn().mockResolvedValue({}) } }
+      await service.attachToAdCreative(tx as never, 'cr-1', video)
+      expect(tx.mediaAsset.update.mock.calls[0][0].data).not.toHaveProperty('status')
+      await service.afterAttach(video)
+      expect(queue.add).toHaveBeenCalledWith('render-video', { assetId: ID1 }, expect.objectContaining({ jobId: `render-video-${ID1}` }))
+    })
+
+    it('foto: depois de ligar, apaga o original (não pagamos duas vezes)', async () => {
+      const { service, prisma, storage } = setup()
+      prisma.mediaAsset.findMany.mockResolvedValue([{ id: ID1, sourceKey: `media-src/${ID1}.jpeg` }])
+      await service.afterAttach(photo)
+      expect(storage.delete).toHaveBeenCalledWith(`media-src/${ID1}.jpeg`)
+    })
+
+    it('falha no pós-processamento não derruba quem chamou (a campanha já foi criada)', async () => {
+      const { service, prisma } = setup()
+      prisma.mediaAsset.findMany.mockRejectedValue(new Error('db fora'))
+      await expect(service.afterAttach(photo)).resolves.toBeUndefined()
+    })
+  })
+
+  describe('limpeza não apaga mídia de anúncio', () => {
+    it('rascunhos: só entram na limpeza os arquivos sem publicação E sem criativo', async () => {
+      const { service, prisma } = setup([])
+      await service.purgeDrafts()
+      expect(prisma.mediaAsset.findMany.mock.calls[0][0].where).toMatchObject({ postId: null, adCreativeId: null })
+    })
+
+    it('vídeo parado de anúncio também volta para a fila', async () => {
+      const { service, prisma } = setup([])
+      await service.requeueStuckVideos()
+      expect(prisma.mediaAsset.findMany.mock.calls[0][0].where.OR).toEqual([{ postId: { not: null } }, { adCreativeId: { not: null } }])
+    })
+
+    it('apagar o rascunho (pela pessoa) nunca apaga arquivo já ligado a anúncio', async () => {
+      const { service, prisma } = setup()
+      prisma.mediaAsset.findFirst.mockResolvedValue(null)
+      await expect(service.discard(USER, ID1)).rejects.toThrow(/não encontrado/)
+      expect(prisma.mediaAsset.findFirst.mock.calls[0][0].where).toMatchObject({ postId: null, adCreativeId: null })
+    })
   })
 })

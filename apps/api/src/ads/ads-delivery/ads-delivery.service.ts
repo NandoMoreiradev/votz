@@ -12,6 +12,8 @@ import {
   type AdEventsResult,
   type SponsoredAdView,
 } from '@votz/shared-types'
+import { StorageService } from '../../storage/storage.service'
+import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.repository'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
@@ -36,7 +38,10 @@ const HOUR_MS = 3600_000
 export class AdsDeliveryService {
   private readonly logger = new Logger(AdsDeliveryService.name)
 
-  constructor(private readonly repo: AdsDeliveryRepository) {}
+  constructor(
+    private readonly repo: AdsDeliveryRepository,
+    private readonly storage: StorageService,
+  ) {}
 
   /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. */
   async next(userId: string, query: NextAdQueryDto, now = new Date()): Promise<SponsoredAdView | null> {
@@ -60,6 +65,8 @@ export class AdsDeliveryService {
     const eligible = pool.filter((ad) => {
       const { objective } = ad.adSet.campaign
       const account = ad.adSet.campaign.account
+      // A consulta já filtra, mas conferimos de novo: nunca vai para o feed vídeo que ainda está sendo preparado.
+      if (!creativeMediaReady(ad.creative.media)) return false
       // Saldo disponível: o que a conta tem menos o gasto que ainda não foi lançado.
       if (account.balanceCents * 1000 - account.pendingSpendMillicents <= 0) return false
       if (!matchesTargeting(ad.adSet, viewer)) return false
@@ -97,6 +104,7 @@ export class AdsDeliveryService {
       body: record.creative.body,
       ctaLabel: record.creative.ctaLabel,
       destinationUrl: record.creative.destinationUrl,
+      media: creativeMediaItem(record.creative.media, (key) => this.storage.getPublicUrl(key)),
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }

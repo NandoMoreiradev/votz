@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { NotificationsService } from '../../notifications/notifications.service'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { AD_REVIEW_LIMITS, type AdInterestId, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
+import { StorageService } from '../../storage/storage.service'
+import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsReviewRepository, type QueueAd } from './ads-review.repository'
 import type { AdReviewDecisionDto } from './dto/ads-review.dto'
 
@@ -15,13 +17,15 @@ export class AdsReviewService {
   constructor(
     private readonly repo: AdsReviewRepository,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
   async listQueue(status: Status = 'PENDING', page = 1, limit = 20): Promise<AdReviewQueueResponse> {
     const take = Math.min(limit, 50)
     const { total, pendingCount, data } = await this.repo.listQueue(status, page, take)
+    const publicUrl = (key: string) => this.storage.getPublicUrl(key)
     return {
-      data: data.map(toQueueItem),
+      data: data.map((ad) => toQueueItem(ad, publicUrl)),
       meta: { total, pendingCount, page, limit: take, totalPages: Math.max(1, Math.ceil(total / take)) },
     }
   }
@@ -35,18 +39,21 @@ export class AdsReviewService {
     if (dto.decision === 'REJECTED' && reason.length < AD_REVIEW_LIMITS.REASON_MIN) {
       throw new BadRequestException(`Para recusar, explique o motivo em pelo menos ${AD_REVIEW_LIMITS.REASON_MIN} letras. O anunciante vai ler.`)
     }
+    // Ninguém aprova o que não viu: vídeo ainda sendo preparado (ou que falhou) só pode ser recusado.
+    if (dto.decision === 'APPROVED' && !creativeMediaReady(ad.creative.media)) {
+      throw new BadRequestException(
+        ad.creative.media?.status === 'FAILED'
+          ? 'O vídeo deste anúncio não pôde ser preparado. Recuse e peça ao anunciante um novo arquivo.'
+          : 'O vídeo deste anúncio ainda está sendo preparado. Espere ele ficar pronto para ver e aprovar.',
+      )
+    }
 
     const ok = await this.repo.decide({
       adId,
       decision: dto.decision,
       reason: reason || null,
       reviewerId: reviewer.id,
-      creativeSnapshot: {
-        headline: ad.creative.headline,
-        body: ad.creative.body,
-        ctaLabel: ad.creative.ctaLabel,
-        destinationUrl: ad.creative.destinationUrl,
-      },
+      creativeSnapshot: creativeSnapshot(ad.creative),
     })
     if (!ok) throw new ConflictException('Outra pessoa da moderação decidiu este anúncio agora há pouco.')
     await this.notifyAdvertiser(ad.adSet.campaign.account.companyId, {
@@ -74,18 +81,15 @@ export class AdsReviewService {
   async approveByAi(adId: string, note: string): Promise<boolean> {
     const ad = await this.repo.findForReview(adId)
     if (!ad || ad.reviewStatus !== 'PENDING') return false
+    // A IA hoje lê só o texto: anúncio com foto ou vídeo sempre passa por uma pessoa.
+    if (ad.creative.media) return false
     const ok = await this.repo.decide({
       adId,
       decision: 'APPROVED',
       reason: note,
       reviewerId: null,
       source: 'AI',
-      creativeSnapshot: {
-        headline: ad.creative.headline,
-        body: ad.creative.body,
-        ctaLabel: ad.creative.ctaLabel,
-        destinationUrl: ad.creative.destinationUrl,
-      },
+      creativeSnapshot: creativeSnapshot(ad.creative),
     })
     if (ok) await this.notifyAdvertiser(ad.adSet.campaign.account.companyId, { adId, campaignName: ad.adSet.campaign.name, decision: 'APPROVED', reason: null })
     return ok
@@ -113,7 +117,24 @@ export class AdsReviewService {
   }
 }
 
-function toQueueItem(ad: QueueAd): AdReviewQueueItem {
+/** O que foi revisado, guardado junto com a decisão (a memória do que foi aprovado ou recusado). */
+function creativeSnapshot(creative: {
+  headline: string
+  body: string
+  ctaLabel: string
+  destinationUrl: string
+  media: { id: string; kind: string; format: string | null } | null
+}) {
+  return {
+    headline: creative.headline,
+    body: creative.body,
+    ctaLabel: creative.ctaLabel,
+    destinationUrl: creative.destinationUrl,
+    media: creative.media ? { id: creative.media.id, kind: creative.media.kind, format: creative.media.format } : null,
+  }
+}
+
+function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQueueItem {
   const { adSet } = ad
   const { campaign } = adSet
   const { account } = campaign
@@ -134,6 +155,7 @@ function toQueueItem(ad: QueueAd): AdReviewQueueItem {
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
+      media: creativeMediaItem(ad.creative.media, publicUrl),
     },
     audience: {
       states: adSet.states,

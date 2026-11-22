@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common'
 import { AdReviewSource, AdReviewStatus, Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
+import { CREATIVE_WITH_MEDIA } from '../ad-creative-media'
 
 const QUEUE_INCLUDE = {
-  creative: true,
+  creative: CREATIVE_WITH_MEDIA,
   adSet: { include: { campaign: { include: { account: { include: { company: { select: { id: true, tradeName: true, verified: true } } } } } } } },
   reviews: { orderBy: { createdAt: 'desc' as const }, take: 5, include: { reviewer: { select: { name: true } } } },
   aiAnalyses: { orderBy: { createdAt: 'desc' as const }, take: 1 },
@@ -31,7 +32,7 @@ export class AdsReviewRepository {
   findForReview(adId: string) {
     return this.prisma.ad.findUnique({
       where: { id: adId },
-      include: { creative: true, adSet: { select: { campaign: { select: { name: true, objective: true, account: { select: { companyId: true } } } } } } },
+      include: { creative: CREATIVE_WITH_MEDIA, adSet: { select: { campaign: { select: { name: true, objective: true, account: { select: { companyId: true } } } } } } },
     })
   }
 
