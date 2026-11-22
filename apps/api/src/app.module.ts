@@ -38,6 +38,8 @@ import { AdsCampaignsModule } from './ads/ads-campaigns/ads-campaigns.module'
 import { AdsBillingModule } from './ads/ads-billing/ads-billing.module'
 import { AdsConversionsModule } from './ads/ads-conversions/ads-conversions.module'
 import { AdsDeliveryModule } from './ads/ads-delivery/ads-delivery.module'
+import { AdsLibraryModule } from './ads/ads-library/ads-library.module'
+import { AdsAlertsModule } from './ads/ads-alerts/ads-alerts.module'
 import { CamaraSyncModule } from './camara-sync/camara-sync.module'
 import { IbgeSyncModule } from './ibge-sync/ibge-sync.module'
 import { SenadoSyncModule } from './senado-sync/senado-sync.module'
@@ -148,6 +150,8 @@ import { SecurityModule } from './common/security/security.module'
     AdsCampaignsModule,
     AdsBillingModule,
     AdsDeliveryModule,
+    AdsLibraryModule,
+    AdsAlertsModule,
     AdsConversionsModule,
     CamaraSyncModule,
     IbgeSyncModule,

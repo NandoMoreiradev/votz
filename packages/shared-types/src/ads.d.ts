@@ -839,4 +839,60 @@ export interface AdReportTotals {
 export declare function summarizeAdStats(rows: readonly AdDailyStatView[]): AdReportTotals;
 /** Completa com zeros os dias sem movimento, do mais antigo até `today` ("AAAA-MM-DD"), para o gráfico não pular dia. */
 export declare function fillAdStatDays(rows: readonly AdDailyStatView[], days: number, today: string): AdDailyStatView[];
+export declare const AD_LIBRARY: {
+    /** Anúncio que parou de rodar continua na biblioteca por este tempo. */
+    readonly RETENTION_MONTHS: 12;
+    readonly PAGE_SIZE: 24;
+    readonly MAX_PAGE_SIZE: 48;
+    readonly SEARCH_MAX: 80;
+};
+export interface AdRangeBand {
+    /** Limite de baixo (incluso). */
+    min: number;
+    /** Limite de cima (excluso); nulo na última faixa ("mais de..."). */
+    max: number | null;
+    label: string;
+}
+export declare const AD_SPEND_BANDS: readonly AdRangeBand[];
+export declare const AD_IMPRESSION_BANDS: readonly AdRangeBand[];
+export declare const adSpendBand: (spendCents: number) => AdRangeBand;
+export declare const adImpressionBand: (impressions: number) => AdRangeBand;
+export interface AdLibraryItem {
+    adId: string;
+    /** Quem pagou o anúncio. */
+    advertiser: {
+        id: string;
+        name: string;
+        username: string | null;
+        logoUrl: string | null;
+        verified: boolean;
+    };
+    headline: string;
+    body: string;
+    ctaLabel: string;
+    /** Só o endereço do site (ex.: padaria.com.br), sem caminho nem parâmetros. */
+    destinationHost: string | null;
+    media: MediaItemDto | null;
+    /** Está rodando agora (campanha ligada, no período, com saldo). */
+    active: boolean;
+    /** "AAAA-MM-DD". */
+    startedOn: string;
+    /** Dia em que acaba ou acabou; nulo se não tem data para acabar. */
+    endsOn: string | null;
+    /** Estados e cidades onde a empresa escolheu mostrar; vazio = todo o Brasil. */
+    states: string[];
+    cities: string[];
+    spend: AdRangeBand;
+    impressions: AdRangeBand;
+}
+export interface AdLibraryResponse {
+    data: AdLibraryItem[];
+    meta: {
+        page: number;
+        limit: number;
+        hasMore: boolean;
+    };
+}
+/** Só o domínio do destino (para a biblioteca mostrar para onde o anúncio leva, sem entregar parâmetros). */
+export declare function adDestinationHost(url: string): string | null;
 //# sourceMappingURL=ads.d.ts.map

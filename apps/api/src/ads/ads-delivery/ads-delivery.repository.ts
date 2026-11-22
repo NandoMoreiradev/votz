@@ -211,7 +211,9 @@ export class AdsDeliveryRepository {
   private async pauseIfBroke(tx: Prisma.TransactionClient, accountId: string) {
     const account = await tx.adAccount.findUniqueOrThrow({ where: { id: accountId }, select: { balanceCents: true, pendingSpendMillicents: true } })
     if (account.balanceCents * 1000 - account.pendingSpendMillicents > 0) return
-    await tx.adCampaign.updateMany({ where: { accountId, status: 'ACTIVE' }, data: { status: 'PAUSED' } })
+    const paused = await tx.adCampaign.updateMany({ where: { accountId, status: 'ACTIVE' }, data: { status: 'PAUSED' } })
+    // Marca a pausa na mesma transação: o aviso ao anunciante sai depois (AdsAlertsService), uma vez por pausa.
+    if (paused.count > 0) await tx.adAccount.update({ where: { id: accountId }, data: { pausedForBalanceAt: new Date() } })
   }
 
   // ── Fechamento de hora em hora ───────────────────────────────────────────────────────────────

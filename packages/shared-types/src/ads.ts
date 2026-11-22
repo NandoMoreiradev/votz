@@ -836,3 +836,91 @@ export function fillAdStatDays(rows: readonly AdDailyStatView[], days: number, t
   }
   return result
 }
+
+// ─── Biblioteca pública de anúncios ────────────────────────────────────────────────────────────
+// Transparência: qualquer pessoa vê quem pagou, o texto, o período, as regiões e FAIXAS de gasto e de exibições.
+// Nunca leva o público escolhido (interesses, idade, gênero), lance, preço nem dado de pessoa.
+
+export const AD_LIBRARY = {
+  /** Anúncio que parou de rodar continua na biblioteca por este tempo. */
+  RETENTION_MONTHS: 12,
+  PAGE_SIZE: 24,
+  MAX_PAGE_SIZE: 48,
+  SEARCH_MAX: 80,
+} as const
+
+export interface AdRangeBand {
+  /** Limite de baixo (incluso). */
+  min: number
+  /** Limite de cima (excluso); nulo na última faixa ("mais de..."). */
+  max: number | null
+  label: string
+}
+
+/** Faixas de gasto, em centavos. Ninguém vê o valor exato: só em qual faixa o anúncio caiu. */
+const SPEND_BAND_LIMITS_CENTS = [0, 10_000, 50_000, 100_000, 500_000, 1_000_000, 5_000_000] as const
+/** Faixas de exibições. */
+const IMPRESSION_BAND_LIMITS = [0, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000] as const
+
+// Milhar com ponto, sem depender do ICU do aparelho (o Hermes do celular nem sempre tem pt-BR).
+const count = (value: number) => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+const brl = (cents: number) => `R$ ${count(cents / 100)}`
+
+function buildBands(limits: readonly number[], format: (value: number) => string, below: string, above: string): AdRangeBand[] {
+  return limits.map((min, index) => {
+    const max = index + 1 < limits.length ? limits[index + 1] : null
+    const label = index === 0 ? below.replace('{max}', format(max as number)) : max === null ? above.replace('{min}', format(min)) : `${format(min)} a ${format(max)}`
+    return { min, max, label }
+  })
+}
+
+export const AD_SPEND_BANDS: readonly AdRangeBand[] = buildBands(SPEND_BAND_LIMITS_CENTS, brl, 'Menos de {max}', 'Mais de {min}')
+export const AD_IMPRESSION_BANDS: readonly AdRangeBand[] = buildBands(IMPRESSION_BAND_LIMITS, count, 'Menos de {max}', 'Mais de {min}')
+
+function bandOf(bands: readonly AdRangeBand[], value: number): AdRangeBand {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0
+  for (let index = bands.length - 1; index >= 0; index -= 1) if (safe >= bands[index].min) return bands[index]
+  return bands[0]
+}
+
+export const adSpendBand = (spendCents: number): AdRangeBand => bandOf(AD_SPEND_BANDS, spendCents)
+export const adImpressionBand = (impressions: number): AdRangeBand => bandOf(AD_IMPRESSION_BANDS, impressions)
+
+export interface AdLibraryItem {
+  adId: string
+  /** Quem pagou o anúncio. */
+  advertiser: { id: string; name: string; username: string | null; logoUrl: string | null; verified: boolean }
+  headline: string
+  body: string
+  ctaLabel: string
+  /** Só o endereço do site (ex.: padaria.com.br), sem caminho nem parâmetros. */
+  destinationHost: string | null
+  media: MediaItemDto | null
+  /** Está rodando agora (campanha ligada, no período, com saldo). */
+  active: boolean
+  /** "AAAA-MM-DD". */
+  startedOn: string
+  /** Dia em que acaba ou acabou; nulo se não tem data para acabar. */
+  endsOn: string | null
+  /** Estados e cidades onde a empresa escolheu mostrar; vazio = todo o Brasil. */
+  states: string[]
+  cities: string[]
+  spend: AdRangeBand
+  impressions: AdRangeBand
+}
+
+export interface AdLibraryResponse {
+  data: AdLibraryItem[]
+  meta: { page: number; limit: number; hasMore: boolean }
+}
+
+/** Só o domínio do destino (para a biblioteca mostrar para onde o anúncio leva, sem entregar parâmetros). */
+export function adDestinationHost(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+    return parsed.hostname.replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}

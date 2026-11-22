@@ -52,6 +52,7 @@ import { StudioBilling } from './pages/studio/StudioBilling'
 import { StudioAdsReport } from './pages/studio/StudioAdsReport'
 import { StudioAdsConversions } from './pages/studio/StudioAdsConversions'
 import { PrestacaoPublica } from './pages/PrestacaoPublica'
+import { AdLibrary } from './pages/AdLibrary'
 import { MandatoPublico } from './pages/MandatoPublico'
 import { DescadastroResumo } from './pages/DescadastroResumo'
 import DebatesList from './pages/DebatesList'
@@ -179,6 +180,7 @@ function App() {
                 <Route path="/mandato/webhooks" element={<MandatoPortal />} />
                 <Route path="/mandato/resumo" element={<MandatoPortal />} />
               </Route>
+              <Route path="/anuncios/biblioteca" element={<AdLibrary />} />
               <Route path="/prestacao/:code" element={<PrestacaoPublica />} />
               <Route path="/p/:slug/mandato" element={<MandatoPublico />} />
               <Route path="/descadastro-resumo" element={<DescadastroResumo />} />

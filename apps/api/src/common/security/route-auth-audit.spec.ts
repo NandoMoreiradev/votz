@@ -23,6 +23,8 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /accountability/public/:code',
   // Clique no anúncio (leva ao anunciante): quem clica já saiu do Votz. Sem dado de sessão; só um identificador sorteado.
   'GET /ads/c/:token',
+  // Biblioteca pública de anúncios: transparência por decisão de produto. Só faixas de gasto e exibições, sem público.
+  'GET /ads/library',
   'GET /alerts',
   'GET /alerts/:id',
   'GET /analytics/public/entities/:id',

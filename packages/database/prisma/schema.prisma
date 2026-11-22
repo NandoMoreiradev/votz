@@ -190,6 +190,8 @@ enum NotificationType {
   POST_MENTION
   AD_APPROVED
   AD_REJECTED
+  AD_LOW_BALANCE
+  AD_PAUSED_NO_BALANCE
 }
 
 enum SlaState {
@@ -2247,6 +2249,11 @@ model AdAccount {
   balanceCents Int          @default(0) @map("balance_cents")
   // Gasto que ainda não completou um centavo (milésimos de centavo). Vira lançamento SPEND quando passa de 1.000.
   pendingSpendMillicents Int @default(0) @map("pending_spend_millicents")
+  // Controle dos avisos de saldo. Aviso de saldo baixo: guarda quando foi mandado e zera quando o saldo se recupera.
+  // Aviso de pausa: `pausedForBalanceAt` é quando as campanhas pausaram por falta de saldo; o aviso vale uma vez por pausa.
+  lowBalanceAlertedAt DateTime? @map("low_balance_alerted_at")
+  pausedForBalanceAt  DateTime? @map("paused_for_balance_at")
+  pausedAlertSentAt   DateTime? @map("paused_alert_sent_at")
   createdById  String       @map("created_by_id")
   campaigns    AdCampaign[]
   creatives    AdCreative[]

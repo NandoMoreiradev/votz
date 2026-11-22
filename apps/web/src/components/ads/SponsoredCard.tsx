@@ -265,7 +265,11 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
         {ad.ctaLabel}
         <ArrowSquareOut size={16} aria-hidden="true" />
       </Cta>
-      {showWhy && <Why>{ad.why}</Why>}
+      {showWhy && (
+        <Why>
+          {ad.why} <Link to="/anuncios/biblioteca">Ver a biblioteca de anúncios</Link>
+        </Why>
+      )}
     </Card>
   )
 }

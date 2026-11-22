@@ -19,6 +19,14 @@ export function notificationContent(notification: AppNotification): { label: str
       : `${name} foi recusado. Abra para ler o motivo e corrigir.`
     return { label, href: '/estudio/anuncios' }
   }
+  if (type === 'AD_LOW_BALANCE' || type === 'AD_PAUSED_NO_BALANCE') {
+    const account = typeof metadata?.accountName === 'string' && metadata.accountName.trim() ? `"${metadata.accountName}"` : 'de anúncios'
+    const available = typeof metadata?.availableCents === 'number' ? ` (R$ ${(Math.max(metadata.availableCents, 0) / 100).toFixed(2).replace('.', ',')})` : ''
+    const label = type === 'AD_LOW_BALANCE'
+      ? `O saldo da conta ${account}${available} dura menos de um dia dos seus anúncios. Recarregue para as campanhas não pararem.`
+      : `As campanhas da conta ${account} foram pausadas porque o saldo acabou. Recarregue e ligue as campanhas de novo.`
+    return { label, href: '/estudio/anuncios/faturamento' }
+  }
   const href = report?.id ? `/relatos/${encodeURIComponent(report.id)}` : null
   const title = report?.title ? `"${report.title}"` : 'um relato'
   if (type === 'NEW_COMMENT') return { label: `Novo comentário em ${title}.`, href }
