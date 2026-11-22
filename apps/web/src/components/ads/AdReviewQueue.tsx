@@ -177,8 +177,21 @@ function AiOpinion({ ai }: { ai: AdAiAnalysisView }) {
       <strong>{ai.autoApproved ? 'Aprovado pela IA' : 'Parecer da IA'} · certeza da leitura {Math.round(ai.confidence * 100)}%</strong>
       {ai.explanation}
       {ai.mediaScope === 'IMAGE' && <div>Na foto, a IA viu: {seen(ai.mediaSummary)}</div>}
+      {ai.mediaScope === 'VIDEO_FRAMES_AUDIO' && (
+        <>
+          <div>Nos quadros do vídeo, a IA viu: {seen(ai.mediaSummary)}.</div>
+          <div>{ai.audioText ? <>No som do vídeo, a IA ouviu: “{ai.audioText}”</> : 'No som do vídeo, a IA não ouviu fala (só música, ruído ou silêncio).'}</div>
+          <div>Uma pessoa ainda assiste e escuta antes de aprovar vídeo.</div>
+        </>
+      )}
+      {ai.mediaScope === 'VIDEO_SILENT' && (
+        <>
+          <div>Nos quadros do vídeo, a IA viu: {seen(ai.mediaSummary)}.</div>
+          <div>Este vídeo não tem som.</div>
+        </>
+      )}
       {ai.mediaScope === 'VIDEO_FRAMES' && (
-        <div>Nos quadros do vídeo, a IA viu: {seen(ai.mediaSummary)}. Ela não ouve o som: assista e ouça antes de aprovar.</div>
+        <div>Nos quadros do vídeo, a IA viu: {seen(ai.mediaSummary)}. Não deu para ouvir o som: assista e ouça antes de aprovar.</div>
       )}
       {ai.mediaScope === 'UNREADABLE' && <div>A IA não conseguiu ler a foto ou o vídeo. Confira você mesmo.</div>}
       {ai.mediaText && <div>Texto escrito na imagem: “{ai.mediaText}”</div>}

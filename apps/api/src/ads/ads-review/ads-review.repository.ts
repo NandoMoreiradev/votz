@@ -50,6 +50,7 @@ export class AdsReviewRepository {
     mediaScope: string | null
     mediaSummary: string | null
     mediaText: string | null
+    audioText: string | null
   }) {
     return this.prisma.adAiAnalysis.create({ data })
   }

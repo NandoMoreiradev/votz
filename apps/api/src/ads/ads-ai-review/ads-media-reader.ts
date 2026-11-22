@@ -16,11 +16,23 @@ export interface AdMediaPart {
   label: string
 }
 
+/** A faixa de som do vídeo, pronta para a IA ouvir. */
+export interface AdAudioPart {
+  mimeType: 'audio/mp3'
+  data: Buffer
+  /** Quantos segundos de som seguem no arquivo (o vídeo todo, até o teto). */
+  seconds: number
+}
+
 export interface AdMediaReading {
   kind: 'IMAGE' | 'VIDEO'
   parts: AdMediaPart[]
   /** Duração do vídeo em segundos (nulo na foto). */
   durationSeconds: number | null
+  /** O vídeo tem faixa de som? (falso na foto.) */
+  hasAudioTrack: boolean
+  /** O som do vídeo, quando tem faixa e deu para extrair. Nulo na foto, em vídeo sem som e se a extração falhou. */
+  audio: AdAudioPart | null
 }
 
 /** Lado maior da imagem que vai para a IA: o bastante para ler texto na arte, pouco para custar barato. */
@@ -28,6 +40,11 @@ export const AD_MEDIA_MAX_SIDE = 1024
 /** Quantos quadros do vídeo a IA olha. */
 export const AD_VIDEO_FRAME_COUNT = 6
 const FRAME_TIMEOUT_MS = 60_000
+const AUDIO_TIMEOUT_MS = 120_000
+/** Anúncio de vídeo tem até 60 s; o teto dá folga e impede um arquivo anormal de virar um áudio enorme. */
+export const AD_AUDIO_MAX_SECONDS = 75
+/** O som vai em mono, 16 kHz, 48 kbps: o bastante para entender fala, e ~0,4 MB por minuto. */
+const AUDIO_BITRATE = '48k'
 /** Vídeo de anúncio tem até 60 s a 5 Mbps (~40 MB). Acima disso o arquivo não é um anúncio normal: fica para a pessoa. */
 const MAX_VIDEO_BYTES = 80 * 1024 * 1024
 
@@ -42,6 +59,11 @@ export function videoFrameTimes(durationSeconds: number, count = AD_VIDEO_FRAME_
 export function frameArgs(inputPath: string, outputPath: string, seconds: number): string[] {
   const scale = `scale='if(gt(iw,ih),min(${AD_MEDIA_MAX_SIDE},iw),-2)':'if(gt(iw,ih),-2,min(${AD_MEDIA_MAX_SIDE},ih))'`
   return ['-hide_banner', '-y', '-ss', String(seconds), '-i', inputPath, '-frames:v', '1', '-vf', scale, '-q:v', '4', outputPath]
+}
+
+/** Argumentos do ffmpeg para extrair só o som, em mp3 mono leve, com teto de duração. */
+export function audioArgs(inputPath: string, outputPath: string): string[] {
+  return ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-b:a', AUDIO_BITRATE, '-t', String(AD_AUDIO_MAX_SECONDS), outputPath]
 }
 
 /** Foto em JPEG com o lado maior limitado (a foto do anúncio já vem em 1080 px: aqui só diminui). */
@@ -81,7 +103,19 @@ export class AdMediaReader {
     const file = await this.storage.getObjectBuffer(key)
     if (!file) return null
     const data = await imageForReading(file)
-    return { kind: 'IMAGE', parts: [{ mimeType: 'image/jpeg', data, label: 'Foto do anúncio.' }], durationSeconds: null }
+    return { kind: 'IMAGE', parts: [{ mimeType: 'image/jpeg', data, label: 'Foto do anúncio.' }], durationSeconds: null, hasAudioTrack: false, audio: null }
+  }
+
+  private async extractAudio(binary: string, inPath: string, dir: string, durationSeconds: number): Promise<AdAudioPart | null> {
+    const outPath = join(dir, 'audio.mp3')
+    const run = await runFfmpeg(binary, audioArgs(inPath, outPath), AUDIO_TIMEOUT_MS, 'tail')
+    if (!run.ok) {
+      this.logger.warn(`Não consegui extrair o som do vídeo do anúncio: ${run.stderr.trim().split('\n').slice(-2).join(' | ')}`)
+      return null
+    }
+    const data = await readFile(outPath).catch(() => null)
+    if (!data?.length) return null
+    return { mimeType: 'audio/mp3', data, seconds: Math.min(AD_AUDIO_MAX_SECONDS, Math.round(durationSeconds)) }
   }
 
   private async readVideo(media: Pick<MediaAssetView, 'key' | 'durationMs'>): Promise<AdMediaReading | null> {
@@ -108,7 +142,11 @@ export class AdMediaReader {
       }
       // Sem pelo menos metade dos quadros, a leitura não vale: melhor dizer que não deu.
       if (parts.length < Math.ceil(times.length / 2)) return null
-      return { kind: 'VIDEO', parts, durationSeconds: durationSeconds || null }
+
+      // O som: só se o vídeo tem faixa de áudio. Falhar aqui não derruba a leitura dos quadros (o parecer avisa que não deu para ouvir).
+      const hasAudioTrack = info?.hasAudio ?? false
+      const audio = hasAudioTrack ? await this.extractAudio(binary, inPath, dir, durationSeconds) : null
+      return { kind: 'VIDEO', parts, durationSeconds: durationSeconds || null, hasAudioTrack, audio }
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined)
     }

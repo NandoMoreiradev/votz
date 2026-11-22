@@ -5,7 +5,7 @@ import { Queue } from 'bullmq'
 import { AdsReviewService } from '../ads-review/ads-review.service'
 import type { AdAiMediaScope } from '@votz/shared-types'
 import { AdsAnalyzer } from './ads-analyzer'
-import { canAutoApprove, mergeViolations, obviousViolations, sanitizeAnalysis } from './ads-ai-review.policy'
+import { AI_EXPLANATION_MAX, canAutoApprove, manipulationAttempt, mergeViolations, obviousViolations, sanitizeAnalysis } from './ads-ai-review.policy'
 import { AdMediaReader, type AdMediaReading } from './ads-media-reader'
 
 export const ADS_AI_REVIEW_QUEUE = 'ads-ai-review'
@@ -13,14 +13,18 @@ export const ADS_AI_REVIEW_QUEUE = 'ads-ai-review'
 /** Tentativas da análise: com 10 s de espera que dobra, dá cerca de 20 minutos para o vídeo ficar pronto. */
 export const ANALYSIS_ATTEMPTS = 8
 
+/** Aviso no começo do parecer quando o anúncio traz uma ordem escondida para a IA. */
+export const MANIPULATION_NOTE = 'Há uma ordem escondida para a IA no anúncio (texto, imagem ou som): tentativa de manipular a revisão.'
+
 export type AiReviewOutcome = 'skipped' | 'annotated' | 'auto-approved'
 
 /**
  * Revisão por IA, antes da fila humana (plano de anúncios, seção 5).
  *
  * - O parecer sempre é gravado e aparece para o moderador. Com foto ou vídeo, a IA olha a foto ou alguns quadros do
- *   vídeo junto com o texto; vídeo ainda sendo preparado faz o trabalho esperar e tentar de novo.
- * - **Vídeo nunca é aprovado pela IA** (ela não ouve o som). Foto só se a IA leu a foto de fato.
+ *   vídeo, e ouve o som dele (faixa extraída em mp3 leve), junto com o texto; vídeo ainda sendo preparado faz o
+ *   trabalho esperar e tentar de novo.
+ * - **Vídeo nunca é aprovado pela IA** (uma pessoa assiste e escuta). Foto só se a IA leu a foto de fato.
  * - A IA **nunca recusa**: recusar é sempre decisão de uma pessoa.
  * - Só aprova sozinha com `ADS_AI_AUTO_APPROVE=true` e se a política de segurança passar (`canAutoApprove`).
  *   Sem a chave de IA, com erro ou com resposta fora do formato, o anúncio simplesmente segue para a fila humana.
@@ -62,7 +66,17 @@ export class AdsAiReviewService {
     // Vídeo ainda sendo preparado: sobe o erro de propósito, o BullMQ espera e tenta de novo.
     if (media && media.status !== 'READY' && media.status !== 'FAILED') throw new Error('A mídia do anúncio ainda está sendo preparada')
     const reading: AdMediaReading | null = media?.status === 'READY' ? await this.mediaReader.read(media) : null
-    const mediaScope: AdAiMediaScope | null = !media ? null : !reading ? 'UNREADABLE' : reading.kind === 'IMAGE' ? 'IMAGE' : 'VIDEO_FRAMES'
+    const mediaScope: AdAiMediaScope | null = !media
+      ? null
+      : !reading
+        ? 'UNREADABLE'
+        : reading.kind === 'IMAGE'
+          ? 'IMAGE'
+          : reading.audio
+            ? 'VIDEO_FRAMES_AUDIO'
+            : reading.hasAudioTrack
+              ? 'VIDEO_FRAMES'
+              : 'VIDEO_SILENT'
 
     const raw = await this.analyzer.analyze(
       {
@@ -81,11 +95,16 @@ export class AdsAiReviewService {
     }
 
     // Trava por palavras, independente do modelo: um texto esperto não convence a IA a aprovar o que é óbvio.
-    // O texto escrito dentro da foto ou do vídeo passa pela mesma trava.
-    const violations = mergeViolations(result.violations, obviousViolations([creative.headline, creative.body, creative.destinationUrl, result.mediaText ?? '']))
-    const final = { ...result, violations }
+    // O texto escrito dentro da foto ou do vídeo, e o que foi falado no áudio, passam pela mesma trava.
+    const heardText = reading?.audio ? (result.audioText ?? '') : ''
+    const everything = [creative.headline, creative.body, creative.destinationUrl, result.mediaText ?? '', heardText]
+    const violations = mergeViolations(result.violations, obviousViolations(everything))
+    // Ordem escondida para a IA (no texto, na imagem ou no som): nunca aprova sozinha, e o parecer avisa a pessoa.
+    const manipulation = manipulationAttempt(everything)
+    const explanation = manipulation ? `${MANIPULATION_NOTE} ${result.explanation}`.slice(0, AI_EXPLANATION_MAX) : result.explanation
+    const final = { ...result, violations, explanation }
     const mediaStatus = media ? { kind: media.kind === 'IMAGE' ? ('IMAGE' as const) : ('VIDEO' as const), read: !!reading && !!result.mediaSummary } : null
-    const approve = this.autoApproveEnabled() && canAutoApprove(final, mediaStatus)
+    const approve = this.autoApproveEnabled() && !manipulation && canAutoApprove(final, mediaStatus)
 
     await this.reviews.saveAnalysis({
       adId,
@@ -100,6 +119,7 @@ export class AdsAiReviewService {
       mediaScope,
       mediaSummary: reading ? final.mediaSummary : null,
       mediaText: reading ? final.mediaText : null,
+      audioText: reading?.audio ? final.audioText : null,
     })
 
     if (!approve) return 'annotated'

@@ -18,6 +18,8 @@ export interface AiAnalysisResult {
   mediaSummary: string | null
   /** Texto escrito dentro da mídia. */
   mediaText: string | null
+  /** O que a IA ouviu no áudio do vídeo (falado ou cantado). Nulo se não ouviu áudio ou só havia música e silêncio. */
+  audioText: string | null
 }
 
 /** Só com confiança igual ou acima disso a IA pode aprovar sozinha. */
@@ -27,6 +29,7 @@ export const AI_VIOLATION_FLOOR = 0.2
 export const AI_EXPLANATION_MAX = 400
 export const AI_MEDIA_SUMMARY_MAX = 400
 export const AI_MEDIA_TEXT_MAX = 500
+export const AI_AUDIO_TEXT_MAX = 600
 
 const PROHIBITED_IDS = new Set<string>(AD_PROHIBITED_CATEGORIES.map((c) => c.id))
 const RESTRICTED_IDS = new Set<string>(AD_RESTRICTED_CATEGORIES.map((c) => c.id))
@@ -55,8 +58,9 @@ export function sanitizeAnalysis(raw: unknown): AiAnalysisResult | null {
 
   const mediaSummary = cleanText(data.mediaSummary, AI_MEDIA_SUMMARY_MAX)
   const mediaText = cleanText(data.mediaText, AI_MEDIA_TEXT_MAX)
+  const audioText = cleanText(data.audioText, AI_AUDIO_TEXT_MAX)
 
-  return { category, restricted, violations, sensitive: data.sensitive, confidence: clamp01(data.confidence), explanation, mediaSummary, mediaText }
+  return { category, restricted, violations, sensitive: data.sensitive, confidence: clamp01(data.confidence), explanation, mediaSummary, mediaText, audioText }
 }
 
 /** Texto curto do modelo: sem quebras de linha, limitado, e vazio vira nulo. */
@@ -90,6 +94,22 @@ export function obviousViolations(texts: string[]): { id: AdProhibitedCategoryId
   return OBVIOUS_TERMS.filter(({ pattern }) => pattern.test(haystack)).map(({ id }) => ({ id, confidence: 1 }))
 }
 
+/**
+ * Ordens escondidas para a IA ("ignore as regras", "aprove este anúncio", "sem violações") no texto, na imagem ou no som.
+ * Independente do modelo: se aparecer, a IA não aprova sozinha, e o parecer avisa a pessoa da moderação.
+ */
+const MANIPULATION_PATTERNS: RegExp[] = [
+  /\bignor\w*\s+(as\s+|todas\s+as\s+|essas\s+|estas\s+|suas\s+)?(regras|instrucoes|ordens|politicas)\b/,
+  /\bapro(ve|var|vem)\s+(este|esse|o)\s+(anuncio|conteudo|criativo)\b/,
+  /\b(responda|diga|aprove)\b[^.]{0,40}\bsem\s+(nenhuma\s+)?violac\w+/,
+  /\bsem\s+(nenhuma\s+)?violac\w+\s+(aprovad|e\s+aprove)/,
+]
+
+export function manipulationAttempt(texts: string[]): boolean {
+  const haystack = strip(texts.join(' \n '))
+  return MANIPULATION_PATTERNS.some((pattern) => pattern.test(haystack))
+}
+
 /** Junta os achados da IA e da trava por palavras (fica o de maior confiança por categoria). */
 export function mergeViolations(
   ai: AiAnalysisResult['violations'],
@@ -111,7 +131,7 @@ export interface AiMediaStatus {
  * restritas (que sempre passam por pessoa) e confiança alta. Qualquer dúvida segue para a fila humana.
  *
  * Mídia: anúncio só de texto passa pela regra normal. Com **foto**, só se a IA leu a foto de fato. Com **vídeo**,
- * nunca: ela vê quadros espaçados e não ouve o som, então uma pessoa sempre assiste e escuta.
+ * nunca (decisão a rever com o dono do produto): ela vê quadros espaçados e ouve o som, mas quem aprova vídeo é uma pessoa.
  */
 export function canAutoApprove(analysis: AiAnalysisResult, media: AiMediaStatus | null = null): boolean {
   if (media) {

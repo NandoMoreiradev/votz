@@ -189,6 +189,7 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
           mediaScope: (ai.mediaScope as AdAiMediaScope | null) ?? null,
           mediaSummary: ai.mediaSummary,
           mediaText: ai.mediaText,
+          audioText: ai.audioText,
           createdAt: ai.createdAt.toISOString(),
         }
       : null,
