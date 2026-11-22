@@ -20,8 +20,15 @@ import { newClickToken } from '../ads-conversions/conversion-rules'
 import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.repository'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
+  CTR_MODEL,
+  PRIOR_CTR,
+  auctionClickRate,
+  clickRatePosterior,
+  dayAsDate,
+  dayElapsedFraction,
   isHoldout,
   matchesTargeting,
+  pacingChance,
   runAuction,
   saoPauloDay,
   validateEvent,
@@ -31,6 +38,7 @@ import {
 
 const CANDIDATE_POOL = 200
 const HOUR_MS = 3600_000
+const PLATFORM_PRIOR_TTL_MS = 10 * 60_000
 
 /**
  * Entrega de anúncios e contagem dos eventos (Etapa 2 do plano). A seleção é por contexto e regras, sem IA: o servidor
@@ -40,6 +48,8 @@ const HOUR_MS = 3600_000
 @Injectable()
 export class AdsDeliveryService {
   private readonly logger = new Logger(AdsDeliveryService.name)
+  /** Chance de clique de partida da plataforma (média dos últimos dias). Muda devagar: guardada por 10 minutos. */
+  private platformPrior: { value: number; at: number } | null = null
 
   constructor(
     private readonly repo: AdsDeliveryRepository,
@@ -49,7 +59,7 @@ export class AdsDeliveryService {
   ) {}
 
   /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. */
-  async next(userId: string, query: NextAdQueryDto, now = new Date()): Promise<SponsoredAdView | null> {
+  async next(userId: string, query: NextAdQueryDto, now = new Date(), random: () => number = Math.random): Promise<SponsoredAdView | null> {
     if (isHoldout(userId, AD_DELIVERY_LIMITS.HOLDOUT_SHARE)) return null
 
     const facts = await this.repo.findViewerFacts(userId)
@@ -83,13 +93,27 @@ export class AdsDeliveryService {
       return remaining >= adChargeMillicents(objective, adFloorCents(objective))
     })
 
-    const candidates: (AuctionCandidate & { record: AdCandidateRecord })[] = eligible.map((record) => ({
-      adId: record.id,
-      objective: record.adSet.campaign.objective,
-      bidCapCents: record.adSet.bidCapCents,
-      record,
-    }))
-    const result = runAuction(candidates)
+    // Ritmo: conjunto que gastou bem mais do que o relógio permite sai deste leilão, para o orçamento render o dia todo.
+    const elapsed = dayElapsedFraction(now)
+    const paced = eligible.filter(
+      (ad) => random() < pacingChance({ spentMillicents: spent.get(ad.adSetId) ?? 0, dailyBudgetMillicents: ad.adSet.dailyBudgetCents * 1000, elapsedFraction: elapsed }),
+    )
+    if (!paced.length) return null
+
+    // Chance de clique medida de cada anúncio (anúncio novo é sorteado; veja `CTR_MODEL`).
+    const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
+    const [stats, prior] = await Promise.all([this.repo.clickStatsByAd(paced.map((ad) => ad.id), ctrSince), this.priorClickRate(ctrSince, now)])
+    const candidates: (AuctionCandidate & { record: AdCandidateRecord })[] = paced.map((record) => {
+      const seen = stats.get(record.id) ?? { viewable: 0, clicks: 0 }
+      return {
+        adId: record.id,
+        objective: record.adSet.campaign.objective,
+        bidCapCents: record.adSet.bidCapCents,
+        clickRate: auctionClickRate(clickRatePosterior(seen.clicks, seen.viewable, prior), seen.viewable, random),
+        record,
+      }
+    })
+    const result = runAuction(candidates, random)
     if (!result) return null
 
     const { record } = result.winner as (typeof candidates)[number]
@@ -120,6 +144,20 @@ export class AdsDeliveryService {
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }
+  }
+
+  /** Chance de clique de partida: a medida na plataforma se já há exibições suficientes, senão a fixa. Nunca derruba a entrega. */
+  private async priorClickRate(since: Date, now: Date): Promise<number> {
+    if (this.platformPrior && now.getTime() - this.platformPrior.at < PLATFORM_PRIOR_TTL_MS) return this.platformPrior.value
+    let value = PRIOR_CTR
+    try {
+      const total = await this.repo.platformClickStats(since)
+      if (total.viewable >= CTR_MODEL.MIN_PLATFORM_VIEWABLE) value = Math.min(Math.max(total.clicks / total.viewable, 0.001), 0.2)
+    } catch (error) {
+      this.logger.warn(`Não consegui medir a chance de clique da plataforma, usando a fixa: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    this.platformPrior = { value, at: now.getTime() }
+    return value
   }
 
   /** Empresas que são alvo de relato nos itens em volta do espaço. `null` se a conferência falhou. */

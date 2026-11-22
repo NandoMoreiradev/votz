@@ -85,16 +85,112 @@ export function dayAsDate(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`)
 }
 
-// ─── Leilão simples (sem IA) ───────────────────────────────────────────────────────────────────
+// ─── Chance de clique medida ───────────────────────────────────────────────────────────────────
 
-/** Chance de clique que supomos até a IA medir de verdade (Etapa 4). Só serve para comparar CPM com CPC. */
+/** Chance de clique de partida (1%): vale até haver exibições medidas. Só serve para comparar CPM com CPC. */
 export const PRIOR_CTR = 0.01
+
+/**
+ * Medição de clique (Etapa 3). A chance de clique de cada anúncio é a média de uma Beta: parte da chance de partida
+ * (`PRIOR_STRENGTH` exibições "imaginárias") e vai sendo trocada pelo que o anúncio fez nos últimos dias. Anúncio com
+ * poucas exibições vistas é sorteado dessa Beta (amostragem de Thompson), para o Votz aprender com ele sem ficar
+ * escondido; com muitas, vale a média, sem sorte.
+ */
+export const CTR_MODEL = {
+  /** Quantas exibições vistas "imaginárias" a chance de partida vale. */
+  PRIOR_STRENGTH: 200,
+  /** Abaixo disso o anúncio ainda explora (é sorteado); a partir daí vale a média. */
+  EXPLORE_BELOW_VIEWABLE: 500,
+  /** Janela dos dados, em dias. */
+  WINDOW_DAYS: 14,
+  /** Plataforma com menos exibições vistas que isto: a chance de partida é a fixa, não a medida. */
+  MIN_PLATFORM_VIEWABLE: 2000,
+} as const
+
+export interface ClickRate {
+  /** Média da Beta: o que o preço e o relatório usam. */
+  mean: number
+  alpha: number
+  beta: number
+}
+
+export function clickRatePosterior(clicks: number, viewable: number, prior: number = PRIOR_CTR, strength: number = CTR_MODEL.PRIOR_STRENGTH): ClickRate {
+  const safeViewable = Math.max(viewable, 0)
+  // Clique sem exibição vista (sinal ruim) não conta mais que a exibição.
+  const safeClicks = Math.min(Math.max(clicks, 0), safeViewable)
+  const alpha = prior * strength + safeClicks
+  const beta = (1 - prior) * strength + (safeViewable - safeClicks)
+  return { mean: alpha / (alpha + beta), alpha, beta }
+}
+
+function gaussian(random: () => number): number {
+  // Box-Muller; 1 - random() evita log(0).
+  return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random())
+}
+
+/** Sorteio de uma Gama(forma, 1) (Marsaglia e Tsang); forma menor que 1 usa o truque do expoente. */
+export function sampleGamma(shape: number, random: () => number = Math.random): number {
+  if (shape < 1) return sampleGamma(shape + 1, random) * Math.pow(1 - random(), 1 / shape)
+  const d = shape - 1 / 3
+  const c = 1 / Math.sqrt(9 * d)
+  for (;;) {
+    const x = gaussian(random)
+    const v = Math.pow(1 + c * x, 3)
+    if (v <= 0) continue
+    const u = 1 - random()
+    if (Math.log(u) < 0.5 * x * x + d - d * v + d * Math.log(v)) return d * v
+  }
+}
+
+export function sampleBeta(alpha: number, beta: number, random: () => number = Math.random): number {
+  const x = sampleGamma(alpha, random)
+  const y = sampleGamma(beta, random)
+  return x / (x + y)
+}
+
+/** A chance de clique que entra no leilão: sorteada para anúncio novo, a média para o resto. */
+export function auctionClickRate(rate: ClickRate, viewable: number, random: () => number = Math.random): number {
+  return viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE ? sampleBeta(rate.alpha, rate.beta, random) : rate.mean
+}
+
+// ─── Ritmo do orçamento (pacing) ───────────────────────────────────────────────────────────────
+
+export const PACING = {
+  /** O conjunto pode estar este tanto do orçamento à frente do relógio sem ser freado. */
+  SLACK: 0.1,
+  /** A partir da folga, a chance de entrar no leilão cai até zero neste tanto de adiantamento. */
+  BAND: 0.15,
+} as const
+
+/** Quanto do dia já passou (0 a 1), no relógio de São Paulo. */
+export function dayElapsedFraction(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
+  return (hour * 60 + minute) / 1440
+}
+
+/**
+ * Chance de o conjunto entrar no leilão agora. Gastando no ritmo (ou atrás), é 1. Se já gastou bem mais do que o
+ * relógio permite, cai até 0, para o orçamento render o dia todo em vez de acabar de manhã.
+ */
+export function pacingChance(input: { spentMillicents: number; dailyBudgetMillicents: number; elapsedFraction: number }): number {
+  if (input.dailyBudgetMillicents <= 0) return 0
+  const spent = input.spentMillicents / input.dailyBudgetMillicents
+  const allowed = Math.min(1, input.elapsedFraction + PACING.SLACK)
+  if (spent <= allowed) return 1
+  return Math.max(0, 1 - (spent - allowed) / PACING.BAND)
+}
+
+// ─── Leilão ────────────────────────────────────────────────────────────────────────────────────
 
 export interface AuctionCandidate {
   adId: string
   objective: Objective
   /** Lance máximo em centavos da unidade cobrada (mil exibições ou clique). Nulo: o Votz usa o preço mínimo. */
   bidCapCents: number | null
+  /** Chance de clique que vale neste leilão (média ou sorteio). Sem ela, vale a de partida. */
+  clickRate?: number
 }
 
 export interface AuctionResult {
@@ -103,10 +199,12 @@ export interface AuctionResult {
   priceCents: number
 }
 
-/** Quanto vale o lance por mil exibições (eCPM, em centavos). Clique vira exibição com a chance de clique de partida. */
+const rateOf = (candidate: AuctionCandidate) => Math.max(candidate.clickRate ?? PRIOR_CTR, 1e-6)
+
+/** Quanto vale o lance por mil exibições (eCPM, em centavos). Clique vira exibição com a chance de clique do anúncio. */
 function ecpm(candidate: AuctionCandidate): number {
   const bid = candidate.bidCapCents ?? adFloorCents(candidate.objective)
-  return adChargeUnit(candidate.objective) === 'CLICK' ? bid * 1000 * PRIOR_CTR : bid
+  return adChargeUnit(candidate.objective) === 'CLICK' ? bid * 1000 * rateOf(candidate) : bid
 }
 
 /** Lance abaixo do piso da própria unidade não entra. */
@@ -130,7 +228,7 @@ export function runAuction(candidates: AuctionCandidate[], random: () => number 
   let toBeat = floor
   if (ranked.length > 1) {
     const second = ranked[1].value
-    const inWinnerUnit = adChargeUnit(winner.objective) === 'CLICK' ? second / (1000 * PRIOR_CTR) : second
+    const inWinnerUnit = adChargeUnit(winner.objective) === 'CLICK' ? second / (1000 * rateOf(winner)) : second
     toBeat = Math.max(floor, Math.ceil(inWinnerUnit))
   }
   return { winner, priceCents: Math.min(bid, toBeat) }

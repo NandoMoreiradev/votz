@@ -102,6 +102,19 @@ export class AdsDeliveryRepository {
     return new Map(rows.map((row) => [row.adSetId, row._sum.spendMillicents ?? 0]))
   }
 
+  /** Exibições vistas e cliques por anúncio desde `since` (a chance de clique medida). Só contagem, nada de pessoa. */
+  async clickStatsByAd(adIds: string[], since: Date): Promise<Map<string, { viewable: number; clicks: number }>> {
+    if (!adIds.length) return new Map()
+    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: adIds }, day: { gte: since } }, _sum: { viewableImpressions: true, clicks: true } })
+    return new Map(rows.map((row) => [row.adId, { viewable: row._sum.viewableImpressions ?? 0, clicks: row._sum.clicks ?? 0 }]))
+  }
+
+  /** Exibições vistas e cliques de toda a plataforma desde `since`: de onde vem a chance de partida dos anúncios novos. */
+  async platformClickStats(since: Date): Promise<{ viewable: number; clicks: number }> {
+    const total = await this.prisma.adDailyStat.aggregate({ where: { day: { gte: since } }, _sum: { viewableImpressions: true, clicks: true } })
+    return { viewable: total._sum.viewableImpressions ?? 0, clicks: total._sum.clicks ?? 0 }
+  }
+
   /** Grava a entrega e conta a exibição do dia, juntas. */
   createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string }) {
     const { adSetId, day, ...impression } = data
