@@ -39,6 +39,7 @@ import { AdsBillingModule } from './ads/ads-billing/ads-billing.module'
 import { AdsConversionsModule } from './ads/ads-conversions/ads-conversions.module'
 import { AdsDeliveryModule } from './ads/ads-delivery/ads-delivery.module'
 import { AdsReachModule } from './ads/ads-reach/ads-reach.module'
+import { AdsVolumeModule } from './ads/ads-volume/ads-volume.module'
 import { AdsExperimentsModule } from './ads/ads-experiments/ads-experiments.module'
 import { AdsLibraryModule } from './ads/ads-library/ads-library.module'
 import { AdsAlertsModule } from './ads/ads-alerts/ads-alerts.module'
@@ -155,6 +156,7 @@ import { SecurityModule } from './common/security/security.module'
     AdsBillingModule,
     AdsDeliveryModule,
     AdsReachModule,
+    AdsVolumeModule,
     AdsExperimentsModule,
     AdsLibraryModule,
     AdsAlertsModule,

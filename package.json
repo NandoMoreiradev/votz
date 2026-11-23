@@ -5,6 +5,7 @@
   "packageManager": "npm@11.20.0",
   "workspaces": [
     "apps/api",
+    "apps/ads-server",
     "apps/web",
     "packages/*"
   ],

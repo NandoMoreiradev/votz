@@ -13,6 +13,7 @@ WORKDIR /app
 # Instala dependências primeiro (melhor cache). O mobile e o chat-crypto-lab ficam fora (.dockerignore).
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
+COPY apps/ads-server/package.json apps/ads-server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
