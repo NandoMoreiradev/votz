@@ -6,12 +6,13 @@ import { AdsBillingModule } from '../ads-billing/ads-billing.module'
 import { AdsConversionsModule } from '../ads-conversions/ads-conversions.module'
 import { AdsDeliveryController, AdsStatsController } from './ads-delivery.controller'
 import { AdsDeliveryRepository } from './ads-delivery.repository'
+import { AdsPacingService } from './ads-pacing.service'
 import { AdsDeliveryService } from './ads-delivery.service'
 
 @Module({
   imports: [PrismaModule, OrgMembershipsModule, AdsBillingModule, AdsConversionsModule, ContentAdjacencyModule],
   controllers: [AdsDeliveryController, AdsStatsController],
-  providers: [AdsDeliveryService, AdsDeliveryRepository],
+  providers: [AdsDeliveryService, AdsDeliveryRepository, AdsPacingService],
   exports: [AdsDeliveryService],
 })
 export class AdsDeliveryModule {}

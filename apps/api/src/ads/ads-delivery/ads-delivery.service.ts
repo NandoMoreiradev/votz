@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import {
   AD_DELIVERY,
@@ -18,6 +18,8 @@ import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsClickLinkService } from '../ads-conversions/ads-click-link.service'
 import { newClickToken } from '../ads-conversions/conversion-rules'
 import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.repository'
+import { AdsPacingService, type PacingView } from './ads-pacing.service'
+import { expectedSpendMillicents, viewableRate } from './pacing-controller'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
   CTR_MODEL,
@@ -27,17 +29,32 @@ import {
   clickRatePosterior,
   dayAsDate,
   dayElapsedFraction,
+  explorationChance,
   isHoldout,
   matchesTargeting,
   pacingChance,
+  pickAuctionPool,
   runAuction,
   saoPauloDay,
+  saoPauloHour,
   validateEvent,
   type AuctionCandidate,
   type Viewer,
 } from './delivery-rules'
 
 const CANDIDATE_POOL = 200
+
+/** Quem disputa o leilão, com o que a disputa precisa saber depois (ritmo e exploração). */
+type PoolCandidate = AuctionCandidate & {
+  record: AdCandidateRecord
+  /** Pouca história: disputa em separado, sorteado (veja `EXPLORATION`). */
+  isNew: boolean
+  seen: { impressions: number; viewable: number; clicks: number; hides: number }
+  /** Média da chance de clique (o sorteio de anúncio novo não entra aqui): o gasto esperado usa a média. */
+  meanClickRate: number
+}
+
+const spentFromView = (view: Map<string, PacingView>): Map<string, number> => new Map([...view].map(([adSetId, item]) => [adSetId, item.estimatedSpentMillicents]))
 const HOUR_MS = 3600_000
 const PLATFORM_PRIOR_TTL_MS = 10 * 60_000
 
@@ -57,6 +74,8 @@ export class AdsDeliveryService {
     private readonly storage: StorageService,
     private readonly clickLinks: AdsClickLinkService,
     private readonly adjacency: ContentAdjacencyService,
+    /** Ritmo por minuto no Redis. Sem ele (ou com o Redis fora do ar) a entrega usa o ritmo pelo banco, como antes. */
+    @Optional() private readonly pacing?: AdsPacingService,
   ) {}
 
   /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. */
@@ -80,7 +99,14 @@ export class AdsDeliveryService {
     if (!pool.length) return null
 
     const day = saoPauloDay(now)
-    const spent = await this.repo.spentTodayByAdSet([...new Set(pool.map((ad) => ad.adSetId))], day)
+    const adSetIds = [...new Set(pool.map((ad) => ad.adSetId))]
+    // Ritmo por minuto (Redis): freio recalculado uma vez por minuto e gasto estimado já com o que foi emprestado na entrega.
+    // Se o Redis não está disponível, cai para o gasto cobrado no banco e o freio por faixa, como antes.
+    const budgets = new Map(pool.map((ad) => [ad.adSetId, ad.adSet.dailyBudgetCents * 1000]))
+    const pacingView = this.pacing
+      ? await this.pacing.view(adSetIds.map((adSetId) => ({ adSetId, dailyBudgetMillicents: budgets.get(adSetId) ?? 0 })), day, now, (ids) => this.repo.spentTodayByAdSet(ids, day))
+      : null
+    const spent = pacingView ? spentFromView(pacingView) : await this.repo.spentTodayByAdSet(adSetIds, day)
 
     const eligible = pool.filter((ad) => {
       const { objective } = ad.adSet.campaign
@@ -94,31 +120,47 @@ export class AdsDeliveryService {
       return remaining >= adChargeMillicents(objective, adFloorCents(objective))
     })
 
-    // Ritmo: conjunto que gastou bem mais do que o relógio permite sai deste leilão, para o orçamento render o dia todo.
+    // Ritmo: conjunto que gastou mais do que a curva do dia permite sai deste leilão, para o orçamento render o dia todo.
     const elapsed = dayElapsedFraction(now)
-    const paced = eligible.filter(
-      (ad) => random() < pacingChance({ spentMillicents: spent.get(ad.adSetId) ?? 0, dailyBudgetMillicents: ad.adSet.dailyBudgetCents * 1000, elapsedFraction: elapsed }),
-    )
+    const paced = eligible.filter((ad) => {
+      const view = pacingView?.get(ad.adSetId)
+      const chance = view
+        ? view.throttle
+        : pacingChance({ spentMillicents: spent.get(ad.adSetId) ?? 0, dailyBudgetMillicents: ad.adSet.dailyBudgetCents * 1000, elapsedFraction: elapsed })
+      return random() < chance
+    })
     if (!paced.length) return null
 
     // Chance de clique medida de cada anúncio (anúncio novo é sorteado; veja `CTR_MODEL`).
     const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
     const [stats, prior] = await Promise.all([this.repo.clickStatsByAd(paced.map((ad) => ad.id), ctrSince), this.priorClickRate(ctrSince, now)])
-    const candidates: (AuctionCandidate & { record: AdCandidateRecord })[] = paced.map((record) => {
+    const candidates: PoolCandidate[] = paced.map((record) => {
       const seen = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0 }
+      const posterior = clickRatePosterior(seen.clicks, seen.viewable, prior)
       return {
         adId: record.id,
         objective: record.adSet.campaign.objective,
         bidCapCents: record.adSet.bidCapCents,
         quality: qualityFactor(seen.hides, seen.impressions),
-        clickRate: auctionClickRate(clickRatePosterior(seen.clicks, seen.viewable, prior), seen.viewable, random),
+        clickRate: auctionClickRate(posterior, seen.viewable, random),
         record,
+        isNew: seen.viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE,
+        seen,
+        meanClickRate: posterior.mean,
       }
     })
-    const result = runAuction(candidates, random)
+    // Anúncio novo disputa em separado dos experientes, com teto e piso por hora (veja `EXPLORATION`).
+    const hour = saoPauloHour(now)
+    const mixed = candidates.some((candidate) => candidate.isNew) && candidates.some((candidate) => !candidate.isNew)
+    const counters = mixed && this.pacing ? await this.pacing.explorationCounters(day, hour) : null
+    const { pool: auctionPool, contested } = pickAuctionPool(candidates, explorationChance(counters), random)
+    let result = runAuction(auctionPool, random)
+    // O grupo sorteado não tinha ninguém que valesse (lance abaixo do piso): o outro grupo ainda pode ganhar.
+    if (!result && contested) result = runAuction(candidates.filter((candidate) => !auctionPool.includes(candidate)), random)
     if (!result) return null
 
-    const { record } = result.winner as (typeof candidates)[number]
+    const winner = result.winner as PoolCandidate
+    const { record } = winner
     const objective = record.adSet.campaign.objective
     const clickToken = newClickToken()
     const impression = await this.repo.createImpression({
@@ -132,6 +174,18 @@ export class AdsDeliveryService {
       clickToken,
       day,
     })
+
+    if (this.pacing) {
+      // O gasto esperado desta entrega entra já no ritmo (a cobrança só chega quando a pessoa vê ou clica) e a disputa entra nos contadores.
+      const chargeMillicents = adChargeMillicents(objective, result.priceCents)
+      await this.pacing.commit(
+        record.adSetId,
+        day,
+        now,
+        expectedSpendMillicents({ chargeMillicents, chargeOn: adChargeUnit(objective), viewableRate: viewableRate(winner.seen.viewable, winner.seen.impressions), clickRate: winner.meanClickRate }),
+      )
+      if (contested) await this.pacing.recordExploration(day, hour, winner.isNew)
+    }
 
     const company = record.adSet.campaign.account.company
     return {

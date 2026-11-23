@@ -153,6 +153,48 @@ export function auctionClickRate(rate: ClickRate, viewable: number, random: () =
   return viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE ? sampleBeta(rate.alpha, rate.beta, random) : rate.mean
 }
 
+// ─── Exploração com teto e piso ────────────────────────────────────────────────────────────────
+
+/**
+ * Anúncio com pouca história (menos de `CTR_MODEL.EXPLORE_BELOW_VIEWABLE` exibições vistas) disputa em separado dos
+ * experientes, para o Votz aprender com ele sem que ele tome o feed nem fique escondido. Só vale quando os dois grupos
+ * existem na disputa: se só há anúncios novos (começo do beta), eles recebem tudo.
+ *
+ * - **Alvo:** cada entrega disputada sorteia, com esta chance, uma disputa só entre os novos.
+ * - **Teto e piso:** pelos contadores da hora (Redis), se a parte dos novos já passou do teto, não explora; se está abaixo
+ *   do piso (com amostra mínima), explora na hora. Sem contadores (Redis fora), vale só o sorteio do alvo.
+ */
+export const EXPLORATION = {
+  TARGET_SHARE: 0.075,
+  MAX_SHARE: 0.1,
+  MIN_SHARE: 0.05,
+  /** Menos entregas disputadas que isto na hora: ainda não dá para julgar a parte (vale o alvo). */
+  MIN_SAMPLE: 40,
+} as const
+
+export function explorationChance(counters: { total: number; explored: number } | null): number {
+  if (!counters || counters.total < EXPLORATION.MIN_SAMPLE) return EXPLORATION.TARGET_SHARE
+  const share = counters.explored / counters.total
+  if (share >= EXPLORATION.MAX_SHARE) return 0
+  if (share < EXPLORATION.MIN_SHARE) return 1
+  return EXPLORATION.TARGET_SHARE
+}
+
+/**
+ * Quem entra no leilão desta entrega. `contested`: há anúncio novo e experiente na disputa (só aí o teto e o piso
+ * valem e as entregas entram nos contadores).
+ */
+export function pickAuctionPool<T extends { isNew: boolean }>(
+  candidates: readonly T[],
+  exploreChance: number,
+  random: () => number = Math.random,
+): { pool: T[]; contested: boolean } {
+  const fresh = candidates.filter((candidate) => candidate.isNew)
+  const proven = candidates.filter((candidate) => !candidate.isNew)
+  if (!fresh.length || !proven.length) return { pool: [...candidates], contested: false }
+  return { pool: random() < exploreChance ? fresh : proven, contested: true }
+}
+
 // ─── Qualidade: o que as pessoas rejeitam ──────────────────────────────────────────────────────
 
 /**
@@ -188,6 +230,12 @@ export const PACING = {
   /** A partir da folga, a chance de entrar no leilão cai até zero neste tanto de adiantamento. */
   BAND: 0.15,
 } as const
+
+/** Hora cheia (0 a 23) no relógio de São Paulo: a janela dos contadores de exploração. */
+export function saoPauloHour(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).formatToParts(date)
+  return Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
+}
 
 /** Quanto do dia já passou (0 a 1), no relógio de São Paulo. */
 export function dayElapsedFraction(date: Date): number {
