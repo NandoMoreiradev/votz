@@ -2533,6 +2533,8 @@ model AdImpression {
   viewableAt       DateTime?  @map("viewable_at")
   clickedAt        DateTime?  @map("clicked_at")
   hiddenAt         DateTime?  @map("hidden_at")
+  // Quando a pessoa denunciou este anúncio (carimbo uma vez só, como esconder).
+  reportedAt       DateTime?  @map("reported_at")
   // Identificador do clique (`votz_click_id`): sorteado na entrega, vai no link do botão e para o anunciante.
   // Não é a exibição nem a pessoa: o anunciante não consegue chegar em nenhuma das duas por ele.
   clickToken       String?    @unique @map("click_token")
@@ -2578,6 +2580,8 @@ model AdDailyStat {
   viewableImpressions Int      @default(0) @map("viewable_impressions")
   clicks              Int      @default(0)
   hides               Int      @default(0)
+  // Denúncias contadas: uma por pessoa e anúncio no dia, só de quem viu o anúncio. Pesam mais que "esconder" no leilão.
+  reports             Int      @default(0)
   invalidEvents       Int      @default(0) @map("invalid_events")
   spendMillicents     Int      @default(0) @map("spend_millicents")
   // Conversões contadas pelo anunciante (API de conversões), no dia em que aconteceram.

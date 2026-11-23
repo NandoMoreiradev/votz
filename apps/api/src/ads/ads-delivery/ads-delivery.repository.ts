@@ -24,6 +24,22 @@ const CANDIDATE_INCLUDE = {
 
 export type AdCandidateRecord = Prisma.AdGetPayload<{ include: typeof CANDIDATE_INCLUDE }>
 
+/** Contagem de um anúncio nos últimos dias (nada de pessoa). */
+export interface AdStats {
+  impressions: number
+  viewable: number
+  clicks: number
+  hides: number
+  reports: number
+}
+
+/** Contagem de todos os anúncios de uma empresa nos últimos dias. */
+export interface AdvertiserStats {
+  impressions: number
+  hides: number
+  reports: number
+}
+
 export interface EventEffect {
   eventId: string
   impressionId: string
@@ -102,11 +118,34 @@ export class AdsDeliveryRepository {
     return new Map(rows.map((row) => [row.adSetId, row._sum.spendMillicents ?? 0]))
   }
 
-  /** Exibições, exibições vistas, cliques e "esconder" por anúncio desde `since` (chance de clique e qualidade). Só contagem, nada de pessoa. */
-  async clickStatsByAd(adIds: string[], since: Date): Promise<Map<string, { impressions: number; viewable: number; clicks: number; hides: number }>> {
+  /** Exibições, exibições vistas, cliques, "esconder" e denúncias por anúncio desde `since` (chance de clique e qualidade). Só contagem, nada de pessoa. */
+  async clickStatsByAd(adIds: string[], since: Date): Promise<Map<string, AdStats>> {
     if (!adIds.length) return new Map()
-    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: adIds }, day: { gte: since } }, _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true } })
-    return new Map(rows.map((row) => [row.adId, { impressions: row._sum.impressions ?? 0, viewable: row._sum.viewableImpressions ?? 0, clicks: row._sum.clicks ?? 0, hides: row._sum.hides ?? 0 }]))
+    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: adIds }, day: { gte: since } }, _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, reports: true } })
+    return new Map(rows.map((row) => [row.adId, { impressions: row._sum.impressions ?? 0, viewable: row._sum.viewableImpressions ?? 0, clicks: row._sum.clicks ?? 0, hides: row._sum.hides ?? 0, reports: row._sum.reports ?? 0 }]))
+  }
+
+  /**
+   * Exibições, "esconder" e denúncias somados por empresa (todos os anúncios dela) desde `since`: a qualidade do anunciante,
+   * que vira o ponto de partida dos anúncios novos dele. Só contagem; nada de pessoa.
+   */
+  async advertiserStats(companyIds: string[], since: Date): Promise<Map<string, AdvertiserStats>> {
+    if (!companyIds.length) return new Map()
+    const ads = await this.prisma.ad.findMany({
+      where: { adSet: { campaign: { account: { companyId: { in: companyIds } } } } },
+      select: { id: true, adSet: { select: { campaign: { select: { account: { select: { companyId: true } } } } } } },
+    })
+    const companyOf = new Map(ads.map((ad) => [ad.id, ad.adSet.campaign.account.companyId]))
+    if (!companyOf.size) return new Map()
+    const rows = await this.prisma.adDailyStat.groupBy({ by: ['adId'], where: { adId: { in: [...companyOf.keys()] }, day: { gte: since } }, _sum: { impressions: true, hides: true, reports: true } })
+    const totals = new Map<string, AdvertiserStats>()
+    for (const row of rows) {
+      const companyId = companyOf.get(row.adId)
+      if (!companyId) continue
+      const current = totals.get(companyId) ?? { impressions: 0, hides: 0, reports: 0 }
+      totals.set(companyId, { impressions: current.impressions + (row._sum.impressions ?? 0), hides: current.hides + (row._sum.hides ?? 0), reports: current.reports + (row._sum.reports ?? 0) })
+    }
+    return totals
   }
 
   /** Exibições vistas e cliques de toda a plataforma desde `since`: de onde vem a chance de partida dos anúncios novos. */
@@ -169,7 +208,7 @@ export class AdsDeliveryRepository {
         return true
       }
 
-      const stamp = async (field: 'viewableAt' | 'clickedAt' | 'hiddenAt') => {
+      const stamp = async (field: 'viewableAt' | 'clickedAt' | 'hiddenAt' | 'reportedAt') => {
         const moved = await tx.adImpression.updateMany({ where: { id: effect.impressionId, [field]: null }, data: { [field]: effect.now } })
         return moved.count === 1
       }
@@ -182,6 +221,17 @@ export class AdsDeliveryRepository {
         await stat({ clicks: { increment: 1 } })
         const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
         if (impression.chargeOn === 'CLICK') await this.charge(tx, effect, impression.chargeMillicents, stat)
+      } else if (effect.type === 'REPORT') {
+        // Denúncia conta uma vez por pessoa e anúncio no dia, e só de quem viu o anúncio: um concorrente não derruba o outro
+        // denunciando em massa o que nunca viu, nem repetindo a mesma denúncia.
+        if (await stamp('reportedAt')) {
+          const dayAgo = new Date(effect.now.getTime() - 24 * 3600_000)
+          const [mine, seen] = await Promise.all([
+            tx.adImpression.count({ where: { userId: effect.userId, adId: effect.adId, reportedAt: { gte: dayAgo } } }),
+            tx.adImpression.count({ where: { id: effect.impressionId, viewableAt: { not: null } } }),
+          ])
+          if (mine === 1 && seen === 1) await stat({ reports: { increment: 1 } })
+        }
       } else if (effect.type === 'HIDE' || effect.type === 'HIDE_ADVERTISER') {
         if (await stamp('hiddenAt')) await stat({ hides: { increment: 1 } })
         // "Esconder todos desta empresa" vale mesmo se a pessoa já tinha escondido só este anúncio.

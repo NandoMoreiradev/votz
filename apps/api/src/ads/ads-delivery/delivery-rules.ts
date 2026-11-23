@@ -198,9 +198,14 @@ export function pickAuctionPool<T extends { isNew: boolean }>(
 // ─── Qualidade: o que as pessoas rejeitam ──────────────────────────────────────────────────────
 
 /**
- * Penalidade por rejeição prevista (plano 6.5). Anúncio que muita gente esconde perde valor no leilão, para o feed não
- * ficar cheio do que incomoda. Mede esconder sobre exibições entregues, suavizado como a chance de clique; só pesa o que
- * passa da taxa normal (`BASELINE`), então anúncio novo não é penalizado.
+ * Penalidade por rejeição prevista (plano 6.5). Anúncio que muita gente esconde ou denuncia perde valor no leilão, para o
+ * feed não ficar cheio do que incomoda. A rejeição é "esconder" mais denúncia (que pesa `REPORT_WEIGHT` vezes: quem
+ * denuncia diz que o anúncio é enganoso ou abusivo, não só chato), sobre as exibições entregues, suavizada como a chance
+ * de clique; só pesa o que passa da taxa normal (`BASELINE`).
+ *
+ * **Qualidade do anunciante:** o ponto de partida da taxa de um anúncio é a taxa da própria empresa em todos os anúncios
+ * dela (`advertiserRejectionRate`), não a taxa normal. Anúncio novo de quem costuma incomodar já começa com a
+ * penalidade; anúncio novo de quem nunca incomodou começa limpo. Sem dados suficientes da empresa, vale a taxa normal.
  */
 export const QUALITY = {
   /** Taxa de esconder que consideramos normal. */
@@ -211,13 +216,40 @@ export const QUALITY = {
   WEIGHT: 5,
   /** Nunca tira mais que isto: o anunciante ainda pode vencer pagando mais. */
   MAX_PENALTY: 0.5,
+  /** Uma denúncia vale tantos "esconder". */
+  REPORT_WEIGHT: 5,
+  /** A taxa da empresa só vale a partir de tantas exibições (antes disso, é a taxa normal). */
+  ADVERTISER_MIN_IMPRESSIONS: 2000,
+  /** Quanto a taxa normal pesa na taxa da empresa (exibições "imaginárias"). */
+  ADVERTISER_PRIOR_STRENGTH: 1000,
+  /** A taxa da empresa nunca passa disto, para um mau período não condenar a empresa para sempre. */
+  ADVERTISER_MAX_RATE: 0.2,
 } as const
 
-/** Multiplicador do valor no leilão, de 1 (sem problema) até `1 - MAX_PENALTY`. */
-export function qualityFactor(hides: number, impressions: number): number {
+/** Rejeições de um conjunto de exibições: "esconder" mais denúncia (que pesa mais), nunca mais que as exibições. */
+function rejections(hides: number, reports: number, impressions: number): number {
+  return Math.min(Math.max(hides || 0, 0) + QUALITY.REPORT_WEIGHT * Math.max(reports || 0, 0), impressions)
+}
+
+/**
+ * Taxa de rejeição da empresa (todos os anúncios dela), suavizada. Com poucas exibições devolve a taxa normal.
+ * É o ponto de partida da taxa de cada anúncio novo dela.
+ */
+export function advertiserRejectionRate(stats: { impressions: number; hides: number; reports: number } | undefined | null): number {
+  const impressions = Math.max(stats?.impressions || 0, 0)
+  if (!stats || impressions < QUALITY.ADVERTISER_MIN_IMPRESSIONS) return QUALITY.BASELINE
+  const rate = (QUALITY.BASELINE * QUALITY.ADVERTISER_PRIOR_STRENGTH + rejections(stats.hides, stats.reports, impressions)) / (QUALITY.ADVERTISER_PRIOR_STRENGTH + impressions)
+  return Math.min(Math.max(rate, 0), QUALITY.ADVERTISER_MAX_RATE)
+}
+
+/**
+ * Multiplicador do valor no leilão, de 1 (sem problema) até `1 - MAX_PENALTY`. `reports`: denúncias do anúncio.
+ * `priorRate`: de onde a taxa parte (a da empresa, ou a normal).
+ */
+export function qualityFactor(hides: number, impressions: number, extra: { reports?: number; priorRate?: number } = {}): number {
   const safeImpressions = Math.max(impressions || 0, 0)
-  const safeHides = Math.min(Math.max(hides || 0, 0), safeImpressions)
-  const rate = (QUALITY.BASELINE * QUALITY.PRIOR_STRENGTH + safeHides) / (QUALITY.PRIOR_STRENGTH + safeImpressions)
+  const prior = Math.min(Math.max(extra.priorRate ?? QUALITY.BASELINE, 0), QUALITY.ADVERTISER_MAX_RATE)
+  const rate = (prior * QUALITY.PRIOR_STRENGTH + rejections(hides, extra.reports ?? 0, safeImpressions)) / (QUALITY.PRIOR_STRENGTH + safeImpressions)
   const penalty = Math.min(QUALITY.MAX_PENALTY, QUALITY.WEIGHT * Math.max(0, rate - QUALITY.BASELINE))
   return 1 - penalty
 }

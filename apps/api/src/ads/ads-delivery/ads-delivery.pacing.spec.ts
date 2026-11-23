@@ -39,6 +39,7 @@ function makeRepo(pool: unknown[]) {
     spentTodayByAdSet: jest.fn().mockResolvedValue(new Map()),
     clickStatsByAd: jest.fn().mockResolvedValue(new Map()),
     platformClickStats: jest.fn().mockResolvedValue({ viewable: 0, clicks: 0 }),
+    advertiserStats: jest.fn().mockResolvedValue(new Map()),
     createImpression: jest.fn().mockResolvedValue({ id: 'imp-1' }),
   }
 }
@@ -278,5 +279,56 @@ describe('exploração: na entrega', () => {
     }
     expect(fresh / 2000).toBeGreaterThan(0.05)
     expect(fresh / 2000).toBeLessThan(0.1)
+  })
+})
+
+describe('qualidade na entrega: denúncia e anunciante', () => {
+  const companyAd = (id: string, companyId: string) => {
+    const base = ad(id, 80, 'TRAFFIC')
+    base.adSet.campaign.account.companyId = companyId
+    base.adSet.campaign.account.company.id = companyId
+    return base
+  }
+  const seenStats = { impressions: 9000, viewable: 6000, clicks: 300, hides: 0, reports: 0 }
+  const freeView = (...ids: string[]) => new Map(ids.map((id) => [`set-${id}`, { throttle: 1, estimatedSpentMillicents: 0 }]))
+
+  it('com o mesmo lance e a mesma chance de clique, o anúncio muito denunciado perde', async () => {
+    const repo = makeRepo([companyAd('limpo', 'co-1'), companyAd('denunciado', 'co-2')])
+    repo.clickStatsByAd.mockResolvedValue(new Map([
+      ['limpo', { ...seenStats }],
+      ['denunciado', { ...seenStats, reports: 90 }], // 1% das exibições denunciadas = o equivalente a 5% de "esconder"
+    ]))
+    const delivery = service(repo, makePacing(freeView('limpo', 'denunciado')))
+    for (let run = 0; run < 20; run += 1) expect((await delivery.next(USER, query, NOW, seeded(run + 1)))?.adId).toBe('limpo')
+  })
+
+  it('anúncio novo de empresa que costuma incomodar perde para o de empresa limpa, com lances iguais', async () => {
+    const repo = makeRepo([companyAd('ruim', 'co-ruim'), companyAd('bom', 'co-bom')])
+    repo.advertiserStats.mockResolvedValue(new Map([
+      ['co-ruim', { impressions: 30000, hides: 4000, reports: 150 }],
+      ['co-bom', { impressions: 30000, hides: 150, reports: 0 }],
+    ]))
+    const delivery = service(repo, makePacing(freeView('ruim', 'bom')))
+    // Os dois são novos (sem estatística própria): o sorteio da chance de clique é igual para os dois, a qualidade decide.
+    let wins = 0
+    for (let run = 0; run < 200; run += 1) if ((await delivery.next(USER, query, NOW, seeded(run + 100)))?.adId === 'bom') wins += 1
+    expect(wins).toBeGreaterThan(130) // bem acima de 50%, com folga para o ruído do sorteio dos anúncios novos
+  })
+
+  it('a qualidade da empresa é medida uma vez e guardada (não consulta o banco a cada pedido)', async () => {
+    const repo = makeRepo([companyAd('a', 'co-1')])
+    const delivery = service(repo, makePacing(freeView('a')))
+    await delivery.next(USER, query, NOW, middle)
+    await delivery.next(USER, query, NOW, middle)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 9 * 60_000), middle)
+    expect(repo.advertiserStats).toHaveBeenCalledTimes(1)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 11 * 60_000), middle)
+    expect(repo.advertiserStats).toHaveBeenCalledTimes(2)
+  })
+
+  it('falha ao medir a qualidade das empresas: usa a taxa normal e a entrega segue', async () => {
+    const repo = makeRepo([companyAd('a', 'co-1')])
+    repo.advertiserStats.mockRejectedValue(new Error('banco'))
+    expect((await service(repo, makePacing(freeView('a'))).next(USER, query, NOW, middle))?.adId).toBe('a')
   })
 })

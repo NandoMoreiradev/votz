@@ -17,12 +17,13 @@ import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsClickLinkService } from '../ads-conversions/ads-click-link.service'
 import { newClickToken } from '../ads-conversions/conversion-rules'
-import { AdsDeliveryRepository, type AdCandidateRecord } from './ads-delivery.repository'
+import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type AdvertiserStats } from './ads-delivery.repository'
 import { AdsPacingService, type PacingView } from './ads-pacing.service'
 import { expectedSpendMillicents, viewableRate } from './pacing-controller'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
   CTR_MODEL,
+  advertiserRejectionRate,
   qualityFactor,
   PRIOR_CTR,
   auctionClickRate,
@@ -49,7 +50,7 @@ type PoolCandidate = AuctionCandidate & {
   record: AdCandidateRecord
   /** Pouca história: disputa em separado, sorteado (veja `EXPLORATION`). */
   isNew: boolean
-  seen: { impressions: number; viewable: number; clicks: number; hides: number }
+  seen: AdStats
   /** Média da chance de clique (o sorteio de anúncio novo não entra aqui): o gasto esperado usa a média. */
   meanClickRate: number
 }
@@ -57,6 +58,8 @@ type PoolCandidate = AuctionCandidate & {
 const spentFromView = (view: Map<string, PacingView>): Map<string, number> => new Map([...view].map(([adSetId, item]) => [adSetId, item.estimatedSpentMillicents]))
 const HOUR_MS = 3600_000
 const PLATFORM_PRIOR_TTL_MS = 10 * 60_000
+/** A qualidade de cada empresa muda devagar: guardada por 10 minutos. */
+const ADVERTISER_TTL_MS = 10 * 60_000
 
 /**
  * Entrega de anúncios e contagem dos eventos (Etapa 2 do plano). A seleção é por contexto e regras, sem IA: o servidor
@@ -68,6 +71,8 @@ export class AdsDeliveryService {
   private readonly logger = new Logger(AdsDeliveryService.name)
   /** Chance de clique de partida da plataforma (média dos últimos dias). Muda devagar: guardada por 10 minutos. */
   private platformPrior: { value: number; at: number } | null = null
+  /** Taxa de rejeição (esconder e denúncia) de cada empresa, guardada por um tempo. */
+  private readonly advertiserRates = new Map<string, { value: number; at: number }>()
 
   constructor(
     private readonly repo: AdsDeliveryRepository,
@@ -134,14 +139,15 @@ export class AdsDeliveryService {
     // Chance de clique medida de cada anúncio (anúncio novo é sorteado; veja `CTR_MODEL`).
     const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
     const [stats, prior] = await Promise.all([this.repo.clickStatsByAd(paced.map((ad) => ad.id), ctrSince), this.priorClickRate(ctrSince, now)])
+    const advertiserRates = await this.advertiserQuality(paced.map((ad) => ad.adSet.campaign.account.companyId), ctrSince, now)
     const candidates: PoolCandidate[] = paced.map((record) => {
-      const seen = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0 }
+      const seen: AdStats = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0, reports: 0 }
       const posterior = clickRatePosterior(seen.clicks, seen.viewable, prior)
       return {
         adId: record.id,
         objective: record.adSet.campaign.objective,
         bidCapCents: record.adSet.bidCapCents,
-        quality: qualityFactor(seen.hides, seen.impressions),
+        quality: qualityFactor(seen.hides, seen.impressions, { reports: seen.reports, priorRate: advertiserRates.get(record.adSet.campaign.account.companyId) }),
         clickRate: auctionClickRate(posterior, seen.viewable, random),
         record,
         isNew: seen.viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE,
@@ -214,6 +220,35 @@ export class AdsDeliveryService {
     }
     this.platformPrior = { value, at: now.getTime() }
     return value
+  }
+
+  /**
+   * Taxa de rejeição de cada empresa (qualidade do anunciante), guardada por 10 minutos. Falha ao medir: vale a taxa
+   * normal e a entrega segue.
+   */
+  private async advertiserQuality(companyIds: string[], since: Date, now: Date): Promise<Map<string, number>> {
+    const unique = [...new Set(companyIds)]
+    const out = new Map<string, number>()
+    const missing: string[] = []
+    for (const companyId of unique) {
+      const cached = this.advertiserRates.get(companyId)
+      if (cached && now.getTime() - cached.at < ADVERTISER_TTL_MS) out.set(companyId, cached.value)
+      else missing.push(companyId)
+    }
+    if (missing.length) {
+      let totals = new Map<string, AdvertiserStats>()
+      try {
+        totals = await this.repo.advertiserStats(missing, since)
+      } catch (error) {
+        this.logger.warn(`Não consegui medir a qualidade dos anunciantes, usando a taxa normal: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      for (const companyId of missing) {
+        const value = advertiserRejectionRate(totals.get(companyId))
+        this.advertiserRates.set(companyId, { value, at: now.getTime() })
+        out.set(companyId, value)
+      }
+    }
+    return out
   }
 
   /** Empresas que são alvo de relato nos itens em volta do espaço. `null` se a conferência falhou. */

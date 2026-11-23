@@ -50,6 +50,7 @@ function makeRepo(pool: unknown[] = [candidate()], viewer: Record<string, unknow
     spentTodayByAdSet: jest.fn().mockResolvedValue(new Map()),
     clickStatsByAd: jest.fn().mockResolvedValue(new Map()),
     platformClickStats: jest.fn().mockResolvedValue({ viewable: 0, clicks: 0 }),
+    advertiserStats: jest.fn().mockResolvedValue(new Map()),
     createImpression: jest.fn().mockResolvedValue({ id: 'imp-1' }),
     findImpression: jest.fn(),
     countClicks: jest.fn().mockResolvedValue(0),
