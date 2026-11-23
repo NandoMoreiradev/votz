@@ -109,13 +109,29 @@ describe('AdsDeliveryService.next: nenhum anúncio perto de relato contra o anun
   })
 
   it('tira da disputa as empresas que são alvo de relato nos itens em volta (junto com as escondidas)', async () => {
-    const repo = makeRepo()
+    const byCompany = (id: string, companyId: string) => candidate({ id }, { }, { companyId, company: { id: companyId, tradeName: id, username: id, logoUrl: null } })
+    const repo = makeRepo([byCompany('ad-alvo', 'co-alvo'), byCompany('ad-escondida', 'co-escondida'), byCompany('ad-livre', 'co-livre')])
     repo.hiddenCompanyIds.mockResolvedValue(['co-escondida'])
     const adjacency = { companiesTargetedNear: jest.fn().mockResolvedValue(['co-alvo']) }
-    await new AdsDeliveryService(repo as never, storage as never, links as never, adjacency as never).next(USER, { ...query, nearPostIds: [POST_A], nearReportIds: [REPORT_B] }, NOW)
+    const view = await new AdsDeliveryService(repo as never, storage as never, links as never, adjacency as never).next(USER, { ...query, nearPostIds: [POST_A], nearReportIds: [REPORT_B] }, NOW)
     expect(adjacency.companiesTargetedNear).toHaveBeenCalledWith({ postIds: [POST_A], reportIds: [REPORT_B] })
-    const excluded = repo.findCandidates.mock.calls[0][1] as string[]
-    expect([...excluded].sort()).toEqual(['co-alvo', 'co-escondida'])
+    // Só a empresa que não é alvo de relato nem foi escondida pode ganhar.
+    expect(view?.adId).toBe('ad-livre')
+  })
+
+  it('só a empresa alvo de relato e a escondida na disputa: nenhum anúncio', async () => {
+    const byCompany = (id: string, companyId: string) => candidate({ id }, { }, { companyId, company: { id: companyId, tradeName: id, username: id, logoUrl: null } })
+    const repo = makeRepo([byCompany('ad-alvo', 'co-alvo'), byCompany('ad-escondida', 'co-escondida')])
+    repo.hiddenCompanyIds.mockResolvedValue(['co-escondida'])
+    const adjacency = { companiesTargetedNear: jest.fn().mockResolvedValue(['co-alvo']) }
+    expect(await new AdsDeliveryService(repo as never, storage as never, links as never, adjacency as never).next(USER, { ...query, nearPostIds: [POST_A] }, NOW)).toBeNull()
+    expect(repo.createImpression).not.toHaveBeenCalled()
+  })
+
+  it('os anúncios que a pessoa já escondeu ou viu demais saem da disputa (limite diário), mesmo com o conjunto compartilhado', async () => {
+    const repo = makeRepo([candidate({ id: 'ad-1' }), candidate({ id: 'ad-2', adSetId: 'set-2' })])
+    repo.excludedAdIds.mockResolvedValue(['ad-1'])
+    expect((await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW))?.adId).toBe('ad-2')
   })
 
   it('se não der para conferir a vizinhança, não mostra anúncio e não conta exibição', async () => {

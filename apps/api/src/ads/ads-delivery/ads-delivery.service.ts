@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import {
   AD_DELIVERY,
@@ -60,6 +61,31 @@ const HOUR_MS = 3600_000
 const PLATFORM_PRIOR_TTL_MS = 10 * 60_000
 /** A qualidade de cada empresa muda devagar: guardada por 10 minutos. */
 const ADVERTISER_TTL_MS = 10 * 60_000
+/**
+ * Conjunto de anúncios que podem entrar na disputa: a mesma consulta para todo mundo, guardada por poucos segundos e
+ * compartilhada entre os pedidos simultâneos. Cada pessoa só tira o que é dela (escondidos, limite diário, vizinhança)
+ * na memória. Custo do atraso: um anúncio pausado, editado ou sem saldo pode ser entregue por até este tempo; o
+ * orçamento do dia e o saldo continuam sendo conferidos em cada pedido (ritmo e gasto), e gasto acima do saldo é
+ * absorvido pelo Votz.
+ */
+const POOL_TTL_MS = 15_000
+/** Contagem de cliques, exibições e rejeição de cada anúncio muda devagar: guardada por 1 minuto. */
+const AD_STATS_TTL_MS = 60_000
+/**
+ * Tempo-limite da entrega (`ADS_DELIVERY_BUDGET_MS`, 0 desliga). O feed não espera anúncio: passou do tempo, devolve "sem
+ * anúncio" e **não cria a exibição** (uma exibição criada depois de a pessoa ter ficado sem resposta contaria no limite
+ * diário e no ritmo sem nunca poder ser vista). O plano pede p99 de 40 ms no serviço de anúncios dedicado; aqui, dentro
+ * da API, o padrão é mais folgado porque o banco divide a conexão com o resto.
+ */
+const DEFAULT_BUDGET_MS = 250
+const TIMEOUT_LOG_EVERY_MS = 10_000
+
+/** A entrega passou do tempo-limite. Nunca sai da `AdsDeliveryService`. */
+class DeliveryTimeout extends Error {
+  constructor() {
+    super('A entrega de anúncio passou do tempo-limite')
+  }
+}
 
 /**
  * Entrega de anúncios e contagem dos eventos (Etapa 2 do plano). A seleção é por contexto e regras, sem IA: o servidor
@@ -73,6 +99,10 @@ export class AdsDeliveryService {
   private platformPrior: { value: number; at: number } | null = null
   /** Taxa de rejeição (esconder e denúncia) de cada empresa, guardada por um tempo. */
   private readonly advertiserRates = new Map<string, { value: number; at: number }>()
+  /** Conjunto de candidatos compartilhado (veja `POOL_TTL_MS`). */
+  private poolCache: { at: number; promise: Promise<AdCandidateRecord[]> } | null = null
+  /** Estatística de cada anúncio, guardada por um tempo (veja `AD_STATS_TTL_MS`). */
+  private readonly adStatsCache = new Map<string, { value: AdStats; at: number }>()
 
   constructor(
     private readonly repo: AdsDeliveryRepository,
@@ -81,26 +111,85 @@ export class AdsDeliveryService {
     private readonly adjacency: ContentAdjacencyService,
     /** Ritmo por minuto no Redis. Sem ele (ou com o Redis fora do ar) a entrega usa o ritmo pelo banco, como antes. */
     @Optional() private readonly pacing?: AdsPacingService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
-  /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. */
+  /** Quantas entregas passaram do tempo-limite desde que o processo subiu (para o log e a conferência). */
+  timeouts = 0
+  private lastTimeoutLog = 0
+
+  /** Tempo-limite da entrega em ms (0 = sem limite). */
+  budgetMs(): number {
+    const raw = this.config?.get<string>('ADS_DELIVERY_BUDGET_MS')
+    if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_BUDGET_MS
+    const value = Number(raw)
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_BUDGET_MS
+  }
+
+  /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. Dentro do tempo-limite, ou "sem anúncio". */
   async next(userId: string, query: NextAdQueryDto, now = new Date(), random: () => number = Math.random): Promise<SponsoredAdView | null> {
+    const budget = this.budgetMs()
+    const deadlineAt = budget > 0 ? performance.now() + budget : Number.POSITIVE_INFINITY
+    try {
+      return await this.deliver(userId, query, now, random, deadlineAt)
+    } catch (error) {
+      if (!(error instanceof DeliveryTimeout)) throw error
+      this.timeouts += 1
+      const clock = Date.now()
+      if (clock - this.lastTimeoutLog >= TIMEOUT_LOG_EVERY_MS) {
+        this.lastTimeoutLog = clock
+        this.logger.warn(`Entrega de anúncio passou de ${budget} ms e devolveu "sem anúncio" (${this.timeouts} desde que o processo subiu).`)
+      }
+      return null
+    }
+  }
+
+  /** Espera `work` até o tempo-limite; depois disso desiste (a leitura segue no banco, sem efeito). */
+  private async within<T>(work: Promise<T>, deadlineAt: number): Promise<T> {
+    if (deadlineAt === Number.POSITIVE_INFINITY) return work
+    work.catch(() => undefined) // se perdermos a corrida, o erro dela não pode virar "unhandled rejection"
+    const remaining = deadlineAt - performance.now()
+    if (remaining <= 0) throw new DeliveryTimeout()
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new DeliveryTimeout()), remaining)
+    })
+    try {
+      return await Promise.race([work, timeout])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  private async deliver(userId: string, query: NextAdQueryDto, now: Date, random: () => number, deadlineAt: number): Promise<SponsoredAdView | null> {
     if (isHoldout(userId, AD_DELIVERY_LIMITS.HOLDOUT_SHARE)) return null
 
-    const facts = await this.repo.findViewerFacts(userId)
+    const since = new Date(now.getTime() - 24 * HOUR_MS)
+    // O que é da pessoa (cadastro, escondidos, limite diário) vem junto, numa ida só ao banco.
+    const [facts, hiddenCompanies, excludedAds] = await this.within(
+      Promise.all([
+        this.repo.findViewerFacts(userId),
+        this.repo.hiddenCompanyIds(userId),
+        this.repo.excludedAdIds(userId, since, AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY),
+      ]),
+      deadlineAt,
+    )
     if (!facts) return null
     const viewer = buildViewer(facts, query)
-
-    const since = new Date(now.getTime() - 24 * HOUR_MS)
-    const [hiddenCompanies, excludedAds] = await Promise.all([
-      this.repo.hiddenCompanyIds(userId),
-      this.repo.excludedAdIds(userId, since, AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY),
-    ])
     // Nenhum anúncio perto de relato contra o próprio anunciante. Se não deu para conferir a vizinhança, não mostra:
     // errar para o lado de não exibir custa uma exibição; errar para o outro lado, a confiança no Votz.
-    const nearCompanies = await this.companiesNextToSlot(query)
+    const nearCompanies = await this.within(this.companiesNextToSlot(query), deadlineAt)
     if (!nearCompanies) return null
-    const pool = await this.repo.findCandidates(now, [...new Set([...hiddenCompanies, ...nearCompanies])], excludedAds, CANDIDATE_POOL)
+    const excludedCompanies = new Set([...hiddenCompanies, ...nearCompanies])
+    const excludedAdIds = new Set(excludedAds)
+    const pool = (await this.within(this.candidatePool(now), deadlineAt)).filter(
+      (ad) =>
+        !excludedAdIds.has(ad.id) &&
+        !excludedCompanies.has(ad.adSet.campaign.account.companyId) &&
+        // A consulta compartilhada já olhou o período, mas pode ter sido feita segundos atrás.
+        !(ad.adSet.startAt && ad.adSet.startAt > now) &&
+        !(ad.adSet.endAt && ad.adSet.endAt <= now),
+    )
     if (!pool.length) return null
 
     const day = saoPauloDay(now)
@@ -109,9 +198,9 @@ export class AdsDeliveryService {
     // Se o Redis não está disponível, cai para o gasto cobrado no banco e o freio por faixa, como antes.
     const budgets = new Map(pool.map((ad) => [ad.adSetId, ad.adSet.dailyBudgetCents * 1000]))
     const pacingView = this.pacing
-      ? await this.pacing.view(adSetIds.map((adSetId) => ({ adSetId, dailyBudgetMillicents: budgets.get(adSetId) ?? 0 })), day, now, (ids) => this.repo.spentTodayByAdSet(ids, day))
+      ? await this.within(this.pacing.view(adSetIds.map((adSetId) => ({ adSetId, dailyBudgetMillicents: budgets.get(adSetId) ?? 0 })), day, now, (ids) => this.repo.spentTodayByAdSet(ids, day)), deadlineAt)
       : null
-    const spent = pacingView ? spentFromView(pacingView) : await this.repo.spentTodayByAdSet(adSetIds, day)
+    const spent = pacingView ? spentFromView(pacingView) : await this.within(this.repo.spentTodayByAdSet(adSetIds, day), deadlineAt)
 
     const eligible = pool.filter((ad) => {
       const { objective } = ad.adSet.campaign
@@ -138,8 +227,14 @@ export class AdsDeliveryService {
 
     // Chance de clique medida de cada anúncio (anúncio novo é sorteado; veja `CTR_MODEL`).
     const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
-    const [stats, prior] = await Promise.all([this.repo.clickStatsByAd(paced.map((ad) => ad.id), ctrSince), this.priorClickRate(ctrSince, now)])
-    const advertiserRates = await this.advertiserQuality(paced.map((ad) => ad.adSet.campaign.account.companyId), ctrSince, now)
+    const [stats, prior, advertiserRates] = await this.within(
+      Promise.all([
+        this.adStats(paced.map((ad) => ad.id), ctrSince, now),
+        this.priorClickRate(ctrSince, now),
+        this.advertiserQuality(paced.map((ad) => ad.adSet.campaign.account.companyId), ctrSince, now),
+      ]),
+      deadlineAt,
+    )
     const candidates: PoolCandidate[] = paced.map((record) => {
       const seen: AdStats = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0, reports: 0 }
       const posterior = clickRatePosterior(seen.clicks, seen.viewable, prior)
@@ -158,13 +253,15 @@ export class AdsDeliveryService {
     // Anúncio novo disputa em separado dos experientes, com teto e piso por hora (veja `EXPLORATION`).
     const hour = saoPauloHour(now)
     const mixed = candidates.some((candidate) => candidate.isNew) && candidates.some((candidate) => !candidate.isNew)
-    const counters = mixed && this.pacing ? await this.pacing.explorationCounters(day, hour) : null
+    const counters = mixed && this.pacing ? await this.within(this.pacing.explorationCounters(day, hour), deadlineAt) : null
     const { pool: auctionPool, contested } = pickAuctionPool(candidates, explorationChance(counters), random)
     let result = runAuction(auctionPool, random)
     // O grupo sorteado não tinha ninguém que valesse (lance abaixo do piso): o outro grupo ainda pode ganhar.
     if (!result && contested) result = runAuction(candidates.filter((candidate) => !auctionPool.includes(candidate)), random)
     if (!result) return null
 
+    // Última chance de desistir: depois de criada, a exibição conta no limite diário e no ritmo. Sem resposta, não se cria.
+    if (performance.now() > deadlineAt) throw new DeliveryTimeout()
     const winner = result.winner as PoolCandidate
     const { record } = winner
     const objective = record.adSet.campaign.objective
@@ -206,6 +303,39 @@ export class AdsDeliveryService {
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }
+  }
+
+  /** O conjunto de candidatos, da memória se foi lido há pouco (e uma só leitura para os pedidos simultâneos). */
+  private candidatePool(now: Date): Promise<AdCandidateRecord[]> {
+    const cached = this.poolCache
+    if (cached && now.getTime() - cached.at < POOL_TTL_MS) return cached.promise
+    const promise = this.repo.findCandidates(now, [], [], CANDIDATE_POOL)
+    this.poolCache = { at: now.getTime(), promise }
+    // Se a leitura falhar, o próximo pedido tenta de novo em vez de guardar o erro.
+    promise.catch(() => {
+      if (this.poolCache?.promise === promise) this.poolCache = null
+    })
+    return promise
+  }
+
+  /** Estatística dos anúncios (cliques, exibições, rejeição), guardada por 1 minuto; só consulta o banco o que falta. */
+  private async adStats(adIds: string[], since: Date, now: Date): Promise<Map<string, AdStats>> {
+    const out = new Map<string, AdStats>()
+    const missing: string[] = []
+    for (const adId of adIds) {
+      const cached = this.adStatsCache.get(adId)
+      if (cached && now.getTime() - cached.at < AD_STATS_TTL_MS) out.set(adId, cached.value)
+      else missing.push(adId)
+    }
+    if (missing.length) {
+      const fresh = await this.repo.clickStatsByAd(missing, since)
+      for (const adId of missing) {
+        const value = fresh.get(adId) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0, reports: 0 }
+        this.adStatsCache.set(adId, { value, at: now.getTime() })
+        out.set(adId, value)
+      }
+    }
+    return out
   }
 
   /** Chance de clique de partida: a medida na plataforma se já há exibições suficientes, senão a fixa. Nunca derruba a entrega. */

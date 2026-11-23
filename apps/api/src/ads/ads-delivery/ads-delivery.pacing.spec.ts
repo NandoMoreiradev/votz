@@ -332,3 +332,139 @@ describe('qualidade na entrega: denúncia e anunciante', () => {
     expect((await service(repo, makePacing(freeView('a'))).next(USER, query, NOW, middle))?.adId).toBe('a')
   })
 })
+
+describe('conjunto de candidatos e estatísticas em memória', () => {
+  const freeView = new Map([['set-a', { throttle: 1, estimatedSpentMillicents: 0 }]])
+
+  it('pedidos simultâneos dividem uma leitura só do conjunto de candidatos', async () => {
+    const repo = makeRepo([ad('a', null)])
+    const delivery = service(repo, makePacing(freeView))
+    await Promise.all(Array.from({ length: 30 }, () => delivery.next(USER, query, NOW, middle)))
+    expect(repo.findCandidates).toHaveBeenCalledTimes(1)
+  })
+
+  it('o conjunto é lido de novo depois de 15 segundos (anúncio pausado ou editado deixa de entrar)', async () => {
+    const repo = makeRepo([ad('a', null)])
+    const delivery = service(repo, makePacing(freeView))
+    await delivery.next(USER, query, NOW, middle)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 14_000), middle)
+    expect(repo.findCandidates).toHaveBeenCalledTimes(1)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 16_000), middle)
+    expect(repo.findCandidates).toHaveBeenCalledTimes(2)
+  })
+
+  it('leitura que falhou não fica guardada: o próximo pedido tenta de novo', async () => {
+    const repo = makeRepo([ad('a', null)])
+    repo.findCandidates.mockRejectedValueOnce(new Error('banco')).mockResolvedValue([ad('a', null)])
+    const delivery = service(repo, makePacing(freeView))
+    await expect(delivery.next(USER, query, NOW, middle)).rejects.toThrow('banco')
+    expect((await delivery.next(USER, query, NOW, middle))?.adId).toBe('a')
+  })
+
+  it('a pessoa só vê o que é dela: o conjunto compartilhado não vaza escondido de uma para outra', async () => {
+    const repo = makeRepo([ad('a', null), ad('b', null)])
+    const delivery = service(repo, makePacing(new Map([['set-a', { throttle: 1, estimatedSpentMillicents: 0 }], ['set-b', { throttle: 1, estimatedSpentMillicents: 0 }]])))
+    repo.excludedAdIds.mockResolvedValueOnce(['a'])
+    expect((await delivery.next(USER, query, NOW, middle))?.adId).toBe('b')
+    repo.excludedAdIds.mockResolvedValueOnce([])
+    repo.clickStatsByAd.mockResolvedValue(new Map([['a', { impressions: 9000, viewable: 6000, clicks: 600, hides: 0, reports: 0 }]]))
+    // Outra pessoa, sem exclusões: o anúncio "a" (que a primeira escondeu) volta a poder ganhar.
+    const wins = new Set<string>()
+    for (let run = 0; run < 60; run += 1) {
+      const other = await delivery.next('u-outra', query, NOW, seeded(run + 1))
+      if (other) wins.add(other.adId)
+    }
+    expect(wins.has('a')).toBe(true)
+  })
+
+  it('a estatística de um anúncio é lida uma vez por minuto, só dos anúncios que faltam', async () => {
+    const repo = makeRepo([ad('a', null), ad('b', null)])
+    const delivery = service(repo, makePacing(new Map([['set-a', { throttle: 1, estimatedSpentMillicents: 0 }], ['set-b', { throttle: 1, estimatedSpentMillicents: 0 }]])))
+    await delivery.next(USER, query, NOW, middle)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 30_000), middle)
+    expect(repo.clickStatsByAd).toHaveBeenCalledTimes(1)
+    await delivery.next(USER, query, new Date(NOW.getTime() + 61_000), middle)
+    expect(repo.clickStatsByAd).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('tempo-limite da entrega', () => {
+  const freeView = new Map([['set-a', { throttle: 1, estimatedSpentMillicents: 0 }]])
+  const withBudget = (repo: ReturnType<typeof makeRepo>, value: string | undefined, pacing = makePacing(freeView)) =>
+    new AdsDeliveryService(repo as never, storage as never, links as never, adjacency as never, pacing as never, { get: () => value } as never)
+  const slow = <T>(value: T, ms: number) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms))
+
+  it('o padrão é 250 ms; 0 desliga; valor inválido volta ao padrão', () => {
+    const budget = (value: string | undefined) => withBudget(makeRepo([]), value).budgetMs()
+    expect(budget(undefined)).toBe(250)
+    expect(budget('')).toBe(250)
+    expect(budget('120')).toBe(120)
+    expect(budget('0')).toBe(0)
+    expect(budget('abc')).toBe(250)
+    expect(budget('-5')).toBe(250)
+    expect(new AdsDeliveryService(makeRepo([]) as never, storage as never, links as never, adjacency as never).budgetMs()).toBe(250)
+  })
+
+  it('dentro do tempo, entrega normalmente', async () => {
+    const repo = makeRepo([ad('a', null)])
+    expect((await withBudget(repo, '200').next(USER, query, NOW, middle))?.adId).toBe('a')
+    expect(repo.createImpression).toHaveBeenCalledTimes(1)
+  })
+
+  it('o banco demorou mais que o limite: "sem anúncio", sem criar exibição e sem emprestar gasto', async () => {
+    const repo = makeRepo([ad('a', null)])
+    repo.findViewerFacts.mockImplementation(() => slow({ city: 'São Paulo', state: 'SP', birthDate: null, gender: null, adPreference: null }, 120))
+    const pacing = makePacing(freeView)
+    const delivery = withBudget(repo, '30', pacing)
+    const started = Date.now()
+    expect(await delivery.next(USER, query, NOW, middle)).toBeNull()
+    expect(Date.now() - started).toBeLessThan(100) // desistiu no tempo, sem esperar o banco responder
+    expect(repo.createImpression).not.toHaveBeenCalled()
+    expect(pacing.commit).not.toHaveBeenCalled()
+    expect(delivery.timeouts).toBe(1)
+  })
+
+  it('o conjunto de candidatos lento também estoura o tempo (e a leitura não fica guardada com erro)', async () => {
+    const repo = makeRepo([])
+    repo.findCandidates.mockImplementation(() => slow([ad('a', null)], 120))
+    const delivery = withBudget(repo, '30')
+    expect(await delivery.next(USER, query, NOW, middle)).toBeNull()
+    expect(delivery.timeouts).toBe(1)
+    await slow(null, 150) // a leitura termina em segundo plano e fica guardada para o próximo pedido
+    expect((await delivery.next(USER, query, NOW, middle))?.adId).toBe('a')
+  })
+
+  it('passou do tempo no último passo (antes de criar a exibição): não cria', async () => {
+    const mixedPool = [ad('velho', 80, 'TRAFFIC'), ad('novo', 80, 'TRAFFIC')]
+    const repo = makeRepo(mixedPool)
+    repo.clickStatsByAd.mockResolvedValue(new Map([['velho', { impressions: 9000, viewable: 6000, clicks: 300, hides: 0, reports: 0 }]]))
+    const pacing = makePacing(new Map([['set-velho', { throttle: 1, estimatedSpentMillicents: 0 }], ['set-novo', { throttle: 1, estimatedSpentMillicents: 0 }]]))
+    let clock = 0
+    const spy = jest.spyOn(performance, 'now').mockImplementation(() => clock)
+    try {
+      // O último passo com espera (contadores de exploração) "leva" mais que o limite, mas resolve a tempo da corrida.
+      pacing.explorationCounters.mockImplementation(async () => {
+        clock += 500
+        return null
+      })
+      const delivery = withBudget(repo, '100', pacing)
+      expect(await delivery.next(USER, query, NOW, seeded(1))).toBeNull()
+      expect(repo.createImpression).not.toHaveBeenCalled()
+      expect(delivery.timeouts).toBe(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('sem limite (0), uma consulta lenta é esperada', async () => {
+    const repo = makeRepo([ad('a', null)])
+    repo.findViewerFacts.mockImplementation(() => slow({ city: 'São Paulo', state: 'SP', birthDate: null, gender: null, adPreference: null }, 80))
+    expect((await withBudget(repo, '0').next(USER, query, NOW, middle))?.adId).toBe('a')
+  })
+
+  it('erro que não é de tempo continua subindo (a API responde erro, como antes)', async () => {
+    const repo = makeRepo([ad('a', null)])
+    repo.findViewerFacts.mockRejectedValue(new Error('banco caiu'))
+    await expect(withBudget(repo, '200').next(USER, query, NOW, middle)).rejects.toThrow('banco caiu')
+  })
+})
