@@ -7,5 +7,6 @@ import { OrgMembershipsModule } from '../org-memberships/org-memberships.module'
   imports: [OrgMembershipsModule],
   controllers: [SubscricoesController],
   providers: [SubscricoesService],
+  exports: [SubscricoesService],
 })
 export class SubscricoesModule {}

@@ -11,10 +11,14 @@ import { PressureBar } from '../components/ui/PressureBar'
 import { Button } from '../components/ui/Button'
 import { CommentsSection } from '../components/comments/CommentsSection'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
+import { ContextNoteCard } from '../components/context-notes/ContextNoteCard'
+import { ContextNoteMenuScope } from '../components/context-notes/useContextNoteMenu'
+import { ContextNoteTargetType } from '@votz/shared-types'
 import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
+import { PressContactCard } from '../components/press/PressContactCard'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
 import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
@@ -941,15 +945,24 @@ export function ReportDetail() {
               <Badges>
                 <CategoryBadge category={report.category} />
                 <StatusBadge status={report.status} />
-                <OptionsMenu
-                  label="Mais opções do relato"
-                  items={[
-                    { key: 'link', label: 'Copiar link', icon: <LinkSimple size={18} />, onSelect: () => copyLink(`/relatos/${report.id}`) },
-                    ...(!(user && !report.anonymous && report.author?.id === user.id)
-                      ? [{ key: 'flag', label: 'Denunciar relato', icon: <Flag size={18} />, onSelect: () => (user ? setFlagOpen(true) : navigate('/entrar')) }]
-                      : []),
-                  ]}
-                />
+                <ContextNoteMenuScope
+                  targetType={ContextNoteTargetType.REPORT}
+                  targetId={report.id}
+                  isOwner={!!(user && !report.anonymous && report.author?.id === user.id)}
+                >
+                  {(contextItems) => (
+                    <OptionsMenu
+                      label="Mais opções do relato"
+                      items={[
+                        { key: 'link', label: 'Copiar link', icon: <LinkSimple size={18} />, onSelect: () => copyLink(`/relatos/${report.id}`) },
+                        ...(!(user && !report.anonymous && report.author?.id === user.id)
+                          ? [{ key: 'flag', label: 'Denunciar relato', icon: <Flag size={18} />, onSelect: () => (user ? setFlagOpen(true) : navigate('/entrar')) }]
+                          : []),
+                        ...contextItems,
+                      ]}
+                    />
+                  )}
+                </ContextNoteMenuScope>
               </Badges>
 
               <FlagContentModal
@@ -1010,6 +1023,8 @@ export function ReportDetail() {
               <Description>
                 {report.description}
               </Description>
+
+              <ContextNoteCard type={ContextNoteTargetType.REPORT} id={report.id} />
 
               {(() => {
                 const advocates: AdvocateEntry[] = (report.timeline ?? [])
@@ -1108,6 +1123,8 @@ export function ReportDetail() {
                 </VoteBtn>
               </VoteButtons>
             </SideCard>
+
+            <PressContactCard reportId={report.id} anonymous={report.anonymous} />
 
             {(() => {
               if (report.recipientType !== RecipientType.POLITICIAN || !recipientPolitician) return null

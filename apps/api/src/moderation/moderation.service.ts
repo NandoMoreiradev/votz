@@ -11,6 +11,7 @@ import * as DOMPurify from 'isomorphic-dompurify'
 import { AdminService } from '../admin/admin.service'
 import { CommentsService } from '../comments/comments.service'
 import { PostsService } from '../posts/posts.service'
+import { ContextNotesService } from '../context-notes/context-notes.service'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { ResolveFlagDto } from './dto/resolve-flag.dto'
 import { ModerationRepository } from './moderation.repository'
@@ -22,6 +23,7 @@ export class ModerationService {
     private readonly adminService: AdminService,
     private readonly commentsService: CommentsService,
     @Optional() private readonly postsService?: PostsService,
+    @Optional() private readonly contextNotes?: ContextNotesService,
   ) {}
 
   async createFlag(reporter: { id: string; emailVerified: boolean }, dto: CreateFlagDto) {
@@ -52,6 +54,15 @@ export class ModerationService {
       }
       if (post.authorUserId === reporter.id) {
         throw new ForbiddenException('Você não pode sinalizar sua própria publicação.')
+      }
+    } else if (dto.targetType === FlagTargetType.CONTEXT_NOTE) {
+      // Denunciar ou discordar de uma nota do Contexto da Comunidade. Só não vale para a própria nota.
+      const note = await this.repo.findContextNoteTarget(dto.targetId)
+      if (!note || note.status === 'REMOVED') {
+        throw new NotFoundException('Nota não encontrada.')
+      }
+      if (note.authorId === reporter.id) {
+        throw new ForbiddenException('Você não pode sinalizar a sua própria nota.')
       }
     } else {
       const postComment = await this.repo.findPostCommentTarget(dto.targetId)
@@ -113,6 +124,8 @@ export class ModerationService {
       await this.commentsService.delete(flag.targetId, actor.id, actor.type, note)
     } else if (flag.targetType === FlagTargetType.POST) {
       await this.postsService?.deletePost(flag.targetId, actor.id, actor.type, note)
+    } else if (flag.targetType === FlagTargetType.CONTEXT_NOTE) {
+      await this.contextNotes?.removeByModeration(flag.targetId, actor.id, note)
     } else {
       await this.postsService?.deleteComment(flag.targetId, actor.id, actor.type, note)
     }

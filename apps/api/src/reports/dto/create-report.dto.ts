@@ -25,6 +25,14 @@ export class CreateReportDto {
   @IsOptional()
   anonymous?: boolean
 
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Aceito receber pedido de contato da imprensa credenciada. Ignorado em relato anônimo.',
+  })
+  @IsBoolean()
+  @IsOptional()
+  pressContactOk?: boolean
+
   @ApiPropertyOptional()
   @IsNumber()
   @IsOptional()

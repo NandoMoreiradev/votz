@@ -10,6 +10,7 @@ import { EmbeddingModule } from '../embedding/embedding.module'
 import { WebhooksModule } from '../webhooks/webhooks.module'
 import { TopicsModule } from '../topics/topics.module'
 import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embedding.processor'
+import { EmbeddingBackfillCron } from './jobs/embedding-backfill.cron'
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embed
     BullModule.registerQueue({ name: REPORTS_QUEUE }),
   ],
   controllers: [ReportsController],
-  providers: [ReportsService, ReportsRepository, GenerateEmbeddingProcessor],
+  providers: [ReportsService, ReportsRepository, GenerateEmbeddingProcessor, EmbeddingBackfillCron],
   exports: [ReportsService],
 })
 export class ReportsModule {}

@@ -60,6 +60,76 @@ export class SubscricoesService {
     return { url: session.url }
   }
 
+  // ── Imprensa (plano Pro da credencial; não usa orgId) ───────────────────────
+
+  /** Preço do Imprensa Pro no Stripe. Sem ele, o plano só é liberado pela equipe. */
+  static pressProPriceId(): string | undefined {
+    return process.env.STRIPE_PRESS_PRO_PRICE_ID || undefined
+  }
+
+  async criarCheckoutImprensa(userId: string, email: string) {
+    const priceId = SubscricoesService.pressProPriceId()
+    if (!priceId) throw new BadRequestException('O plano Imprensa Pro ainda não está à venda. Fale com a nossa equipe.')
+
+    const credential = await this.findApprovedPressCredential(userId)
+    if (credential.plan === 'PRO') throw new BadRequestException('Você já está no plano Imprensa Pro.')
+
+    let customerId = credential.stripeCustomerId
+    if (!customerId) {
+      const customer = await this.stripe.customers.create({ email, metadata: { pressCredentialId: credential.id } })
+      customerId = customer.id
+      await this.prisma.pressCredential.update({ where: { id: credential.id }, data: { stripeCustomerId: customerId } })
+    }
+
+    const webUrl = this.config.getOrThrow('WEB_URL')
+    const metadata = { pressCredentialId: credential.id, plan: 'PRO' }
+    const session = await this.stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${webUrl}/imprensa?plano=ok`,
+      cancel_url: `${webUrl}/imprensa`,
+      metadata,
+      subscription_data: { metadata },
+    })
+    return { url: session.url }
+  }
+
+  async criarPortalImprensa(userId: string) {
+    const credential = await this.findApprovedPressCredential(userId)
+    if (!credential.stripeCustomerId) throw new NotFoundException('Nenhuma assinatura ativa encontrada')
+    const webUrl = this.config.getOrThrow('WEB_URL')
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: credential.stripeCustomerId,
+      return_url: `${webUrl}/imprensa`,
+    })
+    return { url: session.url }
+  }
+
+  private async findApprovedPressCredential(userId: string) {
+    const credential = await this.prisma.pressCredential.findFirst({
+      where: { userId, status: 'APPROVED' },
+      orderBy: { reviewedAt: 'desc' },
+      select: { id: true, plan: true, stripeCustomerId: true },
+    })
+    if (!credential) throw new NotFoundException('Você não tem credencial de imprensa aprovada.')
+    return credential
+  }
+
+  private async ativarPlanoImprensa(credentialId: string, subscriptionId: string | null) {
+    await this.prisma.pressCredential.updateMany({
+      where: { id: credentialId, status: 'APPROVED' },
+      data: { plan: 'PRO', stripeSubscriptionId: subscriptionId },
+    })
+  }
+
+  private async rebaixarImprensa(credentialId: string) {
+    await this.prisma.pressCredential.updateMany({
+      where: { id: credentialId },
+      data: { plan: 'GRATUITA', stripeSubscriptionId: null },
+    })
+  }
+
   async criarPortal(orgId: string, orgType: OrgType) {
     const org = await this.findOrgBilling(orgId, orgType)
     if (!org) throw new NotFoundException('Organização não encontrada')
@@ -110,7 +180,11 @@ export class SubscricoesService {
         case 'checkout.session.completed': {
           const session = event.data.object
           const metadata = session.metadata ?? {}
-          if (metadata.orgId) {
+          if (metadata.pressCredentialId) {
+            if (session.mode === 'subscription') {
+              await this.ativarPlanoImprensa(metadata.pressCredentialId, (session.subscription as string) ?? null)
+            }
+          } else if (metadata.orgId) {
             if (session.mode === 'subscription') {
               await this.ativarPlano(
                 metadata.orgId,
@@ -132,7 +206,13 @@ export class SubscricoesService {
 
         case 'customer.subscription.updated': {
           const sub = event.data.object
-          const { orgId, orgType, plan } = sub.metadata ?? {}
+          const { orgId, orgType, plan, pressCredentialId } = sub.metadata ?? {}
+          if (pressCredentialId) {
+            // Assinatura da imprensa: ativa/teste = Pro; cancelada ou sem pagamento = volta ao gratuito.
+            if (sub.status === 'active' || sub.status === 'trialing') await this.ativarPlanoImprensa(pressCredentialId, sub.id)
+            else if (['canceled', 'unpaid', 'incomplete_expired'].includes(sub.status)) await this.rebaixarImprensa(pressCredentialId)
+            break
+          }
           if (orgId && orgType && plan && sub.status === 'active') {
             await this.ativarPlano(orgId, orgType as OrgType, plan, sub.id)
           }
@@ -141,7 +221,11 @@ export class SubscricoesService {
 
         case 'customer.subscription.deleted': {
           const sub = event.data.object
-          const { orgId, orgType } = sub.metadata ?? {}
+          const { orgId, orgType, pressCredentialId } = sub.metadata ?? {}
+          if (pressCredentialId) {
+            await this.rebaixarImprensa(pressCredentialId)
+            break
+          }
           if (orgId && orgType) {
             await this.rebaixarParaBasico(orgId, orgType as OrgType)
           }

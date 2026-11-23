@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq'
 import { Module } from '@nestjs/common'
+import { ImprensaModule } from '../imprensa/imprensa.module'
 import { MailModule } from '../mail/mail.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { PlansModule } from '../plans/plans.module'
@@ -20,6 +21,7 @@ import { AlertsService, ALERTS_QUEUE } from './alerts.service'
     MailModule,
     PlansModule,
     WebhooksModule,
+    ImprensaModule,
     BullModule.registerQueue({ name: ALERTS_QUEUE }),
   ],
   // AlertRulesController precisa vir antes de AlertsController (:id) para /alerts/rules não colidir com :id

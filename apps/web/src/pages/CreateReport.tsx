@@ -805,6 +805,7 @@ interface FormValues {
   description: string
   category: Category
   anonymous: boolean
+  pressContactOk?: boolean
 }
 
 export function CreateReport() {
@@ -891,7 +892,7 @@ export function CreateReport() {
   useEffect(() => { setLocationError(null) }, [manualStreet, manualNeighborhood, manualCity, manualState])
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
-    defaultValues: { anonymous: false },
+    defaultValues: { anonymous: false, pressContactOk: false },
   })
 
   const selectedCategory = watch('category')
@@ -1210,6 +1211,10 @@ export function CreateReport() {
               <CheckboxRow>
                 <input type="checkbox" {...register('anonymous')} />
                 Relatar anonimamente (seu nome não aparece publicamente)
+              </CheckboxRow>
+              <CheckboxRow style={{ opacity: watch('anonymous') ? 0.5 : 1 }}>
+                <input type="checkbox" disabled={!!watch('anonymous')} {...register('pressContactOk')} />
+                Aceito falar com a imprensa sobre este relato (você escolhe se aceita cada pedido; seu telefone e e-mail não são passados)
               </CheckboxRow>
             </Field>
 

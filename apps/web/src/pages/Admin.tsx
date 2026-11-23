@@ -20,6 +20,7 @@ import {
 } from '../hooks/useSuggestions'
 import { SUGGESTION_CATEGORY_LABEL, SUGGESTION_STATUS_META } from './Sugestoes'
 import { AdReviewQueue } from '../components/ads/AdReviewQueue'
+import { PressCredentialQueue } from '../components/press/PressCredentialQueue'
 import { useAdReviewQueue } from '../hooks/useAds'
 
 function extractApiError(err: unknown, fallback: string): string {
@@ -1149,7 +1150,7 @@ function SuggestionsTab() {
   )
 }
 
-type TabId = 'ads' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
+type TabId = 'ads' | 'press' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
@@ -1205,6 +1206,7 @@ export function Admin() {
             Anúncios
             {(pendingAds?.meta.pendingCount ?? 0) > 0 && <TabCount>{pendingAds?.meta.pendingCount}</TabCount>}
           </Tab>
+          <Tab $active={tab === 'press'} onClick={() => setTab('press')}>Imprensa</Tab>
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
@@ -1215,6 +1217,7 @@ export function Admin() {
         {tab === 'requests'    && <RequestsTab />}
         {tab === 'flags'       && <FlagsTab />}
         {tab === 'ads'         && <AdReviewQueue />}
+        {tab === 'press'       && <PressCredentialQueue />}
         {tab === 'entities'    && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
         {tab === 'reports'     && <ReportsTab />}

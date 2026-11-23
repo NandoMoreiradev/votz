@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
+import { getCategoryLabel } from '@votz/shared-types'
 import { SUPPORT_EMAIL } from '../common/legal.constants'
 
-export type ModerationNoticeKind = 'REPORT_REMOVED' | 'COMMENT_REMOVED' | 'ACCOUNT_BANNED'
+export type ModerationNoticeKind = 'REPORT_REMOVED' | 'COMMENT_REMOVED' | 'NOTE_REMOVED' | 'ACCOUNT_BANNED'
 
 export function escapeHtml(text: string): string {
   return String(text)
@@ -82,7 +83,8 @@ export class MailService {
     const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
     const link = `${baseUrl}/surtos/${encodeURIComponent(data.surtoId)}`
     const safeName = escapeHtml(name)
-    const safeCategory = escapeHtml(data.category)
+    const categoryLabel = getCategoryLabel(data.category)
+    const safeCategory = escapeHtml(categoryLabel)
     const safeCity = escapeHtml(data.city)
     const safeState = escapeHtml(data.state)
     const safeCount = escapeHtml(String(data.count))
@@ -90,7 +92,7 @@ export class MailService {
     await this.transporter.sendMail({
       from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
       to: email,
-      subject: sanitizeSubject(`[SURTO] ${data.category} em ${data.city}/${data.state} — Votz Imprensa`),
+      subject: sanitizeSubject(`[SURTO] ${categoryLabel} em ${data.city}/${data.state} — Votz Imprensa`),
       html: `
         <h2>Alerta de Surto Detectado — Votz</h2>
         <p>Olá, ${safeName}. Um novo surto foi detectado na plataforma Votz:</p>
@@ -103,6 +105,118 @@ export class MailService {
         <p style="color:#6B7280;font-size:13px">Você recebe este alerta por ser um jornalista verificado no Votz. <a href="${escapeHtml(`${baseUrl}/meu-perfil`)}">Gerenciar preferências</a></p>
       `,
     }).catch((err) => this.logger.error('Failed to send surto alert email', err))
+  }
+
+  /** Confirma que a pessoa lê a caixa de e-mail da redação informada no pedido de credencial. */
+  async sendPressEmailConfirmation(email: string, name: string, data: { outletName: string; token: string }): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/imprensa/confirmar-email?token=${encodeURIComponent(data.token)}`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: sanitizeSubject('Confirme o e-mail da redação — Votz Imprensa'),
+      html: `
+        <h2>Confirme o e-mail da redação</h2>
+        <p>Olá, ${escapeHtml(name)}. Recebemos um pedido de credencial de imprensa do Votz para <b>${escapeHtml(data.outletName)}</b>, usando este e-mail.</p>
+        <p>Para a nossa equipe poder analisar o pedido, confirme que esta caixa é da redação:</p>
+        <p><a href="${escapeHtml(link)}" style="background:#E63946;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Confirmar e-mail</a></p>
+        <p style="color:#6B7280;font-size:13px">O link vale por 48 horas. Se você não pediu isso, é só ignorar esta mensagem.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send press email confirmation', err))
+  }
+
+  /** Resultado do pedido de credencial de imprensa. */
+  async sendPressCredentialDecision(
+    email: string,
+    name: string,
+    data: { decision: 'APPROVED' | 'REJECTED' | 'REVOKED'; outletName: string; reviewNote?: string | null },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/imprensa`
+    const outlet = escapeHtml(data.outletName)
+    const note = data.reviewNote ? `<p><b>Motivo:</b> ${escapeHtml(data.reviewNote)}</p>` : ''
+    const copy = {
+      APPROVED: {
+        subject: 'Sua credencial de imprensa foi aprovada — Votz',
+        body: `<p>Boa notícia: a credencial de imprensa de <b>${outlet}</b> foi aprovada. Já dá para baixar os dados em CSV e receber alertas de surto.</p>${note}<p>Se a página ainda não mostrar o painel de imprensa, recarregue ou entre de novo na sua conta.</p>`,
+      },
+      REJECTED: {
+        subject: 'Sobre o seu pedido de credencial de imprensa — Votz',
+        body: `<p>Não conseguimos aprovar o pedido de credencial de <b>${outlet}</b> agora.</p>${note}<p>Você pode corrigir os dados e pedir de novo depois de alguns dias.</p>`,
+      },
+      REVOKED: {
+        subject: 'Sua credencial de imprensa foi cancelada — Votz',
+        body: `<p>A credencial de imprensa de <b>${outlet}</b> foi cancelada.</p>${note}<p>Os dados abertos continuam disponíveis para todo mundo na página de imprensa.</p>`,
+      },
+    }[data.decision]
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: sanitizeSubject(copy.subject),
+      html: `
+        <h2>${escapeHtml(copy.subject.replace(' — Votz', ''))}</h2>
+        <p>Olá, ${escapeHtml(name)}.</p>
+        ${copy.body}
+        <p><a href="${escapeHtml(link)}">Abrir a página de imprensa</a></p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send press credential decision', err))
+  }
+
+  /** Aviso do radar de imprensa: lista curta de relatos ou surtos que bateram com a regra. */
+  async sendPressRadarDigest(
+    email: string,
+    name: string,
+    data: { ruleName: string; items: Array<{ title: string; detail: string; path: string }>; more: number },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const total = data.items.length + data.more
+    const list = data.items
+      .map(
+        (i) =>
+          `<li style="margin-bottom:8px;"><a href="${escapeHtml(`${baseUrl}${i.path}`)}"><b>${escapeHtml(i.title)}</b></a><br><span style="color:#6B7280;font-size:13px">${escapeHtml(i.detail)}</span></li>`,
+      )
+      .join('')
+    const more = data.more > 0 ? `<p style="color:#6B7280;font-size:13px">E mais ${data.more} na página de imprensa.</p>` : ''
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: sanitizeSubject(`[Radar] ${data.ruleName}: ${total} ${total === 1 ? 'novidade' : 'novidades'} — Votz Imprensa`),
+      html: `
+        <h2>Radar de imprensa: ${escapeHtml(data.ruleName)}</h2>
+        <p>Olá, ${escapeHtml(name)}. Estas são as novidades que bateram com o seu aviso:</p>
+        <ul style="padding-left:18px;margin:12px 0;">${list}</ul>
+        ${more}
+        <p style="color:#6B7280;font-size:13px">Relatos são o que cidadãos contam: o Votz não confirma cada um. Confirme com a entidade ou com o autor antes de publicar.</p>
+        <p style="color:#6B7280;font-size:13px">Você recebe este e-mail por ser jornalista credenciado no Votz. <a href="${escapeHtml(`${baseUrl}/imprensa`)}">Gerenciar meus avisos</a></p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send press radar digest', err))
+  }
+
+  /** Avisa o autor de um relato que um veículo de imprensa credenciado pediu para falar com ele. Não é obrigatório responder. */
+  async sendPressContactRequest(
+    email: string,
+    name: string,
+    data: { outletName: string; reportTitle: string; message: string },
+  ): Promise<void> {
+    const baseUrl = this.config.get('APP_URL', 'http://localhost:5173')
+    const link = `${baseUrl}/pedidos-da-imprensa`
+
+    await this.transporter.sendMail({
+      from: this.config.get('SMTP_FROM', 'Votz <noreply@votz.app>'),
+      to: email,
+      subject: sanitizeSubject('Um veículo de imprensa quer falar com você — Votz'),
+      html: `
+        <h2>Pedido de contato da imprensa</h2>
+        <p>Olá, ${escapeHtml(name)}. <b>${escapeHtml(data.outletName)}</b>, veículo com credencial de imprensa verificada no Votz, quer falar com você sobre o seu relato <b>"${escapeHtml(data.reportTitle)}"</b>.</p>
+        <p style="border-left:3px solid #E63946;padding-left:12px;color:#374151">${escapeHtml(data.message)}</p>
+        <p>Você não é obrigado a responder. Pode aceitar, recusar ou bloquear este jornalista. Seu telefone, e-mail e endereço <b>não</b> foram passados para ele.</p>
+        <p><a href="${escapeHtml(link)}" style="background:#E63946;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver o pedido</a></p>
+        <p style="color:#6B7280;font-size:13px">Você recebeu este e-mail porque marcou "aceito falar com a imprensa" neste relato. Para parar de receber pedidos, desmarque a opção na página do relato.</p>
+      `,
+    }).catch((err) => this.logger.error('Failed to send press contact request', err))
   }
 
   async sendDataExportReady(email: string, name: string, downloadUrl: string): Promise<void> {
@@ -251,6 +365,11 @@ export class MailService {
             subject: 'Seu relato foi removido — Votz',
             actionText: 'Um relato publicado por você foi removido pela equipe de moderação do Votz.',
           }
+        : kind === 'NOTE_REMOVED'
+          ? {
+              subject: 'Sua nota de contexto foi removida — Votz',
+              actionText: 'Uma nota de contexto escrita por você foi removida pela equipe de moderação do Votz.',
+            }
         : kind === 'COMMENT_REMOVED'
           ? {
               subject: 'Seu comentário foi removido — Votz',

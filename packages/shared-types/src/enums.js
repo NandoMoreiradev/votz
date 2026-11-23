@@ -107,6 +107,7 @@ var ModerationActionType;
     ModerationActionType["API_KEY_TIER_CHANGED"] = "API_KEY_TIER_CHANGED";
     ModerationActionType["ORG_ITEM_CREATED"] = "ORG_ITEM_CREATED";
     ModerationActionType["ORG_ITEM_DELETED"] = "ORG_ITEM_DELETED";
+    ModerationActionType["CONTEXT_NOTE_REMOVED"] = "CONTEXT_NOTE_REMOVED";
 })(ModerationActionType || (exports.ModerationActionType = ModerationActionType = {}));
 var FlagTargetType;
 (function (FlagTargetType) {
@@ -114,6 +115,7 @@ var FlagTargetType;
     FlagTargetType["COMMENT"] = "COMMENT";
     FlagTargetType["POST"] = "POST";
     FlagTargetType["POST_COMMENT"] = "POST_COMMENT";
+    FlagTargetType["CONTEXT_NOTE"] = "CONTEXT_NOTE";
 })(FlagTargetType || (exports.FlagTargetType = FlagTargetType = {}));
 var PostKind;
 (function (PostKind) {

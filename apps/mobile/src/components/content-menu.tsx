@@ -3,6 +3,7 @@ import { Alert } from 'react-native'
 import { router } from 'expo-router'
 import Clipboard from 'lucide-react-native/icons/clipboard'
 import Flag from 'lucide-react-native/icons/flag'
+import HelpCircle from 'lucide-react-native/icons/circle-help'
 import MoreHorizontal from 'lucide-react-native/icons/more-horizontal'
 import Trash2 from 'lucide-react-native/icons/trash-2'
 import UserCheck from 'lucide-react-native/icons/user-check'
@@ -12,13 +13,14 @@ import { ActionSheet, type SheetItem } from './action-sheet'
 import { ChoiceSheet } from './choice-sheet'
 import { IconButton } from './ui'
 import { useDeletePost, useFlagContent, useFollowing, useToggleFollow } from '../hooks/use-content'
+import { useContextNotesEnabled, useRequestContext } from '../hooks/use-context-notes'
 import { errorMessage } from '../lib/api'
 import { copyText } from '../lib/clipboard'
 import { useSession } from '../lib/session'
 import type { ProfileKind } from '../lib/types'
 import { theme } from '../theme'
 
-const REASONS: readonly { value: FlagReason; label: string }[] = [
+export const FLAG_REASONS: readonly { value: FlagReason; label: string }[] = [
   { value: FlagReason.FALSE_INFO, label: 'Informação falsa ou enganosa' },
   { value: FlagReason.OFFENSIVE, label: 'Ofensa, xingamento ou discurso de ódio' },
   { value: FlagReason.PERSONAL_DATA, label: 'Exposição de dados pessoais de alguém' },
@@ -52,18 +54,21 @@ export function ContentMenu({ kind, id, ownerId, author, text }: {
   const toggle = useToggleFollow(author?.kind ?? 'users', author?.id ?? '')
   const remove = useDeletePost(id)
   const flag = useFlagContent()
+  const contextEnabled = useContextNotesEnabled()
+  const askContext = useRequestContext()
 
   const requireUser = (action: () => void) => (user ? action() : router.push('/login'))
   const items: SheetItem[] = [
     { key: 'copy', label: 'Copiar texto', icon: <Clipboard {...icon} />, onPress: () => { void copyText(text).then((done) => { if (!done) Alert.alert('Copiar chega na próxima atualização', 'Por enquanto, use Compartilhar para enviar o texto.') }) } },
     ...(followable ? [{ key: 'follow', label: following.data?.following ? `Deixar de seguir ${author!.name}` : `Seguir ${author!.name}`, icon: following.data?.following ? <UserCheck {...icon} /> : <UserPlus {...icon} />, onPress: () => requireUser(() => toggle.mutate(undefined, { onError: (error) => Alert.alert('Não foi possível concluir', errorMessage(error)) })) }] : []),
+    ...(!own && contextEnabled ? [{ key: 'context', label: 'Pedir contexto', icon: <HelpCircle {...icon} />, onPress: () => requireUser(() => askContext.mutate({ targetType: kind === 'post' ? 'POST' : 'REPORT', targetId: id }, { onSuccess: () => Alert.alert('Pedido enviado', 'Quem colabora com contexto vai ver.'), onError: (error) => Alert.alert('Não foi possível pedir contexto', errorMessage(error)) })) }] : []),
     ...(!own ? [{ key: 'flag', label: kind === 'post' ? 'Denunciar publicação' : 'Denunciar relato', icon: <Flag {...icon} color={theme.colors.action} />, danger: true, onPress: () => requireUser(() => setReasons(true)) }] : []),
     ...(own && kind === 'post' ? [{ key: 'delete', label: 'Excluir publicação', icon: <Trash2 {...icon} color={theme.colors.action} />, danger: true, onPress: () => Alert.alert('Excluir esta publicação?', 'Ela some para todo mundo e não dá para desfazer.', [{ text: 'Cancelar', style: 'cancel' }, { text: 'Excluir', style: 'destructive', onPress: () => remove.mutate(undefined, { onSuccess: () => { if (router.canGoBack()) router.back() }, onError: (error) => Alert.alert('Não foi possível excluir', errorMessage(error)) }) }]) }] : []),
   ]
   return <>
     <IconButton label={kind === 'post' ? 'Mais opções da publicação' : 'Mais opções do relato'} onPress={() => setOpen(true)}><MoreHorizontal size={20} color={theme.colors.muted} /></IconButton>
     <ActionSheet visible={open} title="Opções" items={items} onClose={() => setOpen(false)} />
-    <ChoiceSheet visible={reasons} title="Qual o motivo?" options={REASONS} value={null} onClose={() => setReasons(false)}
+    <ChoiceSheet visible={reasons} title="Qual o motivo?" options={FLAG_REASONS} value={null} onClose={() => setReasons(false)}
       onChange={(reason) => flag.mutate({ targetType: kind === 'post' ? 'POST' : 'REPORT', targetId: id, reason }, { onSuccess: () => Alert.alert('Recebemos sua denúncia', 'A moderação vai analisar. Ela é confidencial.'), onError: (error) => Alert.alert('Não foi possível denunciar', errorMessage(error)) })} />
   </>
 }

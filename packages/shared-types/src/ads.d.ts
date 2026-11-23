@@ -1022,6 +1022,8 @@ export interface AdLibraryItem {
     /** Só o endereço do site (ex.: padaria.com.br), sem caminho nem parâmetros. */
     destinationHost: string | null;
     media: MediaItemDto | null;
+    /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: só texto. `media` é o primeiro. */
+    mediaItems: MediaItemDto[];
     /** Está rodando agora (campanha ligada, no período, com saldo). */
     active: boolean;
     /** "AAAA-MM-DD". */

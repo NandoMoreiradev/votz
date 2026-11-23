@@ -71,4 +71,43 @@ export class ImprensaController {
       disposition: `attachment; filename="${filename}"`,
     })
   }
+
+  @Get('export/json')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 2, ttl: 10_000 }, medium: { limit: 10, ttl: 3_600_000 }, long: { limit: 20, ttl: 86_400_000 } })
+  @ApiOperation({ summary: '[PRESS Pro] Relatos filtrados em JSON, com descrição' })
+  async exportJson(
+    @CurrentUser() user: { id: string },
+    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
+    @Query('state') state?: string,
+    @Query('city') city?: string,
+    @Query('category') category?: string,
+  ): Promise<StreamableFile> {
+    const { filename, json } = await this.service.exportJson(user.id, days, state, city, category)
+    return new StreamableFile(Buffer.from(json, 'utf-8'), {
+      type: 'application/json; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    })
+  }
+
+  @Get('export/serie')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 2, ttl: 10_000 }, medium: { limit: 10, ttl: 3_600_000 }, long: { limit: 20, ttl: 86_400_000 } })
+  @ApiOperation({ summary: '[PRESS Pro] Série histórica (relatos, respondidos, resolvidos) por semana ou mês, em CSV' })
+  async exportSerie(
+    @CurrentUser() user: { id: string },
+    @Query('days', new DefaultValuePipe(90), ParseIntPipe) days: number,
+    @Query('granularity', new DefaultValuePipe('week')) granularity: string,
+    @Query('state') state?: string,
+    @Query('city') city?: string,
+    @Query('category') category?: string,
+  ): Promise<StreamableFile> {
+    const { filename, csv } = await this.service.exportSerie(user.id, days, granularity, state, city, category)
+    return new StreamableFile(Buffer.from(csv, 'utf-8'), {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    })
+  }
 }

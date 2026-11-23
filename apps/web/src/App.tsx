@@ -35,6 +35,8 @@ import { AcceptInvite } from './pages/AcceptInvite'
 import { CompanyProfile } from './pages/CompanyProfile'
 import { SurtoDetail } from './pages/SurtoDetail'
 import { Imprensa } from './pages/Imprensa'
+import { PressEmailConfirm } from './pages/PressEmailConfirm'
+import { PressContactInbox } from './pages/PressContactInbox'
 import { PropostasList } from './pages/PropostasList'
 import { PropostaDetail } from './pages/PropostaDetail'
 import { CreateProposta } from './pages/CreateProposta'
@@ -64,6 +66,7 @@ import { Diretrizes } from './pages/Diretrizes'
 import { PostDetail } from './pages/PostDetail'
 import { PautaDetail } from './pages/PautaDetail'
 import { Sugestoes } from './pages/Sugestoes'
+import { ContextoDaComunidade } from './pages/ContextoDaComunidade'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { Footer } from './components/layout/Footer'
 import { OrgReauthGate } from './components/ui/OrgReauthGate'
@@ -154,6 +157,8 @@ function App() {
               <Route path="/empresa/:id" element={<CompanyProfile />} />
               <Route path="/surtos/:id" element={<SurtoDetail />} />
               <Route path="/imprensa" element={<Imprensa />} />
+              <Route path="/imprensa/confirmar-email" element={<PressEmailConfirm />} />
+              <Route path="/pedidos-da-imprensa" element={<PressContactInbox />} />
               <Route path="/propostas" element={<PropostasList />} />
               <Route path="/propostas/:id" element={<PropostaDetail />} />
               <Route path="/planos" element={<Planos />} />
@@ -191,6 +196,7 @@ function App() {
               <Route path="/cookies" element={<Cookies />} />
               <Route path="/diretrizes" element={<Diretrizes />} />
               <Route path="/sugestoes" element={<Sugestoes />} />
+              <Route path="/contexto" element={<ContextoDaComunidade />} />
             </Routes>
             <ConsentGate />
             <RouteFooter />

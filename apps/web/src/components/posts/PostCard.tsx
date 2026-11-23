@@ -32,6 +32,9 @@ import { useIsFollowingTarget, useToggleFollowTarget } from '../../hooks/useFoll
 import { useAuthStore } from '../../store/auth.store'
 import { useMediaViewer } from '../ui/MediaViewer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
+import { ContextNoteCard } from '../context-notes/ContextNoteCard'
+import { ContextNoteMenuScope } from '../context-notes/useContextNoteMenu'
+import { ContextNoteTargetType } from '@votz/shared-types'
 import { ConfirmDialog, OptionsMenu, copyLink, type MenuItem } from '../ui/OptionsMenu'
 import { socialRow } from '../ui/social'
 
@@ -533,7 +536,9 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
           </FollowMiniBtn>
         )}
 
-        <OptionsMenu label="Mais opções da publicação" items={menuItems} />
+        <ContextNoteMenuScope targetType={ContextNoteTargetType.POST} targetId={post.id} isOwner={isOwner}>
+          {(contextItems) => <OptionsMenu label="Mais opções da publicação" items={[...menuItems, ...contextItems]} />}
+        </ContextNoteMenuScope>
       </Header>
 
       {post.content && <BodyText $detail={detail}>{renderContentWithTopics(post.content)}</BodyText>}
@@ -553,6 +558,8 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
           }
         />
       )}
+
+      <ContextNoteCard type={ContextNoteTargetType.POST} id={post.id} />
 
       {post.poll && (
         <PollBox>

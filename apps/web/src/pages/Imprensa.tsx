@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -8,15 +8,27 @@ import {
   useRelatosDestaque,
   useEntidadesRanking,
   useSurtosAtivos,
-  downloadCsv,
   type CategoryTrend,
   type RelatoDestaque,
   type EntidadeRanking,
   type SurtoAtivo,
 } from '../hooks/useImprensa'
-import { Category, ReportStatus, UserType } from '@votz/shared-types'
+import { Category, PRESS_PLAN_LIMITS, ReportStatus, UserType, type PressPlanInfo } from '@votz/shared-types'
+import {
+  downloadPressFile,
+  pressFileErrorMessage,
+  usePressPlan,
+  type PressFileKind,
+} from '../hooks/usePressTools'
+import { PressPlanBox } from '../components/press/PressPlanBox'
+import { PressRadarPanel } from '../components/press/PressRadarPanel'
+import { PressContactsPanel } from '../components/press/PressContactsPanel'
+import { PressSearchPanel } from '../components/press/PressSearchPanel'
+import { SurtoBriefingPanel } from '../components/press/SurtoBriefingPanel'
+import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../store/auth.store'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
+import { PressCredentialPanel } from '../components/press/PressCredentialPanel'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -238,6 +250,14 @@ const Empty = styled.div`
   text-align:center;padding:32px 24px;color:#6B6B7A;font-size:14px;
   background:#fff;border:1px solid #E5E5E0;border-radius:10px;
 `
+const MethodBox = styled.div`
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};
+  border-radius:${({ theme }) => theme.radii.lg};padding:20px 24px;
+  font-size:${({ theme }) => theme.fontSizes.sm};color:${({ theme }) => theme.colors.muted};line-height:1.6;
+  ul{margin:8px 0 0;padding-left:18px;}
+  li{margin-bottom:6px;}
+  b{color:${({ theme }) => theme.colors.text};}
+`
 
 // ── PRESS panel ───────────────────────────────────────────────────────────────
 const PressPanel = styled.div`
@@ -306,30 +326,55 @@ const DAYS_OPTIONS = [
   { value: 365, label: '1 ano' },
 ]
 
+const GhostCsvButton = styled(CsvButton)`
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.35);
+  &:hover{opacity:1;background:rgba(255,255,255,.1);}
+  &:disabled{opacity:0.45;}
+`
+
 function PressSection({
   days,
   onDaysChange,
+  info,
 }: {
   days: number
   onDaysChange: (d: number) => void
+  info?: PressPlanInfo
 }) {
   const [state, setState] = useState('')
   const [city, setCity]   = useState('')
   const [category, setCategory] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<PressFileKind | null>(null)
+  const [granularity, setGranularity] = useState<'week' | 'month'>('week')
   const [error, setError] = useState('')
+
+  // Sem as informações do plano, assume o gratuito (o servidor confere de qualquer jeito).
+  const limits = info?.limits ?? PRESS_PLAN_LIMITS.GRATUITA
+  const options = DAYS_OPTIONS.filter((o) => o.value <= limits.exportMaxDays)
+
+  // O período também mexe nas tendências abaixo; se estiver acima do que o plano exporta, volta para o maior permitido.
+  useEffect(() => {
+    if (days > limits.exportMaxDays) onDaysChange(options[options.length - 1].value)
+  }, [days, limits.exportMaxDays]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStateChange = (v: string) => { setState(v); setCity('') }
 
-  async function handleDownload() {
-    setLoading(true)
+  async function handleDownload(kind: PressFileKind) {
+    setLoading(kind)
     setError('')
     try {
-      await downloadCsv(days, state || undefined, city || undefined, category || undefined)
-    } catch {
-      setError('Falha ao gerar o CSV. Tente novamente.')
+      await downloadPressFile(kind, {
+        days,
+        state: state || undefined,
+        city: city || undefined,
+        category: category || undefined,
+        granularity,
+      })
+    } catch (err) {
+      setError(await pressFileErrorMessage(err, 'Falha ao gerar o arquivo. Tente novamente.'))
     } finally {
-      setLoading(false)
+      setLoading(null)
     }
   }
 
@@ -341,7 +386,7 @@ function PressSection({
         <PressLabel>
           Período
           <PressSelect value={days} onChange={(e) => onDaysChange(Number(e.target.value))}>
-            {DAYS_OPTIONS.map((o) => (
+            {options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </PressSelect>
@@ -363,10 +408,35 @@ function PressSection({
             ))}
           </PressSelect>
         </PressLabel>
-        <CsvButton onClick={handleDownload} disabled={loading} $loading={loading}>
-          {loading ? 'Gerando…' : 'Baixar CSV'}
+        <CsvButton onClick={() => handleDownload('csv')} disabled={loading !== null} $loading={loading === 'csv'}>
+          {loading === 'csv' ? 'Gerando…' : 'Baixar CSV'}
         </CsvButton>
       </PressControls>
+
+      <PressControls style={{ marginTop: 14 }}>
+        <GhostCsvButton
+          onClick={() => handleDownload('json')}
+          disabled={loading !== null || !limits.jsonExport}
+          title={limits.jsonExport ? undefined : 'Disponível no plano Imprensa Pro'}
+        >
+          {loading === 'json' ? 'Gerando…' : `Baixar JSON${limits.jsonExport ? '' : ' (Pro)'}`}
+        </GhostCsvButton>
+        <PressLabel>
+          Série histórica
+          <PressSelect value={granularity} onChange={(e) => setGranularity(e.target.value as 'week' | 'month')} disabled={!limits.timeSeries}>
+            <option value="week">Por semana</option>
+            <option value="month">Por mês</option>
+          </PressSelect>
+        </PressLabel>
+        <GhostCsvButton
+          onClick={() => handleDownload('serie')}
+          disabled={loading !== null || !limits.timeSeries}
+          title={limits.timeSeries ? undefined : 'Disponível no plano Imprensa Pro'}
+        >
+          {loading === 'serie' ? 'Gerando…' : `Baixar série${limits.timeSeries ? '' : ' (Pro)'}`}
+        </GhostCsvButton>
+      </PressControls>
+
       {error && (
         <div style={{ marginTop: 10, fontFamily: 'monospace', fontSize: 12, color: '#E63946' }}>
           {error}
@@ -374,7 +444,11 @@ function PressSection({
       )}
       <AlertBadge>
         <AlertDot />
-        Alertas de surto ativados automaticamente para sua conta
+        Cada arquivo traz até {limits.exportMaxRows.toLocaleString('pt-BR')} relatos públicos, os de maior pressão primeiro. Relatos anônimos ficam de fora.
+      </AlertBadge>
+      <AlertBadge style={{ marginTop: 6 }}>
+        <AlertDot />
+        Surto: você recebe o e-mail padrão até criar avisos próprios no Radar, mais abaixo.
       </AlertBadge>
     </PressPanel>
   )
@@ -460,6 +534,11 @@ function SurtoCard_({ surto }: { surto: SurtoAtivo }) {
 export function Imprensa() {
   const user = useAuthStore((s) => s.user)
   const isPress = user?.type === UserType.PRESS && user?.verified
+  const { data: planInfo } = usePressPlan(!!isPress)
+  const [briefingSurtoId, setBriefingSurtoId] = useState<string | null>(null)
+  // Equipe do Votz e contas de organização não pedem credencial; visitante e conta comum sim.
+  const canRequestCredential =
+    !user || [UserType.CITIZEN, UserType.NGO, UserType.RESEARCHER, UserType.PRESS].includes(user.type as UserType)
 
   const [days, setDays] = useState(30)
 
@@ -478,11 +557,20 @@ export function Imprensa() {
           <PageTitle>Dados abertos do Votz</PageTitle>
           <PageSub>
             Estatísticas públicas e em tempo real sobre relatos cidadãos, entidades e surtos ativos.
-            Uso livre para fins jornalísticos — cite como fonte: <b>votz.com.br/imprensa</b>.
+            Uso livre para fins jornalísticos — cite como fonte: <b>{typeof window !== 'undefined' ? window.location.host : 'votz.app'}/imprensa</b>.
           </PageSub>
         </PageHeader>
 
-        {isPress && <PressSection days={days} onDaysChange={setDays} />}
+        {isPress && <PressSection days={days} onDaysChange={setDays} info={planInfo} />}
+        {isPress && planInfo && (
+          <>
+            <PressSearchPanel info={planInfo} />
+            <PressPlanBox info={planInfo} />
+            <PressRadarPanel info={planInfo} />
+            {planInfo.limits.canRequestContact && <PressContactsPanel />}
+          </>
+        )}
+        {!isPress && canRequestCredential && <PressCredentialPanel />}
 
         {/* ── Resumo ── */}
         <Section>
@@ -543,9 +631,26 @@ export function Imprensa() {
           ) : surtos?.length === 0 ? (
             <Empty>Nenhum surto ativo no momento.</Empty>
           ) : (
-            <SurtoGrid>
-              {surtos?.map((s) => <SurtoCard_ key={s.id} surto={s} />)}
-            </SurtoGrid>
+            <>
+              <SurtoGrid>
+                {surtos?.map((s) => (
+                  <div key={s.id}>
+                    <SurtoCard_ surto={s} />
+                    {isPress && planInfo && (
+                      <Button
+                        variant="outline" size="sm" fullWidth style={{ marginTop: 8 }}
+                        disabled={!planInfo.limits.aiBriefing}
+                        title={planInfo.limits.aiBriefing ? 'Resumo com IA e números do banco' : 'Disponível no plano Imprensa Pro'}
+                        onClick={() => setBriefingSurtoId(briefingSurtoId === s.id ? null : s.id)}
+                      >
+                        {planInfo.limits.aiBriefing ? (briefingSurtoId === s.id ? 'Fechar briefing' : 'Briefing com IA') : 'Briefing com IA (Pro)'}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </SurtoGrid>
+              {briefingSurtoId && <SurtoBriefingPanel surtoId={briefingSurtoId} onClose={() => setBriefingSurtoId(null)} />}
+            </>
           )}
         </Section>
 
@@ -625,6 +730,22 @@ export function Imprensa() {
               ))}
             </Table>
           )}
+        </Section>
+
+        {/* ── Como ler os números ── */}
+        <Section>
+          <SectionTitle>Como ler estes números</SectionTitle>
+          <MethodBox>
+            Antes de publicar, leia o que cada dado quer dizer:
+            <ul>
+              <li><b>Relatos são o que cidadãos contam.</b> O Votz não confirma cada relato. Um relato em destaque mostra o que muita gente está apoiando, não um fato apurado. Confirme com a entidade ou com o autor antes de afirmar.</li>
+              <li><b>Ranking de entidades conta volume, não desempenho.</b> Cidades e órgãos maiores têm mais relatos. Não use o ranking sozinho para dizer quem é pior ou melhor.</li>
+              <li><b>Pressão</b> é um número do Votz que junta apoios, comentários, dias sem resposta e relatos parecidos. Serve para ordenar, não é uma medida oficial.</li>
+              <li><b>Taxa de resposta</b> é a parte dos relatos abertos que já teve ao menos uma resposta da entidade. <b>Taxa de resolução</b> é a parte que foi marcada como resolvida. Relatos arquivados ficam de fora das duas.</li>
+              <li><b>Relatos anônimos</b> entram nos totais, mas não aparecem nas listas nem no CSV.</li>
+              <li>Os números desta página são guardados por alguns minutos e podem ter um pequeno atraso.</li>
+            </ul>
+          </MethodBox>
         </Section>
       </Content>
     </Page>

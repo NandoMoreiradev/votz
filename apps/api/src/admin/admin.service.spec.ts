@@ -135,6 +135,7 @@ describe('AdminService', () => {
         UserType.MODERATOR,
         'adm-1',
         'CITIZEN → MODERATOR: Promovido após treinamento de moderação.',
+        UserType.CITIZEN,
       )
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null },
@@ -470,6 +471,20 @@ describe('AdminRepository.deleteReport (FK dependency cleanup)', () => {
       user: { id: 'u-t1', type: UserType.MODERATOR },
       actionId: 'act-type-tx',
     })
+  })
+
+  it('AdminRepository.setUserType grants verified when promoting to PRESS and removes it when leaving PRESS', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'u-p1', type: UserType.PRESS })
+    const tx: any = { user: { update }, moderationAction: { create: jest.fn().mockResolvedValue({ id: 'a1' }) } }
+    const prismaMock: any = { $transaction: jest.fn((fn: any) => fn(tx)) }
+    const { AdminRepository } = require('./admin.repository')
+    const repo = new AdminRepository(prismaMock)
+
+    await repo.setUserType('u-p1', UserType.PRESS, 'adm-1', 'CITIZEN → PRESS: credencial conferida.', UserType.CITIZEN)
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ data: { type: UserType.PRESS, verified: true } }))
+
+    await repo.setUserType('u-p1', UserType.CITIZEN, 'adm-1', 'PRESS → CITIZEN: credencial revogada.', UserType.PRESS)
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ data: { type: UserType.CITIZEN, verified: false } }))
   })
 
   describe('setApiKeyTier', () => {

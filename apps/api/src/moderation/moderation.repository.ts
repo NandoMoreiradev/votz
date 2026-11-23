@@ -34,6 +34,13 @@ export class ModerationRepository {
     })
   }
 
+  findContextNoteTarget(id: string) {
+    return this.prisma.contextNote.findUnique({
+      where: { id },
+      select: { id: true, authorId: true, status: true },
+    })
+  }
+
   findPostCommentTarget(id: string) {
     return this.prisma.postComment.findUnique({
       where: { id },
@@ -103,7 +110,9 @@ export class ModerationRepository {
     const postIds = flags.filter((f) => f.targetType === FlagTargetType.POST).map((f) => f.targetId)
     const postCommentIds = flags.filter((f) => f.targetType === FlagTargetType.POST_COMMENT).map((f) => f.targetId)
 
-    const [reports, comments, posts, postComments] = await Promise.all([
+    const noteIds = flags.filter((f) => f.targetType === FlagTargetType.CONTEXT_NOTE).map((f) => f.targetId)
+
+    const [reports, comments, posts, postComments, contextNotes] = await Promise.all([
       reportIds.length > 0
         ? this.prisma.report.findMany({
             where: { id: { in: reportIds } },
@@ -133,12 +142,19 @@ export class ModerationRepository {
             select: { id: true, content: true, postId: true },
           })
         : Promise.resolve([]),
+      noteIds.length > 0
+        ? this.prisma.contextNote.findMany({
+            where: { id: { in: noteIds } },
+            select: { id: true, text: true, status: true, postId: true, reportId: true },
+          })
+        : Promise.resolve([]),
     ])
 
     const reportMap = new Map(reports.map((r) => [r.id, r]))
     const commentMap = new Map(comments.map((c) => [c.id, c]))
     const postMap = new Map(posts.map((p) => [p.id, p]))
     const postCommentMap = new Map(postComments.map((c) => [c.id, c]))
+    const noteMap = new Map(contextNotes.map((n) => [n.id, n]))
 
     const data = flags.map((flag) => {
       let targetPreview: FlagTargetPreview
@@ -187,6 +203,22 @@ export class ModerationRepository {
               link: null,
               exists: false,
             }
+      } else if (flag.targetType === FlagTargetType.CONTEXT_NOTE) {
+        const note = noteMap.get(flag.targetId)
+        targetPreview =
+          note && note.status !== 'REMOVED'
+            ? {
+                title: 'Nota do Contexto da Comunidade',
+                excerpt: note.text.slice(0, 200),
+                link: note.postId ? `/publicacoes/${note.postId}` : `/relatos/${note.reportId}`,
+                exists: true,
+              }
+            : {
+                title: null,
+                excerpt: '[Nota já removida]',
+                link: null,
+                exists: false,
+              }
       } else {
         const com = postCommentMap.get(flag.targetId)
         targetPreview = com

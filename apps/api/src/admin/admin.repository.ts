@@ -57,11 +57,15 @@ export class AdminRepository {
     return this.prisma.user.count({ where: { type: UserType.ADMIN } })
   }
 
-  async setUserType(id: string, type: string, actorId: string, reason: string) {
+  async setUserType(id: string, type: string, actorId: string, reason: string, previousType?: string) {
+    // Jornalista só funciona (CSV, e-mail de surto, painel) com `verified = true`. Quem promove a PRESS
+    // é o admin, com motivo auditado, então a promoção já é a verificação; sair de PRESS retira.
+    const verified =
+      type === UserType.PRESS ? true : previousType === UserType.PRESS ? false : undefined
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id },
-        data: { type: type as UserType },
+        data: { type: type as UserType, ...(verified === undefined ? {} : { verified }) },
         select: { id: true, type: true },
       })
       const action = await tx.moderationAction.create({

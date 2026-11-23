@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
-import { Category, EventType, RecipientType, ReportStatus } from '@votz/shared-types'
+import { Category, EventType, RecipientType, ReportStatus, normalizeLocationKey } from '@votz/shared-types'
 
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 86_400_000)
@@ -20,7 +20,7 @@ export class ImprensaRepository {
       totalVotes,
       activeSurtos,
       totalNonArchived,
-      respondedDistinct,
+      respondedNonArchived,
     ] = await Promise.all([
       this.prisma.report.count(),
       this.prisma.report.count({ where: { createdAt: { gte: since30 } } }),
@@ -28,9 +28,10 @@ export class ImprensaRepository {
       this.prisma.vote.count(),
       this.prisma.surto.count({ where: { active: true } }),
       this.prisma.report.count({ where: { status: { not: ReportStatus.ARCHIVED } } }),
-      this.prisma.timelineEvent
-        .groupBy({ by: ['reportId'], where: { type: EventType.RESPONDED } })
-        .then((g) => g.length),
+      // Mesma base do denominador (relatos não arquivados): antes o numerador contava também os arquivados.
+      this.prisma.report.count({
+        where: { status: { not: ReportStatus.ARCHIVED }, timeline: { some: { type: EventType.RESPONDED } } },
+      }),
     ])
 
     return {
@@ -41,7 +42,7 @@ export class ImprensaRepository {
       activeSurtos,
       responseRate:
         totalNonArchived > 0
-          ? ((respondedDistinct / totalNonArchived) * 100).toFixed(1)
+          ? ((respondedNonArchived / totalNonArchived) * 100).toFixed(1)
           : '0.0',
       resolvedRate:
         totalNonArchived > 0
@@ -55,7 +56,7 @@ export class ImprensaRepository {
     const since = daysAgo(days)
     const baseWhere = { createdAt: { gte: since }, status: { not: ReportStatus.ARCHIVED } } as const
 
-    const [byCategory, topCidades] = await Promise.all([
+    const [byCategory, cityRows] = await Promise.all([
       this.prisma.report.groupBy({
         by: ['category'],
         where: baseWhere,
@@ -66,10 +67,27 @@ export class ImprensaRepository {
         by: ['city', 'state'],
         where: { ...baseWhere, city: { not: null } },
         _count: { _all: true },
-        orderBy: { _count: { city: 'desc' } },
-        take: 10,
       }),
     ])
+
+    // "Sao Paulo" e "São Paulo" são a mesma cidade: junta pelo nome sem acento e sem maiúscula.
+    const merged = new Map<string, { city: string; state: string | null; count: number; best: number }>()
+    for (const row of cityRows) {
+      if (!row.city) continue
+      const key = `${(row.state ?? '').toUpperCase()}|${normalizeLocationKey(row.city)}`
+      const current = merged.get(key)
+      const n = row._count._all
+      if (!current) merged.set(key, { city: row.city, state: row.state, count: n, best: n })
+      else {
+        current.count += n
+        // O nome exibido é o da grafia mais usada.
+        if (n > current.best) {
+          current.best = n
+          current.city = row.city
+        }
+      }
+    }
+    const topCidades = [...merged.values()].sort((a, b) => b.count - a.count).slice(0, 10)
 
     const total = byCategory.reduce((s, c) => s + c._count._all, 0)
 
@@ -82,7 +100,7 @@ export class ImprensaRepository {
       topCidades: topCidades.map((c) => ({
         city: c.city,
         state: c.state,
-        count: c._count._all,
+        count: c.count,
       })),
       period: days,
     }
@@ -163,19 +181,37 @@ export class ImprensaRepository {
     })
   }
 
-  async getReportsForExport(days: number, state?: string, city?: string, category?: string) {
-    const since = daysAgo(days)
+  private exportWhere(days: number, state?: string, city?: string, category?: string) {
+    const cityKey = city ? normalizeLocationKey(city) : ''
+    return {
+      status: { not: ReportStatus.ARCHIVED },
+      createdAt: { gte: daysAgo(days) },
+      ...(state && { state: { equals: state.toUpperCase() } }),
+      // Cidade sem acento e sem maiúscula (cityKey), com o texto original como segunda chance
+      // para relatos antigos sem cityKey.
+      ...(city && {
+        OR: [
+          { cityKey: { contains: cityKey } },
+          { city: { contains: city, mode: 'insensitive' as const } },
+        ],
+      }),
+      ...(category && { category: category as Category }),
+    }
+  }
+
+  /** Relatos públicos (não anônimos) para o CSV e o JSON. `rich` (plano Pro) inclui a descrição. */
+  async getReportsForExport(
+    days: number,
+    state?: string,
+    city?: string,
+    category?: string,
+    take = 1000,
+    rich = false,
+  ) {
     return this.prisma.report.findMany({
-      where: {
-        anonymous: false,
-        status: { not: ReportStatus.ARCHIVED },
-        createdAt: { gte: since },
-        ...(state && { state: { equals: state.toUpperCase() } }),
-        ...(city && { city: { contains: city, mode: 'insensitive' as const } }),
-        ...(category && { category: category as Category }),
-      },
+      where: { ...this.exportWhere(days, state, city, category), anonymous: false },
       orderBy: { pressureScore: 'desc' },
-      take: 5000,
+      take,
       select: {
         id: true,
         title: true,
@@ -186,8 +222,26 @@ export class ImprensaRepository {
         neighborhood: true,
         pressureScore: true,
         createdAt: true,
+        firstResponseAt: true,
+        resolvedAt: true,
+        slaState: true,
+        recipientType: true,
+        ...(rich && { description: true }),
         _count: { select: { votes: true, comments: true } },
       },
+    })
+  }
+
+  /**
+   * Linhas mínimas para a série histórica. Só contagem e datas, sem texto, por isso entram também os
+   * relatos anônimos (mesma base dos totais públicos de tendências).
+   */
+  async getReportsForSeries(days: number, state?: string, city?: string, category?: string) {
+    return this.prisma.report.findMany({
+      where: this.exportWhere(days, state, city, category),
+      orderBy: { createdAt: 'asc' },
+      take: 20_000,
+      select: { createdAt: true, status: true, pressureScore: true, firstResponseAt: true },
     })
   }
 }

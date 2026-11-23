@@ -103,6 +103,7 @@ export enum ModerationActionType {
   API_KEY_TIER_CHANGED = 'API_KEY_TIER_CHANGED',
   ORG_ITEM_CREATED = 'ORG_ITEM_CREATED',
   ORG_ITEM_DELETED = 'ORG_ITEM_DELETED',
+  CONTEXT_NOTE_REMOVED = 'CONTEXT_NOTE_REMOVED',
 }
 
 export enum FlagTargetType {
@@ -110,6 +111,7 @@ export enum FlagTargetType {
   COMMENT = 'COMMENT',
   POST = 'POST',
   POST_COMMENT = 'POST_COMMENT',
+  CONTEXT_NOTE = 'CONTEXT_NOTE',
 }
 
 export enum PostKind {

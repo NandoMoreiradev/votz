@@ -12,6 +12,15 @@ export function notificationContent(notification: AppNotification): { label: str
   if (Object.prototype.hasOwnProperty.call(postLabels, type)) {
     return { label: postLabels[type], href: postId ? `/publicacoes/${encodeURIComponent(postId)}${type === 'POST_COMMENT' ? '#responder' : ''}` : null }
   }
+  if (type === 'CONTEXT_NOTE_SHOWN') {
+    const targetId = typeof metadata?.targetId === 'string' && metadata.targetId.trim() ? metadata.targetId : null
+    const isReport = metadata?.targetType === 'REPORT'
+    const base = isReport ? '/relatos/' : '/publicacoes/'
+    return {
+      label: `Pessoas do Votz acrescentaram contexto ${isReport ? 'ao seu relato' : 'à sua publicação'}. Se discordar, dá para denunciar a nota.`,
+      href: targetId ? `${base}${encodeURIComponent(targetId)}` : null,
+    }
+  }
   if (type === 'AD_APPROVED' || type === 'AD_REJECTED') {
     const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'Seu anúncio'
     const label = type === 'AD_APPROVED'
@@ -58,6 +67,33 @@ export function notificationContent(notification: AppNotification): { label: str
       ? `Achamos cliques suspeitos em ${name} e pausamos o anúncio para você não pagar por eles.${credit} A moderação vai conferir e religar o anúncio.`
       : `Achamos cliques suspeitos em ${name}.${credit} Você não paga por cliques inválidos.`
     return { label, href: '/estudio/anuncios/relatorio' }
+  }
+  if (type === 'PRESS_CONTACT_REQUEST') {
+    const outlet = typeof metadata?.outletName === 'string' && metadata.outletName.trim() ? `"${metadata.outletName}"` : 'Um veículo de imprensa'
+    const title = typeof metadata?.reportTitle === 'string' && metadata.reportTitle.trim() ? ` sobre o seu relato "${metadata.reportTitle}"` : ''
+    return { label: `${outlet} quer falar com você${title}. Você decide se aceita; seu telefone e e-mail não foram passados.`, href: '/pedidos-da-imprensa' }
+  }
+  if (type === 'PRESS_CONTACT_ACCEPTED' || type === 'PRESS_CONTACT_DECLINED') {
+    const title = typeof metadata?.reportTitle === 'string' && metadata.reportTitle.trim() ? ` sobre "${metadata.reportTitle}"` : ''
+    const label = type === 'PRESS_CONTACT_ACCEPTED'
+      ? `O autor aceitou o seu pedido de contato${title}. Veja a resposta na página de imprensa.`
+      : `O seu pedido de contato${title} ficou sem disponibilidade.`
+    return { label, href: '/imprensa' }
+  }
+  if (type === 'PRESS_RADAR_HIT') {
+    const rule = typeof metadata?.ruleName === 'string' && metadata.ruleName.trim() ? ' "' + metadata.ruleName + '"' : ''
+    const count = typeof metadata?.count === 'number' ? metadata.count : 1
+    return { label: 'Radar' + rule + ': ' + count + (count === 1 ? ' novidade' : ' novidades') + ' para a sua cobertura. Veja no e-mail ou na página de imprensa.', href: '/imprensa' }
+  }
+  if (type === 'PRESS_CREDENTIAL_APPROVED' || type === 'PRESS_CREDENTIAL_REJECTED' || type === 'PRESS_CREDENTIAL_REVOKED') {
+    const outlet = typeof metadata?.outletName === 'string' && metadata.outletName.trim() ? ` de "${metadata.outletName}"` : ''
+    const reason = typeof metadata?.reviewNote === 'string' && metadata.reviewNote.trim() ? ` Motivo: ${metadata.reviewNote}` : ''
+    const label = type === 'PRESS_CREDENTIAL_APPROVED'
+      ? `A credencial de imprensa${outlet} foi aprovada. Recarregue a página de imprensa para usar o painel.${reason}`
+      : type === 'PRESS_CREDENTIAL_REJECTED'
+        ? `O pedido de credencial de imprensa${outlet} não foi aprovado.${reason}`
+        : `A credencial de imprensa${outlet} foi cancelada.${reason}`
+    return { label, href: '/imprensa' }
   }
   const href = report?.id ? `/relatos/${encodeURIComponent(report.id)}` : null
   const title = report?.title ? `"${report.title}"` : 'um relato'

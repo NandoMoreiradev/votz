@@ -133,7 +133,7 @@ export function useDeletePost(postId: string) {
 /** Denunciar publicação ou relato para a moderação. */
 export function useFlagContent() {
   return useMutation({
-    mutationFn: (body: { targetType: 'POST' | 'REPORT'; targetId: string; reason: string; details?: string }) => api('/moderation/flags', json(body)),
+    mutationFn: (body: { targetType: 'POST' | 'REPORT' | 'CONTEXT_NOTE'; targetId: string; reason: string; details?: string }) => api('/moderation/flags', json(body)),
   })
 }
 export type CommentInput = { content: string; parentId?: string }

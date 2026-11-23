@@ -116,7 +116,9 @@ export function FlagContentModal({
             ? 'relato'
             : targetType === FlagTargetType.POST
               ? 'publicação'
-              : 'comentário'}
+              : targetType === FlagTargetType.CONTEXT_NOTE
+                ? 'nota de contexto'
+                : 'comentário'}
         </ModalTitle>
         <ModalDesc>
           Conte para a moderação o motivo. Sua sinalização é confidencial.

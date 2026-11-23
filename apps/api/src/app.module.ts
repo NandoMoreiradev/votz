@@ -70,6 +70,7 @@ import { GifsModule } from './gifs/gifs.module'
 import { TopicsModule } from './topics/topics.module'
 import { PostsModule } from './posts/posts.module'
 import { SuggestionsModule } from './suggestions/suggestions.module'
+import { ContextNotesModule } from './context-notes/context-notes.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
 import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
@@ -188,6 +189,7 @@ import { SecurityModule } from './common/security/security.module'
     TopicsModule,
     PostsModule,
     SuggestionsModule,
+    ContextNotesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

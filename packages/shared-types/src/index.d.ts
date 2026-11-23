@@ -15,4 +15,6 @@ export * from './post';
 export * from './conversation';
 export * from './media';
 export * from './ads';
+export * from './press';
+export * from './context-notes';
 //# sourceMappingURL=index.d.ts.map

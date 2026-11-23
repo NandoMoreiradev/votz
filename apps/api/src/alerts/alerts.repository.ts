@@ -136,7 +136,8 @@ export class AlertsRepository {
 
   findVerifiedPressUsers() {
     return this.prisma.user.findMany({
-      where: { type: 'PRESS', verified: true },
+      // Quem criou aviso de surto no radar recebe pelas regras dele, não por este e-mail padrão.
+      where: { type: 'PRESS', verified: true, pressRadarRules: { none: { kind: 'SURGE', active: true } } },
       select: { id: true, email: true, name: true },
     })
   }

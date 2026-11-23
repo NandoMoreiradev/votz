@@ -132,6 +132,8 @@ export class ReportsRepository {
         description: dto.description.trim(),
         category: dto.category,
         anonymous: dto.anonymous ?? false,
+        // Pedido de contato da imprensa só faz sentido em relato público: anônimo nem guarda quem escreveu.
+        pressContactOk: dto.anonymous ? false : (dto.pressContactOk ?? false),
         latitude: dto.latitude,
         longitude: dto.longitude,
         cell7: encodeGeohash7(dto.latitude, dto.longitude),
@@ -510,19 +512,36 @@ export class ReportsRepository {
     `
   }
 
-  async findByEmbedding(embedding: number[], limit: number): Promise<SimilarReportRow[]> {
+  /**
+   * `minScore` é a similaridade mínima (0 a 1). Com o modelo atual (`gemini-embedding-001`, 768 dimensões),
+   * texto sem relação fica perto de 0,60 e o parecido de verdade passa de 0,75; o antigo corte de 0,60 deixaria tudo passar.
+   */
+  async findByEmbedding(embedding: number[], limit: number, minScore = 0.72): Promise<SimilarReportRow[]> {
     const vectorLiteral = `[${embedding.map(n => n.toFixed(8)).join(',')}]`
     return this.prisma.$queryRaw<SimilarReportRow[]>(
       Prisma.sql`
         SELECT
           id, title, description, category::text, status::text, city, state,
-          created_at AS "createdAt", pressure_score AS "pressureScore",
+          "createdAt", "pressureScore",
           1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) AS score
         FROM reports
         WHERE
           embedding IS NOT NULL
-          AND 1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) > 0.6
+          AND 1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) > ${minScore}
         ORDER BY embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}
+        LIMIT ${limit}
+      `
+    )
+  }
+
+  /** Relatos ainda sem embedding (o job só roda para relato novo; o modelo antigo falhava), os mais novos primeiro. */
+  async findWithoutEmbedding(limit: number): Promise<Array<{ id: string; title: string; description: string }>> {
+    return this.prisma.$queryRaw<Array<{ id: string; title: string; description: string }>>(
+      Prisma.sql`
+        SELECT id, title, description
+        FROM reports
+        WHERE embedding IS NULL AND status <> 'ARCHIVED'
+        ORDER BY "createdAt" DESC
         LIMIT ${limit}
       `
     )

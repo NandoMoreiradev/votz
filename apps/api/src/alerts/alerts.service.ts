@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service'
 import { MailService } from '../mail/mail.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { WebhooksService } from '../webhooks/webhooks.service'
+import { PressRadarService } from '../imprensa/press-radar.service'
 
 export const ALERTS_QUEUE = 'alerts'
 
@@ -30,6 +31,7 @@ export class AlertsService {
     @InjectQueue(ALERTS_QUEUE) private readonly queue: Queue,
     @Optional() private readonly webhooks?: WebhooksService,
     @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly pressRadar?: PressRadarService,
   ) {}
 
   // ── Enqueue helpers ────────────────────────────────────────────────────────
@@ -90,7 +92,12 @@ export class AlertsService {
           }).catch(() => null)
         }
 
-        // E-mail para todos os jornalistas PRESS verificados (fire-and-forget)
+        // Radar de imprensa: quem criou avisos de surto recebe pelas regras dele (cidade, tema, frequência)
+        this.pressRadar
+          ?.onSurtoActivated({ id: surto.id, category, city, state, count })
+          .catch((err) => this.logger.error(`Falha no radar de imprensa (surto ${surto.id})`, err))
+
+        // E-mail padrão para os jornalistas PRESS verificados que não têm aviso de surto próprio (fire-and-forget)
         this.repo.findVerifiedPressUsers().then((pressUsers) => {
           for (const u of pressUsers) {
             this.mail.sendSurtoAlert(u.email, u.name, { category, city, state, count, surtoId: surto.id })

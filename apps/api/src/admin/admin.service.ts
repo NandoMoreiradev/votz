@@ -99,7 +99,7 @@ export class AdminService {
     }
 
     const auditReason = `${target.type} → ${type}: ${trimmedReason}`
-    const { user } = await this.repo.setUserType(id, type, actorId, auditReason)
+    const { user } = await this.repo.setUserType(id, type, actorId, auditReason, target.type)
     await this.revokeRefreshSessions(id)
     return user
   }

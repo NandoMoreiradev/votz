@@ -198,6 +198,65 @@ enum NotificationType {
   AD_INVOICE_ISSUED
   AD_INVALID_TRAFFIC
   AD_LANDING_PAGE
+  PRESS_CREDENTIAL_APPROVED
+  PRESS_CREDENTIAL_REJECTED
+  PRESS_CREDENTIAL_REVOKED
+  PRESS_RADAR_HIT
+  PRESS_CONTACT_REQUEST
+  PRESS_CONTACT_ACCEPTED
+  PRESS_CONTACT_DECLINED
+  CONTEXT_NOTE_SHOWN
+}
+
+// Credenciamento de imprensa: tipo do veículo e andamento do pedido.
+enum PressOutletType {
+  TV
+  RADIO
+  NEWSPAPER
+  PORTAL
+  AGENCY
+  INDEPENDENT
+  FREELANCER
+  OTHER
+}
+
+enum PressCredentialStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum PressContactStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum PressContactDeclineReason {
+  NOT_NOW
+  NOT_INTERESTED
+  ABUSIVE
+}
+
+// Plano da imprensa: a credencial é gratuita; o plano Pro libera radar maior, exportação e série histórica.
+enum PressPlan {
+  GRATUITA
+  PRO
+}
+
+// Radar da imprensa: o que avisa o jornalista. SURGE = surto ativado; PRESSURE = relato passou da pressão
+// escolhida; UNANSWERED = relato sem nenhuma resposta da entidade há N dias.
+enum PressRadarKind {
+  SURGE
+  PRESSURE
+  UNANSWERED
+}
+
+enum PressRadarFrequency {
+  IMMEDIATE
+  DAILY
 }
 
 enum SlaState {
@@ -344,6 +403,13 @@ model User {
   notifications        Notification[]
   registrationRequests RegistrationRequest[] @relation("RegistrationRequester")
   reviewedRequests     RegistrationRequest[] @relation("RegistrationReviewer")
+  pressCredentials         PressCredential[] @relation("PressCredentialUser")
+  reviewedPressCredentials PressCredential[] @relation("PressCredentialReviewer")
+  pressRadarRules          PressRadarRule[]
+  pressContactsSent        PressContactRequest[] @relation("PressContactSender")
+  pressContactsReceived    PressContactRequest[] @relation("PressContactRecipient")
+  pressContactBlocksMade   PressContactBlock[]   @relation("PressContactBlocker")
+  pressContactBlocksGot    PressContactBlock[]   @relation("PressContactBlocked")
   memberships          OrgMembership[]
   apiKeys              ApiKey[]
   propostaTimeline     PropostaTimeline[]
@@ -389,6 +455,10 @@ model User {
   chatKeyBackup            ChatKeyBackup?
   chatHistoryTransfers     ChatHistoryTransfer[]
   chatReceipts             ChatReceipt[]
+  contextNotesAuthored     ContextNote[]          @relation("ContextNoteAuthor")
+  contextNoteRatings       ContextNoteRating[]    @relation("ContextNoteRater")
+  contextNoteRequests      ContextNoteRequest[]   @relation("ContextNoteRequester")
+  contextContributor       ContextContributor?    @relation("ContextContributorUser")
 
   @@map("users")
 }
@@ -668,6 +738,8 @@ model Report {
   category         Category
   status           ReportStatus   @default(OPEN)
   anonymous        Boolean        @default(false)
+  // O autor (relato público) aceita receber pedido de contato da imprensa credenciada. Nunca vale em relato anônimo.
+  pressContactOk   Boolean        @default(false) @map("press_contact_ok")
 
   // Location
   latitude         Float?
@@ -722,11 +794,14 @@ model Report {
   comments         Comment[]
   notifications    Notification[]
   followers        ReportFollower[]
+  pressContactRequests PressContactRequest[]
   orgTags          OrgReportTag[]
   orgNotes         OrgReportNote[]
   assignments      OrgReportAssignment[]
   mentionedInPosts Post[]
   topics           ReportTopic[]
+  contextNotes     ContextNote[]
+  contextRequests  ContextNoteRequest[]
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -931,6 +1006,125 @@ model RegistrationRequest {
   @@map("registration_requests")
 }
 
+// Pedido de credencial de imprensa (jornalista, veículo ou freelancer). Aprovado por moderador;
+// a aprovação faz o usuário virar PRESS verificado (CSV, alerta de surto, painel de imprensa).
+model PressCredential {
+  id                String                @id @default(uuid())
+  userId            String                @map("user_id")
+  user              User                  @relation("PressCredentialUser", fields: [userId], references: [id], onDelete: Cascade)
+  outletName        String                @map("outlet_name") @db.VarChar(120)
+  outletType        PressOutletType       @map("outlet_type")
+  jobTitle          String?               @map("job_title") @db.VarChar(80)
+  website           String                @db.VarChar(300)
+  newsroomEmail     String                @map("newsroom_email") @db.VarChar(200)
+  coverageArea      String?               @map("coverage_area") @db.VarChar(160)
+  portfolioUrls     String[]              @map("portfolio_urls")
+  note              String?               @db.VarChar(500)
+  // Confirmação de que a pessoa lê a caixa de e-mail da redação (link com código de uso único, guardado só como hash).
+  emailConfirmedAt  DateTime?             @map("email_confirmed_at")
+  emailTokenHash    String?               @unique @map("email_token_hash")
+  emailTokenExpires DateTime?             @map("email_token_expires")
+  status            PressCredentialStatus @default(PENDING)
+  reviewerId        String?               @map("reviewer_id")
+  reviewer          User?                 @relation("PressCredentialReviewer", fields: [reviewerId], references: [id])
+  reviewNote        String?               @map("review_note") @db.VarChar(500)
+  reviewedAt        DateTime?             @map("reviewed_at")
+  plan                 PressPlan          @default(GRATUITA)
+  stripeCustomerId     String?            @map("stripe_customer_id")
+  stripeSubscriptionId String?            @map("stripe_subscription_id")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("press_credentials")
+}
+
+// Regra do radar de imprensa (aviso por e-mail e sino). Só vale enquanto o dono continua sendo PRESS verificado.
+model PressRadarRule {
+  id           String              @id @default(uuid())
+  userId       String              @map("user_id")
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String              @db.VarChar(80)
+  kind         PressRadarKind
+  states       String[]            // UFs; vazio = qualquer estado
+  cities       String[]            // nomes de cidade; vazio = qualquer cidade
+  categories   Category[]          // vazio = qualquer tema
+  minPressure  Float?              @map("min_pressure")
+  stalledDays  Int?                @map("stalled_days")
+  frequency    PressRadarFrequency @default(DAILY)
+  active       Boolean             @default(true)
+  lastDigestAt DateTime?           @map("last_digest_at")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  hits PressRadarHit[]
+
+  @@index([userId, active])
+  @@index([kind, active])
+  @@map("press_radar_rules")
+}
+
+// Um achado do radar. `dedupKey` garante um aviso por relato (ou por surto e dia) em cada regra;
+// `sentAt` nulo = ainda não foi para o e-mail (resumo diário ou próxima rodada).
+model PressRadarHit {
+  id        String         @id @default(uuid())
+  ruleId    String         @map("rule_id")
+  rule      PressRadarRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  dedupKey  String         @map("dedup_key")
+  reportId  String?        @map("report_id")
+  surtoId   String?        @map("surto_id")
+  createdAt DateTime       @default(now()) @map("created_at")
+  sentAt    DateTime?      @map("sent_at")
+
+  @@unique([ruleId, dedupKey])
+  @@index([ruleId, sentAt])
+  @@map("press_radar_hits")
+}
+
+// Pedido de contato da imprensa a quem escreveu um relato público e marcou "aceito falar com a imprensa".
+// É só uma camada de consentimento: não abre conversa sozinho e não revela nenhum contato do cidadão.
+// A resposta (`reply`) é escrita pelo cidadão e só ele decide o que compartilhar.
+model PressContactRequest {
+  id            String                     @id @default(uuid())
+  journalistId  String                     @map("journalist_id")
+  journalist    User                       @relation("PressContactSender", fields: [journalistId], references: [id], onDelete: Cascade)
+  recipientId   String                     @map("recipient_id")
+  recipient     User                       @relation("PressContactRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  reportId      String                     @map("report_id")
+  report        Report                     @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  // Cópia do veículo na hora do pedido: o cidadão vê quem pediu mesmo que a credencial mude depois.
+  outletName    String                     @map("outlet_name") @db.VarChar(120)
+  outletType    PressOutletType            @map("outlet_type")
+  outletWebsite String                     @map("outlet_website") @db.VarChar(300)
+  message       String                     @db.VarChar(500)
+  status        PressContactStatus         @default(PENDING)
+  declineReason PressContactDeclineReason? @map("decline_reason")
+  reply         String?                    @db.VarChar(300)
+  viaVotzChat   Boolean                    @default(false) @map("via_votz_chat")
+  respondedAt   DateTime?                  @map("responded_at")
+  expiresAt     DateTime                   @map("expires_at")
+  createdAt     DateTime                   @default(now()) @map("created_at")
+
+  @@unique([journalistId, reportId])
+  @@index([recipientId, status, createdAt])
+  @@index([journalistId, createdAt])
+  @@map("press_contact_requests")
+}
+
+// O cidadão bloqueou este jornalista: nenhum pedido novo chega.
+model PressContactBlock {
+  id           String   @id @default(uuid())
+  recipientId  String   @map("recipient_id")
+  recipient    User     @relation("PressContactBlocker", fields: [recipientId], references: [id], onDelete: Cascade)
+  journalistId String   @map("journalist_id")
+  journalist   User     @relation("PressContactBlocked", fields: [journalistId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([recipientId, journalistId])
+  @@map("press_contact_blocks")
+}
+
 model Comment {
   id        String    @id @default(uuid())
   reportId  String
@@ -1003,8 +1197,28 @@ model Surto {
   updatedAt  DateTime @updatedAt
   reports    Report[]
 
+  pressBriefings PressSurtoBriefing[]
+
   @@unique([category, city])
   @@map("surtos")
+}
+
+// Briefing de surto para a imprensa Pro. Gerado uma vez por surto (e refeito depois de algumas horas), não por pessoa:
+// o custo da IA depende do número de surtos, não de quantos jornalistas olham. `stats` sai do banco; `content` é o texto
+// da IA, que nunca traz número e só é guardado se passar na checagem (senão fica nulo e `aiGenerated` é falso).
+model PressSurtoBriefing {
+  id          String   @id @default(uuid())
+  surtoId     String   @map("surto_id")
+  surto       Surto    @relation(fields: [surtoId], references: [id], onDelete: Cascade)
+  aiGenerated Boolean  @map("ai_generated")
+  model       String?  @db.VarChar(80)
+  content     Json?
+  stats       Json
+  references  Json
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  @@index([surtoId, generatedAt])
+  @@map("press_surto_briefings")
 }
 
 // Politician or entity explicitly following a report for notifications/visibility
@@ -1307,6 +1521,8 @@ enum ModerationActionType {
   API_KEY_TIER_CHANGED
   ORG_ITEM_CREATED
   ORG_ITEM_DELETED
+  PRESS_PLAN_CHANGED
+  CONTEXT_NOTE_REMOVED
 }
 
 model ModerationAction {
@@ -1330,6 +1546,7 @@ enum FlagTargetType {
   POST
   POST_COMMENT
   CONVERSATION
+  CONTEXT_NOTE
 }
 
 enum FlagReason {
@@ -1777,6 +1994,8 @@ model Post {
   topics               PostTopic[]
   // Fotos e vídeos no padrão de formatos (docs/dev/padrao-de-midia-plano-2026-11-21.md), na ordem de `position`.
   mediaAssets MediaAsset[]
+  contextNotes         ContextNote[]
+  contextRequests      ContextNoteRequest[]
 
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
@@ -2840,4 +3059,149 @@ model AdLandingCheck {
 
   @@index([adId, checkedAt])
   @@map("ad_landing_checks")
+}
+
+// ── Contexto da Comunidade (docs/dev/contexto-da-comunidade-analise-2026-11-23.md) ──────────────
+// Notas escritas por pessoas habilitadas, com fonte, sobre uma publicação do feed ou um relato.
+// A nota ACRESCENTA informação: tirar conteúdo do ar continua só com a moderação.
+// Relato anônimo tem `authorId` nulo, então o autor dele não pode ser excluído da avaliação (limite conhecido).
+
+enum ContextNoteKind {
+  // Publicação: correção com fonte, contexto que falta, foto ou vídeo fora de contexto.
+  CORRECTION
+  MISSING_CONTEXT
+  OUT_OF_CONTEXT_MEDIA
+  // Relato (tipos fechados, nunca "é falso"): prova adicional, atualização, duplicado.
+  EXTRA_EVIDENCE
+  UPDATE
+  DUPLICATE
+}
+
+enum ContextNoteStatus {
+  NEEDS_RATINGS
+  SHOWN
+  NOT_SHOWN
+  REMOVED
+}
+
+enum ContextNoteOrigin {
+  HUMAN
+  AI
+}
+
+enum ContextNoteRatingValue {
+  HELPFUL
+  SOMEWHAT
+  NOT_HELPFUL
+}
+
+model ContextNote {
+  id             String            @id @default(uuid())
+  // Exatamente um dos dois (checado por constraint no banco).
+  postId         String?           @map("post_id")
+  post           Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reportId       String?           @map("report_id")
+  report         Report?           @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  // Nulo quando a conta de quem escreveu é excluída (a nota fica, sem autor) e quando a origem é IA.
+  authorId       String?           @map("author_id")
+  author         User?             @relation("ContextNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  origin         ContextNoteOrigin @default(HUMAN)
+  kind           ContextNoteKind
+  text           String            @db.VarChar(500)
+  // Pelo menos um link (validado no serviço).
+  sources        String[]
+  status         ContextNoteStatus @default(NEEDS_RATINGS)
+  // Números calculados pelo job de hora em hora; a verdade continua na tabela de avaliações.
+  ratingsCount   Int               @default(0) @map("ratings_count")
+  helpfulShare   Float?            @map("helpful_share")
+  // Quantas rodadas seguidas a nota exibida ficou abaixo da régua (só sai do ar na segunda).
+  badStreak      Int               @default(0) @map("bad_streak")
+  shownAt        DateTime?         @map("shown_at")
+  removedAt      DateTime?         @map("removed_at")
+  removedReason  String?           @map("removed_reason") @db.VarChar(500)
+  removedById    String?           @map("removed_by_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  ratings        ContextNoteRating[]
+  statusLog      ContextNoteStatusLog[]
+
+  @@index([postId, status])
+  @@index([reportId, status])
+  @@index([status, createdAt])
+  @@index([authorId, createdAt])
+  @@map("context_notes")
+}
+
+model ContextNoteRating {
+  id        String                 @id @default(uuid())
+  noteId    String                 @map("note_id")
+  note      ContextNote            @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  // Apagada junto com a conta (direito de eliminação).
+  raterId   String                 @map("rater_id")
+  rater     User                   @relation("ContextNoteRater", fields: [raterId], references: [id], onDelete: Cascade)
+  value     ContextNoteRatingValue
+  // Motivos de uma lista fechada (ver `CONTEXT_NOTE_RATING_REASONS` em @votz/shared-types).
+  reasons   String[]
+  createdAt DateTime               @default(now()) @map("created_at")
+  updatedAt DateTime               @updatedAt @map("updated_at")
+
+  @@unique([noteId, raterId])
+  @@index([raterId, createdAt])
+  @@map("context_note_ratings")
+}
+
+// "Pedir contexto": uma pessoa diz que gostaria de ver contexto neste conteúdo. Não vira nota sozinho.
+model ContextNoteRequest {
+  id          String   @id @default(uuid())
+  postId      String?  @map("post_id")
+  post        Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reportId    String?  @map("report_id")
+  report      Report?  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  requesterId String   @map("requester_id")
+  requester   User     @relation("ContextNoteRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([requesterId, postId])
+  @@unique([requesterId, reportId])
+  @@index([postId])
+  @@index([reportId])
+  @@map("context_note_requests")
+}
+
+// Quem pode escrever e avaliar. Entra com aceite do termo do colaborador (maior de 18, regras de escrita).
+model ContextContributor {
+  userId           String    @id @map("user_id")
+  user             User      @relation("ContextContributorUser", fields: [userId], references: [id], onDelete: Cascade)
+  termsVersion     String    @map("terms_version")
+  termsAcceptedAt  DateTime  @map("terms_accepted_at")
+  // Quantas avaliações a pessoa deu e quantas coincidiram com o resultado final (nota exibida ou não).
+  ratingsGiven     Int       @default(0) @map("ratings_given")
+  ratingsResolved  Int       @default(0) @map("ratings_resolved")
+  ratingsAligned   Int       @default(0) @map("ratings_aligned")
+  // A moderação pode convidar para escrever antes de a pessoa cumprir a régua.
+  writeGrantedAt   DateTime? @map("write_granted_at")
+  suspendedAt      DateTime? @map("suspended_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("context_contributors")
+}
+
+// Histórico imutável das mudanças de status de cada nota (alimenta a Memória). Nunca é editado nem apagado pelo código.
+model ContextNoteStatusLog {
+  id           String             @id @default(uuid())
+  noteId       String             @map("note_id")
+  note         ContextNote        @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  fromStatus   ContextNoteStatus? @map("from_status")
+  toStatus     ContextNoteStatus  @map("to_status")
+  // RULE (job), MODERATION ou CREATED.
+  cause        String
+  actorId      String?            @map("actor_id")
+  ratingsCount Int                @default(0) @map("ratings_count")
+  helpfulShare Float?             @map("helpful_share")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  @@index([noteId, createdAt])
+  @@map("context_note_status_log")
 }
