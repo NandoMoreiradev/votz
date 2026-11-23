@@ -14,7 +14,8 @@ export class SlaCron {
   async scheduleSlaSweep(): Promise<void> {
     const now = new Date()
     const bucket = Math.floor(now.getUTCMinutes() / 15) * 15
-    const bucketKey = `${now.toISOString().slice(0, 13)}:${String(bucket).padStart(2, '0')}`
+    // BullMQ recusa ":" no jobId ("Custom Id cannot contain :"), então o separador é hífen.
+    const bucketKey = `${now.toISOString().slice(0, 13)}-${String(bucket).padStart(2, '0')}`
     await this.queue.add(
       'sla-sweep',
       {},

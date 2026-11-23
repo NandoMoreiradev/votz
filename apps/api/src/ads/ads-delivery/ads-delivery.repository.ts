@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import type { AdChargeOn, AdEventStatus, Prisma } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AdsBillingRepository } from '../ads-billing/ads-billing.repository'
@@ -8,6 +8,9 @@ import { dayAsDate, splitSpend } from './delivery-rules'
 
 /** A cada quanto gasto (em millicents) o fechamento lança no livro-caixa: R$ 1,00. O resto fecha de hora em hora. */
 export const SETTLE_THRESHOLD_MILLICENTS = 100_000
+
+/** De quanto em quanto tempo as exibições entregues são somadas ao contador do dia (ver `createImpression`). */
+export const IMPRESSION_FLUSH_MS = 1_000
 
 const CANDIDATE_INCLUDE = {
   creative: CREATIVE_WITH_MEDIA,
@@ -74,7 +77,12 @@ export interface EventEffect {
  * Nada de relatos, votos ou atividade política (teste do muro). O saldo só muda por `AdsBillingRepository.postLedger`.
  */
 @Injectable()
-export class AdsDeliveryRepository {
+export class AdsDeliveryRepository implements OnModuleDestroy {
+  private readonly logger = new Logger(AdsDeliveryRepository.name)
+  /** Exibições entregues ainda não somadas em `ad_daily_stats`, por anúncio e dia (ver `createImpression`). */
+  private readonly pendingImpressions = new Map<string, { adId: string; adSetId: string; day: string; count: number }>()
+  private flushTimer?: NodeJS.Timeout
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: AdsBillingRepository,
@@ -178,18 +186,66 @@ export class AdsDeliveryRepository {
     return { viewable: total._sum.viewableImpressions ?? 0, clicks: total._sum.clicks ?? 0 }
   }
 
-  /** Grava a entrega e conta a exibição do dia, juntas. */
-  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string; experiment?: string | null }) {
+  /**
+   * Grava a entrega (um INSERT só, sem transação) e soma a exibição ao contador do dia **em lote**.
+   *
+   * Antes o contador subia dentro da transação de cada entrega: todos os pedidos do mesmo anúncio travavam a mesma linha
+   * de `ad_daily_stats` e o servidor parava em ~100 pedidos/s (46 a 57 de 60 conexões em `Lock/transactionid`, medido em 23/11).
+   * Agora cada processo junta as contagens e grava uma vez por segundo por anúncio e dia. Custo aceito: o contador de
+   * "exibições entregues" atrasa até 1 s e, se o processo cair de repente, perde o que estava no buffer. Ele só alimenta
+   * relatório e taxas (qualidade, visibilidade); o **dinheiro** vem dos eventos (visível e clique), que continuam exatos.
+   */
+  async createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string; experiment?: string | null }) {
     const { adSetId, day, ...impression } = data
-    return this.prisma.$transaction(async (tx) => {
-      const created = await tx.adImpression.create({ data: impression })
-      await tx.adDailyStat.upsert({
-        where: { adId_day: { adId: data.adId, day: dayAsDate(day) } },
-        create: { adId: data.adId, adSetId, day: dayAsDate(day), impressions: 1 },
-        update: { impressions: { increment: 1 } },
-      })
-      return created
-    })
+    const created = await this.prisma.adImpression.create({ data: impression })
+    this.countImpression(data.adId, adSetId, day)
+    return created
+  }
+
+  private countImpression(adId: string, adSetId: string, day: string): void {
+    const key = `${adId}|${day}`
+    const pending = this.pendingImpressions.get(key)
+    if (pending) pending.count += 1
+    else this.pendingImpressions.set(key, { adId, adSetId, day, count: 1 })
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => void this.flushImpressionCounts(), IMPRESSION_FLUSH_MS)
+      this.flushTimer.unref?.()
+    }
+  }
+
+  /** Grava no banco as contagens guardadas. Se uma gravação falhar, a contagem volta para o buffer e tenta no próximo ciclo. */
+  async flushImpressionCounts(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = undefined
+    }
+    if (!this.pendingImpressions.size) return
+    const batch = [...this.pendingImpressions.values()]
+    this.pendingImpressions.clear()
+    for (const { adId, adSetId, day, count } of batch) {
+      try {
+        await this.prisma.adDailyStat.upsert({
+          where: { adId_day: { adId, day: dayAsDate(day) } },
+          create: { adId, adSetId, day: dayAsDate(day), impressions: count },
+          update: { impressions: { increment: count } },
+        })
+      } catch (error) {
+        this.logger.warn(`Contagem de exibições do anúncio ${adId} não gravada (volta para o próximo ciclo): ${(error as Error).message}`)
+        const key = `${adId}|${day}`
+        const again = this.pendingImpressions.get(key)
+        if (again) again.count += count
+        else this.pendingImpressions.set(key, { adId, adSetId, day, count })
+      }
+    }
+    if (this.pendingImpressions.size && !this.flushTimer) {
+      this.flushTimer = setTimeout(() => void this.flushImpressionCounts(), IMPRESSION_FLUSH_MS)
+      this.flushTimer.unref?.()
+    }
+  }
+
+  /** Ao desligar o processo, não deixa contagem para trás. */
+  async onModuleDestroy(): Promise<void> {
+    await this.flushImpressionCounts()
   }
 
   /** Grava o que cada braço de teste teria escolhido (modo sombra). Sem pessoa, sem efeito para ninguém. */
