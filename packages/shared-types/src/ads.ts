@@ -357,6 +357,8 @@ export interface AdAccountView {
 export const AD_MEDIA_RULES = {
   MIN_WIDTH: AD_MEDIA_MIN_WIDTH,
   MAX_VIDEO_SECONDS: AD_VIDEO_MAX_SECONDS,
+  /** Fotos no carrossel de um anúncio. Vídeo não entra em carrossel: vale um vídeo sozinho. */
+  MAX_ITEMS: 5,
   /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
   RECOMMENDED_FORMATS: ['SQUARE', 'PORTRAIT'] as const,
   /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
@@ -394,6 +396,8 @@ export interface AdCreativeView {
   destinationUrl: string
   /** A primeira foto ou o vídeo do anúncio; null se é só texto. Existe para os apps antigos, que só sabem desenhar uma. */
   media: MediaItemDto | null
+  /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: o anúncio é só texto. `media` é o primeiro item. */
+  mediaItems: MediaItemDto[]
 }
 
 export interface AdView {
@@ -455,6 +459,11 @@ export interface CreateAdCampaignInput {
     destinationUrl: string
     /** Uma foto ou vídeo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
     media?: { id: string; format: MediaFormat; crop?: MediaCrop }
+    /**
+     * Carrossel: até `AD_MEDIA_RULES.MAX_ITEMS` fotos, todas no mesmo formato (ou um vídeo sozinho). Use este campo **ou**
+     * `media`, nunca os dois.
+     */
+    mediaItems?: { id: string; format: MediaFormat; crop?: MediaCrop }[]
   }
   /** Já manda o anúncio para revisão ao salvar. */
   submitForReview?: boolean
@@ -611,15 +620,6 @@ export interface AdStatementLine {
   createdAt: string
 }
 
-export interface AdBillingView {
-  account: AdAccountView
-  mode: AdBillingMode
-  /** Formas de pagamento que estão disponíveis agora. */
-  methods: AdTopUpMethod[]
-  limits: { minTopUpCents: number; maxTopUpCents: number }
-  topUps: AdTopUpView[]
-  statement: AdStatementLine[]
-  /** O saldo da conta bate com a soma do livro-caixa. Se for falso, há erro de contabilidade e o suporte precisa olhar. */
 // ─── Devolução de saldo ───────────────────────────────────────────────────────────────────────────
 
 export const AD_REFUND_STATUS_LABELS = { REQUESTED: 'Pedida', PAID: 'Devolvida', REJECTED: 'Recusada', CANCELED: 'Cancelada' } as const
@@ -718,13 +718,13 @@ export interface AdInvoiceView {
   issuedAt: string | null
 }
 
-  reconciled: boolean
-}
-
-// ─── Eventos de anúncio ────────────────────────────────────────────────────────────────────────
-
-export const AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT', 'CONVERSION'] as const
-export type AdEventType = (typeof AD_EVENT_TYPES)[number]
+export interface AdBillingView {
+  account: AdAccountView
+  mode: AdBillingMode
+  /** Formas de pagamento que estão disponíveis agora. */
+  methods: AdTopUpMethod[]
+  limits: { minTopUpCents: number; maxTopUpCents: number }
+  topUps: AdTopUpView[]
   /** Quanto dá para pedir de volta agora (nunca mais que o saldo disponível nem que o que foi pago em recargas). */
   refundableCents: number
   refunds: AdRefundView[]
@@ -732,6 +732,15 @@ export type AdEventType = (typeof AD_EVENT_TYPES)[number]
   autoTopUpAvailable: boolean
   autoTopUp: AdAutoTopUpView | null
   invoices: AdInvoiceView[]
+  statement: AdStatementLine[]
+  /** O saldo da conta bate com a soma do livro-caixa. Se for falso, há erro de contabilidade e o suporte precisa olhar. */
+  reconciled: boolean
+}
+
+// ─── Eventos de anúncio ────────────────────────────────────────────────────────────────────────
+
+export const AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT', 'CONVERSION'] as const
+export type AdEventType = (typeof AD_EVENT_TYPES)[number]
 
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
 export const AD_VIEWABILITY = { MIN_VISIBLE_RATIO: 0.5, MIN_VISIBLE_MS: 1000 } as const
@@ -905,6 +914,8 @@ export interface SponsoredAdView {
   clickUrl: string
   /** A primeira foto ou o vídeo (para os apps antigos, que só desenham uma); null se é só texto. */
   media: MediaItemDto | null
+  /** Todas as fotos do carrossel (ou o vídeo), prontas para desenhar e na ordem. Vazio: só texto. `media` é o primeiro. */
+  mediaItems: MediaItemDto[]
   advertiser: { id: string; name: string; username: string | null; logoUrl: string | null }
   /** "Por que estou vendo isto?" em português simples. */
   why: string
@@ -1047,6 +1058,8 @@ export interface AdLibraryItem {
   /** Só o endereço do site (ex.: padaria.com.br), sem caminho nem parâmetros. */
   destinationHost: string | null
   media: MediaItemDto | null
+  /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: só texto. `media` é o primeiro. */
+  mediaItems: MediaItemDto[]
   /** Está rodando agora (campanha ligada, no período, com saldo). */
   active: boolean
   /** "AAAA-MM-DD". */

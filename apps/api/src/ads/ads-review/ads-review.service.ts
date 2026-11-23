@@ -3,7 +3,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { AD_REVIEW_LIMITS, type AdAiMediaScope, type AdInterestId, type AdLandingCheckView, type AdReviewQueueItem, type AdReviewQueueResponse, type AgeBand } from '@votz/shared-types'
 import { StorageService } from '../../storage/storage.service'
-import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
+import { creativeMediaFailed, creativeMediaItems, creativeMediaReady } from '../ad-creative-media'
 import { AdsReviewRepository, type QueueAd } from './ads-review.repository'
 import type { AdReviewDecisionDto } from './dto/ads-review.dto'
 
@@ -46,9 +46,9 @@ export class AdsReviewService {
     // Ninguém aprova o que não viu: vídeo ainda sendo preparado (ou que falhou) só pode ser recusado.
     if (dto.decision === 'APPROVED' && !creativeMediaReady(ad.creative.media)) {
       throw new BadRequestException(
-        ad.creative.media?.status === 'FAILED'
-          ? 'O vídeo deste anúncio não pôde ser preparado. Recuse e peça ao anunciante um novo arquivo.'
-          : 'O vídeo deste anúncio ainda está sendo preparado. Espere ele ficar pronto para ver e aprovar.',
+        creativeMediaFailed(ad.creative.media)
+          ? 'Uma foto ou o vídeo deste anúncio não pôde ser preparado. Recuse e peça ao anunciante um novo arquivo.'
+          : 'A mídia deste anúncio ainda está sendo preparada. Espere ela ficar pronta para ver e aprovar.',
       )
     }
 
@@ -88,7 +88,7 @@ export class AdsReviewService {
     if (!ad || ad.reviewStatus !== 'PENDING') return false
     // A IA lê o texto e a foto, mas não ouve o som do vídeo: anúncio com vídeo (ou mídia que não está pronta) sempre
     // passa por uma pessoa. A política de aprovação (`canAutoApprove`) já exigiu que a foto tenha sido lida.
-    if (ad.creative.media && (ad.creative.media.kind !== 'IMAGE' || ad.creative.media.status !== 'READY')) return false
+    if (ad.creative.media.some((media) => media.kind !== 'IMAGE' || media.status !== 'READY')) return false
     const ok = await this.repo.decide({
       adId,
       decision: 'APPROVED',
@@ -130,14 +130,17 @@ function creativeSnapshot(creative: {
   body: string
   ctaLabel: string
   destinationUrl: string
-  media: { id: string; kind: string; format: string | null } | null
+  media: { id: string; kind: string; format: string | null }[]
 }) {
+  const items = creative.media.map((media) => ({ id: media.id, kind: media.kind, format: media.format }))
   return {
     headline: creative.headline,
     body: creative.body,
     ctaLabel: creative.ctaLabel,
     destinationUrl: creative.destinationUrl,
-    media: creative.media ? { id: creative.media.id, kind: creative.media.kind, format: creative.media.format } : null,
+    // `media` é o primeiro (como nos registros antigos); `mediaItems` guarda o carrossel inteiro, na ordem.
+    media: items[0] ?? null,
+    mediaItems: items,
   }
 }
 
@@ -147,6 +150,7 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
   const { account } = campaign
   const ai = ad.aiAnalyses[0]
   const landing = ad.landingChecks[0]
+  const mediaItems = creativeMediaItems(ad.creative.media, publicUrl)
   return {
     adId: ad.id,
     landing: landing
@@ -166,7 +170,8 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
-      media: creativeMediaItem(ad.creative.media, publicUrl),
+      media: mediaItems[0] ?? null,
+      mediaItems,
     },
     audience: {
       states: adSet.states,

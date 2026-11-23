@@ -69,7 +69,7 @@ export function SponsoredCard({ ad, surface, position }: { ad: SponsoredAdView; 
     </View>
     <Text style={{ fontFamily: theme.fonts.heading, fontSize: 17, color: theme.colors.text, marginBottom: 4 }}>{ad.headline}</Text>
     <Text style={{ fontFamily: theme.fonts.body, fontSize: 15, lineHeight: 22, color: theme.colors.text, marginBottom: 12 }}>{ad.body}</Text>
-    {ad.media && <View style={{ marginBottom: 12 }}><MediaCarousel items={[ad.media]} maxHeight={FEED_MEDIA_MAX_HEIGHT} /></View>}
+    {(() => { const items = ad.mediaItems ?? (ad.media ? [ad.media] : []); return items.length > 0 ? <View style={{ marginBottom: 12 }}><MediaCarousel items={items} maxHeight={FEED_MEDIA_MAX_HEIGHT} /></View> : null })()}
     <Pressable accessibilityRole="link" accessibilityLabel={`${ad.ctaLabel}, abre o site do anunciante`} onPress={open} style={({ pressed }) => ({ alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1 })}>
       <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: '#FFFFFF' }}>{ad.ctaLabel}</Text>
     </Pressable>

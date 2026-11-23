@@ -62,10 +62,12 @@ export class AdsAiReviewService {
     if (!ad || ad.reviewStatus !== 'PENDING') return 'skipped'
 
     const { creative } = ad
-    const media = creative.media
+    const medias = creative.media
+    const media = medias[0] ?? null
     // Vídeo ainda sendo preparado: sobe o erro de propósito, o BullMQ espera e tenta de novo.
-    if (media && media.status !== 'READY' && media.status !== 'FAILED') throw new Error('A mídia do anúncio ainda está sendo preparada')
-    const reading: AdMediaReading | null = media?.status === 'READY' ? await this.mediaReader.read(media) : null
+    if (medias.some((item) => item.status !== 'READY' && item.status !== 'FAILED')) throw new Error('A mídia do anúncio ainda está sendo preparada')
+    // Só lê se todas estão prontas: nunca se aprova olhando só parte do carrossel.
+    const reading: AdMediaReading | null = media && medias.every((item) => item.status === 'READY') ? await this.mediaReader.readAll(medias) : null
     const mediaScope: AdAiMediaScope | null = !media
       ? null
       : !reading

@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { AD_LIBRARY, type AdLibraryItem, type AdLibraryResponse } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
-import { AdMedia } from '../components/ads/AdMedia'
+import { AdMedia, adMediaItems } from '../components/ads/AdMedia'
 import { api } from '../lib/api'
 
 const Page = styled.main`
@@ -186,7 +186,7 @@ function AdLibraryCard({ item }: { item: AdLibraryItem }) {
       </Top>
       <Headline>{item.headline}</Headline>
       <Body>{item.body}</Body>
-      <AdMedia media={item.media} maxWidth={480} />
+      <AdMedia items={adMediaItems(item)} maxWidth={480} />
       <Facts>
         <div><dt>Período</dt><dd>{period(item)}</dd></div>
         <div><dt>Onde foi mostrado</dt><dd>{regions(item)}</dd></div>

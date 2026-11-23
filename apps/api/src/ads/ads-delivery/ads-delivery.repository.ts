@@ -121,8 +121,8 @@ export class AdsDeliveryRepository {
         reviewStatus: 'APPROVED',
         status: { notIn: ['PAUSED', 'ARCHIVED'] },
         id: { notIn: excludeAdIds },
-        // Anúncio com vídeo só roda depois de o vídeo ficar pronto: nunca mostramos "preparando" no feed de ninguém.
-        creative: { OR: [{ media: { is: null } }, { media: { is: { status: 'READY' } } }] },
+        // Anúncio com mídia só roda depois de toda foto e vídeo ficarem prontos ("every" vale também para anúncio só de texto): nunca mostramos "preparando" no feed de ninguém.
+        creative: { media: { every: { status: 'READY' } } },
         adSet: {
           status: { notIn: ['PAUSED', 'ARCHIVED'] },
           startAt: { lte: now },

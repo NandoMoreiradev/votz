@@ -109,7 +109,7 @@ describe('entrega usa a qualidade do histórico', () => {
   const ad = (id: string) => ({
     id,
     adSetId: `set-${id}`,
-    creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media: null },
+    creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media: [] },
     adSet: {
       dailyBudgetCents: 1000, bidCapCents: 1000, states: [], cities: [], interests: [], ageBands: [], genders: [], automaticAudience: false,
       campaign: { objective: 'AWARENESS', account: { id: 'acc-1', balanceCents: 5000, pendingSpendMillicents: 0, companyId: 'co-1', company: { id: 'co-1', tradeName: 'Padaria', username: 'padaria', logoUrl: null } } },

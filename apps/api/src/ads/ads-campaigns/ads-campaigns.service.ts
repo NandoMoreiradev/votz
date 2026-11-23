@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from '@nestjs/config'
 import * as DOMPurify from 'isomorphic-dompurify'
 import type { Ad, AdAccount, AdCampaign, AdCreative, AdSet, Prisma } from '@prisma/client'
-import { AD_LIMITS } from '@votz/shared-types'
+import { AD_LIMITS, AD_MEDIA_RULES } from '@votz/shared-types'
 import type {
   AdAccountView,
   AdCampaignView,
@@ -15,7 +15,7 @@ import type { PostMediaInputDto } from '../../media/dto/media.dto'
 import { MediaAssetsService, type PreparedPostMedia } from '../../media/media-assets.service'
 import type { MediaAssetView } from '../../media/media-items'
 import { StorageService } from '../../storage/storage.service'
-import { creativeMediaItem } from '../ad-creative-media'
+import { creativeMediaFailed, creativeMediaItems } from '../ad-creative-media'
 import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
 import { AdsLandingService } from '../ads-landing/ads-landing.service'
 import { parseBlockedDomains, staticLinkProblem } from '../ads-landing/landing-rules'
@@ -25,7 +25,7 @@ import { CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdSetDt
 /** Quantas contas de anúncios uma empresa pode ter. */
 export const MAX_AD_ACCOUNTS_PER_COMPANY = 5
 
-type AdWithCreative = Ad & { creative: AdCreative & { media: MediaAssetView | null } }
+type AdWithCreative = Ad & { creative: AdCreative & { media: MediaAssetView[] } }
 type CampaignTree = AdCampaign & { adSets: (AdSet & { ads: AdWithCreative[] })[] }
 
 const clean = (text: string) => DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).replace(/\s+/g, ' ').trim()
@@ -106,7 +106,8 @@ export class AdsCampaignsService {
 
     // Mídia por último entre as conferências: confere dono, recorte e exigências de anúncio e já gera a foto.
     // Se a campanha não for criada, os arquivos gerados são apagados e o envio fica livre de novo.
-    const prepared: PreparedPostMedia | null = creative.media ? await this.mediaAssets.prepareForAdCreative(userId, creative.media) : null
+    const mediaInputs = creativeMediaInputs(creative)
+    const prepared: PreparedPostMedia | null = mediaInputs.length ? await this.mediaAssets.prepareForAdCreative(userId, mediaInputs) : null
 
     let campaign: Awaited<ReturnType<AdsCampaignsRepository['createCampaign']>>
     try {
@@ -172,8 +173,8 @@ export class AdsCampaignsService {
     if (!ad || ad.adSet.campaign.account.companyId !== companyId) throw new NotFoundException('Anúncio não encontrado.')
     if (ad.reviewStatus === 'PENDING') throw new BadRequestException('Este anúncio já está em revisão.')
     if (ad.reviewStatus === 'APPROVED') throw new BadRequestException('Este anúncio já foi aprovado.')
-    if (ad.creative.media?.status === 'FAILED') {
-      throw new BadRequestException('O vídeo deste anúncio não pôde ser preparado. Crie o anúncio de novo com outro arquivo.')
+    if (creativeMediaFailed(ad.creative.media)) {
+      throw new BadRequestException('A foto ou o vídeo deste anúncio não pôde ser preparado. Crie o anúncio de novo com outro arquivo.')
     }
     // O endereço pode ter entrado na lista de bloqueio depois que o anúncio foi criado.
     const linkProblem = this.linkProblem(ad.creative.destinationUrl)
@@ -239,11 +240,11 @@ export class AdsCampaignsService {
    * a nova; os arquivos antigos só são apagados depois. Como qualquer mudança no anúncio, o aprovado ou em revisão volta
    * para a revisão (e vídeo novo só roda depois de pronto).
    */
-  async updateAdMedia(companyId: string, adId: string, userId: string, media: PostMediaInputDto | null | undefined): Promise<AdView> {
+  async updateAdMedia(companyId: string, adId: string, userId: string, media: readonly PostMediaInputDto[]): Promise<AdView> {
     const ad = await this.editableAd(companyId, adId)
-    if (!media && !ad.creative.media) return toAdView(ad, this.publicUrl)
+    if (!media.length && !ad.creative.media.length) return toAdView(ad, this.publicUrl)
 
-    const prepared: PreparedPostMedia | null = media ? await this.mediaAssets.prepareForAdCreative(userId, media) : null
+    const prepared: PreparedPostMedia | null = media.length ? await this.mediaAssets.prepareForAdCreative(userId, media) : null
     const backToReview = ad.reviewStatus === 'APPROVED' || ad.reviewStatus === 'PENDING'
     let oldKeys: string[] = []
     let saved: Awaited<ReturnType<AdsCampaignsRepository['updateAd']>>
@@ -377,7 +378,19 @@ function toAccountView(account: AdAccount): AdAccountView {
   }
 }
 
+/**
+ * As fotos ou o vídeo que o anunciante mandou, em lista: `mediaItems` (carrossel) ou `media` (uma só). Os dois juntos é erro:
+ * não dá para saber qual vale.
+ */
+export function creativeMediaInputs(creative: { media?: PostMediaInputDto; mediaItems?: PostMediaInputDto[] }): PostMediaInputDto[] {
+  if (creative.media && creative.mediaItems?.length) throw new BadRequestException('Mande a foto em "media" ou as fotos em "mediaItems", não os dois.')
+  const items = creative.mediaItems?.length ? creative.mediaItems : creative.media ? [creative.media] : []
+  if (items.length > AD_MEDIA_RULES.MAX_ITEMS) throw new BadRequestException(`O carrossel do anúncio aceita até ${AD_MEDIA_RULES.MAX_ITEMS} fotos.`)
+  return items
+}
+
 function toAdView(ad: AdWithCreative, publicUrl: (key: string) => string): AdView {
+  const mediaItems = creativeMediaItems(ad.creative.media, publicUrl)
   return {
     id: ad.id,
     name: ad.name,
@@ -390,7 +403,8 @@ function toAdView(ad: AdWithCreative, publicUrl: (key: string) => string): AdVie
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
-      media: creativeMediaItem(ad.creative.media, publicUrl),
+      media: mediaItems[0] ?? null,
+      mediaItems,
     },
   }
 }

@@ -13,7 +13,7 @@ import {
 } from '@votz/shared-types'
 import { ContentAdjacencyService } from '../../content-adjacency/content-adjacency.service'
 import { StorageService } from '../../storage/storage.service'
-import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
+import { creativeMediaItems, creativeMediaReady } from '../ad-creative-media'
 import { AdsClickLinkService } from '../ads-conversions/ads-click-link.service'
 import { newClickToken } from '../ads-conversions/conversion-rules'
 import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type AdvertiserStats, type ShadowDecisionRow } from './ads-delivery.repository'
@@ -423,6 +423,7 @@ export class AdsDeliveryService {
     }
 
     const company = record.adSet.campaign.account.company
+    const mediaItems = creativeMediaItems(record.creative.media, (key) => this.storage.getPublicUrl(key))
     return {
       impressionId: impression.id,
       adId: record.id,
@@ -431,7 +432,8 @@ export class AdsDeliveryService {
       ctaLabel: record.creative.ctaLabel,
       destinationUrl: record.creative.destinationUrl,
       clickUrl: this.clickLinks.build(clickToken),
-      media: creativeMediaItem(record.creative.media, (key) => this.storage.getPublicUrl(key)),
+      media: mediaItems[0] ?? null,
+      mediaItems,
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }

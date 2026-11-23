@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from '../../store/auth.store'
 import { AdEditForm, AdSetEditForm } from '../../components/ads/AdEditForms'
 import { AdMediaEditForm } from '../../components/ads/AdMediaEditForm'
-import { AdMedia } from '../../components/ads/AdMedia'
+import { AdMedia, adMediaItems } from '../../components/ads/AdMedia'
 import {
   adsErrorMessage,
   formatBRL,
@@ -261,13 +261,13 @@ function CampaignCard({ campaign, companyId, accountId, canManage }: { campaign:
               </Row>
               <AdHeadline>{ad.creative.headline}</AdHeadline>
               <Hint>{ad.creative.body}</Hint>
-              <AdMedia media={ad.creative.media} maxWidth={240} />
+              <AdMedia items={adMediaItems(ad.creative)} maxWidth={240} />
               <Hint>Botão "{ad.creative.ctaLabel}" → {ad.creative.destinationUrl}</Hint>
               {ad.reviewNote && <ErrorMsg>Motivo: {ad.reviewNote}</ErrorMsg>}
               {canManage && !archived && editingAd !== ad.id && editingMedia !== ad.id && (
                 <Row style={{ marginTop: 10 }}>
                   <SecondaryButton type="button" onClick={() => setEditingAd(ad.id)}>Editar anúncio</SecondaryButton>
-                  <SecondaryButton type="button" onClick={() => setEditingMedia(ad.id)}>{ad.creative.media ? 'Trocar foto ou vídeo' : 'Adicionar foto ou vídeo'}</SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => setEditingMedia(ad.id)}>{adMediaItems(ad.creative).length ? 'Trocar fotos ou vídeo' : 'Adicionar fotos ou vídeo'}</SecondaryButton>
                 </Row>
               )}
               {editingMedia === ad.id && <AdMediaEditForm ad={ad} companyId={companyId} accountId={accountId} onDone={() => setEditingMedia(null)} />}

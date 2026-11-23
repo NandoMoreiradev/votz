@@ -346,9 +346,9 @@ describe('MediaAssetsService: criativo de anúncio (AD_CREATIVE)', () => {
   describe('prepareForAdCreative', () => {
     it('só aceita arquivo enviado como anúncio: o de publicação (ou de outra pessoa) é recusado', async () => {
       const { service, prisma } = setup([makeRow()])
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE' }])).rejects.toThrow(/não está disponível/)
       prisma.mediaAsset.findMany.mockResolvedValue([])
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE' }])).rejects.toThrow(/não está disponível/)
       expect(prisma.mediaAsset.updateMany).not.toHaveBeenCalled()
     })
 
@@ -359,34 +359,34 @@ describe('MediaAssetsService: criativo de anúncio (AD_CREATIVE)', () => {
 
     it('arquivo já ligado a outro criativo não pode ser usado de novo', async () => {
       const { service } = setup([AD({ adCreativeId: 'cr-outro', status: 'READY' })])
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/não está disponível/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE' }])).rejects.toThrow(/não está disponível/)
     })
 
     it('arquivo estreito: o que vale é a largura da parte mostrada depois do recorte', async () => {
       // 1200×800 passa no envio (1200 ≥ 1080), mas o quadrado mostra só 800 px de largura.
       const { service, prisma, storage } = setup([AD({ sourceWidth: 1200, sourceHeight: 800 })])
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })).rejects.toThrow(/enquadramento.*1080/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE' }])).rejects.toThrow(/enquadramento.*1080/)
       expect(prisma.mediaAsset.updateMany).not.toHaveBeenCalled()
       // Em paisagem a mesma foto mostra os 1200 px inteiros.
       storage.getObjectBuffer.mockResolvedValue(await jpeg(1200, 800))
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'LANDSCAPE' })).resolves.toMatchObject({ items: [{ id: ID1 }] })
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'LANDSCAPE' }])).resolves.toMatchObject({ items: [{ id: ID1 }] })
     })
 
     it('zoom que deixa a parte mostrada abaixo de 1080 px é recusado', async () => {
       const { service } = setup([AD({ sourceWidth: 4000, sourceHeight: 4000 })])
       // Recorte de 25% de uma foto de 4000 px = 1000 px.
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE', crop: { x: 0, y: 0, w: 0.25, h: 0.25 } })).rejects.toThrow(/1080/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE', crop: { x: 0, y: 0, w: 0.25, h: 0.25 } }])).rejects.toThrow(/1080/)
     })
 
     it('vídeo de anúncio com mais de 60 s (arquivo que já estava no banco) é recusado', async () => {
       const { service } = setup([AD({ kind: 'VIDEO', sourceWidth: 1080, sourceHeight: 1920, durationMs: 75_000, sourceKey: `media-src/${ID1}.mp4` })])
-      await expect(service.prepareForAdCreative(USER, { id: ID1, format: 'PORTRAIT' })).rejects.toThrow(/60 segundos/)
+      await expect(service.prepareForAdCreative(USER, [{ id: ID1, format: 'PORTRAIT' }])).rejects.toThrow(/60 segundos/)
     })
 
     it('foto boa: reserva, gera as versões e devolve as chaves para apagar se a campanha não for criada', async () => {
       const { service, prisma, storage } = setup([AD()])
       storage.getObjectBuffer.mockResolvedValue(await jpeg(4000, 3000))
-      const prepared = await service.prepareForAdCreative(USER, { id: ID1, format: 'SQUARE' })
+      const prepared = await service.prepareForAdCreative(USER, [{ id: ID1, format: 'SQUARE' }])
       expect(prisma.mediaAsset.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PROCESSING', format: 'SQUARE' }) }))
       expect(prepared.items).toEqual([{ id: ID1, kind: 'IMAGE', position: 0 }])
       expect(prepared.renderedKeys.length).toBe(3)

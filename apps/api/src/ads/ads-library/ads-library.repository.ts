@@ -62,7 +62,7 @@ export function libraryWhere(filter: LibraryFilter): Prisma.AdWhereInput {
   const and: Prisma.AdWhereInput[] = [
     { reviewStatus: 'APPROVED' },
     visibility,
-    { creative: { OR: [{ media: { is: null } }, { media: { is: { status: 'READY' } } }] } },
+    { creative: { media: { every: { status: 'READY' } } } },
   ]
   if (filter.company) {
     and.push({ adSet: { campaign: { account: { company: { OR: [{ id: filter.company }, { username: { equals: filter.company, mode: 'insensitive' } }] } } } } })

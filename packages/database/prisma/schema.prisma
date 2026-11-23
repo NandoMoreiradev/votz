@@ -2183,8 +2183,8 @@ model MediaAsset {
   postId          String?           @map("post_id")
   post            Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
   position        Int?
-  // Criativo de anúncio dono do arquivo (uma mídia por criativo). Nunca junto com `postId` (o banco barra).
-  adCreativeId    String?           @unique @map("ad_creative_id")
+  // Criativo de anúncio dono do arquivo (até 5 fotos, ou um vídeo, por criativo). Nunca junto com `postId` (o banco barra).
+  adCreativeId    String?           @map("ad_creative_id")
   adCreative      AdCreative?       @relation(fields: [adCreativeId], references: [id], onDelete: Cascade)
   attachedAt      DateTime?         @map("attached_at")
   processedAt     DateTime?         @map("processed_at")
@@ -2192,6 +2192,7 @@ model MediaAsset {
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
   @@index([postId, position])
+  @@index([adCreativeId, position])
   @@index([uploaderId, createdAt])
   @@index([status, createdAt])
   @@index([attachedAt, createdAt])
@@ -2265,10 +2266,10 @@ model AdAccount {
   creatives    AdCreative[]
   topUps       AdTopUp[]
   ledger       AdLedgerEntry[]
-  conversionKeys AdConversionKey[]
   refunds      AdRefund[]
   autoTopUp    AdAutoTopUp?
   invoices     AdInvoice[]
+  conversionKeys AdConversionKey[]
   conversions  AdConversion[]
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
@@ -2327,8 +2328,9 @@ model AdCreative {
   body           String
   ctaLabel       String    @map("cta_label")
   destinationUrl String    @map("destination_url")
-  // Foto ou vídeo do anúncio (padrão de mídia: 1:1, 4:5 ou 16:9). Sem mídia, o anúncio é só texto.
-  media          MediaAsset?
+  // Fotos ou vídeo do anúncio (padrão de mídia: 1:1, 4:5 ou 16:9), na ordem de `position`. Até 5 fotos (carrossel) ou um
+  // vídeo sozinho. Sem mídia, o anúncio é só texto.
+  media          MediaAsset[]
   ads            Ad[]
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
@@ -2458,10 +2460,10 @@ model AdTopUp {
   expiresAt   DateTime          @map("expires_at")
   paidAt      DateTime?         @map("paid_at")
   createdById String            @map("created_by_id")
-  ledger      AdLedgerEntry[]
-  createdAt   DateTime          @default(now()) @map("created_at")
   // Recarga feita sozinha pela recarga automática (e não por uma pessoa pedindo na tela).
   auto        Boolean           @default(false)
+  ledger      AdLedgerEntry[]
+  createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
   @@unique([provider, externalId])
@@ -2476,9 +2478,9 @@ enum AdLedgerAccount {
   PAYMENTS_RECEIVED // dinheiro recebido dos provedores (Asaas, Stripe, teste)
   AD_REVENUE // receita de anúncios (gasto das campanhas)
   PROMO_FUND // crédito dado pelo Votz (ajuste manual)
+  REFUNDS_PAYABLE // devoluções pedidas e ainda não pagas: o que o Votz deve devolver ao anunciante
 }
 
-  REFUNDS_PAYABLE // devoluções pedidas e ainda não pagas: o que o Votz deve devolver ao anunciante
 enum AdLedgerSide {
   DEBIT
   CREDIT
@@ -2505,19 +2507,17 @@ model AdLedgerEntry {
   description   String
   topUpId       String?           @map("top_up_id")
   topUp         AdTopUp?          @relation(fields: [topUpId], references: [id], onDelete: SetNull)
-  createdById   String?           @map("created_by_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
   refundId      String?           @map("refund_id")
   refund        AdRefund?         @relation(fields: [refundId], references: [id], onDelete: SetNull)
+  createdById   String?           @map("created_by_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
 
   @@index([adAccountId, createdAt])
   @@index([transactionId])
   @@index([topUpId])
+  @@index([refundId])
   @@map("ad_ledger_entries")
 }
-  @@index([refundId])
-
-// ── Anúncios: entrega, eventos e medição (plano de anúncios, Etapa 2) ───────
 
 enum AdRefundStatus {
   REQUESTED // pedida: o valor já saiu do saldo (fica em "devoluções a pagar") e espera o Votz devolver o dinheiro
@@ -2607,6 +2607,8 @@ model AdInvoice {
   @@index([status, createdAt])
   @@map("ad_invoices")
 }
+
+// ── Anúncios: entrega, eventos e medição (plano de anúncios, Etapa 2) ───────
 
 enum AdChargeOn {
   VIEWABLE_IMPRESSION // reconhecimento e conversões: por exibição visível

@@ -12,7 +12,7 @@ function ad(id: string, bidCapCents: number | null, objective = 'AWARENESS') {
   return {
     id,
     adSetId: `set-${id}`,
-    creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media: null },
+    creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media: [] },
     adSet: {
       dailyBudgetCents: 1000,
       bidCapCents,

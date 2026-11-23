@@ -8,12 +8,17 @@ const Wrap = styled.div<{ $maxWidth?: number }>`
   max-width: ${({ $maxWidth }) => ($maxWidth ? `${$maxWidth}px` : 'none')};
 `
 
-/** Foto ou vídeo do anúncio, na mesma moldura (1:1, 4:5 ou 16:9) do feed. Não desenha nada se o anúncio é só texto. */
-export function AdMedia({ media, maxWidth, label = 'Foto ou vídeo do anúncio' }: { media: MediaItemDto | null | undefined; maxWidth?: number; label?: string }) {
-  if (!media) return null
+/** As fotos (ou o vídeo) do anúncio em lista. Cai para `media` se a resposta é de uma API que ainda não manda `mediaItems`. */
+export function adMediaItems(source: { media?: MediaItemDto | null; mediaItems?: MediaItemDto[] }): MediaItemDto[] {
+  return source.mediaItems ?? (source.media ? [source.media] : [])
+}
+
+/** Fotos (carrossel) ou vídeo do anúncio, na mesma moldura (1:1, 4:5 ou 16:9) do feed. Não desenha nada se o anúncio é só texto. */
+export function AdMedia({ items, maxWidth, label = 'Foto ou vídeo do anúncio' }: { items: MediaItemDto[] | null | undefined; maxWidth?: number; label?: string }) {
+  if (!items?.length) return null
   return (
     <Wrap $maxWidth={maxWidth}>
-      <MediaCarousel items={[media]} label={label} maxHeight={FEED_MEDIA_MAX_HEIGHT} />
+      <MediaCarousel items={items} label={label} maxHeight={FEED_MEDIA_MAX_HEIGHT} />
     </Wrap>
   )
 }

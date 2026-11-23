@@ -86,6 +86,24 @@ export class AdMediaReader {
 
   constructor(private readonly storage: StorageService) {}
 
+  /**
+   * Lê todas as mídias do anúncio. Carrossel de fotos: a IA recebe todas, cada uma com o número dela, e lê o texto escrito em
+   * qualquer uma. Basta uma não ser lida para o resultado ser "não deu para ler" (nunca se aprova olhando só parte). Vídeo vale
+   * sozinho.
+   */
+  async readAll(medias: readonly Pick<MediaAssetView, 'kind' | 'key' | 'feedKey' | 'durationMs'>[]): Promise<AdMediaReading | null> {
+    if (medias.length <= 1) return medias.length ? this.read(medias[0]) : null
+    if (medias.some((media) => media.kind !== 'IMAGE')) return null
+    const readings: AdMediaReading[] = []
+    for (const media of medias) {
+      const reading = await this.read(media)
+      if (!reading) return null
+      readings.push(reading)
+    }
+    const parts = readings.flatMap((reading, index) => reading.parts.map((part) => ({ ...part, label: `Foto ${index + 1} de ${readings.length} do anúncio.` })))
+    return { kind: 'IMAGE', parts, durationSeconds: null, hasAudioTrack: false, audio: null }
+  }
+
   async read(media: Pick<MediaAssetView, 'kind' | 'key' | 'feedKey' | 'durationMs'>): Promise<AdMediaReading | null> {
     try {
       if (media.kind === 'IMAGE') return await this.readImage(media)

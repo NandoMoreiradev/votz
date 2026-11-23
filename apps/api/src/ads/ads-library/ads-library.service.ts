@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { AD_LIBRARY, adDestinationHost, adImpressionBand, adSpendBand, MILLICENTS_PER_CENT, type AdLibraryItem, type AdLibraryResponse } from '@votz/shared-types'
 import { StorageService } from '../../storage/storage.service'
-import { creativeMediaItem } from '../ad-creative-media'
+import { creativeMediaItems } from '../ad-creative-media'
 import { dayAsDate, saoPauloDay } from '../ads-delivery/delivery-rules'
 import { AdsLibraryRepository, type LibraryAdRecord } from './ads-library.repository'
 import type { AdLibraryQueryDto } from './dto/ads-library.dto'
@@ -69,6 +69,7 @@ export function toLibraryItem(
 ): AdLibraryItem {
   const { adSet } = ad
   const company = adSet.campaign.account.company
+  const mediaItems = creativeMediaItems(ad.creative.media, publicUrl)
   return {
     adId: ad.id,
     advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl, verified: company.verified },
@@ -76,7 +77,8 @@ export function toLibraryItem(
     body: ad.creative.body,
     ctaLabel: ad.creative.ctaLabel,
     destinationHost: adDestinationHost(ad.creative.destinationUrl),
-    media: creativeMediaItem(ad.creative.media, publicUrl),
+    media: mediaItems[0] ?? null,
+    mediaItems,
     active: isRunning(ad, now),
     startedOn: saoPauloDay(adSet.startAt),
     endsOn: adSet.endAt ? saoPauloDay(adSet.endAt) : null,

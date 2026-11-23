@@ -18,14 +18,15 @@ import {
   type AdCtaLabel,
   type AdInterestId,
   type AdObjective,
+  type AdReachEstimateInput,
   type AgeBand,
   type CreateAdCampaignInput,
   type MediaFormat,
   type UserGender,
 } from '@votz/shared-types'
 import { useAuthStore } from '../../store/auth.store'
-import { adsErrorMessage, formatBRL, useAdAccounts, useCreateAdCampaign, useUploadAdMedia } from '../../hooks/useAds'
-import { discardPostMedia } from '../../lib/post-media-upload'
+import { adsErrorMessage, formatBRL, useAdAccounts, useAdReachEstimate, useCreateAdCampaign } from '../../hooks/useAds'
+import { AdMediaPicker, useAdMediaFiles } from '../../components/ads/AdMediaPicker'
 import { kindOfFile, measureLocal } from '../../lib/local-media'
 import { CroppedMedia, INITIAL_VIEW, MediaCropEditor, cropOf, type CropEditorItem, type CropView } from '../../components/media/MediaCropEditor'
 import {
@@ -51,6 +52,39 @@ import {
 
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 const STEPS = ['Objetivo', 'Público e orçamento', 'Anúncio', 'Revisão'] as const
+
+const ReachBox = styled.div`
+  margin: 4px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  background: ${({ theme }) => theme.colors.neutral};
+`
+
+const ReachLabel = styled.p`
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const ReachValue = styled.p`
+  margin: 0 0 6px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: ${({ theme }) => theme.colors.text};
+`
+
+/** O mesmo valor, mas só depois de ficar parado um tempo (para não perguntar ao servidor a cada letra). */
+function useSettled<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return settled
+}
 
 const Steps = styled.ol`
   display: flex;
@@ -150,13 +184,6 @@ const FrameStatus = styled.span`
   background: ${({ theme }) => `${theme.colors.primary}99`};
 `
 
-/** Foto ou vídeo escolhido para o anúncio: prévia local enquanto envia; o recorte é aplicado pelo servidor ao criar. */
-interface AdFile extends CropEditorItem {
-  status: 'uploading' | 'ready'
-  progress: number
-  assetId?: string
-}
-
 const todayIso = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10)
 const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
 /** "20" ou "20,50" → centavos. */
@@ -196,29 +223,20 @@ export function StudioAdsNew() {
   const [body, setBody] = useState('')
   const [cta, setCta] = useState<AdCtaLabel>('Saiba mais')
   const [url, setUrl] = useState('https://')
-  const [file, setFile] = useState<AdFile | null>(null)
-  const [format, setFormat] = useState<MediaFormat>(DEFAULT_MEDIA_FORMAT)
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [mediaError, setMediaError] = useState<string | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const upload = useUploadAdMedia(canManage ? companyId : '')
-  // Ao sair sem salvar, apaga no servidor o que foi enviado e libera a prévia local.
-  const fileRef = useRef(file)
-  fileRef.current = file
-  const saved = useRef(false)
-  useEffect(() => () => {
-    const current = fileRef.current
-    if (!current) return
-    URL.revokeObjectURL(current.previewUrl)
-    if (current.assetId && !saved.current) discardPostMedia(current.assetId)
-  }, [])
+  // Fotos do carrossel (até 5) ou um vídeo sozinho: envio, ordem, enquadramento e regras ficam no seletor.
+  const picker = useAdMediaFiles(canManage ? companyId : '')
+  const { files, first, format, uploading, hasVideo } = picker
 
   const cities = useMemo(() => [...new Set(citiesText.split(',').map((city) => city.trim()).filter(Boolean))], [citiesText])
   const budgetCents = reaisToCents(budget)
-  // A largura que vale é a da parte que aparece depois do enquadramento (a API confere de novo).
-  const mediaProblem = file?.status === 'ready'
-    ? adMediaProblem({ kind: file.kind, width: Math.round((cropOf(file, format)?.w ?? 1) * file.width), scope: 'crop' })
-    : null
+  // Estimativa de alcance: pergunta ao servidor quando a pessoa para de mexer no público.
+  const audience: AdReachEstimateInput = useMemo(
+    () => ({ states, cities, interests: automatic ? [] : interests, ageBands: automatic ? [] : ageBands, genders: automatic ? [] : genders, automaticAudience: automatic }),
+    [states, cities, interests, ageBands, genders, automatic],
+  )
+  const settledAudience = useSettled(audience, 500)
+  const reach = useAdReachEstimate(canManage ? companyId : '', step === 1 && cities.length <= AD_LIMITS.MAX_CITIES ? settledAudience : null)
+  const mediaProblem = picker.problem
 
   const problems: string[][] = [
     name.trim().length < 2 ? ['Dê um nome à campanha.'] : [],
@@ -234,7 +252,7 @@ export function StudioAdsNew() {
       ...(headline.trim().length < 2 ? ['Escreva o título.'] : []),
       ...(body.trim().length < 2 ? ['Escreva o texto do anúncio.'] : []),
       ...(!isHttpsUrl(url) ? ['O link precisa começar com https:// e ser um endereço válido.'] : []),
-      ...(file?.status === 'uploading' ? ['Espere o envio da foto ou do vídeo terminar.'] : []),
+      ...(uploading ? ['Espere o envio das fotos ou do vídeo terminar.'] : []),
       ...(mediaProblem ? [mediaProblem] : []),
     ],
     [],
@@ -246,51 +264,6 @@ export function StudioAdsNew() {
   }
   if (accounts.isSuccess && !accountId) {
     return <Card><CardTitle>Crie primeiro a conta de anúncios</CardTitle><Hint><Link to="/estudio/anuncios">Ir para Anúncios</Link></Hint></Card>
-  }
-
-  function dropFile() {
-    if (!file) return
-    URL.revokeObjectURL(file.previewUrl)
-    if (file.assetId) discardPostMedia(file.assetId)
-    setFile(null)
-  }
-
-  async function chooseFile(files: FileList | null) {
-    const chosen = files?.[0]
-    if (fileInput.current) fileInput.current.value = ''
-    if (!chosen) return
-    setMediaError(null)
-    const kind = kindOfFile(chosen)
-    if (!kind || kind === 'GIF') {
-      setMediaError(kind === 'GIF' ? 'GIF ainda não vale em anúncio. Use uma foto ou um vídeo.' : 'Use uma foto (JPEG, PNG ou WebP) ou um vídeo (MP4 ou MOV).')
-      return
-    }
-    const previewUrl = URL.createObjectURL(chosen)
-    const size = await measureLocal(previewUrl, kind)
-    const tooSmall = adMediaProblem({ kind, width: size.width, scope: 'file' })
-    if (tooSmall) {
-      URL.revokeObjectURL(previewUrl)
-      setMediaError(tooSmall)
-      return
-    }
-    dropFile()
-    const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    setFile({ key, previewUrl, kind, ...size, view: INITIAL_VIEW, status: 'uploading', progress: 0 })
-    setFormat(nearestMediaFormat(size.width, size.height) ?? DEFAULT_MEDIA_FORMAT)
-    setEditorOpen(true)
-    try {
-      const asset = await upload.mutateAsync({
-        file: chosen,
-        onProgress: (progress) => setFile((prev) => (prev?.key === key ? { ...prev, progress } : prev)),
-      })
-      // O tamanho que vale é o do servidor; é sobre ele que o recorte é calculado.
-      setFile((prev) => (prev?.key === key ? { ...prev, status: 'ready', progress: 100, assetId: asset.id, width: asset.width, height: asset.height } : prev))
-    } catch (error) {
-      URL.revokeObjectURL(previewUrl)
-      setFile((prev) => (prev?.key === key ? null : prev))
-      setEditorOpen(false)
-      setMediaError(adsErrorMessage(error))
-    }
   }
 
   function save(submitForReview: boolean) {
@@ -314,14 +287,14 @@ export function StudioAdsNew() {
         body: body.trim(),
         ctaLabel: cta,
         destinationUrl: url.trim(),
-        media: file?.assetId ? { id: file.assetId, format, crop: cropOf(file, format) } : undefined,
+        mediaItems: picker.inputs().length ? picker.inputs() : undefined,
       },
       submitForReview,
     }
     create.mutate(input, {
       onSuccess: () => {
         // Salvo: o arquivo agora é do anúncio (não apagar no servidor).
-        saved.current = true
+        picker.markSaved()
         navigate('/estudio/anuncios')
       },
     })
@@ -347,14 +320,6 @@ export function StudioAdsNew() {
         ))}
       </Steps>
 
-      <MediaCropEditor
-        open={editorOpen && !!file}
-        items={file ? [file] : []}
-        format={format}
-        onFormatChange={setFormat}
-        onViewChange={(key, view: CropView) => setFile((prev) => (prev?.key === key ? { ...prev, view } : prev))}
-        onClose={() => setEditorOpen(false)}
-      />
 
       <Card>
         {step === 0 && (
@@ -438,6 +403,20 @@ export function StudioAdsNew() {
                 </Field>
               </>
             )}
+
+            <ReachBox aria-live="polite" data-testid="reach-estimate">
+              <ReachLabel>Quantas pessoas podem ver</ReachLabel>
+              {reach.data ? (
+                <>
+                  <ReachValue>{reach.data.label}</ReachValue>
+                  <Hint>{reach.data.note}</Hint>
+                </>
+              ) : reach.isError ? (
+                <Hint>Não deu para estimar agora. Você pode continuar mesmo assim.</Hint>
+              ) : (
+                <Hint>Calculando…</Hint>
+              )}
+            </ReachBox>
           </>
         )}
 
@@ -466,32 +445,7 @@ export function StudioAdsNew() {
                 <Hint>Precisa começar com https://.</Hint>
               </Field>
               <Field>
-                <Label as="p">Foto ou vídeo (opcional)</Label>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  hidden
-                  accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
-                  onChange={(event) => void chooseFile(event.target.files)}
-                />
-                <Row>
-                  <SecondaryButton type="button" onClick={() => fileInput.current?.click()}>
-                    {file ? 'Trocar arquivo' : 'Escolher foto ou vídeo'}
-                  </SecondaryButton>
-                  {file && <SecondaryButton type="button" onClick={() => setEditorOpen(true)}>Ajustar enquadramento</SecondaryButton>}
-                  {file && <SecondaryButton type="button" onClick={dropFile}>Remover</SecondaryButton>}
-                </Row>
-                {file && (
-                  <Hint style={{ marginTop: 6 }}>
-                    Formato: <b>{MEDIA_FORMATS[format].label} ({MEDIA_FORMATS[format].ratioLabel})</b>
-                    {file.status === 'uploading' ? ` · enviando ${file.progress}%` : ''}
-                  </Hint>
-                )}
-                {mediaError && <ErrorMsg role="alert">{mediaError}</ErrorMsg>}
-                <Hint style={{ marginTop: 6 }}>
-                  Largura de pelo menos {AD_MEDIA_RULES.MIN_WIDTH} px e vídeo de até {AD_MEDIA_RULES.MAX_VIDEO_SECONDS} segundos. Quadrado (1:1) e retrato (4:5) ocupam
-                  mais espaço no celular. Escreva no texto o que o vídeo diz, para quem assiste sem som. Anúncio com foto ou vídeo sempre passa por uma pessoa da revisão.
-                </Hint>
+                <AdMediaPicker picker={picker} />
               </Field>
             </div>
             <div>
@@ -500,10 +454,11 @@ export function StudioAdsNew() {
                 <Sponsored>{activeContext.name} · Patrocinado</Sponsored>
                 <OptionTitle>{headline || 'Seu título'}</OptionTitle>
                 <Hint>{body || 'Seu texto aparece aqui.'}</Hint>
-                {file && (
+                {first && (
                   <MediaFrame $ratio={`${MEDIA_FORMATS[format].width} / ${MEDIA_FORMATS[format].height}`}>
-                    <CroppedMedia item={file} format={format} label="Prévia da foto ou do vídeo do anúncio" />
-                    {file.status === 'uploading' && <FrameStatus role="status">Enviando {file.progress}%</FrameStatus>}
+                    <CroppedMedia item={first} format={format} label="Prévia da foto ou do vídeo do anúncio" />
+                    {first.status === 'uploading' && <FrameStatus role="status">Enviando {first.progress}%</FrameStatus>}
+                    {files.length > 1 && <FrameStatus>1 de {files.length}</FrameStatus>}
                   </MediaFrame>
                 )}
                 <PreviewCta>{cta}</PreviewCta>
@@ -521,7 +476,7 @@ export function StudioAdsNew() {
               <dt>Onde</dt><dd>{where}</dd>
               <dt>Quem</dt><dd>{automatic ? 'Público automático' : [ageBands.length ? `${ageBands.join(', ')} anos` : 'Todas as idades', genders.map((gender) => USER_GENDER_LABELS[gender]).join(', '), interests.map((id) => AD_INTERESTS.find((interest) => interest.id === id)?.label).join(', ')].filter(Boolean).join(' · ')}</dd>
               <dt>Anúncio</dt><dd>{headline} · botão "{cta}" → {url}</dd>
-              <dt>Foto ou vídeo</dt><dd>{file ? `${file.kind === 'VIDEO' ? 'Vídeo' : 'Foto'} no formato ${MEDIA_FORMATS[format].label.toLowerCase()} (${MEDIA_FORMATS[format].ratioLabel})` : 'Só texto'}</dd>
+              <dt>Foto ou vídeo</dt><dd>{first ? `${hasVideo ? 'Vídeo' : files.length > 1 ? `Carrossel com ${files.length} fotos` : 'Foto'} no formato ${MEDIA_FORMATS[format].label.toLowerCase()} (${MEDIA_FORMATS[format].ratioLabel})` : 'Só texto'}</dd>
             </Summary>
             <Hint style={{ marginTop: 14 }}>
               Ao enviar para revisão, o Votz confere se o anúncio segue a política de anúncios. Política, órgãos públicos, apostas e

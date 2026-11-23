@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../../auth/decorators/current-user.decorator'
 import { MEDIA_VIDEO_MAX_BYTES, PresignMediaUploadDto } from '../../media/dto/media.dto'
 import { OrgPermissionGuard, RequireOrgPermission } from '../../org-memberships/org-memberships.guard'
-import { AdsCampaignsService } from './ads-campaigns.service'
+import { AdsCampaignsService, creativeMediaInputs } from './ads-campaigns.service'
 import { CreateAdAccountDto, CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdMediaDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 
 /**
@@ -168,7 +168,7 @@ export class AdsCampaignsController {
     @CurrentUser() user: { id: string },
   ) {
     onlyCompany(orgType)
-    return this.service.updateAdMedia(orgId, adId, user.id, dto.media)
+    return this.service.updateAdMedia(orgId, adId, user.id, creativeMediaInputs({ media: dto.media ?? undefined, mediaItems: dto.mediaItems }))
   }
 
   @Patch('ad-sets/:adSetId')

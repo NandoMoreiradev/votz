@@ -11,7 +11,7 @@ import type { UpdateAdDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 const now = new Date('2026-11-22T15:00:00Z')
 
 const creative = (patch: Record<string, unknown> = {}) => ({
-  id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now, media: null, ...patch,
+  id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now, media: [], ...patch,
 })
 const adRow = (reviewStatus = 'APPROVED', campaignStatus = 'ACTIVE', companyId = 'co1') => ({
   id: 'ad1', adSetId: 'set1', creativeId: 'cr1', name: 'Pão quente', status: 'DRAFT', reviewStatus, reviewNote: null, submittedAt: now, reviewedAt: now, createdAt: now, updatedAt: now,
@@ -220,7 +220,7 @@ describe('editar público e orçamento', () => {
 describe('duplicar campanha', () => {
   it('copia como rascunho, começando hoje, sem foto ou vídeo', async () => {
     const service = build()
-    const source = tree({ adSets: [{ ...setRow({ endAt: new Date('2099-01-01T03:00:00Z') }), ads: [{ ...adRow(), creative: creative({ media: { id: 'm1' } }) }] }] })
+    const source = tree({ adSets: [{ ...setRow({ endAt: new Date('2099-01-01T03:00:00Z') }), ads: [{ ...adRow(), creative: creative({ media: [{ id: 'm1' }] }) }] }] })
     repo.findCampaign.mockResolvedValue(source)
     repo.duplicateCampaign.mockResolvedValue(tree({ id: 'camp2', name: 'Cópia de Dezembro', status: 'DRAFT' }))
     const view = await service.duplicateCampaign('co1', 'camp1')
@@ -259,8 +259,8 @@ describe('duplicar campanha', () => {
 describe('trocar a foto ou o vídeo do anúncio', () => {
   const tx = { tx: true }
   const prepared = { items: [{ id: 'm2', kind: 'IMAGE', position: 0 }], media: [], mediaKeys: ['k2'], renderedKeys: ['k2'] }
-  const withMedia = (status = 'APPROVED') => ({ ...adRow(status), creative: creative({ media: { id: 'm1', status: 'READY', kind: 'IMAGE', format: 'SQUARE' } }) })
-  const input = { id: 'm2', format: 'SQUARE' } as never
+  const withMedia = (status = 'APPROVED') => ({ ...adRow(status), creative: creative({ media: [{ id: 'm1', status: 'READY', kind: 'IMAGE', format: 'SQUARE' }] }) })
+  const input = [{ id: 'm2', format: 'SQUARE' }] as never
 
   /** O repositório de verdade roda a função da transação; aqui rodamos com um tx falso e devolvemos o anúncio. */
   const runTx = (result: unknown) =>
@@ -295,7 +295,7 @@ describe('trocar a foto ou o vídeo do anúncio', () => {
     repo.findAdForEdit.mockResolvedValue(withMedia('APPROVED'))
     mediaAssets.removeAdCreativeMedia.mockResolvedValue(['old.jpg'])
     runTx(adRow('PENDING'))
-    await service.updateAdMedia('co1', 'ad1', 'u1', null)
+    await service.updateAdMedia('co1', 'ad1', 'u1', [])
     expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
     expect(mediaAssets.attachToAdCreative).not.toHaveBeenCalled()
     expect(mediaAssets.dropKeys).toHaveBeenCalledWith(['old.jpg'])
@@ -305,7 +305,7 @@ describe('trocar a foto ou o vídeo do anúncio', () => {
   it('tirar a mídia de anúncio que já é só texto não faz nada', async () => {
     const service = build()
     repo.findAdForEdit.mockResolvedValue(adRow('APPROVED'))
-    await service.updateAdMedia('co1', 'ad1', 'u1', null)
+    await service.updateAdMedia('co1', 'ad1', 'u1', [])
     expect(repo.updateAd).not.toHaveBeenCalled()
     expect(aiReview.enqueue).not.toHaveBeenCalled()
   })

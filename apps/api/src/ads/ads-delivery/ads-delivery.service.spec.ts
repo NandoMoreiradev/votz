@@ -73,11 +73,12 @@ const mediaRow = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('AdsDeliveryService.next: foto e vídeo do anúncio', () => {
-  const withMedia = (media: unknown) => candidate({ creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media } })
+  const withMedia = (media: unknown) => candidate({ creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media: [media] } })
 
   it('anúncio só de texto entrega com media nula', async () => {
     const view = await new AdsDeliveryService(makeRepo() as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
     expect(view?.media).toBeNull()
+    expect(view?.mediaItems).toEqual([])
   })
 
   it('foto pronta vai para o feed com o endereço público da versão do feed e o formato escolhido', async () => {
@@ -312,5 +313,25 @@ describe('AdsDeliveryService.stats e fechamento', () => {
     expect(await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).closeSpend()).toBe(2)
     repo.closeSpend.mockRejectedValueOnce(new Error('falhou'))
     expect(await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).closeSpend()).toBe(1)
+  })
+})
+
+describe('AdsDeliveryService.next: carrossel', () => {
+  const photo = (id: string, status = 'READY') => ({
+    id, kind: 'IMAGE', status, format: 'SQUARE', key: `posts/${id}.jpg`, feedKey: `posts/${id}.feed.jpg`, thumbKey: `posts/${id}.thumb.webp`,
+    posterKey: null, width: 1080, height: 1080, sourceWidth: 2000, sourceHeight: 2000, durationMs: null, legacy: false,
+  })
+  const carousel = (...media: unknown[]) => candidate({ creative: { headline: 'Pão', body: 'Quente', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.example/', media } })
+
+  it('entrega todas as fotos, na ordem, e `media` é a primeira (para os apps antigos)', async () => {
+    const view = await new AdsDeliveryService(makeRepo([carousel(photo('a'), photo('b'), photo('c'))]) as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
+    expect(view?.mediaItems.map((item) => item.url)).toEqual(['https://cdn.test/posts/a.feed.jpg', 'https://cdn.test/posts/b.feed.jpg', 'https://cdn.test/posts/c.feed.jpg'])
+    expect(view?.media).toEqual(view?.mediaItems[0])
+  })
+
+  it('basta uma foto não estar pronta para o anúncio não ser entregue', async () => {
+    const repo = makeRepo([carousel(photo('a'), photo('b', 'PROCESSING'))])
+    expect(await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)).toBeNull()
+    expect(repo.createImpression).not.toHaveBeenCalled()
   })
 })

@@ -121,7 +121,7 @@ export function useUpdateAd(companyId: string, accountId: string) {
 export function useUpdateAdMedia(companyId: string, accountId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ adId, media }: { adId: string; media: PostMediaInput | null }) => api.put<AdView>(`${base(companyId)}/ads/${adId}/media`, { media }).then((r) => r.data),
+    mutationFn: ({ adId, mediaItems }: { adId: string; mediaItems: PostMediaInput[] }) => api.put<AdView>(`${base(companyId)}/ads/${adId}/media`, { mediaItems }).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignsKey(companyId, accountId) }),
   })
 }

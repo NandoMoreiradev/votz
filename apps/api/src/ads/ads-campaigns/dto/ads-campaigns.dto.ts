@@ -22,6 +22,7 @@ import {
   AD_CTA_LABELS,
   AD_INTEREST_IDS,
   AD_LIMITS,
+  AD_MEDIA_RULES,
   AD_OBJECTIVES,
   AGE_BANDS,
   USER_GENDERS,
@@ -138,6 +139,17 @@ export class AdCreativeInputDto {
   @ValidateNested()
   @Type(() => PostMediaInputDto)
   media?: PostMediaInputDto
+
+  @ApiPropertyOptional({
+    type: [PostMediaInputDto],
+    description: `Carrossel: até ${AD_MEDIA_RULES.MAX_ITEMS} fotos, todas no mesmo formato (ou um vídeo sozinho). Use este campo ou "media", nunca os dois.`,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(AD_MEDIA_RULES.MAX_ITEMS, { message: `O carrossel aceita até ${AD_MEDIA_RULES.MAX_ITEMS} fotos.` })
+  @ValidateNested({ each: true })
+  @Type(() => PostMediaInputDto)
+  mediaItems?: PostMediaInputDto[]
 }
 
 export class CreateAdCampaignDto {
@@ -284,4 +296,12 @@ export class UpdateAdMediaDto {
   @ValidateNested()
   @Type(() => PostMediaInputDto)
   media?: PostMediaInputDto | null
+
+  @ApiPropertyOptional({ type: [PostMediaInputDto], description: `Carrossel novo: até ${AD_MEDIA_RULES.MAX_ITEMS} fotos (ou um vídeo sozinho). Vazio ou ausente, junto com "media" nulo: tira a mídia.` })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(AD_MEDIA_RULES.MAX_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => PostMediaInputDto)
+  mediaItems?: PostMediaInputDto[]
 }

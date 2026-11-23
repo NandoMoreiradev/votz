@@ -16,6 +16,7 @@ import type { MediaAssetPurpose, Prisma } from '@prisma/client'
 import {
   MEDIA_FORMATS,
   POST_MEDIA_MAX_ITEMS,
+  AD_MEDIA_RULES,
   adMediaProblem,
   defaultCrop,
   validateMediaCrop,
@@ -275,13 +276,14 @@ export class MediaAssetsService {
    * exigências de anúncio (largura mínima da parte mostrada, vídeo de até 60 s, sem GIF). Depois de criar o criativo,
    * chame `finalizeForAdCreative`; se ele não for criado, `releaseForPost`.
    */
-  prepareForAdCreative(userId: string, input: PostMediaInputDto): Promise<PreparedPostMedia> {
-    return this.prepare(userId, [input], 'AD_CREATIVE')
+  prepareForAdCreative(userId: string, inputs: readonly PostMediaInputDto[]): Promise<PreparedPostMedia> {
+    return this.prepare(userId, inputs, 'AD_CREATIVE')
   }
 
   private async prepare(userId: string, inputs: readonly PostMediaInputDto[], purpose: MediaAssetPurpose): Promise<PreparedPostMedia> {
     const forAd = purpose === 'AD_CREATIVE'
-    if (forAd && inputs.length > 1) throw new BadRequestException('O anúncio aceita uma foto ou um vídeo.')
+    if (!inputs.length) throw new BadRequestException('Escolha pelo menos uma foto ou um vídeo.')
+    if (forAd && inputs.length > AD_MEDIA_RULES.MAX_ITEMS) throw new BadRequestException(`O carrossel do anúncio aceita até ${AD_MEDIA_RULES.MAX_ITEMS} fotos.`)
     if (inputs.length > POST_MEDIA_MAX_ITEMS)
       throw new BadRequestException(`Uma publicação pode ter até ${POST_MEDIA_MAX_ITEMS} fotos ou vídeos.`)
     const ids = inputs.map((input) => input.id)
@@ -313,6 +315,9 @@ export class MediaAssetsService {
       if (adProblem) throw new BadRequestException(adProblem)
       return { row, position, crop }
     })
+
+    // Vídeo de anúncio vale sozinho: o carrossel é só de fotos.
+    if (forAd && inputs.length > 1 && plan.some((item) => item.row.kind === 'VIDEO')) throw new BadRequestException('O vídeo do anúncio vale sozinho. No carrossel, use só fotos.')
 
     // Reserva um por um: se outro pedido (dois toques em "Publicar") pegou algum, devolve só os que este reservou.
     const claimed: string[] = []
@@ -392,17 +397,17 @@ export class MediaAssetsService {
   }
 
   /**
-   * Tira da transação do anúncio a foto ou o vídeo que ele tinha (a linha some junto) e devolve os arquivos do bucket para
+   * Tira da transação do anúncio as fotos ou o vídeo que ele tinha (as linhas somem junto) e devolve os arquivos do bucket para
    * apagar DEPOIS do commit com `dropKeys`: se a troca falhar, nada se perde. Devolve vazio se o anúncio era só texto.
    */
   async removeAdCreativeMedia(tx: Prisma.TransactionClient, adCreativeId: string): Promise<string[]> {
-    const old = await tx.mediaAsset.findUnique({
+    const old = await tx.mediaAsset.findMany({
       where: { adCreativeId },
       select: { id: true, sourceKey: true, key: true, feedKey: true, thumbKey: true, posterKey: true },
     })
-    if (!old) return []
-    await tx.mediaAsset.delete({ where: { id: old.id } })
-    return [old.sourceKey, old.key, old.feedKey, old.thumbKey, old.posterKey].filter((key): key is string => !!key)
+    if (!old.length) return []
+    await tx.mediaAsset.deleteMany({ where: { id: { in: old.map((item) => item.id) } } })
+    return old.flatMap((item) => [item.sourceKey, item.key, item.feedKey, item.thumbKey, item.posterKey]).filter((key): key is string => !!key)
   }
 
   /** Apaga arquivos do bucket sem falhar o chamador (o que sobrar é só registrado). */

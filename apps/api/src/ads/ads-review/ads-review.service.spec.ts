@@ -16,13 +16,13 @@ const notifications = { notify: jest.fn() }
 const storage = { getPublicUrl: (key: string) => `https://cdn.test/${key}` }
 
 const now = new Date('2026-11-22T12:00:00Z')
-const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null }
+const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: [] }
 const pendingAd = { id: 'ad1', reviewStatus: 'PENDING', creative, adSet: { campaign: { name: 'Dezembro', account: { companyId: 'co1' } } } }
 const mediaRow = (overrides: Record<string, unknown> = {}) => ({
   id: 'media-1', kind: 'VIDEO', status: 'READY', format: 'PORTRAIT', key: 'posts/m1.mp4', feedKey: null, thumbKey: null, posterKey: 'posts/m1.poster.jpg',
   width: 1080, height: 1350, sourceWidth: 1080, sourceHeight: 1920, durationMs: 20_000, legacy: false, ...overrides,
 })
-const adWithMedia = (media: unknown) => ({ ...pendingAd, creative: { ...creative, media } })
+const adWithMedia = (media: unknown) => ({ ...pendingAd, creative: { ...creative, media: [media] } })
 
 describe('AdsReviewService', () => {
   let service: AdsReviewService
@@ -48,7 +48,7 @@ describe('AdsReviewService', () => {
         total: 1,
         pendingCount: 1,
         data: [{
-          id: 'ad1', reviewStatus: 'PENDING', submittedAt: now, reviewedAt: null, reviewNote: null, creative: { ...creative, media: mediaRow() },
+          id: 'ad1', reviewStatus: 'PENDING', submittedAt: now, reviewedAt: null, reviewNote: null, creative: { ...creative, media: [mediaRow()] },
           adSet: {
             states: ['SP'], cities: [], interests: ['food-drink'], ageBands: ['25-34'], genders: [], automaticAudience: false, dailyBudgetCents: 2000,
             campaign: { name: 'Dezembro', objective: 'TRAFFIC', account: { name: 'Conta principal', company: { id: 'co1', tradeName: 'Padaria', verified: true } } },
@@ -106,7 +106,7 @@ describe('AdsReviewService', () => {
         decision: 'APPROVED',
         reason: null,
         reviewerId: 'mod1',
-        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null },
+        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null, mediaItems: [] },
       })
     })
 

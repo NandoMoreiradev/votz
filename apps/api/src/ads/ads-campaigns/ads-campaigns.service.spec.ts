@@ -33,7 +33,7 @@ const repo = {
 
 const now = new Date('2026-11-21T15:00:00Z')
 const account = { id: 'acc1', companyId: 'co1', name: 'Conta', currency: 'BRL', timezone: 'America/Sao_Paulo', balanceCents: 0, createdById: 'u1', createdAt: now, updatedAt: now }
-const creative = { id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now }
+const creative = { id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now, media: [] }
 const ad = (reviewStatus: string) => ({ id: 'ad1', adSetId: 'set1', creativeId: 'cr1', name: 'Pão quente', status: 'DRAFT', reviewStatus, reviewNote: null, submittedAt: null, reviewedAt: null, createdAt: now, updatedAt: now, creative })
 const tree = (overrides: Record<string, unknown> = {}, reviewStatus = 'NOT_SUBMITTED') => ({
   id: 'camp1', accountId: 'acc1', name: 'Dezembro', objective: 'TRAFFIC', status: 'DRAFT', createdAt: now, updatedAt: now,
@@ -139,7 +139,7 @@ describe('AdsCampaignsService', () => {
     })
     const treeWithMedia = (media: unknown) => {
       const base = tree()
-      base.adSets[0].ads[0].creative = { ...creative, media } as never
+      base.adSets[0].ads[0].creative = { ...creative, media: media ? [media] : [] } as never
       return base
     }
 
@@ -159,7 +159,7 @@ describe('AdsCampaignsService', () => {
       repo.findCampaign.mockResolvedValue(treeWithMedia(mediaRow()))
       const view = await service.createCampaign('co1', 'acc1', withMedia(), 'u1')
 
-      expect(mediaAssets.prepareForAdCreative).toHaveBeenCalledWith('u1', { id: 'media-1', format: 'SQUARE' })
+      expect(mediaAssets.prepareForAdCreative).toHaveBeenCalledWith('u1', [{ id: 'media-1', format: 'SQUARE' }])
       // O 2º argumento do repositório é o "anexar": roda dentro da transação e liga ao criativo recém-criado.
       const tx = {}
       await repo.createCampaign.mock.calls[0][1](tx, 'cr1')
@@ -200,7 +200,7 @@ describe('AdsCampaignsService', () => {
     })
 
     it('não deixa mandar para revisão anúncio cujo vídeo falhou', async () => {
-      repo.findAd.mockResolvedValue({ ...ad('REJECTED'), creative: { ...creative, media: mediaRow({ kind: 'VIDEO', status: 'FAILED' }) }, adSet: { campaign: { account: { companyId: 'co1' } } } })
+      repo.findAd.mockResolvedValue({ ...ad('REJECTED'), creative: { ...creative, media: [mediaRow({ kind: 'VIDEO', status: 'FAILED' })] }, adSet: { campaign: { account: { companyId: 'co1' } } } })
       await expect(service.submitAd('co1', 'ad1')).rejects.toThrow('vídeo')
       expect(repo.submitAd).not.toHaveBeenCalled()
     })

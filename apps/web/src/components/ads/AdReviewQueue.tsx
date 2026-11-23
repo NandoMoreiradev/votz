@@ -17,7 +17,7 @@ import { ModerationReasonModal } from '../moderation/ModerationReasonModal'
 import { useAuthStore } from '../../store/auth.store'
 import { AdFraudQueue } from './AdFraudQueue'
 import { AdRefundQueue } from './AdRefundQueue'
-import { AdMedia } from './AdMedia'
+import { AdMedia, adMediaItems } from './AdMedia'
 
 type Filter = 'PENDING' | 'APPROVED' | 'REJECTED'
 const FILTER_LABEL: Record<Filter, string> = { PENDING: 'Na fila', APPROVED: 'Aprovados', REJECTED: 'Recusados' }
@@ -274,9 +274,10 @@ export function AdReviewQueue() {
               <Tag>Patrocinado</Tag>
               <Headline>{item.creative.headline}</Headline>
               <Body>{item.creative.body}</Body>
-              <AdMedia media={item.creative.media} maxWidth={360} />
-              {item.creative.media?.status === 'PROCESSING' && <Meta>O vídeo ainda está sendo preparado: só dá para aprovar quando ficar pronto.</Meta>}
-              {item.creative.media?.status === 'FAILED' && <Meta>O vídeo não pôde ser preparado: recuse e peça um novo arquivo.</Meta>}
+              <AdMedia items={adMediaItems(item.creative)} maxWidth={360} />
+              {adMediaItems(item.creative).length > 1 && <Meta>Carrossel com {adMediaItems(item.creative).length} fotos: veja todas antes de aprovar.</Meta>}
+              {adMediaItems(item.creative).some((media) => media.status === 'PROCESSING') && <Meta>A mídia ainda está sendo preparada: só dá para aprovar quando ficar pronta.</Meta>}
+              {adMediaItems(item.creative).some((media) => media.status === 'FAILED') && <Meta>Uma foto ou o vídeo não pôde ser preparado: recuse e peça um novo arquivo.</Meta>}
               <Cta>{item.creative.ctaLabel}</Cta>
               <Url href={item.creative.destinationUrl} target="_blank" rel="noopener noreferrer nofollow">{item.creative.destinationUrl}</Url>
             </Preview>
