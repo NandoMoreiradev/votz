@@ -15,6 +15,8 @@ export interface NewTopUpData {
   checkoutUrl: string | null
   expiresAt: Date
   createdById: string
+  /** Veio da recarga automática. */
+  auto?: boolean
 }
 
 /** Só tabelas de anúncio. O saldo da conta só muda dentro de `postLedger`, junto com o lançamento. */
@@ -97,10 +99,32 @@ export class AdsBillingRepository {
   /** Único caminho que muda `balanceCents`: grava as linhas do lançamento e aplica a diferença no saldo. */
   async postLedger(
     tx: Pick<PrismaService, 'adLedgerEntry' | 'adAccount'>,
-    entry: { adAccountId: string; type: AdLedgerEntryType; description: string; lines: LedgerLine[]; topUpId?: string; createdById?: string },
+    entry: {
+      adAccountId: string
+      type: AdLedgerEntryType
+      description: string
+      lines: LedgerLine[]
+      topUpId?: string
+      refundId?: string
+      createdById?: string
+      /** Para lançamentos que tiram do saldo: o saldo precisa ter pelo menos isto antes (checagem atômica, sem corrida). */
+      minBalanceBeforeCents?: number
+    },
   ) {
     assertBalanced(entry.lines)
     const transactionId = randomUUID()
+    const delta = customerBalanceDelta(entry.lines)
+    if (delta !== 0) {
+      if (delta < 0 && entry.minBalanceBeforeCents !== undefined) {
+        const moved = await tx.adAccount.updateMany({
+          where: { id: entry.adAccountId, balanceCents: { gte: entry.minBalanceBeforeCents } },
+          data: { balanceCents: { increment: delta } },
+        })
+        if (moved.count === 0) throw new InsufficientBalanceError()
+      } else {
+        await tx.adAccount.update({ where: { id: entry.adAccountId }, data: { balanceCents: { increment: delta } } })
+      }
+    }
     await tx.adLedgerEntry.createMany({
       data: entry.lines.map((line) => ({
         adAccountId: entry.adAccountId,
@@ -111,10 +135,16 @@ export class AdsBillingRepository {
         type: entry.type,
         description: entry.description,
         topUpId: entry.topUpId ?? null,
+        refundId: entry.refundId ?? null,
         createdById: entry.createdById ?? null,
       })),
     })
-    const delta = customerBalanceDelta(entry.lines)
-    if (delta !== 0) await tx.adAccount.update({ where: { id: entry.adAccountId }, data: { balanceCents: { increment: delta } } })
+  }
+}
+
+/** O saldo não cobre o lançamento (alguém gastou ou pediu devolução ao mesmo tempo). */
+export class InsufficientBalanceError extends Error {
+  constructor() {
+    super('O saldo mudou e não cobre mais este valor.')
   }
 }

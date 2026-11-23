@@ -21,4 +21,14 @@ export class TestPaymentGateway implements PaymentGateway {
       : `00000.00000 00000.000000 00000.000000 0 TESTE-${request.topUpId.slice(0, 8)}`
     return { externalId, paymentCode: code, checkoutUrl: null }
   }
+
+  /** Recarga automática de teste: o "cartão" de teste sempre aprova, a não ser que a referência seja `test_card_declined`. */
+  supportsSavedMethod(): boolean {
+    return true
+  }
+
+  async chargeSavedMethod(request: ChargeRequest & { paymentMethodRef: string }): Promise<ChargeResult & { paid: boolean }> {
+    if (request.paymentMethodRef === 'test_card_declined') throw new Error('Cartão de teste recusado.')
+    return { externalId: `test_${request.topUpId}`, paymentCode: null, checkoutUrl: null, paid: true }
+  }
 }

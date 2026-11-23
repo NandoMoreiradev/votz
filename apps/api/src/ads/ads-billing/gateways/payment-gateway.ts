@@ -26,4 +26,11 @@ export interface PaymentGateway {
   /** Está configurado e implementado? Só então a forma de pagamento aparece para o anunciante. */
   isReady(): boolean
   createCharge(request: ChargeRequest): Promise<ChargeResult>
+  /**
+   * Recarga automática: cobra na hora o cartão salvo (referência do provedor, nunca o número). Devolve `paid: true` se o
+   * provedor aprovou. Quem não faz cobrança sem a pessoa presente não implementa e a recarga automática fica indisponível.
+   */
+  chargeSavedMethod?(request: ChargeRequest & { paymentMethodRef: string }): Promise<ChargeResult & { paid: boolean }>
+  /** Há cartão salvo para cobrar sozinho? */
+  supportsSavedMethod?(): boolean
 }

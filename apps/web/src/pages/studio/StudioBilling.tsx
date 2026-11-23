@@ -19,6 +19,7 @@ import {
   useConfirmTestTopUp,
   useCreateAdTopUp,
 } from '../../hooks/useAds'
+import { AutoTopUpSection, InvoicesSection, RefundSection } from '../../components/ads/BillingExtras'
 import {
   Badge,
   Card,
@@ -191,6 +192,10 @@ function BillingBody({ companyId, accountId, billing, canManage }: { companyId: 
         {billing.topUps.length === 0 ? <Hint>Você ainda não pediu nenhuma recarga.</Hint>
           : billing.topUps.map((topUp) => <TopUpRow key={topUp.id} companyId={companyId} accountId={accountId} topUp={topUp} testMode={testMode} canManage={canManage} />)}
       </Card>
+
+      <AutoTopUpSection key={`auto-${accountId}-${billing.autoTopUp?.consentAt ?? 'off'}-${billing.autoTopUp?.enabled}`} companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
+      <RefundSection companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
+      <InvoicesSection billing={billing} />
 
       <Card>
         <CardTitle>Extrato</CardTitle>

@@ -14,7 +14,9 @@ import {
 } from '@votz/shared-types'
 import { adsErrorMessage, formatBRL, useAdFraudQueue, useAdReviewQueue, useDecideAd } from '../../hooks/useAds'
 import { ModerationReasonModal } from '../moderation/ModerationReasonModal'
+import { useAuthStore } from '../../store/auth.store'
 import { AdFraudQueue } from './AdFraudQueue'
+import { AdRefundQueue } from './AdRefundQueue'
 import { AdMedia } from './AdMedia'
 
 type Filter = 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -217,7 +219,8 @@ function audience(item: AdReviewQueueItem): string {
 
 /** Aba "Anúncios" do painel de moderação: fila de revisão. Aprovar ou recusar (com motivo); tudo fica registrado. */
 export function AdReviewQueue() {
-  const [view, setView] = useState<'REVIEW' | 'FRAUD'>('REVIEW')
+  const isAdmin = useAuthStore((s) => s.user?.type) === 'ADMIN'
+  const [view, setView] = useState<'REVIEW' | 'FRAUD' | 'REFUNDS'>('REVIEW')
   const fraud = useAdFraudQueue('OPEN', 1)
   const [status, setStatus] = useState<Filter>('PENDING')
   const [page, setPage] = useState(1)
@@ -236,9 +239,11 @@ export function AdReviewQueue() {
     <FilterRow aria-label="O que revisar">
       <FilterBtn type="button" $active={view === 'REVIEW'} onClick={() => setView('REVIEW')}>Revisão de anúncios</FilterBtn>
       <FilterBtn type="button" $active={view === 'FRAUD'} onClick={() => setView('FRAUD')}>Tráfego suspeito{fraudOpen ? ` (${fraudOpen})` : ''}</FilterBtn>
+      {isAdmin && <FilterBtn type="button" $active={view === 'REFUNDS'} onClick={() => setView('REFUNDS')}>Devoluções de saldo</FilterBtn>}
     </FilterRow>
   )
   if (view === 'FRAUD') return <div>{views}<AdFraudQueue /></div>
+  if (view === 'REFUNDS' && isAdmin) return <div>{views}<AdRefundQueue /></div>
 
   return (
     <div>

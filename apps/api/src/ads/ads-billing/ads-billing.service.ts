@@ -1,18 +1,24 @@
 import { randomUUID } from 'crypto'
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import type { AdAccount, AdTopUp } from '@prisma/client'
+import type { AdAccount, AdInvoice, AdTopUp } from '@prisma/client'
 import {
   AD_BILLING_LIMITS,
   AD_TOPUP_METHODS,
   type AdAccountView,
   type AdBillingMode,
   type AdBillingView,
+  type AdInvoiceView,
   type AdStatementLine,
   type AdTopUpMethod,
   type AdTopUpView,
 } from '@votz/shared-types'
+import { AdsAutoTopUpRepository } from './ads-auto-topup.repository'
 import { AdsBillingRepository } from './ads-billing.repository'
+import { AdsRefundsRepository } from './ads-refunds.repository'
+import { AdsInvoicesRepository } from './invoices/ads-invoices.repository'
+import { autoTopUpView, saoPauloMonth } from './billing-rules'
+import { toView as refundView } from './refund-view'
 import { topUpLines } from './ledger'
 import type { PaymentGateway } from './gateways/payment-gateway'
 import { TestPaymentGateway } from './gateways/test-payment.gateway'
@@ -20,6 +26,8 @@ import { AsaasPaymentGateway, StripePaymentGateway } from './gateways/live-gatew
 import type { CreateAdTopUpDto } from './dto/ads-billing.dto'
 
 const RECENT_TOPUPS = 10
+const RECENT_REFUNDS = 10
+const RECENT_INVOICES = 12
 const STATEMENT_LINES = 30
 
 /**
@@ -35,6 +43,9 @@ export class AdsBillingService {
     private readonly testGateway: TestPaymentGateway,
     private readonly asaas: AsaasPaymentGateway,
     private readonly stripe: StripePaymentGateway,
+    @Optional() private readonly refunds?: AdsRefundsRepository,
+    @Optional() private readonly autoTopUps?: AdsAutoTopUpRepository,
+    @Optional() private readonly invoices?: AdsInvoicesRepository,
   ) {}
 
   /** `ADS_BILLING_MODE` manda; sem ele, produção é real e o resto é teste. */
@@ -47,10 +58,16 @@ export class AdsBillingService {
   async getBilling(companyId: string, accountId: string): Promise<AdBillingView> {
     const account = await this.ownedAccount(companyId, accountId)
     await this.repo.expirePending(accountId)
-    const [topUps, entries, ledgerBalance] = await Promise.all([
+    const now = new Date()
+    const [topUps, entries, ledgerBalance, refundable, refunds, autoTopUp, autoUsed, invoices] = await Promise.all([
       this.repo.listTopUps(accountId, RECENT_TOPUPS),
       this.repo.listStatement(accountId, STATEMENT_LINES),
       this.repo.ledgerBalance(accountId),
+      this.refunds?.refundable(accountId) ?? 0,
+      this.refunds?.list(accountId, RECENT_REFUNDS) ?? [],
+      this.autoTopUps?.find(accountId) ?? null,
+      this.autoTopUps?.usedInMonth(accountId, saoPauloMonth(now)) ?? 0,
+      this.invoices?.list(accountId, RECENT_INVOICES) ?? [],
     ])
 
     // O saldo depois de cada linha sai do saldo atual, andando para trás.
@@ -75,6 +92,11 @@ export class AdsBillingService {
       methods: AD_TOPUP_METHODS.filter((method) => this.gatewayFor(method).isReady()),
       limits: { minTopUpCents: AD_BILLING_LIMITS.MIN_TOPUP_CENTS, maxTopUpCents: AD_BILLING_LIMITS.MAX_TOPUP_CENTS },
       topUps: topUps.map(toTopUpView),
+      refundableCents: refundable,
+      refunds: refunds.map(refundView),
+      autoTopUpAvailable: !!this.savedMethodGateway(),
+      autoTopUp: autoTopUp ? autoTopUpView(autoTopUp, autoUsed) : null,
+      invoices: invoices.map(invoiceView),
       statement,
       reconciled: ledgerBalance === account.balanceCents,
     }
@@ -130,6 +152,12 @@ export class AdsBillingService {
     return { credited: result }
   }
 
+  /** Provedor que cobra o cartão salvo sem a pessoa presente (recarga automática). `null` se nenhum está pronto. */
+  savedMethodGateway(): PaymentGateway | null {
+    const gateway = this.gatewayFor('CARD')
+    return gateway.isReady() && gateway.supportsSavedMethod?.() && gateway.chargeSavedMethod ? gateway : null
+  }
+
   private gatewayFor(method: AdTopUpMethod): PaymentGateway {
     if (this.mode === 'test') return this.testGateway
     return method === 'CARD' ? this.stripe : this.asaas
@@ -145,6 +173,20 @@ export class AdsBillingService {
     const topUp = await this.repo.findTopUp(topUpId)
     if (!topUp || topUp.adAccount.companyId !== companyId) throw new NotFoundException('Recarga não encontrada.')
     return topUp
+  }
+}
+
+function invoiceView(invoice: AdInvoice): AdInvoiceView {
+  return {
+    id: invoice.id,
+    periodStart: invoice.periodStart.toISOString().slice(0, 10),
+    periodEnd: invoice.periodEnd.toISOString().slice(0, 10),
+    amountCents: invoice.amountCents,
+    status: invoice.status,
+    number: invoice.number,
+    pdfUrl: invoice.pdfUrl,
+    xmlUrl: invoice.xmlUrl,
+    issuedAt: invoice.issuedAt?.toISOString() ?? null,
   }
 }
 

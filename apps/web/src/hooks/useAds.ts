@@ -1,6 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AdAccountView,
+  AdReachEstimate,
+  AdReachEstimateInput,
+  AdAutoTopUpView,
+  AdRefundQueueItem,
+  AdRefundStatus,
+  AdRefundView,
+  RequestAdRefundInput,
+  SetAdAutoTopUpInput,
   AdBillingView,
   AdCampaignView,
   AdConversionKeyCreated,
@@ -62,6 +70,17 @@ export function useAdCampaigns(companyId: string, accountId: string | undefined)
 export function useUploadAdMedia(companyId: string) {
   return useMutation({
     mutationFn: ({ file, onProgress }: { file: File; onProgress?: (percent: number) => void }) => uploadAdMedia(companyId, file, onProgress),
+  })
+}
+
+/** Estimativa de alcance do público do passo a passo (uma faixa, nunca o número exato). `null` não consulta. */
+export function useAdReachEstimate(companyId: string, input: AdReachEstimateInput | null) {
+  return useQuery({
+    queryKey: ['ads', companyId, 'reach', input],
+    queryFn: () => api.post<AdReachEstimate>(`${base(companyId)}/reach-estimate`, input).then((r) => r.data),
+    enabled: !!companyId && !!input,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -178,6 +197,49 @@ export function useCancelAdTopUp(companyId: string, accountId: string) {
   return useMutation({
     mutationFn: (topUpId: string) => api.post<AdTopUpView>(`${base(companyId)}/topups/${topUpId}/cancel`).then((r) => r.data),
     onSuccess: refresh,
+  })
+}
+
+export function useRequestAdRefund(companyId: string, accountId: string) {
+  const refresh = useRefreshBilling(companyId, accountId)
+  return useMutation({
+    mutationFn: (input: RequestAdRefundInput) => api.post<AdRefundView>(`${base(companyId)}/accounts/${accountId}/refunds`, input).then((r) => r.data),
+    onSuccess: refresh,
+  })
+}
+
+export function useCancelAdRefund(companyId: string, accountId: string) {
+  const refresh = useRefreshBilling(companyId, accountId)
+  return useMutation({
+    mutationFn: (refundId: string) => api.post<AdRefundView>(`${base(companyId)}/refunds/${refundId}/cancel`).then((r) => r.data),
+    onSuccess: refresh,
+  })
+}
+
+export function useSetAdAutoTopUp(companyId: string, accountId: string) {
+  const refresh = useRefreshBilling(companyId, accountId)
+  return useMutation({
+    mutationFn: (input: SetAdAutoTopUpInput) => api.put<AdAutoTopUpView>(`${base(companyId)}/accounts/${accountId}/auto-topup`, input).then((r) => r.data),
+    onSuccess: refresh,
+  })
+}
+
+// ─── Devoluções de saldo (admin) ───────────────────────────────────────────────────────────────
+
+export function useAdRefundQueue(status: AdRefundStatus, enabled = true) {
+  return useQuery({
+    queryKey: ['admin-ad-refunds', status],
+    queryFn: () => api.get<AdRefundQueueItem[]>('/admin/ad-refunds', { params: { status } }).then((r) => r.data),
+    enabled,
+  })
+}
+
+export function useResolveAdRefund() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ refundId, ...body }: { refundId: string; decision: 'PAID' | 'REJECTED'; note?: string; externalId?: string }) =>
+      api.post<AdRefundView>(`/admin/ad-refunds/${refundId}/resolve`, body).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-ad-refunds'] }),
   })
 }
 

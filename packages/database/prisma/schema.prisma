@@ -192,6 +192,10 @@ enum NotificationType {
   AD_REJECTED
   AD_LOW_BALANCE
   AD_PAUSED_NO_BALANCE
+  AD_REFUND_PAID
+  AD_REFUND_REJECTED
+  AD_AUTO_TOPUP_STOPPED
+  AD_INVOICE_ISSUED
   AD_INVALID_TRAFFIC
   AD_LANDING_PAGE
 }
@@ -2262,6 +2266,9 @@ model AdAccount {
   topUps       AdTopUp[]
   ledger       AdLedgerEntry[]
   conversionKeys AdConversionKey[]
+  refunds      AdRefund[]
+  autoTopUp    AdAutoTopUp?
+  invoices     AdInvoice[]
   conversions  AdConversion[]
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
@@ -2453,6 +2460,8 @@ model AdTopUp {
   createdById String            @map("created_by_id")
   ledger      AdLedgerEntry[]
   createdAt   DateTime          @default(now()) @map("created_at")
+  // Recarga feita sozinha pela recarga automática (e não por uma pessoa pedindo na tela).
+  auto        Boolean           @default(false)
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
   @@unique([provider, externalId])
@@ -2469,6 +2478,7 @@ enum AdLedgerAccount {
   PROMO_FUND // crédito dado pelo Votz (ajuste manual)
 }
 
+  REFUNDS_PAYABLE // devoluções pedidas e ainda não pagas: o que o Votz deve devolver ao anunciante
 enum AdLedgerSide {
   DEBIT
   CREDIT
@@ -2497,14 +2507,106 @@ model AdLedgerEntry {
   topUp         AdTopUp?          @relation(fields: [topUpId], references: [id], onDelete: SetNull)
   createdById   String?           @map("created_by_id")
   createdAt     DateTime          @default(now()) @map("created_at")
+  refundId      String?           @map("refund_id")
+  refund        AdRefund?         @relation(fields: [refundId], references: [id], onDelete: SetNull)
 
   @@index([adAccountId, createdAt])
   @@index([transactionId])
   @@index([topUpId])
   @@map("ad_ledger_entries")
 }
+  @@index([refundId])
 
 // ── Anúncios: entrega, eventos e medição (plano de anúncios, Etapa 2) ───────
+
+enum AdRefundStatus {
+  REQUESTED // pedida: o valor já saiu do saldo (fica em "devoluções a pagar") e espera o Votz devolver o dinheiro
+  PAID // dinheiro devolvido
+  REJECTED // recusada pelo Votz: o valor volta para o saldo
+  CANCELED // cancelada pelo anunciante antes de ser paga: o valor volta para o saldo
+}
+
+// Pedido de devolução do saldo que sobrou. O valor sai do saldo na hora do pedido, para não ser gasto enquanto espera.
+model AdRefund {
+  id             String          @id @default(uuid())
+  adAccountId    String          @map("ad_account_id")
+  adAccount      AdAccount       @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  amountCents    Int             @map("amount_cents")
+  status         AdRefundStatus  @default(REQUESTED)
+  reason         String?
+  requestedById  String          @map("requested_by_id")
+  resolvedById   String?         @map("resolved_by_id")
+  resolutionNote String?         @map("resolution_note")
+  // Identificador da devolução no banco ou provedor, quando o Votz paga.
+  externalId     String?         @map("external_id")
+  requestedAt    DateTime        @default(now()) @map("requested_at")
+  resolvedAt     DateTime?       @map("resolved_at")
+  ledger         AdLedgerEntry[]
+
+  @@index([adAccountId, requestedAt])
+  @@index([status, requestedAt])
+  @@map("ad_refunds")
+}
+
+// Recarga automática: quando o saldo cai abaixo do piso, o Votz cobra o cartão salvo (nunca o número: só uma referência do provedor).
+model AdAutoTopUp {
+  adAccountId         String            @id @map("ad_account_id")
+  adAccount           AdAccount         @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  enabled             Boolean           @default(false)
+  // Quando o saldo disponível ficar abaixo disto, recarrega `amountCents`.
+  thresholdCents      Int               @map("threshold_cents")
+  amountCents         Int               @map("amount_cents")
+  // Teto de recargas automáticas por mês (centavos): passou disso, para até o mês seguinte.
+  monthlyLimitCents   Int               @map("monthly_limit_cents")
+  provider            AdPaymentProvider
+  // Referência do cartão no provedor. Nunca o número do cartão.
+  paymentMethodRef    String?           @map("payment_method_ref")
+  consentAt           DateTime?         @map("consent_at")
+  consentById         String?           @map("consent_by_id")
+  lastTriggeredAt     DateTime?         @map("last_triggered_at")
+  consecutiveFailures Int               @default(0) @map("consecutive_failures")
+  // Por que foi desligada sozinha (falhas seguidas, teto do mês). Vazio se está tudo bem.
+  stoppedReason       String?           @map("stopped_reason")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  @@map("ad_auto_top_ups")
+}
+
+enum AdInvoiceStatus {
+  PENDING // criada, ainda não emitida
+  ISSUED // nota emitida
+  FAILED // a emissão falhou depois de várias tentativas: precisa de ajuda humana
+  CANCELED
+}
+
+// Nota fiscal de serviço de um mês de gasto com anúncios. O valor sai do livro-caixa (soma do gasto do mês), então confere sempre.
+model AdInvoice {
+  id          String          @id @default(uuid())
+  adAccountId String          @map("ad_account_id")
+  adAccount   AdAccount       @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  // Mês de competência: primeiro e último dia (fuso de São Paulo).
+  periodStart DateTime        @map("period_start") @db.Date
+  periodEnd   DateTime        @map("period_end") @db.Date
+  amountCents Int             @map("amount_cents")
+  status      AdInvoiceStatus @default(PENDING)
+  // Dados do tomador no momento da emissão (a empresa pode mudar o cadastro depois).
+  takerName   String          @map("taker_name")
+  takerCnpj   String          @map("taker_cnpj")
+  provider    String?
+  externalId  String?         @map("external_id")
+  number      String?
+  pdfUrl      String?         @map("pdf_url")
+  xmlUrl      String?         @map("xml_url")
+  attempts    Int             @default(0)
+  lastError   String?         @map("last_error")
+  issuedAt    DateTime?       @map("issued_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@unique([adAccountId, periodStart])
+  @@index([status, createdAt])
+  @@map("ad_invoices")
+}
 
 enum AdChargeOn {
   VIEWABLE_IMPRESSION // reconhecimento e conversões: por exibição visível

@@ -27,6 +27,22 @@ export function notificationContent(notification: AppNotification): { label: str
       : `As campanhas da conta ${account} foram pausadas porque o saldo acabou. Recarregue e ligue as campanhas de novo.`
     return { label, href: '/estudio/anuncios/faturamento' }
   }
+  if (type === 'AD_REFUND_PAID' || type === 'AD_REFUND_REJECTED') {
+    const value = typeof metadata?.amountCents === 'number' ? `R$ ${(Math.max(metadata.amountCents, 0) / 100).toFixed(2).replace('.', ',')}` : 'o valor'
+    const reason = typeof metadata?.reason === 'string' && metadata.reason.trim() ? ` Motivo: ${metadata.reason}` : ''
+    const label = type === 'AD_REFUND_PAID'
+      ? `A devolução de ${value} foi paga. O dinheiro já foi enviado para você.`
+      : `A devolução de ${value} foi recusada e o valor voltou para o seu saldo.${reason}`
+    return { label, href: '/estudio/anuncios/faturamento' }
+  }
+  if (type === 'AD_AUTO_TOPUP_STOPPED') {
+    const reason = typeof metadata?.reason === 'string' && metadata.reason.trim() ? ` ${metadata.reason}` : ''
+    return { label: `A recarga automática foi desligada.${reason} Ligue de novo em Faturamento quando quiser.`, href: '/estudio/anuncios/faturamento' }
+  }
+  if (type === 'AD_INVOICE_ISSUED') {
+    const value = typeof metadata?.amountCents === 'number' ? ` de R$ ${(Math.max(metadata.amountCents, 0) / 100).toFixed(2).replace('.', ',')}` : ''
+    return { label: `Sua nota fiscal${value} do gasto com anúncios do mês passado foi emitida. Veja em Faturamento.`, href: '/estudio/anuncios/faturamento' }
+  }
   if (type === 'AD_LANDING_PAGE') {
     const name = typeof metadata?.campaignName === 'string' && metadata.campaignName.trim() ? `"${metadata.campaignName}"` : 'sua campanha'
     const host = typeof metadata?.host === 'string' && metadata.host ? ` (${metadata.host})` : ''

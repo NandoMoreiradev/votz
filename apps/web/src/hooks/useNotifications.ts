@@ -8,6 +8,7 @@ export interface AppNotification {
     | 'WEEKLY_DIGEST' | 'SLA_AT_RISK' | 'SLA_BREACHED' | 'SLA_ESCALATED'
     | 'REPORT_ASSIGNED' | 'POST_LIKE' | 'POST_COMMENT' | 'POST_REPOST' | 'POST_MENTION'
     | 'AD_APPROVED' | 'AD_REJECTED' | 'AD_LOW_BALANCE' | 'AD_PAUSED_NO_BALANCE' | 'AD_INVALID_TRAFFIC' | 'AD_LANDING_PAGE'
+    | 'AD_REFUND_PAID' | 'AD_REFUND_REJECTED' | 'AD_AUTO_TOPUP_STOPPED' | 'AD_INVOICE_ISSUED'
   read: boolean
   createdAt: string
   metadata: Record<string, unknown> | null
