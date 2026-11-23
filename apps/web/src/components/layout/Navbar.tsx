@@ -14,6 +14,7 @@ import { useUnreadCount, useNotifications, useMarkRead, useMarkAllRead } from '.
 import { notificationContent } from '../../lib/notification-content'
 import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
+import { useContextNotesEnabled } from '../../hooks/useContextNotes'
 
 const Nav = styled.nav`
   position: sticky;
@@ -683,6 +684,7 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
   const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const { data: profiles } = useMyProfiles(!!user && sessionReady)
+  const contextNotesEnabled = useContextNotesEnabled()
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
   const closeMobileMenu = useCallback((restoreFocus = false) => {
@@ -922,6 +924,11 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
                       <DropdownItem to="/sugestoes" onClick={() => setOpen(false)}>
                         Sugestões e melhorias
                       </DropdownItem>
+                      {contextNotesEnabled && (
+                        <DropdownItem to="/contexto" onClick={() => setOpen(false)}>
+                          Contexto da Comunidade
+                        </DropdownItem>
+                      )}
                       <DropdownAction onClick={() => { setShowInviteModal(true); setOpen(false) }}>
                         Convidar pessoas
                       </DropdownAction>
@@ -1044,6 +1051,11 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
               <MobileNavLink to="/sugestoes" onClick={() => setMobileOpen(false)}>
                 Sugestões e melhorias
               </MobileNavLink>
+              {contextNotesEnabled && (
+                <MobileNavLink to="/contexto" onClick={() => setMobileOpen(false)}>
+                  Contexto da Comunidade
+                </MobileNavLink>
+              )}
               <MobileDrawerAction
                 type="button"
                 onClick={() => {

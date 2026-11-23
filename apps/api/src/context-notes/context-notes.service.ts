@@ -461,13 +461,14 @@ export class ContextNotesService {
     if (!removed) throw new NotFoundException('Nota não encontrada ou já removida.')
     if (removed.authorId) {
       const contact = await this.repo.findUserContact(removed.authorId)
-      await deliverModerationNotice(this.mail, this.prisma, this.logger, {
+      // Em segundo plano: e-mail lento ou fora do ar nunca trava a moderação nem desfaz a remoção (o erro vai para o log).
+      void deliverModerationNotice(this.mail, this.prisma, this.logger, {
         actionId: removed.actionId,
         email: contact?.email,
         name: contact?.name,
         kind: 'NOTE_REMOVED',
         reason: clean,
-      })
+      }).catch((err) => this.logger.error(`Aviso de nota removida falhou (${removed.actionId})`, err))
     }
     return { removed: true }
   }

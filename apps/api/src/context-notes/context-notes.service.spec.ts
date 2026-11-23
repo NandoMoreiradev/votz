@@ -313,6 +313,7 @@ describe('ContextNotesService', () => {
       const { service, repo, mail, prisma } = build()
       repo.removeNote.mockResolvedValue({ actionId: 'act1', authorId: U(2) })
       await service.removeByModeration(U(100), U(5), 'A nota acusa a pessoa de crime, sem fonte.')
+      await new Promise((resolve) => setImmediate(resolve)) // o aviso corre em segundo plano
       expect(repo.removeNote).toHaveBeenCalledWith(U(100), U(5), 'A nota acusa a pessoa de crime, sem fonte.')
       expect(mail.sendModerationNotice).toHaveBeenCalledWith('a@b.c', 'Ana', 'NOTE_REMOVED', 'A nota acusa a pessoa de crime, sem fonte.')
       expect(prisma.moderationAction.update).toHaveBeenCalledWith({ where: { id: 'act1' }, data: { notifiedAt: expect.any(Date) } })
@@ -322,6 +323,14 @@ describe('ContextNotesService', () => {
       await expect(service.removeByModeration(U(100), U(5), 'curto')).rejects.toBeInstanceOf(BadRequestException)
       repo.removeNote.mockResolvedValue(null)
       await expect(service.removeByModeration(U(100), U(5), 'Motivo bem explicado aqui.')).rejects.toBeInstanceOf(NotFoundException)
+    })
+    it('e-mail lento ou com falha não trava nem desfaz a remoção', async () => {
+      const { service, repo, mail } = build()
+      repo.removeNote.mockResolvedValue({ actionId: 'act3', authorId: U(2) })
+      mail.sendModerationNotice.mockReturnValue(new Promise(() => {})) // nunca responde
+      await expect(service.removeByModeration(U(100), U(5), 'Motivo bem explicado aqui.')).resolves.toEqual({ removed: true })
+      mail.sendModerationNotice.mockRejectedValue(new Error('SMTP fora'))
+      await expect(service.removeByModeration(U(100), U(5), 'Motivo bem explicado aqui.')).resolves.toEqual({ removed: true })
     })
     it('nota de IA (sem autor) é removida sem e-mail', async () => {
       const { service, repo, mail } = build()

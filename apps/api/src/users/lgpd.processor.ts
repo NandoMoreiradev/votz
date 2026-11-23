@@ -59,6 +59,10 @@ export class LgpdProcessor extends WorkerHost {
       registrationRequests,
       accessLogs,
       adPreferences,
+      contextNotes,
+      contextNoteRatings,
+      contextNoteRequests,
+      contextContributor,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -174,6 +178,29 @@ export class LgpdProcessor extends WorkerHost {
         where: { userId },
         select: { personalizationConsent: true, consentAt: true, consentVersion: true, interests: true, updatedAt: true },
       }),
+      // Contexto da Comunidade: o que a pessoa escreveu, avaliou e pediu, e o andamento dela como colaboradora.
+      this.prisma.contextNote.findMany({
+        where: { authorId: userId },
+        select: {
+          kind: true, text: true, sources: true, status: true, createdAt: true,
+          post: { select: { id: true } }, report: { select: { id: true, title: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.contextNoteRating.findMany({
+        where: { raterId: userId },
+        select: { value: true, reasons: true, createdAt: true, note: { select: { id: true, postId: true, reportId: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.contextNoteRequest.findMany({
+        where: { requesterId: userId },
+        select: { postId: true, reportId: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.contextContributor.findUnique({
+        where: { userId },
+        select: { termsVersion: true, termsAcceptedAt: true, ratingsGiven: true, ratingsResolved: true, ratingsAligned: true, writeGrantedAt: true, suspendedAt: true, createdAt: true },
+      }),
     ])
 
     let decryptedCpf: string | null = null
@@ -205,6 +232,10 @@ export class LgpdProcessor extends WorkerHost {
       registrationRequests: { total: registrationRequests.length, items: registrationRequests },
       accessLogs: { total: accessLogs.length, items: accessLogs },
       adPreferences,
+      contextNotes: { total: contextNotes.length, items: contextNotes },
+      contextNoteRatings: { total: contextNoteRatings.length, items: contextNoteRatings },
+      contextNoteRequests: { total: contextNoteRequests.length, items: contextNoteRequests },
+      contextContributor,
     }
 
     const key = `exports/${userId}/${randomUUID()}.json`

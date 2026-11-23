@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { ContextNoteView } from '@votz/shared-types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { ContextNoteRatingValue, ContextNoteView } from '@votz/shared-types'
 import { api, json } from '../lib/api'
 
 export type ContextTargetType = 'POST' | 'REPORT'
@@ -73,5 +73,67 @@ export function useShownContextNote(type: ContextTargetType, id: string) {
 export function useRequestContext() {
   return useMutation({
     mutationFn: (body: { targetType: ContextTargetType; targetId: string }) => api('/context-notes/requests', json(body)),
+  })
+}
+
+// ── Colaborar (entrar, avaliar, escrever) ─────────────────────────────────────────
+export type ContributorStatus = {
+  enabled: boolean
+  termsVersion: string
+  joined: boolean
+  suspended: boolean
+  blockedReason: string | null
+  canRate: boolean
+  canWrite: boolean
+  progress: { ratingsGiven: number; ratingsNeededToWrite: number }
+}
+export type QueueTarget = { type: ContextTargetType; id: string; title: string; excerpt: string; link: string }
+export type QueueNote = {
+  note: { id: string; kind: ContextNoteKindValue; text: string; sources: string[]; origin: 'HUMAN' | 'AI'; createdAt: string }
+  target: QueueTarget
+}
+export type ContextQueue = { canWrite: boolean; toRate: QueueNote[]; requested: Array<{ count: number; target: QueueTarget }> }
+type ContextNoteKindValue = ContextNoteView['kind']
+
+export function useContributorStatus(enabled: boolean) {
+  return useQuery({
+    queryKey: ['context-notes', 'me'],
+    queryFn: ({ signal }) => api<ContributorStatus>('/context-notes/contributor/me', { signal }),
+    enabled,
+    staleTime: 60_000,
+  })
+}
+export function useJoinContributor() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (termsVersion: string) => api<ContributorStatus>('/context-notes/contributor', json({ acceptTerms: true, termsVersion })),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['context-notes'] }),
+  })
+}
+export function useContextQueue(enabled: boolean) {
+  return useQuery({
+    queryKey: ['context-notes', 'queue'],
+    queryFn: ({ signal }) => api<ContextQueue>('/context-notes/queue', { signal }),
+    enabled,
+    staleTime: 30_000,
+  })
+}
+export function useRateContextNote() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { noteId: string; value: ContextNoteRatingValue; reasons: string[] }) =>
+      api(`/context-notes/${body.noteId}/rating`, { method: 'PUT', body: JSON.stringify({ value: body.value, reasons: body.reasons }) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['context-notes', 'queue'] })
+      void client.invalidateQueries({ queryKey: ['context-notes', 'me'] })
+    },
+  })
+}
+export function useCreateContextNote() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { targetType: ContextTargetType; targetId: string; kind: ContextNoteKindValue; text: string; sources: string[] }) =>
+      api('/context-notes', json(body)),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['context-notes', 'queue'] }),
   })
 }

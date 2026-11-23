@@ -27,6 +27,10 @@ describe('LgpdProcessor', () => {
       apiKey: { findMany: jest.fn().mockResolvedValue([]) },
       registrationRequest: { findMany: jest.fn().mockResolvedValue([]) },
       accessLog: { findMany: jest.fn().mockResolvedValue([]) },
+      contextNote: { findMany: jest.fn().mockResolvedValue([{ kind: 'CORRECTION', text: 'Minha nota', sources: ['https://exemplo.com/a'], status: 'SHOWN', createdAt: new Date(), post: { id: 'p1' }, report: null }]) },
+      contextNoteRating: { findMany: jest.fn().mockResolvedValue([{ value: 'HELPFUL', reasons: [], createdAt: new Date(), note: { id: 'n1', postId: 'p2', reportId: null } }]) },
+      contextNoteRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      contextContributor: { findUnique: jest.fn().mockResolvedValue({ termsVersion: '2026-11-23', ratingsGiven: 3 }) },
       adUserPreference: { findUnique: jest.fn().mockResolvedValue({ personalizationConsent: true, consentAt: null, consentVersion: '2026-11-21', interests: ['sports'], updatedAt: null }) },
     }
     storage = {
@@ -148,6 +152,16 @@ describe('LgpdProcessor', () => {
 
     // Preferências de anúncios entram na exportação (LGPD: acesso e portabilidade)
     expect(payload.adPreferences).toEqual(expect.objectContaining({ personalizationConsent: true, interests: ['sports'] }))
+
+    // Contexto da Comunidade: o que a pessoa escreveu, avaliou e pediu entra na exportação, filtrado só pela conta dela.
+    expect(prisma.contextNote.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { authorId: 'u1' } }))
+    expect(prisma.contextNoteRating.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { raterId: 'u1' } }))
+    expect(prisma.contextNoteRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { requesterId: 'u1' } }))
+    expect(payload.contextNotes.total).toBe(1)
+    expect(payload.contextNotes.items[0].text).toBe('Minha nota')
+    expect(payload.contextNoteRatings.total).toBe(1)
+    expect(payload.contextNoteRequests.total).toBe(0)
+    expect(payload.contextContributor).toEqual(expect.objectContaining({ termsVersion: '2026-11-23', ratingsGiven: 3 }))
 
     // Ensure no secret fields are selected or exported
     const serialized = JSON.stringify(payload)
