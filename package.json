@@ -26,7 +26,7 @@
     "security:encrypt-mfa-secrets": "npm run security:encrypt-mfa-secrets --workspace=apps/api"
   },
   "devDependencies": {
-    "turbo": "^2.3.3",
+    "turbo": "^2.11.13",
     "typescript": "5.9.3"
   },
   "engines": {
