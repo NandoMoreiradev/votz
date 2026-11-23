@@ -27,7 +27,7 @@ import {
   ConversationLoadingMore,
   ConversationPersonRow,
 } from '../../components/conversation-ui'
-import { BrandMark, Screen } from '../../components/screen'
+import { Screen, Toolbar } from '../../components/screen'
 import { Button, ErrorText, IconButton, State } from '../../components/ui'
 import {
   useConversationAction,
@@ -370,13 +370,7 @@ function InboxMenu() {
 export default function ConversationsScreen() {
   return (
     <Screen tabs>
-      <View style={styles.header}>
-        <BrandMark />
-        <Text accessibilityRole="header" style={styles.headerTitle}>
-          Conversas
-        </Text>
-        <InboxMenu />
-      </View>
+      <Toolbar title="Conversas" right={<InboxMenu />} />
       <ConversationGate allowWithoutChat>
         <Inbox />
       </ConversationGate>
@@ -385,21 +379,6 @@ export default function ConversationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 12,
-    paddingRight: 8,
-    gap: 12,
-    backgroundColor: theme.colors.surface,
-  },
-  headerTitle: {
-    flex: 1,
-    fontFamily: theme.fonts.heading,
-    fontSize: 26,
-    color: theme.colors.primary,
-  },
   folderRow: {
     flexDirection: 'row',
     alignItems: 'center',
