@@ -422,6 +422,8 @@ export interface AdAccountView {
 export declare const AD_MEDIA_RULES: {
     readonly MIN_WIDTH: 1080;
     readonly MAX_VIDEO_SECONDS: 60;
+    /** Fotos no carrossel de um anúncio. Vídeo não entra em carrossel: vale um vídeo sozinho. */
+    readonly MAX_ITEMS: 5;
     /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
     readonly RECOMMENDED_FORMATS: readonly ["SQUARE", "PORTRAIT"];
     /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
@@ -442,8 +444,10 @@ export interface AdCreativeView {
     body: string;
     ctaLabel: string;
     destinationUrl: string;
-    /** Foto ou vídeo do anúncio; null se o anúncio é só texto. */
+    /** A primeira foto ou o vídeo do anúncio; null se é só texto. Existe para os apps antigos, que só sabem desenhar uma. */
     media: MediaItemDto | null;
+    /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: o anúncio é só texto. `media` é o primeiro item. */
+    mediaItems: MediaItemDto[];
 }
 export interface AdView {
     id: string;
@@ -499,12 +503,21 @@ export interface CreateAdCampaignInput {
         body: string;
         ctaLabel: AdCtaLabel;
         destinationUrl: string;
-        /** Arquivo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
+        /** Uma foto ou vídeo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
         media?: {
             id: string;
             format: MediaFormat;
             crop?: MediaCrop;
         };
+        /**
+         * Carrossel: até `AD_MEDIA_RULES.MAX_ITEMS` fotos, todas no mesmo formato (ou um vídeo sozinho). Use este campo **ou**
+         * `media`, nunca os dois.
+         */
+        mediaItems?: {
+            id: string;
+            format: MediaFormat;
+            crop?: MediaCrop;
+        }[];
     };
     /** Já manda o anúncio para revisão ao salvar. */
     submitForReview?: boolean;
@@ -663,6 +676,97 @@ export interface AdStatementLine {
     balanceAfterCents: number;
     createdAt: string;
 }
+export declare const AD_REFUND_STATUS_LABELS: {
+    readonly REQUESTED: "Pedida";
+    readonly PAID: "Devolvida";
+    readonly REJECTED: "Recusada";
+    readonly CANCELED: "Cancelada";
+};
+export type AdRefundStatus = keyof typeof AD_REFUND_STATUS_LABELS;
+export declare const AD_REFUND_LIMITS: {
+    /** Devolução mínima: R$ 10,00 (a não ser que seja tudo o que dá para devolver). */
+    readonly MIN_CENTS: 1000;
+    readonly REASON_MAX: 300;
+    readonly NOTE_MAX: 300;
+};
+export interface AdRefundView {
+    id: string;
+    amountCents: number;
+    status: AdRefundStatus;
+    reason: string | null;
+    /** O que o Votz escreveu ao recusar. */
+    resolutionNote: string | null;
+    requestedAt: string;
+    resolvedAt: string | null;
+}
+/** Um pedido de devolução na fila do Votz (tela de moderação). */
+export interface AdRefundQueueItem extends AdRefundView {
+    accountId: string;
+    accountName: string;
+    companyId: string;
+    companyName: string;
+    companyCnpj: string;
+}
+export interface RequestAdRefundInput {
+    amountCents: number;
+    reason?: string;
+}
+export declare const AD_AUTO_TOPUP_LIMITS: {
+    /** Piso mínimo e máximo para disparar (centavos). */
+    readonly MIN_THRESHOLD_CENTS: 1000;
+    readonly MAX_THRESHOLD_CENTS: 500000;
+    /** Teto mensal máximo de recargas automáticas: R$ 20.000,00. */
+    readonly MAX_MONTHLY_LIMIT_CENTS: 2000000;
+    /** Depois de tantas falhas seguidas, a recarga automática desliga e o anunciante é avisado. */
+    readonly MAX_FAILURES: 3;
+    /** No mínimo este tempo entre duas recargas automáticas da mesma conta. */
+    readonly MIN_INTERVAL_MINUTES: 60;
+};
+export interface AdAutoTopUpView {
+    enabled: boolean;
+    thresholdCents: number;
+    amountCents: number;
+    monthlyLimitCents: number;
+    /** Quanto já foi recarregado sozinho neste mês. */
+    usedThisMonthCents: number;
+    /** Há um cartão salvo para cobrar. */
+    hasPaymentMethod: boolean;
+    /** Por que parou sozinha (falhas seguidas, teto do mês). */
+    stoppedReason: string | null;
+    consentAt: string | null;
+    lastTriggeredAt: string | null;
+}
+export interface SetAdAutoTopUpInput {
+    enabled: boolean;
+    thresholdCents: number;
+    amountCents: number;
+    monthlyLimitCents: number;
+    /** A pessoa leu e aceitou que o cartão seja cobrado sozinho (obrigatório para ligar). */
+    acceptCharges?: boolean;
+}
+export declare const AD_AUTO_TOPUP_COPY: {
+    readonly CONSENT: "Quando o saldo ficar abaixo do piso que você escolheu, o Votz cobra o seu cartão sozinho e soma o valor ao saldo. Você pode desligar a qualquer momento.";
+    readonly CAP: "O Votz nunca cobra mais do que o teto do mês.";
+};
+export declare const AD_INVOICE_STATUS_LABELS: {
+    readonly PENDING: "Sendo emitida";
+    readonly ISSUED: "Emitida";
+    readonly FAILED: "Com problema";
+    readonly CANCELED: "Cancelada";
+};
+export type AdInvoiceStatus = keyof typeof AD_INVOICE_STATUS_LABELS;
+export interface AdInvoiceView {
+    id: string;
+    /** Primeiro e último dia do mês de gasto ("AAAA-MM-DD"). */
+    periodStart: string;
+    periodEnd: string;
+    amountCents: number;
+    status: AdInvoiceStatus;
+    number: string | null;
+    pdfUrl: string | null;
+    xmlUrl: string | null;
+    issuedAt: string | null;
+}
 export interface AdBillingView {
     account: AdAccountView;
     mode: AdBillingMode;
@@ -673,6 +777,13 @@ export interface AdBillingView {
         maxTopUpCents: number;
     };
     topUps: AdTopUpView[];
+    /** Quanto dá para pedir de volta agora (nunca mais que o saldo disponível nem que o que foi pago em recargas). */
+    refundableCents: number;
+    refunds: AdRefundView[];
+    /** A recarga automática funciona agora (há provedor de cartão pronto). */
+    autoTopUpAvailable: boolean;
+    autoTopUp: AdAutoTopUpView | null;
+    invoices: AdInvoiceView[];
     statement: AdStatementLine[];
     /** O saldo da conta bate com a soma do livro-caixa. Se for falso, há erro de contabilidade e o suporte precisa olhar. */
     reconciled: boolean;
@@ -824,8 +935,10 @@ export interface SponsoredAdView {
      * link. É isso que deixa o anunciante contar conversões sem rastrear a pessoa.
      */
     clickUrl: string;
-    /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
+    /** A primeira foto ou o vídeo (para os apps antigos, que só desenham uma); null se é só texto. */
     media: MediaItemDto | null;
+    /** Todas as fotos do carrossel (ou o vídeo), prontas para desenhar e na ordem. Vazio: só texto. `media` é o primeiro. */
+    mediaItems: MediaItemDto[];
     advertiser: {
         id: string;
         name: string;
@@ -1010,4 +1123,33 @@ export declare const AD_EDIT_COPY: {
     readonly REVIEW_PENDING: "O anúncio já está em revisão. Ao salvar, a moderação passa a ver o anúncio novo.";
     readonly DUPLICATE_NO_MEDIA: "A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.";
 };
+export declare const AD_REACH: {
+    /** Menos pessoas que isto não é informado em número: com público tão pequeno, o número poderia apontar alguém. */
+    readonly MIN_AUDIENCE: 100;
+    /** Faixas em que o alcance é dito (nunca o número exato). */
+    readonly BUCKETS: readonly [100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000];
+};
+/** O público escolhido no passo a passo (os mesmos campos do conjunto de anúncios). */
+export interface AdReachEstimateInput {
+    states: string[];
+    cities: string[];
+    interests: AdInterestId[];
+    ageBands: AgeBand[];
+    genders: UserGender[];
+    automaticAudience: boolean;
+}
+export interface AdReachEstimate {
+    /** `FEW`: menos de `AD_REACH.MIN_AUDIENCE` pessoas, sem número. `RANGE`: entre `min` e `max` (`max` vazio = "mais de"). */
+    kind: 'FEW' | 'RANGE';
+    min: number | null;
+    max: number | null;
+    /** Frase pronta para a tela, em português simples. */
+    label: string;
+    /** Aviso sobre o que a conta não inclui. */
+    note: string;
+}
+/** Diz o alcance em faixa. `audience` é o total estimado; o número exato nunca sai daqui. */
+export declare function describeAdReach(audience: number, personalized: boolean): AdReachEstimate;
+/** O público pede algo que só a personalização permite (interesses, idade ou gênero) e não é automático? */
+export declare function adAudienceIsPersonal(input: Pick<AdReachEstimateInput, 'interests' | 'ageBands' | 'genders' | 'automaticAudience'>): boolean;
 //# sourceMappingURL=ads.d.ts.map

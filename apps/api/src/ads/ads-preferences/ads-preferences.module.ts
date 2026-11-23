@@ -3,9 +3,10 @@ import { PrismaModule } from '../../prisma/prisma.module'
 import { AdsPreferencesController } from './ads-preferences.controller'
 import { AdsPreferencesService } from './ads-preferences.service'
 import { AdsPreferencesRepository } from './ads-preferences.repository'
+import { AdsViewerModule } from '../ads-viewer/ads-viewer.module'
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AdsViewerModule],
   controllers: [AdsPreferencesController],
   providers: [AdsPreferencesService, AdsPreferencesRepository],
   exports: [AdsPreferencesService],

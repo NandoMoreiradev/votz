@@ -392,7 +392,7 @@ export interface AdCreativeView {
   body: string
   ctaLabel: string
   destinationUrl: string
-  /** Foto ou vídeo do anúncio; null se o anúncio é só texto. */
+  /** A primeira foto ou o vídeo do anúncio; null se é só texto. Existe para os apps antigos, que só sabem desenhar uma. */
   media: MediaItemDto | null
 }
 
@@ -453,7 +453,7 @@ export interface CreateAdCampaignInput {
     body: string
     ctaLabel: AdCtaLabel
     destinationUrl: string
-    /** Arquivo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
+    /** Uma foto ou vídeo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
     media?: { id: string; format: MediaFormat; crop?: MediaCrop }
   }
   /** Já manda o anúncio para revisão ao salvar. */
@@ -620,6 +620,104 @@ export interface AdBillingView {
   topUps: AdTopUpView[]
   statement: AdStatementLine[]
   /** O saldo da conta bate com a soma do livro-caixa. Se for falso, há erro de contabilidade e o suporte precisa olhar. */
+// ─── Devolução de saldo ───────────────────────────────────────────────────────────────────────────
+
+export const AD_REFUND_STATUS_LABELS = { REQUESTED: 'Pedida', PAID: 'Devolvida', REJECTED: 'Recusada', CANCELED: 'Cancelada' } as const
+export type AdRefundStatus = keyof typeof AD_REFUND_STATUS_LABELS
+
+export const AD_REFUND_LIMITS = {
+  /** Devolução mínima: R$ 10,00 (a não ser que seja tudo o que dá para devolver). */
+  MIN_CENTS: 1_000,
+  REASON_MAX: 300,
+  NOTE_MAX: 300,
+} as const
+
+export interface AdRefundView {
+  id: string
+  amountCents: number
+  status: AdRefundStatus
+  reason: string | null
+  /** O que o Votz escreveu ao recusar. */
+  resolutionNote: string | null
+  requestedAt: string
+  resolvedAt: string | null
+}
+
+/** Um pedido de devolução na fila do Votz (tela de moderação). */
+export interface AdRefundQueueItem extends AdRefundView {
+  accountId: string
+  accountName: string
+  companyId: string
+  companyName: string
+  companyCnpj: string
+}
+
+export interface RequestAdRefundInput {
+  amountCents: number
+  reason?: string
+}
+
+// ─── Recarga automática ──────────────────────────────────────────────────────────────────────────
+
+export const AD_AUTO_TOPUP_LIMITS = {
+  /** Piso mínimo e máximo para disparar (centavos). */
+  MIN_THRESHOLD_CENTS: 1_000,
+  MAX_THRESHOLD_CENTS: 500_000,
+  /** Teto mensal máximo de recargas automáticas: R$ 20.000,00. */
+  MAX_MONTHLY_LIMIT_CENTS: 2_000_000,
+  /** Depois de tantas falhas seguidas, a recarga automática desliga e o anunciante é avisado. */
+  MAX_FAILURES: 3,
+  /** No mínimo este tempo entre duas recargas automáticas da mesma conta. */
+  MIN_INTERVAL_MINUTES: 60,
+} as const
+
+export interface AdAutoTopUpView {
+  enabled: boolean
+  thresholdCents: number
+  amountCents: number
+  monthlyLimitCents: number
+  /** Quanto já foi recarregado sozinho neste mês. */
+  usedThisMonthCents: number
+  /** Há um cartão salvo para cobrar. */
+  hasPaymentMethod: boolean
+  /** Por que parou sozinha (falhas seguidas, teto do mês). */
+  stoppedReason: string | null
+  consentAt: string | null
+  lastTriggeredAt: string | null
+}
+
+export interface SetAdAutoTopUpInput {
+  enabled: boolean
+  thresholdCents: number
+  amountCents: number
+  monthlyLimitCents: number
+  /** A pessoa leu e aceitou que o cartão seja cobrado sozinho (obrigatório para ligar). */
+  acceptCharges?: boolean
+}
+
+export const AD_AUTO_TOPUP_COPY = {
+  CONSENT: 'Quando o saldo ficar abaixo do piso que você escolheu, o Votz cobra o seu cartão sozinho e soma o valor ao saldo. Você pode desligar a qualquer momento.',
+  CAP: 'O Votz nunca cobra mais do que o teto do mês.',
+} as const
+
+// ─── Notas fiscais ───────────────────────────────────────────────────────────────────────────────
+
+export const AD_INVOICE_STATUS_LABELS = { PENDING: 'Sendo emitida', ISSUED: 'Emitida', FAILED: 'Com problema', CANCELED: 'Cancelada' } as const
+export type AdInvoiceStatus = keyof typeof AD_INVOICE_STATUS_LABELS
+
+export interface AdInvoiceView {
+  id: string
+  /** Primeiro e último dia do mês de gasto ("AAAA-MM-DD"). */
+  periodStart: string
+  periodEnd: string
+  amountCents: number
+  status: AdInvoiceStatus
+  number: string | null
+  pdfUrl: string | null
+  xmlUrl: string | null
+  issuedAt: string | null
+}
+
   reconciled: boolean
 }
 
@@ -627,6 +725,13 @@ export interface AdBillingView {
 
 export const AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT', 'CONVERSION'] as const
 export type AdEventType = (typeof AD_EVENT_TYPES)[number]
+  /** Quanto dá para pedir de volta agora (nunca mais que o saldo disponível nem que o que foi pago em recargas). */
+  refundableCents: number
+  refunds: AdRefundView[]
+  /** A recarga automática funciona agora (há provedor de cartão pronto). */
+  autoTopUpAvailable: boolean
+  autoTopUp: AdAutoTopUpView | null
+  invoices: AdInvoiceView[]
 
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
 export const AD_VIEWABILITY = { MIN_VISIBLE_RATIO: 0.5, MIN_VISIBLE_MS: 1000 } as const
@@ -798,7 +903,7 @@ export interface SponsoredAdView {
    * link. É isso que deixa o anunciante contar conversões sem rastrear a pessoa.
    */
   clickUrl: string
-  /** Foto ou vídeo já pronto para desenhar (só chega anúncio com a mídia processada); null se é só texto. */
+  /** A primeira foto ou o vídeo (para os apps antigos, que só desenham uma); null se é só texto. */
   media: MediaItemDto | null
   advertiser: { id: string; name: string; username: string | null; logoUrl: string | null }
   /** "Por que estou vendo isto?" em português simples. */
@@ -1047,3 +1152,56 @@ export const AD_EDIT_COPY = {
   REVIEW_PENDING: 'O anúncio já está em revisão. Ao salvar, a moderação passa a ver o anúncio novo.',
   DUPLICATE_NO_MEDIA: 'A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.',
 } as const
+
+// ─── Estimativa de alcance (passo a passo do Estúdio) ─────────────────────────────────────────────
+
+export const AD_REACH = {
+  /** Menos pessoas que isto não é informado em número: com público tão pequeno, o número poderia apontar alguém. */
+  MIN_AUDIENCE: 100,
+  /** Faixas em que o alcance é dito (nunca o número exato). */
+  BUCKETS: [100, 500, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 5_000_000],
+} as const
+
+/** O público escolhido no passo a passo (os mesmos campos do conjunto de anúncios). */
+export interface AdReachEstimateInput {
+  states: string[]
+  cities: string[]
+  interests: AdInterestId[]
+  ageBands: AgeBand[]
+  genders: UserGender[]
+  automaticAudience: boolean
+}
+
+export interface AdReachEstimate {
+  /** `FEW`: menos de `AD_REACH.MIN_AUDIENCE` pessoas, sem número. `RANGE`: entre `min` e `max` (`max` vazio = "mais de"). */
+  kind: 'FEW' | 'RANGE'
+  min: number | null
+  max: number | null
+  /** Frase pronta para a tela, em português simples. */
+  label: string
+  /** Aviso sobre o que a conta não inclui. */
+  note: string
+}
+
+const reachNumber = (value: number) => value.toLocaleString('pt-BR')
+
+/** Diz o alcance em faixa. `audience` é o total estimado; o número exato nunca sai daqui. */
+export function describeAdReach(audience: number, personalized: boolean): AdReachEstimate {
+  const note = personalized
+    ? 'Estimativa com base nos cadastros. Só entram pessoas que ligaram os anúncios personalizados e escolheram esses interesses, idade ou gênero.'
+    : 'Estimativa com base nos cadastros. Quem vê de fato depende do orçamento, do leilão e de a pessoa abrir o feed.'
+  if (!Number.isFinite(audience) || audience < AD_REACH.MIN_AUDIENCE) {
+    return { kind: 'FEW', min: null, max: null, label: `Poucas pessoas (menos de ${reachNumber(AD_REACH.MIN_AUDIENCE)}). Amplie o público para o anúncio rodar bem.`, note }
+  }
+  const buckets = AD_REACH.BUCKETS
+  const index = buckets.findIndex((edge, position) => audience >= edge && (position === buckets.length - 1 || audience < buckets[position + 1]))
+  const min = buckets[index]
+  const max = index === buckets.length - 1 ? null : buckets[index + 1]
+  const label = max === null ? `Mais de ${reachNumber(min)} pessoas` : `Entre ${reachNumber(min)} e ${reachNumber(max)} pessoas`
+  return { kind: 'RANGE', min, max, label, note }
+}
+
+/** O público pede algo que só a personalização permite (interesses, idade ou gênero) e não é automático? */
+export function adAudienceIsPersonal(input: Pick<AdReachEstimateInput, 'interests' | 'ageBands' | 'genders' | 'automaticAudience'>): boolean {
+  return !input.automaticAudience && (input.interests.length > 0 || input.ageBands.length > 0 || input.genders.length > 0)
+}

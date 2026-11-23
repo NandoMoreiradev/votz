@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
+import { AdsViewerCacheService } from '../ads-viewer/ads-viewer-cache.service'
 import {
   AD_PERSONALIZATION_CONSENT_VERSION,
   ageBandOf,
@@ -12,7 +13,11 @@ import { UpdateAdPreferencesDto } from './dto/update-ad-preferences.dto'
 
 @Injectable()
 export class AdsPreferencesService {
-  constructor(private readonly repo: AdsPreferencesRepository) {}
+  constructor(
+    private readonly repo: AdsPreferencesRepository,
+    /** Cópia curta do cadastro da entrega: apagada ao mudar aceite ou interesses, para retirar o aceite valer na hora. */
+    @Optional() private readonly viewerCache?: AdsViewerCacheService,
+  ) {}
 
   /** Sem registro, vale o padrão: personalização desligada e nenhum interesse. */
   async get(userId: string): Promise<AdPreferencesView> {
@@ -45,7 +50,10 @@ export class AdsPreferencesService {
     }
     if (dto.interests !== undefined) data.interests = [...new Set(dto.interests)]
 
-    if (Object.keys(data).length) await this.repo.upsert(userId, data)
+    if (Object.keys(data).length) {
+      await this.repo.upsert(userId, data)
+      await this.viewerCache?.invalidate(userId)
+    }
     return this.get(userId)
   }
 }

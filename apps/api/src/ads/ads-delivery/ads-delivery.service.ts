@@ -4,8 +4,6 @@ import { Cron, CronExpression } from '@nestjs/schedule'
 import {
   AD_DELIVERY,
   AD_DELIVERY_LIMITS,
-  ageBandOf,
-  ageOn,
   adChargeMillicents,
   adChargeUnit,
   adFloorCents,
@@ -22,6 +20,7 @@ import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type Adver
 import { DELIVERY_EXPERIMENTS, activeExperiment, assignArm, experimentLabel, type DeliveryExperiment, type DeliveryOverrides } from './experiments'
 import { AdsPacingService, type PacingView } from './ads-pacing.service'
 import { AdsUserStateService, type UserAdState } from './ads-user-state.service'
+import { AdsViewerCacheService, viewerFactsFromRow, type ViewerFacts } from '../ads-viewer/ads-viewer-cache.service'
 import { expectedSpendMillicents, viewableRate } from './pacing-controller'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
@@ -42,6 +41,7 @@ import {
   runAuction,
   saoPauloDay,
   saoPauloHour,
+  targetingMismatch,
   validateEvent,
   type AuctionCandidate,
   type Viewer,
@@ -117,7 +117,18 @@ export class AdsDeliveryService {
     @Optional() private readonly config?: ConfigService,
     /** Escondidos e limite diário por pessoa no Redis. Sem ele (ou com o Redis fora do ar) a entrega consulta o banco, como antes. */
     @Optional() private readonly userState?: AdsUserStateService,
+    /** Cópia curta do cadastro da pessoa no Redis. Sem ela (ou com o Redis fora do ar) a entrega lê o cadastro do banco, como antes. */
+    @Optional() private readonly viewerCache?: AdsViewerCacheService,
   ) {}
+
+  /** Cadastro da pessoa para a entrega: da cópia curta, senão do banco (a fonte da verdade). */
+  private viewerFacts(userId: string): Promise<ViewerFacts | null> {
+    const fromDb = async () => {
+      const row = await this.repo.findViewerFacts(userId)
+      return row ? viewerFactsFromRow(row) : null
+    }
+    return this.viewerCache ? this.viewerCache.get(userId, fromDb) : fromDb()
+  }
 
   /** Experimentos A/B e de sombra ativos (nenhum por padrão; os testes e a prova trocam a lista). */
   experiments: readonly DeliveryExperiment[] = DELIVERY_EXPERIMENTS
@@ -133,12 +144,40 @@ export class AdsDeliveryService {
     return Number.isFinite(value) && value >= 0 ? value : DEFAULT_BUDGET_MS
   }
 
+  /**
+   * Explica em desenvolvimento por que ninguém ganhou (`ADS_DELIVERY_DEBUG`; sem a variável, liga só com `NODE_ENV=development`).
+   * Em produção fica desligado: a explicação cita regras de alvo e nunca deve sair para o aparelho da pessoa.
+   */
+  debugEnabled(): boolean {
+    // Em produção nunca: a explicação cita título e público de campanhas de outras empresas.
+    if ((this.config?.get<string>('NODE_ENV') ?? process.env.NODE_ENV) === 'production') return false
+    const raw = String(this.config?.get<string>('ADS_DELIVERY_DEBUG') ?? '').trim().toLowerCase()
+    if (raw === 'true' || raw === '1') return true
+    if (raw === 'false' || raw === '0') return false
+    return (this.config?.get<string>('NODE_ENV') ?? process.env.NODE_ENV) === 'development'
+  }
+
   /** Escolhe o anúncio da vez para esta pessoa (ou nenhum) e registra a entrega. Dentro do tempo-limite, ou "sem anúncio". */
   async next(userId: string, query: NextAdQueryDto, now = new Date(), random: () => number = Math.random): Promise<SponsoredAdView | null> {
+    return (await this.nextWithReason(userId, query, now, random)).ad
+  }
+
+  /**
+   * Igual a `next`, mas diz por que não saiu anúncio (`reason`, só com `debugEnabled()`), em português, para quem está
+   * desenvolvendo. Também escreve o motivo no log (nível debug) quando está ligado.
+   */
+  async nextWithReason(
+    userId: string,
+    query: NextAdQueryDto,
+    now = new Date(),
+    random: () => number = Math.random,
+  ): Promise<{ ad: SponsoredAdView | null; reason: string | null }> {
     const budget = this.budgetMs()
     const deadlineAt = budget > 0 ? performance.now() + budget : Number.POSITIVE_INFINITY
+    const trace: NoAdTrace = { enabled: this.debugEnabled(), reason: null }
+    let ad: SponsoredAdView | null = null
     try {
-      return await this.deliver(userId, query, now, random, deadlineAt)
+      ad = await this.deliver(userId, query, now, random, deadlineAt, trace)
     } catch (error) {
       if (!(error instanceof DeliveryTimeout)) throw error
       this.timeouts += 1
@@ -147,8 +186,13 @@ export class AdsDeliveryService {
         this.lastTimeoutLog = clock
         this.logger.warn(`Entrega de anúncio passou de ${budget} ms e devolveu "sem anúncio" (${this.timeouts} desde que o processo subiu).`)
       }
-      return null
+      trace.reason = `passou do tempo-limite de ${budget} ms (ADS_DELIVERY_BUDGET_MS)`
     }
+    if (!ad && trace.enabled) {
+      trace.reason ??= 'sem motivo registrado'
+      this.logger.log(`Sem anúncio para ${userId.slice(0, 8)} (${query.surface}, posição ${query.position ?? 0}): ${trace.reason}`)
+    }
+    return { ad, reason: ad ? null : trace.reason }
   }
 
   /** Espera `work` até o tempo-limite; depois disso desiste (a leitura segue no banco, sem efeito). */
@@ -168,8 +212,13 @@ export class AdsDeliveryService {
     }
   }
 
-  private async deliver(userId: string, query: NextAdQueryDto, now: Date, random: () => number, deadlineAt: number): Promise<SponsoredAdView | null> {
-    if (isHoldout(userId, AD_DELIVERY_LIMITS.HOLDOUT_SHARE)) return null
+  private async deliver(userId: string, query: NextAdQueryDto, now: Date, random: () => number, deadlineAt: number, trace: NoAdTrace): Promise<SponsoredAdView | null> {
+    /** Sai sem anúncio e, em desenvolvimento, anota por quê (o texto só é montado se estiver ligado). */
+    const none = (reason: () => string): null => {
+      if (trace.enabled) trace.reason = reason()
+      return null
+    }
+    if (isHoldout(userId, AD_DELIVERY_LIMITS.HOLDOUT_SHARE)) return none(() => `a pessoa está no grupo de controle (${AD_DELIVERY_LIMITS.HOLDOUT_SHARE * 100}% nunca vê anúncio, decidido pelo id)`)
 
     // Teste A/B ou modo sombra (nenhum ativo por padrão). A pessoa cai sempre no mesmo braço. No A/B ela é servida pelas
     // regras do braço; na sombra é servida pelo controle e os outros braços só calculam o que escolheriam.
@@ -182,17 +231,17 @@ export class AdsDeliveryService {
     // Nenhum anúncio perto de relato contra o próprio anunciante. Se não deu para conferir a vizinhança, não mostra:
     // errar para o lado de não exibir custa uma exibição; errar para o outro lado, a confiança no Votz.
     const nearCompanies = await this.within(this.companiesNextToSlot(query), deadlineAt)
-    if (!nearCompanies) return null
+    if (!nearCompanies) return none(() => 'não deu para conferir o que está perto do espaço (regra de vizinhança); na dúvida, não mostra')
 
     const since = new Date(now.getTime() - 24 * HOUR_MS)
     const candidates = await this.within(this.candidatePool(now), deadlineAt)
-    // O cadastro vem sempre do banco (retirar o aceite de anúncios personalizados vale na hora). Escondidos e limite diário
-    // vêm da cópia no Redis; sem ela, das consultas ao banco, como antes.
+    // O cadastro vem de uma cópia curta no Redis, apagada sempre que a pessoa muda o perfil ou o aceite (retirar o aceite de
+    // anúncios personalizados vale na hora). Escondidos e limite diário vêm da cópia por pessoa; sem as cópias, do banco.
     const [facts, cached] = await this.within(
-      Promise.all([this.repo.findViewerFacts(userId), this.userStateOf(userId, candidates, since)]),
+      Promise.all([this.viewerFacts(userId), this.userStateOf(userId, candidates, since)]),
       deadlineAt,
     )
-    if (!facts) return null
+    if (!facts) return none(() => 'cadastro da pessoa não encontrado')
     const [hiddenCompanies, excludedAds] = cached
       ? [cached.hiddenCompanyIds, cached.excludedAdIds]
       : await this.within(
@@ -210,7 +259,15 @@ export class AdsDeliveryService {
         !(ad.adSet.startAt && ad.adSet.startAt > now) &&
         !(ad.adSet.endAt && ad.adSet.endAt <= now),
     )
-    if (!pool.length) return null
+    if (!pool.length) {
+      return none(() => {
+        if (!candidates.length) return 'nenhum anúncio pode ser entregue agora no banco (precisa: anúncio aprovado, campanha ativa, conta com saldo, dentro do período e mídia pronta)'
+        const hiddenAds = candidates.filter((ad) => excludedAdIds.has(ad.id)).length
+        const hiddenCompanies = candidates.filter((ad) => excludedCompanies.has(ad.adSet.campaign.account.companyId)).length
+        const outOfPeriod = candidates.filter((ad) => (ad.adSet.startAt && ad.adSet.startAt > now) || (ad.adSet.endAt && ad.adSet.endAt <= now)).length
+        return `${candidates.length} anúncio(s) na disputa, todos fora para esta pessoa: ${hiddenAds} escondido(s) ou no limite de ${AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY} exibições em 24 h, ${hiddenCompanies} de empresa escondida ou alvo de relato ao lado do espaço, ${outOfPeriod} fora do período`
+      })
+    }
 
     const day = saoPauloDay(now)
     const adSetIds = [...new Set(pool.map((ad) => ad.adSetId))]
@@ -234,6 +291,14 @@ export class AdsDeliveryService {
       return remaining >= adChargeMillicents(objective, adFloorCents(objective))
     })
 
+    if (!eligible.length) {
+      return none(() => {
+        const lines = pool.slice(0, 5).map((ad) => `"${ad.creative.headline}" (${ad.id.slice(0, 8)}): ${ineligibleReason(ad, viewer, spent) ?? 'ok'}`)
+        const more = pool.length > lines.length ? ` (e mais ${pool.length - lines.length})` : ''
+        return `${pool.length} anúncio(s) na disputa, nenhum serve para esta pessoa: ${lines.join('; ')}${more}`
+      })
+    }
+
     // Ritmo: conjunto que gastou mais do que a curva do dia permite sai deste leilão, para o orçamento render o dia todo.
     const elapsed = dayElapsedFraction(now)
     const paced = eligible.filter((ad) => {
@@ -243,7 +308,7 @@ export class AdsDeliveryService {
         : pacingChance({ spentMillicents: spent.get(ad.adSetId) ?? 0, dailyBudgetMillicents: ad.adSet.dailyBudgetCents * 1000, elapsedFraction: elapsed })
       return random() < chance
     })
-    if (!paced.length) return null
+    if (!paced.length) return none(() => `${eligible.length} anúncio(s) serviriam, mas o freio de ritmo do orçamento segurou todos neste pedido (o orçamento do dia está sendo gasto mais rápido que a curva)`)
 
     // Chance de clique medida de cada anúncio (anúncio novo é sorteado; veja `CTR_MODEL`).
     const ctrSince = dayAsDate(saoPauloDay(new Date(now.getTime() - CTR_MODEL.WINDOW_DAYS * 24 * HOUR_MS)))
@@ -320,7 +385,7 @@ export class AdsDeliveryService {
     })
     if (!result) {
       this.logShadow(shadowRows)
-      return null
+      return none(() => `${paced.length} anúncio(s) disputaram o leilão e nenhum valeu o piso de preço (o lance máximo fica abaixo do mínimo do objetivo)`)
     }
 
     // Última chance de desistir: depois de criada, a exibição conta no limite diário e no ritmo. Sem resposta, não se cria.
@@ -574,22 +639,36 @@ export class AdsDeliveryService {
   }
 }
 
-function buildViewer(
-  facts: NonNullable<Awaited<ReturnType<AdsDeliveryRepository['findViewerFacts']>>>,
-  query: NextAdQueryDto,
-): Viewer {
-  const consented = facts.adPreference?.personalizationConsent === true
-  const age = facts.birthDate ? ageOn(facts.birthDate) : null
+/** Anota por que ninguém ganhou, só em desenvolvimento (veja `AdsDeliveryService.debugEnabled`). */
+interface NoAdTrace {
+  enabled: boolean
+  reason: string | null
+}
+
+/** Por que este anúncio não serve para esta pessoa agora (só para o log de desenvolvimento; as regras estão na entrega). */
+function ineligibleReason(ad: AdCandidateRecord, viewer: Viewer, spent: Map<string, number>): string | null {
+  const account = ad.adSet.campaign.account
+  if (!creativeMediaReady(ad.creative.media)) return 'a mídia (vídeo) ainda não está pronta'
+  if (account.balanceCents * 1000 - account.pendingSpendMillicents <= 0) return 'a conta não tem saldo'
+  const mismatch = targetingMismatch(ad.adSet, viewer)
+  if (mismatch) return `público não bate: ${mismatch}`
+  const { objective } = ad.adSet.campaign
+  const remaining = ad.adSet.dailyBudgetCents * 1000 - (spent.get(ad.adSetId) ?? 0)
+  if (remaining < adChargeMillicents(objective, adFloorCents(objective))) return 'o orçamento do dia acabou'
+  return null
+}
+
+function buildViewer(facts: ViewerFacts, query: NextAdQueryDto): Viewer {
   // Menor de idade nunca é perfilado para anúncio (ECA Digital), mesmo com aceite no banco.
-  const personalization = consented && !(age !== null && age < 18)
+  const personalization = facts.consented && !facts.minor
   return {
     // Região é contexto da tela. Só com aceite o cadastro pode completar o que a tela não informou.
     state: query.state?.toUpperCase() ?? (personalization ? facts.state : null),
     city: query.city ?? (personalization ? facts.city : null),
     personalization,
-    interests: personalization ? (facts.adPreference?.interests ?? []) : [],
-    ageBand: personalization ? ageBandOf(facts.birthDate) : null,
-    gender: personalization ? (facts.gender ?? null) : null,
+    interests: personalization ? facts.interests : [],
+    ageBand: personalization ? facts.ageBand : null,
+    gender: personalization ? facts.gender : null,
   }
 }
 

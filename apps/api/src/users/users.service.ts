@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException, Optional } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import * as bcrypt from 'bcrypt'
@@ -7,6 +7,7 @@ import { MIN_AGE, PRIVACY_VERSION, TERMS_VERSION } from '@votz/shared-types'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
 import { HandlesService } from '../handles/handles.service'
+import { AdsViewerCacheService } from '../ads/ads-viewer/ads-viewer-cache.service'
 import { UsersRepository } from './users.repository'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { AcceptConsentDto } from './dto/accept-consent.dto'
@@ -22,6 +23,8 @@ export class UsersService {
     private readonly storage: StorageService,
     @InjectQueue(LGPD_QUEUE) private readonly lgpdQueue: Queue,
     private readonly handles: HandlesService,
+    /** Cópia curta do cadastro usada pela entrega de anúncios: apagada quando a pessoa muda o que ela usa. */
+    @Optional() private readonly adsViewerCache?: AdsViewerCacheService,
   ) {}
 
   async findById(id: string) {
@@ -57,7 +60,12 @@ export class UsersService {
       await this.handles.assertAvailable(dto.username, { kind: 'USER', id })
     }
     try {
-      return await this.saveProfile(id, dto)
+      const saved = await this.saveProfile(id, dto)
+      // Cidade, estado, nascimento e gênero entram na entrega de anúncios: a cópia curta é apagada para valer na hora.
+      if (dto.city !== undefined || dto.state !== undefined || dto.birthDate !== undefined || dto.gender !== undefined) {
+        await this.adsViewerCache?.invalidate(id)
+      }
+      return saved
     } catch (err) {
       // Dois pedidos ao mesmo tempo pelo mesmo nome: o banco barra o segundo.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

@@ -18,7 +18,9 @@ export class AdsDeliveryController {
   @Get('next')
   @ApiOperation({ summary: 'Anúncio da vez para o espaço patrocinado do feed (ou nenhum)' })
   async next(@CurrentUser() user: { id: string }, @Query() query: NextAdQueryDto) {
-    return { ad: await this.service.next(user.id, query) }
+    // Em desenvolvimento a resposta sem anúncio explica o motivo (`debugReason`). Em produção o campo nunca existe.
+    const { ad, reason } = await this.service.nextWithReason(user.id, query)
+    return reason ? { ad, debugReason: reason } : { ad }
   }
 
   @Post('events')

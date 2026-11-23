@@ -8,8 +8,8 @@
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AD_SPEND_BANDS = exports.AD_LIBRARY = exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_LANDING_PROBLEM_LABELS = exports.AD_LANDING_STATUS_LABELS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
-exports.AD_EDIT_COPY = exports.AD_FRAUD_SIGNAL_LABELS = exports.adImpressionBand = exports.adSpendBand = exports.AD_IMPRESSION_BANDS = void 0;
+exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_INVOICE_STATUS_LABELS = exports.AD_AUTO_TOPUP_COPY = exports.AD_AUTO_TOPUP_LIMITS = exports.AD_REFUND_LIMITS = exports.AD_REFUND_STATUS_LABELS = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_LANDING_PROBLEM_LABELS = exports.AD_LANDING_STATUS_LABELS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
+exports.AD_REACH = exports.AD_EDIT_COPY = exports.AD_FRAUD_SIGNAL_LABELS = exports.adImpressionBand = exports.adSpendBand = exports.AD_IMPRESSION_BANDS = exports.AD_SPEND_BANDS = exports.AD_LIBRARY = exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = void 0;
 exports.isAdInterestId = isAdInterestId;
 exports.adNeighborIds = adNeighborIds;
 exports.assertAllowedAdFeatures = assertAllowedAdFeatures;
@@ -23,6 +23,8 @@ exports.adChargeMillicents = adChargeMillicents;
 exports.summarizeAdStats = summarizeAdStats;
 exports.fillAdStatDays = fillAdStatDays;
 exports.adDestinationHost = adDestinationHost;
+exports.describeAdReach = describeAdReach;
+exports.adAudienceIsPersonal = adAudienceIsPersonal;
 const media_1 = require("./media");
 // ─── Taxonomia de interesses ───────────────────────────────────────────────────────────────────
 /**
@@ -293,6 +295,8 @@ exports.AD_CTA_LABELS = ['Saiba mais', 'Comprar', 'Pedir agora', 'Agendar', 'Fal
 exports.AD_MEDIA_RULES = {
     MIN_WIDTH: media_1.AD_MEDIA_MIN_WIDTH,
     MAX_VIDEO_SECONDS: media_1.AD_VIDEO_MAX_SECONDS,
+    /** Fotos no carrossel de um anúncio. Vídeo não entra em carrossel: vale um vídeo sozinho. */
+    MAX_ITEMS: 5,
     /** Formatos que o Votz recomenda ao anunciante (o paisagem também vale). */
     RECOMMENDED_FORMATS: ['SQUARE', 'PORTRAIT'],
     /** Quanto o vídeo pode passar de 60 s por arredondamento da leitura do arquivo. */
@@ -348,6 +352,32 @@ exports.AD_BILLING_LIMITS = {
     TOPUP_VALID_HOURS: 72,
 };
 exports.AD_LEDGER_TYPE_LABELS = { TOPUP: 'Recarga', SPEND: 'Gasto com anúncios', REFUND: 'Devolução', ADJUSTMENT: 'Ajuste' };
+// ─── Devolução de saldo ───────────────────────────────────────────────────────────────────────────
+exports.AD_REFUND_STATUS_LABELS = { REQUESTED: 'Pedida', PAID: 'Devolvida', REJECTED: 'Recusada', CANCELED: 'Cancelada' };
+exports.AD_REFUND_LIMITS = {
+    /** Devolução mínima: R$ 10,00 (a não ser que seja tudo o que dá para devolver). */
+    MIN_CENTS: 1_000,
+    REASON_MAX: 300,
+    NOTE_MAX: 300,
+};
+// ─── Recarga automática ──────────────────────────────────────────────────────────────────────────
+exports.AD_AUTO_TOPUP_LIMITS = {
+    /** Piso mínimo e máximo para disparar (centavos). */
+    MIN_THRESHOLD_CENTS: 1_000,
+    MAX_THRESHOLD_CENTS: 500_000,
+    /** Teto mensal máximo de recargas automáticas: R$ 20.000,00. */
+    MAX_MONTHLY_LIMIT_CENTS: 2_000_000,
+    /** Depois de tantas falhas seguidas, a recarga automática desliga e o anunciante é avisado. */
+    MAX_FAILURES: 3,
+    /** No mínimo este tempo entre duas recargas automáticas da mesma conta. */
+    MIN_INTERVAL_MINUTES: 60,
+};
+exports.AD_AUTO_TOPUP_COPY = {
+    CONSENT: 'Quando o saldo ficar abaixo do piso que você escolheu, o Votz cobra o seu cartão sozinho e soma o valor ao saldo. Você pode desligar a qualquer momento.',
+    CAP: 'O Votz nunca cobra mais do que o teto do mês.',
+};
+// ─── Notas fiscais ───────────────────────────────────────────────────────────────────────────────
+exports.AD_INVOICE_STATUS_LABELS = { PENDING: 'Sendo emitida', ISSUED: 'Emitida', FAILED: 'Com problema', CANCELED: 'Cancelada' };
 // ─── Eventos de anúncio ────────────────────────────────────────────────────────────────────────
 exports.AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT', 'CONVERSION'];
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
@@ -513,4 +543,31 @@ exports.AD_EDIT_COPY = {
     REVIEW_PENDING: 'O anúncio já está em revisão. Ao salvar, a moderação passa a ver o anúncio novo.',
     DUPLICATE_NO_MEDIA: 'A cópia não leva a foto ou o vídeo: envie de novo ao editar o anúncio.',
 };
+// ─── Estimativa de alcance (passo a passo do Estúdio) ─────────────────────────────────────────────
+exports.AD_REACH = {
+    /** Menos pessoas que isto não é informado em número: com público tão pequeno, o número poderia apontar alguém. */
+    MIN_AUDIENCE: 100,
+    /** Faixas em que o alcance é dito (nunca o número exato). */
+    BUCKETS: [100, 500, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 5_000_000],
+};
+const reachNumber = (value) => value.toLocaleString('pt-BR');
+/** Diz o alcance em faixa. `audience` é o total estimado; o número exato nunca sai daqui. */
+function describeAdReach(audience, personalized) {
+    const note = personalized
+        ? 'Estimativa com base nos cadastros. Só entram pessoas que ligaram os anúncios personalizados e escolheram esses interesses, idade ou gênero.'
+        : 'Estimativa com base nos cadastros. Quem vê de fato depende do orçamento, do leilão e de a pessoa abrir o feed.';
+    if (!Number.isFinite(audience) || audience < exports.AD_REACH.MIN_AUDIENCE) {
+        return { kind: 'FEW', min: null, max: null, label: `Poucas pessoas (menos de ${reachNumber(exports.AD_REACH.MIN_AUDIENCE)}). Amplie o público para o anúncio rodar bem.`, note };
+    }
+    const buckets = exports.AD_REACH.BUCKETS;
+    const index = buckets.findIndex((edge, position) => audience >= edge && (position === buckets.length - 1 || audience < buckets[position + 1]));
+    const min = buckets[index];
+    const max = index === buckets.length - 1 ? null : buckets[index + 1];
+    const label = max === null ? `Mais de ${reachNumber(min)} pessoas` : `Entre ${reachNumber(min)} e ${reachNumber(max)} pessoas`;
+    return { kind: 'RANGE', min, max, label, note };
+}
+/** O público pede algo que só a personalização permite (interesses, idade ou gênero) e não é automático? */
+function adAudienceIsPersonal(input) {
+    return !input.automaticAudience && (input.interests.length > 0 || input.ageBands.length > 0 || input.genders.length > 0);
+}
 //# sourceMappingURL=ads.js.map

@@ -45,23 +45,31 @@ export function normalizePlace(value: string | null | undefined): string {
  * automático, só a região conta (a escolha fina fica por conta do Votz, nunca do anunciante).
  */
 export function matchesTargeting(targeting: AdSetTargeting, viewer: Viewer): boolean {
+  return targetingMismatch(targeting, viewer) === null
+}
+
+/**
+ * Por que o conjunto **não** mostra para esta pessoa, em uma frase para quem desenvolve (`null` = mostra). Só serve para
+ * explicar a ausência de anúncio no log de desenvolvimento; as regras são as de `matchesTargeting`.
+ */
+export function targetingMismatch(targeting: AdSetTargeting, viewer: Viewer): string | null {
   if (targeting.states.length) {
     const wanted = targeting.states.map((state) => state.trim().toUpperCase())
-    if (!viewer.state || !wanted.includes(viewer.state.trim().toUpperCase())) return false
+    if (!viewer.state || !wanted.includes(viewer.state.trim().toUpperCase())) return `estado ${viewer.state ?? '(sem estado)'} fora de ${wanted.join('/')}`
   }
   if (targeting.cities.length) {
     const wanted = targeting.cities.map(normalizePlace)
-    if (!viewer.city || !wanted.includes(normalizePlace(viewer.city))) return false
+    if (!viewer.city || !wanted.includes(normalizePlace(viewer.city))) return `cidade ${viewer.city ?? '(sem cidade)'} fora de ${wanted.join('/')}`
   }
-  if (targeting.automaticAudience) return true
+  if (targeting.automaticAudience) return null
 
   const personal = targeting.interests.length > 0 || targeting.ageBands.length > 0 || targeting.genders.length > 0
-  if (!personal) return true
-  if (!viewer.personalization) return false
-  if (targeting.interests.length && !targeting.interests.some((interest) => viewer.interests.includes(interest))) return false
-  if (targeting.ageBands.length && (!viewer.ageBand || !targeting.ageBands.includes(viewer.ageBand))) return false
-  if (targeting.genders.length && (!viewer.gender || !targeting.genders.includes(viewer.gender))) return false
-  return true
+  if (!personal) return null
+  if (!viewer.personalization) return 'exige público personalizado e a pessoa não ligou os anúncios personalizados (ou é menor de idade)'
+  if (targeting.interests.length && !targeting.interests.some((interest) => viewer.interests.includes(interest))) return `nenhum interesse em comum (pede ${targeting.interests.join('/')})`
+  if (targeting.ageBands.length && (!viewer.ageBand || !targeting.ageBands.includes(viewer.ageBand))) return `faixa de idade ${viewer.ageBand ?? '(sem data de nascimento)'} fora de ${targeting.ageBands.join('/')}`
+  if (targeting.genders.length && (!viewer.gender || !targeting.genders.includes(viewer.gender))) return `gênero ${viewer.gender ?? '(não informado)'} fora de ${targeting.genders.join('/')}`
+  return null
 }
 
 /** Fração de pessoas que nunca vê anúncio (grupo de controle, decisão 4). Decidido pelo id, sempre o mesmo resultado. */
