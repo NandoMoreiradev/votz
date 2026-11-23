@@ -21,6 +21,7 @@ import { newClickToken } from '../ads-conversions/conversion-rules'
 import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type AdvertiserStats, type ShadowDecisionRow } from './ads-delivery.repository'
 import { DELIVERY_EXPERIMENTS, activeExperiment, assignArm, experimentLabel, type DeliveryExperiment, type DeliveryOverrides } from './experiments'
 import { AdsPacingService, type PacingView } from './ads-pacing.service'
+import { AdsUserStateService, type UserAdState } from './ads-user-state.service'
 import { expectedSpendMillicents, viewableRate } from './pacing-controller'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
 import {
@@ -114,6 +115,8 @@ export class AdsDeliveryService {
     /** Ritmo por minuto no Redis. Sem ele (ou com o Redis fora do ar) a entrega usa o ritmo pelo banco, como antes. */
     @Optional() private readonly pacing?: AdsPacingService,
     @Optional() private readonly config?: ConfigService,
+    /** Escondidos e limite diário por pessoa no Redis. Sem ele (ou com o Redis fora do ar) a entrega consulta o banco, como antes. */
+    @Optional() private readonly userState?: AdsUserStateService,
   ) {}
 
   /** Experimentos A/B e de sombra ativos (nenhum por padrão; os testes e a prova trocam a lista). */
@@ -176,25 +179,30 @@ export class AdsDeliveryService {
     const label = experiment && arm ? experimentLabel(experiment, experiment.mode === 'AB' ? arm : experiment.arms[0]) : null
     const shadowArms = experiment?.mode === 'SHADOW' && arm ? experiment.arms.slice(1) : []
 
-    const since = new Date(now.getTime() - 24 * HOUR_MS)
-    // O que é da pessoa (cadastro, escondidos, limite diário) vem junto, numa ida só ao banco.
-    const [facts, hiddenCompanies, excludedAds] = await this.within(
-      Promise.all([
-        this.repo.findViewerFacts(userId),
-        this.repo.hiddenCompanyIds(userId),
-        this.repo.excludedAdIds(userId, since, AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY),
-      ]),
-      deadlineAt,
-    )
-    if (!facts) return null
-    const viewer = buildViewer(facts, query)
     // Nenhum anúncio perto de relato contra o próprio anunciante. Se não deu para conferir a vizinhança, não mostra:
     // errar para o lado de não exibir custa uma exibição; errar para o outro lado, a confiança no Votz.
     const nearCompanies = await this.within(this.companiesNextToSlot(query), deadlineAt)
     if (!nearCompanies) return null
+
+    const since = new Date(now.getTime() - 24 * HOUR_MS)
+    const candidates = await this.within(this.candidatePool(now), deadlineAt)
+    // O cadastro vem sempre do banco (retirar o aceite de anúncios personalizados vale na hora). Escondidos e limite diário
+    // vêm da cópia no Redis; sem ela, das consultas ao banco, como antes.
+    const [facts, cached] = await this.within(
+      Promise.all([this.repo.findViewerFacts(userId), this.userStateOf(userId, candidates, since)]),
+      deadlineAt,
+    )
+    if (!facts) return null
+    const [hiddenCompanies, excludedAds] = cached
+      ? [cached.hiddenCompanyIds, cached.excludedAdIds]
+      : await this.within(
+          Promise.all([this.repo.hiddenCompanyIds(userId), this.repo.excludedAdIds(userId, since, AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY)]),
+          deadlineAt,
+        )
+    const viewer = buildViewer(facts, query)
     const excludedCompanies = new Set([...hiddenCompanies, ...nearCompanies])
     const excludedAdIds = new Set(excludedAds)
-    const pool = (await this.within(this.candidatePool(now), deadlineAt)).filter(
+    const pool = candidates.filter(
       (ad) =>
         !excludedAdIds.has(ad.id) &&
         !excludedCompanies.has(ad.adSet.campaign.account.companyId) &&
@@ -334,6 +342,8 @@ export class AdsDeliveryService {
       experiment: label,
     })
     this.logShadow(shadowRows)
+    // A exibição entra na contagem do limite diário da pessoa (a cópia dela no Redis).
+    await this.userState?.recordImpression(userId, record.id)
 
     if (this.pacing) {
       // O gasto esperado desta entrega entra já no ritmo (a cobrança só chega quando a pessoa vê ou clica) e a disputa entra nos contadores.
@@ -360,6 +370,22 @@ export class AdsDeliveryService {
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }
+  }
+
+  /**
+   * Escondidos e limite diário da pessoa pela cópia no Redis (`null` se não há Redis). Só olha os anúncios que estão na
+   * disputa; se a cópia faltar, é carregada do banco aqui.
+   */
+  private userStateOf(userId: string, candidates: AdCandidateRecord[], since: Date): Promise<UserAdState | null> {
+    if (!this.userState) return Promise.resolve(null)
+    return this.userState.load(userId, [...new Set(candidates.map((ad) => ad.id))], AD_DELIVERY.MAX_IMPRESSIONS_PER_USER_AD_DAY, async () => {
+      const [hiddenCompanyIds, hiddenAdIds, impressionCounts24h] = await Promise.all([
+        this.repo.hiddenCompanyIds(userId),
+        this.repo.hiddenAdIds(userId),
+        this.repo.impressionCounts(userId, since),
+      ])
+      return { hiddenCompanyIds, hiddenAdIds, impressionCounts24h }
+    })
   }
 
   /** Grava as decisões da sombra sem atrasar a resposta; falhar aqui nunca atrapalha a entrega. */
@@ -496,7 +522,12 @@ export class AdsDeliveryService {
       })
       if (!applied) result.duplicates += 1
       else if (reason) result.rejected += 1
-      else result.accepted += 1
+      else {
+        result.accepted += 1
+        // Escondeu um anúncio ou uma empresa: a cópia da pessoa no Redis é apagada e relida do banco no próximo pedido,
+        // então o que ela escondeu nunca reaparece.
+        if (event.type === 'HIDE' || event.type === 'HIDE_ADVERTISER') await this.userState?.invalidate(userId)
+      }
     }
     return result
   }

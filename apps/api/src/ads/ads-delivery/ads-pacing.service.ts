@@ -72,7 +72,7 @@ export class AdsPacingService implements OnModuleDestroy {
         })
       : null
     this.redis?.on('error', () => {
-      // O Redis local pode estar parado: a entrega cai para o ritmo pelo banco (veja `guard`).
+      // O Redis local pode estar parado: a entrega cai para o ritmo pelo banco (veja `withRedis`).
     })
   }
 
@@ -85,8 +85,8 @@ export class AdsPacingService implements OnModuleDestroy {
     return !!this.redis && now >= this.downUntil
   }
 
-  /** Roda uma operação do Redis; se falhar, abre o disjuntor e devolve `null`. */
-  private async guard<T>(label: string, work: (redis: Redis) => Promise<T>): Promise<T | null> {
+  /** Roda uma operação do Redis; se falhar, abre o disjuntor e devolve `null`. Público: o estado por pessoa usa a mesma conexão. */
+  async withRedis<T>(label: string, work: (redis: Redis) => Promise<T>): Promise<T | null> {
     if (!this.redis || Date.now() < this.downUntil) return null
     try {
       return await work(this.redis)
@@ -110,7 +110,7 @@ export class AdsPacingService implements OnModuleDestroy {
     if (!adSets.length) return new Map()
     const nowMs = now.getTime()
     const minute = Math.floor(nowMs / MINUTE_MS)
-    const result = await this.guard('ler o ritmo', async (redis) => {
+    const result = await this.withRedis('ler o ritmo', async (redis) => {
       const fields = ['thr', 'e1', 'e2', 'base', 'at', minuteField(minute), minuteField(minute - 1), minuteField(minute - 2)]
       const pipeline = redis.pipeline()
       for (const set of adSets) pipeline.hmget(stateKey(day, set.adSetId), ...fields)
@@ -167,14 +167,14 @@ export class AdsPacingService implements OnModuleDestroy {
   async commit(adSetId: string, day: string, now: Date, expectedMillicents: number): Promise<void> {
     if (!(expectedMillicents > 0)) return
     const key = stateKey(day, adSetId)
-    await this.guard('emprestar gasto', (redis) =>
+    await this.withRedis('emprestar gasto', (redis) =>
       redis.multi().hincrby(key, minuteField(Math.floor(now.getTime() / MINUTE_MS)), Math.round(expectedMillicents)).expire(key, STATE_TTL_SECONDS).exec(),
     )
   }
 
   /** Contadores da hora para o teto e o piso de exploração; `null` sem Redis. */
   async explorationCounters(day: string, hour: number): Promise<ExplorationCounters | null> {
-    return this.guard('ler exploração', async (redis) => {
+    return this.withRedis('ler exploração', async (redis) => {
       const [total, explored] = await redis.hmget(exploreKey(day, hour), 'total', 'explored')
       return { total: Number(total) || 0, explored: Number(explored) || 0 }
     })
@@ -183,7 +183,7 @@ export class AdsPacingService implements OnModuleDestroy {
   /** Conta uma entrega disputada entre anúncio novo e experiente, e se o vencedor era novo. Nunca lança. */
   async recordExploration(day: string, hour: number, winnerWasNew: boolean): Promise<void> {
     const key = exploreKey(day, hour)
-    await this.guard('contar exploração', (redis) => {
+    await this.withRedis('contar exploração', (redis) => {
       const multi = redis.multi().hincrby(key, 'total', 1)
       if (winnerWasNew) multi.hincrby(key, 'explored', 1)
       return multi.expire(key, COUNTERS_TTL_SECONDS).exec()

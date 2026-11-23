@@ -94,6 +94,18 @@ export class AdsDeliveryRepository {
     return rows.map((row) => row.companyId)
   }
 
+  /** Anúncios que a pessoa escondeu (em qualquer época). Para a cópia da pessoa no Redis. */
+  async hiddenAdIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.adImpression.findMany({ where: { userId, hiddenAt: { not: null } }, select: { adId: true }, distinct: ['adId'] })
+    return rows.map((row) => row.adId)
+  }
+
+  /** Exibições de cada anúncio para a pessoa desde `since`. Para a cópia da pessoa no Redis. */
+  async impressionCounts(userId: string, since: Date): Promise<Map<string, number>> {
+    const rows = await this.prisma.adImpression.groupBy({ by: ['adId'], where: { userId, servedAt: { gte: since } }, _count: { _all: true } })
+    return new Map(rows.map((row) => [row.adId, row._count._all]))
+  }
+
   /** Anúncios que a pessoa escondeu, ou que já passaram do limite de exibições nas últimas 24 horas. */
   async excludedAdIds(userId: string, since: Date, maxPerDay: number): Promise<string[]> {
     const [hidden, counts] = await Promise.all([
