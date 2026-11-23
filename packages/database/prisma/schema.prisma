@@ -2535,6 +2535,9 @@ model AdImpression {
   hiddenAt         DateTime?  @map("hidden_at")
   // Quando a pessoa denunciou este anúncio (carimbo uma vez só, como esconder).
   reportedAt       DateTime?  @map("reported_at")
+  // Teste A/B da entrega: "nome-do-experimento:braço" em que a pessoa estava quando esta exibição foi escolhida.
+  // Nulo fora de experimento. Só serve para comparar braços no relatório.
+  experiment       String?
   // Identificador do clique (`votz_click_id`): sorteado na entrega, vai no link do botão e para o anunciante.
   // Não é a exibição nem a pessoa: o anunciante não consegue chegar em nenhuma das duas por ele.
   clickToken       String?    @unique @map("click_token")
@@ -2545,6 +2548,7 @@ model AdImpression {
 
   @@index([userId, adId, servedAt])
   @@index([adId, servedAt])
+  @@index([experiment, servedAt])
   @@map("ad_impressions")
 }
 
@@ -2591,6 +2595,26 @@ model AdDailyStat {
   @@unique([adId, day])
   @@index([adSetId, day])
   @@map("ad_daily_stats")
+}
+
+// Modo sombra da entrega: o que um braço de teste TERIA escolhido, enquanto quem foi servido foi o controle. Ninguém vê o
+// anúncio da sombra. Sem id de pessoa e sem chave estrangeira: só serve para comparar os dois caminhos.
+model AdShadowDecision {
+  id               String   @id @default(uuid())
+  experiment       String
+  arm              String
+  servedAdId       String?  @map("served_ad_id")
+  shadowAdId       String?  @map("shadow_ad_id")
+  // Os dois escolheram o mesmo anúncio (ou os dois nenhum)?
+  agreed           Boolean
+  // Valor por mil exibições (eCPM, em centavos) do anúncio escolhido por cada caminho. Preço de clique e de mil exibições
+  // têm unidades diferentes; só o eCPM permite comparar.
+  servedEcpmCents  Float?   @map("served_ecpm_cents")
+  shadowEcpmCents  Float?   @map("shadow_ecpm_cents")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([experiment, arm, createdAt])
+  @@map("ad_shadow_decisions")
 }
 
 // Chave que o anunciante usa para mandar conversões (`POST /ads/conversions`). Só o hash (SHA-256) fica guardado;

@@ -33,6 +33,18 @@ export interface AdStats {
   reports: number
 }
 
+/** Uma decisão do modo sombra. */
+export interface ShadowDecisionRow {
+  experiment: string
+  arm: string
+  servedAdId: string | null
+  shadowAdId: string | null
+  agreed: boolean
+  /** Valor por mil exibições (centavos) do que cada caminho escolheu. */
+  servedEcpmCents: number | null
+  shadowEcpmCents: number | null
+}
+
 /** Contagem de todos os anúncios de uma empresa nos últimos dias. */
 export interface AdvertiserStats {
   impressions: number
@@ -155,7 +167,7 @@ export class AdsDeliveryRepository {
   }
 
   /** Grava a entrega e conta a exibição do dia, juntas. */
-  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string }) {
+  createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string; experiment?: string | null }) {
     const { adSetId, day, ...impression } = data
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.adImpression.create({ data: impression })
@@ -166,6 +178,11 @@ export class AdsDeliveryRepository {
       })
       return created
     })
+  }
+
+  /** Grava o que cada braço de teste teria escolhido (modo sombra). Sem pessoa, sem efeito para ninguém. */
+  createShadowDecisions(rows: ShadowDecisionRow[]) {
+    return this.prisma.adShadowDecision.createMany({ data: rows })
   }
 
   // ── Eventos ──────────────────────────────────────────────────────────────────────────────────

@@ -18,7 +18,8 @@ import { StorageService } from '../../storage/storage.service'
 import { creativeMediaItem, creativeMediaReady } from '../ad-creative-media'
 import { AdsClickLinkService } from '../ads-conversions/ads-click-link.service'
 import { newClickToken } from '../ads-conversions/conversion-rules'
-import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type AdvertiserStats } from './ads-delivery.repository'
+import { AdsDeliveryRepository, type AdCandidateRecord, type AdStats, type AdvertiserStats, type ShadowDecisionRow } from './ads-delivery.repository'
+import { DELIVERY_EXPERIMENTS, activeExperiment, assignArm, experimentLabel, type DeliveryExperiment, type DeliveryOverrides } from './experiments'
 import { AdsPacingService, type PacingView } from './ads-pacing.service'
 import { expectedSpendMillicents, viewableRate } from './pacing-controller'
 import { AdEventsBatchDto, NextAdQueryDto } from './dto/ads-delivery.dto'
@@ -31,6 +32,7 @@ import {
   clickRatePosterior,
   dayAsDate,
   dayElapsedFraction,
+  ecpmOfPrice,
   explorationChance,
   isHoldout,
   matchesTargeting,
@@ -114,6 +116,8 @@ export class AdsDeliveryService {
     @Optional() private readonly config?: ConfigService,
   ) {}
 
+  /** Experimentos A/B e de sombra ativos (nenhum por padrão; os testes e a prova trocam a lista). */
+  experiments: readonly DeliveryExperiment[] = DELIVERY_EXPERIMENTS
   /** Quantas entregas passaram do tempo-limite desde que o processo subiu (para o log e a conferência). */
   timeouts = 0
   private lastTimeoutLog = 0
@@ -163,6 +167,14 @@ export class AdsDeliveryService {
 
   private async deliver(userId: string, query: NextAdQueryDto, now: Date, random: () => number, deadlineAt: number): Promise<SponsoredAdView | null> {
     if (isHoldout(userId, AD_DELIVERY_LIMITS.HOLDOUT_SHARE)) return null
+
+    // Teste A/B ou modo sombra (nenhum ativo por padrão). A pessoa cai sempre no mesmo braço. No A/B ela é servida pelas
+    // regras do braço; na sombra é servida pelo controle e os outros braços só calculam o que escolheriam.
+    const experiment = activeExperiment(this.experiments, now)
+    const arm = experiment ? assignArm(userId, experiment) : null
+    const serving: DeliveryOverrides = experiment?.mode === 'AB' && arm ? arm.overrides : {}
+    const label = experiment && arm ? experimentLabel(experiment, experiment.mode === 'AB' ? arm : experiment.arms[0]) : null
+    const shadowArms = experiment?.mode === 'SHADOW' && arm ? experiment.arms.slice(1) : []
 
     const since = new Date(now.getTime() - 24 * HOUR_MS)
     // O que é da pessoa (cadastro, escondidos, limite diário) vem junto, numa ida só ao banco.
@@ -235,30 +247,73 @@ export class AdsDeliveryService {
       ]),
       deadlineAt,
     )
-    const candidates: PoolCandidate[] = paced.map((record) => {
+    // Dados de cada anúncio que não dependem do braço (o sorteio da chance de clique é um só: os braços da sombra comparam o mesmo sorteio).
+    const base = paced.map((record) => {
       const seen: AdStats = stats.get(record.id) ?? { impressions: 0, viewable: 0, clicks: 0, hides: 0, reports: 0 }
       const posterior = clickRatePosterior(seen.clicks, seen.viewable, prior)
       return {
-        adId: record.id,
-        objective: record.adSet.campaign.objective,
-        bidCapCents: record.adSet.bidCapCents,
-        quality: qualityFactor(seen.hides, seen.impressions, { reports: seen.reports, priorRate: advertiserRates.get(record.adSet.campaign.account.companyId) }),
-        clickRate: auctionClickRate(posterior, seen.viewable, random),
         record,
-        isNew: seen.viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE,
         seen,
+        clickRate: auctionClickRate(posterior, seen.viewable, random),
         meanClickRate: posterior.mean,
+        priorRate: advertiserRates.get(record.adSet.campaign.account.companyId),
+        isNew: seen.viewable < CTR_MODEL.EXPLORE_BELOW_VIEWABLE,
       }
     })
     // Anúncio novo disputa em separado dos experientes, com teto e piso por hora (veja `EXPLORATION`).
     const hour = saoPauloHour(now)
-    const mixed = candidates.some((candidate) => candidate.isNew) && candidates.some((candidate) => !candidate.isNew)
+    const mixed = base.some((item) => item.isNew) && base.some((item) => !item.isNew)
     const counters = mixed && this.pacing ? await this.within(this.pacing.explorationCounters(day, hour), deadlineAt) : null
-    const { pool: auctionPool, contested } = pickAuctionPool(candidates, explorationChance(counters), random)
-    let result = runAuction(auctionPool, random)
-    // O grupo sorteado não tinha ninguém que valesse (lance abaixo do piso): o outro grupo ainda pode ganhar.
-    if (!result && contested) result = runAuction(candidates.filter((candidate) => !auctionPool.includes(candidate)), random)
-    if (!result) return null
+
+    /** A disputa com os parâmetros de um braço. `coin` é o sorteio de explorar, o mesmo para todos os braços (comparação pareada). */
+    const decide = (overrides: DeliveryOverrides, tieBreak: () => number, coin: number) => {
+      const candidates: PoolCandidate[] = base.map((item) => ({
+        adId: item.record.id,
+        objective: item.record.adSet.campaign.objective,
+        bidCapCents: item.record.adSet.bidCapCents,
+        quality: qualityFactor(item.seen.hides, item.seen.impressions, {
+          reports: item.seen.reports,
+          priorRate: item.priorRate,
+          reportWeight: overrides.reportWeight,
+          weight: overrides.qualityWeight,
+          maxPenalty: overrides.qualityMaxPenalty,
+        }),
+        clickRate: item.clickRate,
+        record: item.record,
+        isNew: item.isNew,
+        seen: item.seen,
+        meanClickRate: item.meanClickRate,
+      }))
+      const { pool: auctionPool, contested } = pickAuctionPool(candidates, explorationChance(counters, overrides.explorationTargetShare), () => coin)
+      let outcome = runAuction(auctionPool, tieBreak)
+      // O grupo sorteado não tinha ninguém que valesse (lance abaixo do piso): o outro grupo ainda pode ganhar.
+      if (!outcome && contested) outcome = runAuction(candidates.filter((candidate) => !auctionPool.includes(candidate)), tieBreak)
+      return { result: outcome, contested }
+    }
+
+    // O controle usa o sorteio de sempre (mesma ordem de chamadas de `random` de antes dos experimentos).
+    const coin = mixed ? random() : 0.5
+    const { result, contested } = decide(serving, random, coin)
+
+    // Modo sombra: o que cada braço de teste teria escolhido com o mesmo sorteio. Só calcula; ninguém vê.
+    const shadowRows: ShadowDecisionRow[] = shadowArms.map((testArm) => {
+      const shadow = decide(testArm.overrides, () => 0.5, coin).result
+      const servedAdId = result?.winner.adId ?? null
+      const shadowAdId = shadow?.winner.adId ?? null
+      return {
+        experiment: experiment!.key,
+        arm: testArm.key,
+        servedAdId,
+        shadowAdId,
+        agreed: servedAdId === shadowAdId,
+        servedEcpmCents: result ? ecpmOfPrice(result.winner.objective, result.priceCents, (result.winner as PoolCandidate).meanClickRate) : null,
+        shadowEcpmCents: shadow ? ecpmOfPrice(shadow.winner.objective, shadow.priceCents, (shadow.winner as PoolCandidate).meanClickRate) : null,
+      }
+    })
+    if (!result) {
+      this.logShadow(shadowRows)
+      return null
+    }
 
     // Última chance de desistir: depois de criada, a exibição conta no limite diário e no ritmo. Sem resposta, não se cria.
     if (performance.now() > deadlineAt) throw new DeliveryTimeout()
@@ -276,7 +331,9 @@ export class AdsDeliveryService {
       chargeMillicents: adChargeMillicents(objective, result.priceCents),
       clickToken,
       day,
+      experiment: label,
     })
+    this.logShadow(shadowRows)
 
     if (this.pacing) {
       // O gasto esperado desta entrega entra já no ritmo (a cobrança só chega quando a pessoa vê ou clica) e a disputa entra nos contadores.
@@ -303,6 +360,14 @@ export class AdsDeliveryService {
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
       why: explainWhy(record, viewer),
     }
+  }
+
+  /** Grava as decisões da sombra sem atrasar a resposta; falhar aqui nunca atrapalha a entrega. */
+  private logShadow(rows: ShadowDecisionRow[]): void {
+    if (!rows.length) return
+    this.repo.createShadowDecisions(rows).catch((error) => {
+      this.logger.warn(`Não consegui gravar as decisões do modo sombra: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   /** O conjunto de candidatos, da memória se foi lido há pouco (e uma só leitura para os pedidos simultâneos). */

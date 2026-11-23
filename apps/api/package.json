@@ -13,7 +13,8 @@
     "test:cov": "jest --coverage",
     "security:encrypt-mfa-secrets": "dotenv -e ../../.env -- ts-node src/crypto/encrypt-mfa-secrets.ts",
     "analytics:backfill": "dotenv -e ../../.env -- ts-node src/analytics/backfill-cli.ts",
-    "media:backfill": "dotenv -e ../../.env -- ts-node src/media/legacy-backfill-cli.ts"
+    "media:backfill": "dotenv -e ../../.env -- ts-node src/media/legacy-backfill-cli.ts",
+    "ads:experiment-report": "dotenv -e ../../.env -- ts-node src/ads/ads-experiments/experiment-report-cli.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1048.0",

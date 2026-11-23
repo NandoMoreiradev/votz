@@ -172,12 +172,16 @@ export const EXPLORATION = {
   MIN_SAMPLE: 40,
 } as const
 
-export function explorationChance(counters: { total: number; explored: number } | null): number {
-  if (!counters || counters.total < EXPLORATION.MIN_SAMPLE) return EXPLORATION.TARGET_SHARE
+/**
+ * `targetShare`: o alvo do braço do experimento (padrão: `EXPLORATION.TARGET_SHARE`). O teto e o piso por hora valem para
+ * todos os braços: um experimento muda o alvo, nunca solta o teto.
+ */
+export function explorationChance(counters: { total: number; explored: number } | null, targetShare: number = EXPLORATION.TARGET_SHARE): number {
+  if (!counters || counters.total < EXPLORATION.MIN_SAMPLE) return targetShare
   const share = counters.explored / counters.total
   if (share >= EXPLORATION.MAX_SHARE) return 0
   if (share < EXPLORATION.MIN_SHARE) return 1
-  return EXPLORATION.TARGET_SHARE
+  return targetShare
 }
 
 /**
@@ -227,30 +231,38 @@ export const QUALITY = {
 } as const
 
 /** Rejeições de um conjunto de exibições: "esconder" mais denúncia (que pesa mais), nunca mais que as exibições. */
-function rejections(hides: number, reports: number, impressions: number): number {
-  return Math.min(Math.max(hides || 0, 0) + QUALITY.REPORT_WEIGHT * Math.max(reports || 0, 0), impressions)
+function rejections(hides: number, reports: number, impressions: number, reportWeight: number = QUALITY.REPORT_WEIGHT): number {
+  return Math.min(Math.max(hides || 0, 0) + reportWeight * Math.max(reports || 0, 0), impressions)
 }
 
 /**
  * Taxa de rejeição da empresa (todos os anúncios dela), suavizada. Com poucas exibições devolve a taxa normal.
  * É o ponto de partida da taxa de cada anúncio novo dela.
  */
-export function advertiserRejectionRate(stats: { impressions: number; hides: number; reports: number } | undefined | null): number {
+export function advertiserRejectionRate(
+  stats: { impressions: number; hides: number; reports: number } | undefined | null,
+  reportWeight: number = QUALITY.REPORT_WEIGHT,
+): number {
   const impressions = Math.max(stats?.impressions || 0, 0)
   if (!stats || impressions < QUALITY.ADVERTISER_MIN_IMPRESSIONS) return QUALITY.BASELINE
-  const rate = (QUALITY.BASELINE * QUALITY.ADVERTISER_PRIOR_STRENGTH + rejections(stats.hides, stats.reports, impressions)) / (QUALITY.ADVERTISER_PRIOR_STRENGTH + impressions)
+  const rate = (QUALITY.BASELINE * QUALITY.ADVERTISER_PRIOR_STRENGTH + rejections(stats.hides, stats.reports, impressions, reportWeight)) / (QUALITY.ADVERTISER_PRIOR_STRENGTH + impressions)
   return Math.min(Math.max(rate, 0), QUALITY.ADVERTISER_MAX_RATE)
 }
 
 /**
  * Multiplicador do valor no leilão, de 1 (sem problema) até `1 - MAX_PENALTY`. `reports`: denúncias do anúncio.
- * `priorRate`: de onde a taxa parte (a da empresa, ou a normal).
+ * `priorRate`: de onde a taxa parte (a da empresa, ou a normal). `reportWeight`, `weight` e `maxPenalty`: os valores do braço
+ * de um experimento (padrão: os de `QUALITY`).
  */
-export function qualityFactor(hides: number, impressions: number, extra: { reports?: number; priorRate?: number } = {}): number {
+export function qualityFactor(
+  hides: number,
+  impressions: number,
+  extra: { reports?: number; priorRate?: number; reportWeight?: number; weight?: number; maxPenalty?: number } = {},
+): number {
   const safeImpressions = Math.max(impressions || 0, 0)
   const prior = Math.min(Math.max(extra.priorRate ?? QUALITY.BASELINE, 0), QUALITY.ADVERTISER_MAX_RATE)
-  const rate = (prior * QUALITY.PRIOR_STRENGTH + rejections(hides, extra.reports ?? 0, safeImpressions)) / (QUALITY.PRIOR_STRENGTH + safeImpressions)
-  const penalty = Math.min(QUALITY.MAX_PENALTY, QUALITY.WEIGHT * Math.max(0, rate - QUALITY.BASELINE))
+  const rate = (prior * QUALITY.PRIOR_STRENGTH + rejections(hides, extra.reports ?? 0, safeImpressions, extra.reportWeight)) / (QUALITY.PRIOR_STRENGTH + safeImpressions)
+  const penalty = Math.min(extra.maxPenalty ?? QUALITY.MAX_PENALTY, (extra.weight ?? QUALITY.WEIGHT) * Math.max(0, rate - QUALITY.BASELINE))
   return 1 - penalty
 }
 
@@ -316,6 +328,14 @@ function ecpm(candidate: AuctionCandidate): number {
   const bid = candidate.bidCapCents ?? adFloorCents(candidate.objective)
   const value = adChargeUnit(candidate.objective) === 'CLICK' ? bid * 1000 * rateOf(candidate) : bid
   return value * qualityOf(candidate)
+}
+
+/**
+ * Valor por mil exibições (em centavos) do preço fixado numa entrega: o preço de mil exibições já é isso; o de clique
+ * vira mil exibições com a chance de clique. É a medida que permite comparar dois caminhos (modo sombra).
+ */
+export function ecpmOfPrice(objective: Objective, priceCents: number, clickRate: number): number {
+  return adChargeUnit(objective) === 'CLICK' ? priceCents * 1000 * Math.max(clickRate, 0) : priceCents
 }
 
 /** Lance abaixo do piso da própria unidade não entra. */
