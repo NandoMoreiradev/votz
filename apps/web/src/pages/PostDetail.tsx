@@ -5,6 +5,7 @@ import { Navbar } from '../components/layout/Navbar'
 import { PostCard } from '../components/posts/PostCard'
 import { PostCommentsSection } from '../components/posts/PostCommentsSection'
 import { usePost } from '../hooks/usePosts'
+import { SkeletonBlock } from '../components/ui/Skeleton'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -68,7 +69,7 @@ export function PostDetail() {
           <h1>Publicação</h1>
         </PageHeader>
 
-        {isLoading && <StateCard>Carregando publicação...</StateCard>}
+        {isLoading && <SkeletonBlock $h={320} $radius="12px" role="status" aria-label="Carregando publicação" />}
         {isError && <StateCard>Publicação não encontrada ou removida.</StateCard>}
         {post && <>
           <PostCard post={post} detail />

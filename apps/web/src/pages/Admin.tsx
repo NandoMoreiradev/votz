@@ -23,6 +23,7 @@ import { AdReviewQueue } from '../components/ads/AdReviewQueue'
 import { PressCredentialQueue } from '../components/press/PressCredentialQueue'
 import { ContextNotesAdminTab } from '../components/context-notes/ContextNotesAdminTab'
 import { useAdReviewQueue } from '../hooks/useAds'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 function extractApiError(err: unknown, fallback: string): string {
   const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
@@ -355,7 +356,7 @@ function UsersTab() {
   return (
     <div>
       <SearchInput placeholder="Buscar por nome ou e-mail..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhum usuário encontrado.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhum usuário encontrado.</Empty> : (
         <Table>
           <thead>
             <tr>
@@ -488,7 +489,7 @@ function ReportsTab() {
   return (
     <div>
       <SearchInput placeholder="Buscar por título..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhum relato encontrado.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhum relato encontrado.</Empty> : (
         <Table>
           <thead>
             <tr>
@@ -578,7 +579,7 @@ function FlagsTab() {
       </FilterRow>
 
       {isLoading ? (
-        <Empty>Carregando...</Empty>
+        <SkeletonRows />
       ) : !data?.data?.length ? (
         <Empty>Nenhuma sinalização neste filtro.</Empty>
       ) : (
@@ -721,7 +722,7 @@ function EntitiesTab() {
         <FilterBtn $active={verified === true} onClick={() => { setVerified(true); setPage(1) }}>Verificadas</FilterBtn>
         <FilterBtn $active={verified === undefined} onClick={() => { setVerified(undefined); setPage(1) }}>Todas</FilterBtn>
       </FilterRow>
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhuma entidade encontrada.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhuma entidade encontrada.</Empty> : (
         <Table>
           <thead>
             <tr><Th>Nome</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Estado</Th><Th>Status</Th><Th>Plano</Th><Th>Ações</Th></tr>
@@ -787,7 +788,7 @@ function PoliticiansTab() {
         <FilterBtn $active={verified === true} onClick={() => { setVerified(true); setPage(1) }}>Verificados</FilterBtn>
         <FilterBtn $active={verified === undefined} onClick={() => { setVerified(undefined); setPage(1) }}>Todos</FilterBtn>
       </FilterRow>
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhum político encontrado.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhum político encontrado.</Empty> : (
         <Table>
           <thead>
             <tr><Th>Nome</Th><Th>Partido</Th><Th>Cargo</Th><Th>Estado</Th><Th>Status</Th><Th>Plano</Th><Th>Ações</Th></tr>
@@ -1057,7 +1058,7 @@ function SuggestionsTab() {
       </FilterRow>
 
       {isLoading ? (
-        <Empty>Carregando...</Empty>
+        <SkeletonRows />
       ) : !data?.data?.length ? (
         <Empty>Nenhuma sugestão encontrada.</Empty>
       ) : (

@@ -10,6 +10,7 @@ import {
   useUpdateMemberRole,
   useRemoveMember,
 } from '../../hooks/useOrgMemberships'
+import { SkeletonRows } from '../ui/Skeleton'
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 
@@ -315,7 +316,7 @@ export function TeamPanel({ orgType, orgId, currentUserId }: Props) {
         </PanelHeader>
 
         {isLoading ? (
-          <Empty>Carregando membros...</Empty>
+          <SkeletonRows rows={3} height={56} label="Carregando membros" />
         ) : members && members.length > 0 ? (
           <MemberList>
             {members.map((m) => {

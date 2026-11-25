@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { Navbar } from '../components/layout/Navbar'
 import { api } from '../lib/api'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 interface PublicMandateMeta {
   politician: {
@@ -132,7 +133,7 @@ export function MandatoPublico() {
     <Page>
       <Navbar />
       <Container>
-        {isLoading && <Card>Carregando dados públicos do mandato...</Card>}
+        {isLoading && <SkeletonRows rows={4} height={90} label="Carregando dados do mandato" />}
         {isError && <Card>Mandato não encontrado.</Card>}
         {data && (
           <>

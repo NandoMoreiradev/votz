@@ -6,6 +6,7 @@ import { AD_LIBRARY, type AdLibraryItem, type AdLibraryResponse } from '@votz/sh
 import { Navbar } from '../components/layout/Navbar'
 import { AdMedia, adMediaItems } from '../components/ads/AdMedia'
 import { api } from '../lib/api'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.main`
   min-height: 100vh;
@@ -261,7 +262,7 @@ export function AdLibrary() {
           </Intro>
         )}
 
-        {query.isLoading && <Empty>Carregando…</Empty>}
+        {query.isLoading && <SkeletonRows rows={3} height={160} label="Carregando anúncios" />}
         {query.isError && <Empty>Não deu para carregar a biblioteca agora. Tente de novo em instantes.</Empty>}
         {!query.isLoading && !query.isError && items.length === 0 && <Empty>Nenhum anúncio encontrado.</Empty>}
         {items.map((item) => <AdLibraryCard key={item.adId} item={item} />)}

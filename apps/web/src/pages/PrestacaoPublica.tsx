@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { Navbar } from '../components/layout/Navbar'
 import { api } from '../lib/api'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 interface PublicAccountabilityResponse {
   code: string
@@ -160,7 +161,7 @@ export function PrestacaoPublica() {
     <Page>
       <Navbar />
       <Container>
-        {isLoading && <Card>Carregando registro imutável de prestação de contas...</Card>}
+        {isLoading && <SkeletonRows rows={4} height={90} label="Carregando prestação de contas" />}
         {isError && (
           <Card>
             <Title>Código de verificação não encontrado</Title>

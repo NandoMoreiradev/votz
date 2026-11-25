@@ -17,6 +17,7 @@ import {
   type PressCredentialReview,
   type PressDecision,
 } from '../../hooks/usePressCredential'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const STATUSES: PressCredentialStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'REVOKED']
 
@@ -231,7 +232,7 @@ export function PressCredentialQueue() {
           </Chip>
         ))}
       </Filters>
-      {isLoading && <Hint>Carregando…</Hint>}
+      {isLoading && <SkeletonRows rows={3} height={90} />}
       {isError && <Hint $error>Não foi possível carregar os pedidos.</Hint>}
       {!isLoading && !isError && items.length === 0 && <Hint>Nenhum pedido nesta situação.</Hint>}
       {items.map((item) => <ReviewCard key={item.id} item={item} />)}

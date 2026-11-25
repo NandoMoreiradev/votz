@@ -24,6 +24,7 @@ import {
   type QueueTarget,
 } from '../hooks/useContextNotes'
 import { useAuthStore } from '../store/auth.store'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -251,7 +252,7 @@ export function ContextoDaComunidade() {
           </Panel>
         )}
 
-        {enabled && user && isLoading && <Panel><Muted style={{ margin: 0 }}>Carregando...</Muted></Panel>}
+        {enabled && user && isLoading && <SkeletonRows rows={3} height={100} />}
 
         {enabled && user && status?.blockedReason && (
           <Panel>

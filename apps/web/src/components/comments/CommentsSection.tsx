@@ -8,6 +8,7 @@ import { FlagTargetType, UserType } from '@votz/shared-types'
 import { VoiceRecorder } from './VoiceRecorder'
 import { VoiceCommentPlayer } from './VoiceCommentPlayer'
 import { FlagContentModal } from '../moderation/FlagContentModal'
+import { SkeletonRows } from '../ui/Skeleton'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
 
@@ -569,7 +570,7 @@ export function CommentsSection({ reportId }: CommentsSectionProps) {
       )}
 
       {isLoading ? (
-        <Empty>Carregando...</Empty>
+        <SkeletonRows rows={3} height={64} label="Carregando comentários" />
       ) : comments && comments.length > 0 ? (
         <CommentList>
           {comments.map((c) => (

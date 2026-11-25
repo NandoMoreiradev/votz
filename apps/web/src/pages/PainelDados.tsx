@@ -33,6 +33,7 @@ import {
   useAnalyticsTimeseries,
 } from '../hooks/useAnalytics'
 import { useAuthStore } from '../store/auth.store'
+import { SkeletonBlock, SkeletonCards, SkeletonRows } from '../components/ui/Skeleton'
 
 type PainelTab = 'overview' | 'heatmap' | 'recurrence' | 'response-times' | 'categories' | 'export'
 
@@ -500,7 +501,7 @@ export function PainelDados() {
         {tab === 'overview' && (
           <Stack>
             {overviewQ.isLoading ? (
-              <PanelBox>Carregando métricas da visão geral...</PanelBox>
+              <SkeletonCards count={6} height={110} label="Carregando métricas" />
             ) : overviewLock ? (
               <PlanLockedPreview
                 featureName="Visão geral e janela estendida"
@@ -704,7 +705,7 @@ export function PainelDados() {
         {tab === 'heatmap' && (
           <Stack>
             {heatmapQ.isLoading ? (
-              <PanelBox>Carregando células do mapa de calor...</PanelBox>
+              <SkeletonBlock $h={360} $radius="12px" role="status" aria-label="Carregando mapa de calor" />
             ) : heatmapLock ? (
               <PlanLockedPreview
                 featureName="Mapa de calor por célula geohash-7"
@@ -722,7 +723,7 @@ export function PainelDados() {
         {tab === 'recurrence' && (
           <Stack>
             {recurrenceQ.isLoading ? (
-              <PanelBox>Carregando células reincidentes...</PanelBox>
+              <SkeletonRows rows={4} label="Carregando células reincidentes" />
             ) : recurrenceLock ? (
               <PlanLockedPreview
                 featureName="Reincidência por célula e categoria"
@@ -785,7 +786,7 @@ export function PainelDados() {
         {tab === 'response-times' && (
           <Stack>
             {responseTimesQ.isLoading ? (
-              <PanelBox>Carregando tempos de resposta...</PanelBox>
+              <SkeletonBlock $h={260} $radius="12px" role="status" aria-label="Carregando tempos de resposta" />
             ) : responseTimesLock ? (
               <PlanLockedPreview
                 featureName="Distribuição e percentis de tempo de resposta"
@@ -825,7 +826,7 @@ export function PainelDados() {
         {tab === 'categories' && (
           <Stack>
             {categoriesQ.isLoading ? (
-              <PanelBox>Carregando distribuição por categoria...</PanelBox>
+              <SkeletonBlock $h={260} $radius="12px" role="status" aria-label="Carregando distribuição por categoria" />
             ) : categoriesQ.isError || !categoriesQ.data ? (
               <PanelBox>Não foi possível carregar as categorias.</PanelBox>
             ) : (

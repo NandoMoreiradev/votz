@@ -29,6 +29,7 @@ import {
   Title,
 } from '../../components/ads/ads-ui'
 import { PageHeader, StudioPage } from '../../components/studio/studio-ui'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 
 const Steps = styled.ol`
   margin: 8px 0 0;
@@ -195,7 +196,7 @@ function Keys({ companyId, accountId, canManage }: { companyId: string; accountI
         )}
 
         {keys.isError ? <ErrorMsg role="alert">{adsErrorMessage(keys.error)}</ErrorMsg>
-          : keys.isLoading ? <Hint style={{ marginTop: 12 }}>Carregando…</Hint>
+          : keys.isLoading ? <div style={{ marginTop: 12 }}><SkeletonRows rows={2} height={44} /></div>
           : !keys.data?.length ? <Hint style={{ marginTop: 12 }}>Nenhuma chave ainda.</Hint>
           : (
             <KeyList>
@@ -253,7 +254,7 @@ export function StudioAdsConversions() {
         </Hint>
       </Card>
 
-      {accounts.isLoading ? <Hint>Carregando…</Hint>
+      {accounts.isLoading ? <SkeletonRows rows={3} />
         : accounts.isError ? <ErrorMsg role="alert">{adsErrorMessage(accounts.error)}</ErrorMsg>
         : !accounts.data?.length ? <Card><CardTitle>Nenhuma conta de anúncios</CardTitle><Hint>Crie a conta em Anúncios › Campanhas para ligar as conversões.</Hint></Card>
         : (

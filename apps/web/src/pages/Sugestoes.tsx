@@ -12,6 +12,7 @@ import {
   useSuggestions,
   useToggleSuggestionVote,
 } from '../hooks/useSuggestions'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 function extractApiError(err: unknown, fallback: string): string {
   const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
@@ -487,7 +488,7 @@ export function Sugestoes() {
         </Controls>
 
         {isLoading ? (
-          <EmptyBox>Carregando sugestões...</EmptyBox>
+          <SkeletonRows rows={4} height={110} label="Carregando sugestões" />
         ) : !data?.data?.length ? (
           <EmptyBox>
             Nenhuma sugestão encontrada neste filtro. Que tal enviar a primeira?

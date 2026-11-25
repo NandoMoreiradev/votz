@@ -23,6 +23,7 @@ import {
   useRadarRules,
   useUpdateRadarRule,
 } from '../../hooks/usePressTools'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const Box = styled.section`
   background: ${({ theme }) => theme.colors.surface};
@@ -218,7 +219,7 @@ export function PressRadarPanel({ info }: { info: PressPlanInfo }) {
 
       {adding && <RuleForm info={info} onDone={() => setAdding(false)} />}
 
-      {isLoading && <Msg>Carregando…</Msg>}
+      {isLoading && <SkeletonRows rows={4} height={70} />}
       {!isLoading && used === 0 && !adding && (
         <Msg>Você ainda não criou nenhum aviso. Sem avisos próprios, você continua recebendo o e-mail padrão de todo surto detectado.</Msg>
       )}

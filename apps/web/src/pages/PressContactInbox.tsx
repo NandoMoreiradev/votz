@@ -15,6 +15,7 @@ import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../store/auth.store'
 import { apiErrorMessage } from '../hooks/usePressCredential'
 import { useReceivedPressContacts, useRespondPressContact } from '../hooks/usePressContacts'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.div`min-height: 100vh; background: ${({ theme }) => theme.colors.neutral};`
 const Content = styled.div`max-width: 760px; margin: 0 auto; padding: 32px 24px 72px; @media (max-width: 640px) { padding: 16px 16px 48px; }`
@@ -152,7 +153,7 @@ export function PressContactInbox() {
           com "aceito falar com a imprensa". Você escolhe se aceita, e ninguém recebe seu telefone ou e-mail sem você compartilhar.
         </Lead>
         {sessionReady && !user && <Msg>Entre na sua conta para ver os pedidos. <Link to="/login?redirect=/pedidos-da-imprensa">Entrar</Link></Msg>}
-        {isLoading && <Msg>Carregando…</Msg>}
+        {isLoading && <SkeletonRows rows={3} height={90} />}
         {isError && <Msg $error>Não foi possível carregar os pedidos.</Msg>}
         {user && !isLoading && !isError && rows.length === 0 && <Msg>Você não tem pedidos da imprensa.</Msg>}
         {rows.map((r) => <RequestCard key={r.id} item={r} />)}

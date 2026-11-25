@@ -2,6 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { AD_REFUND_LIMITS, AD_REFUND_STATUS_LABELS, type AdRefundQueueItem, type AdRefundStatus } from '@votz/shared-types'
 import { adsErrorMessage, formatBRL, useAdRefundQueue, useResolveAdRefund } from '../../hooks/useAds'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const FILTERS: AdRefundStatus[] = ['REQUESTED', 'PAID', 'REJECTED', 'CANCELED']
 
@@ -149,7 +150,7 @@ export function AdRefundQueue() {
         ))}
       </FilterRow>
       {error && <Err role="alert">{error}</Err>}
-      {queue.isLoading ? <Empty>Carregando...</Empty>
+      {queue.isLoading ? <SkeletonRows />
         : queue.isError ? <Empty>{adsErrorMessage(queue.error)}</Empty>
         : !queue.data?.length ? <Empty>{status === 'REQUESTED' ? 'Nenhum pedido de devolução esperando.' : 'Nenhum pedido neste filtro.'}</Empty>
         : queue.data.map((item) => (

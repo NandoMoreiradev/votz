@@ -2,6 +2,7 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { AD_FRAUD_SIGNAL_LABELS, AD_OBJECTIVE_LABELS, type AdFraudFlagItem, type AdFraudStatus } from '@votz/shared-types'
 import { adsErrorMessage, formatBRL, useAdFraudQueue, useResolveAdFraud } from '../../hooks/useAds'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const FILTER_LABEL: Record<AdFraudStatus, string> = { OPEN: 'Em aberto', CONFIRMED: 'Confirmados', DISMISSED: 'Descartados' }
 
@@ -166,7 +167,7 @@ export function AdFraudQueue() {
       </FilterRow>
       {error && <Err role="alert">{error}</Err>}
 
-      {queue.isLoading ? <Empty>Carregando...</Empty>
+      {queue.isLoading ? <SkeletonRows />
         : queue.isError ? <Empty>{adsErrorMessage(queue.error)}</Empty>
         : !queue.data?.data.length ? <Empty>{status === 'OPEN' ? 'Nenhum tráfego suspeito em aberto.' : 'Nenhum caso neste filtro.'}</Empty>
         : queue.data.data.map((item) => <Case key={item.id} item={item} busy={resolve.isPending} onResolve={(resolution) => act(item, resolution)} />)}

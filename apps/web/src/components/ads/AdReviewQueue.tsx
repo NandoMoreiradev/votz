@@ -19,6 +19,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { AdFraudQueue } from './AdFraudQueue'
 import { AdRefundQueue } from './AdRefundQueue'
 import { AdMedia, adMediaItems } from './AdMedia'
+import { SkeletonRows } from '../ui/Skeleton'
 
 type Filter = 'PENDING' | 'APPROVED' | 'REJECTED'
 const FILTER_LABEL: Record<Filter, string> = { PENDING: 'Na fila', APPROVED: 'Aprovados', REJECTED: 'Recusados' }
@@ -258,7 +259,7 @@ export function AdReviewQueue() {
       </FilterRow>
       {error && <Err role="alert">{error}</Err>}
 
-      {queue.isLoading ? <Empty>Carregando...</Empty>
+      {queue.isLoading ? <SkeletonRows height={120} rows={3} />
         : queue.isError ? <Empty>{adsErrorMessage(queue.error)}</Empty>
         : !queue.data?.data.length ? <Empty>{status === 'PENDING' ? 'Nenhum anúncio esperando revisão.' : 'Nenhum anúncio neste filtro.'}</Empty>
         : queue.data.data.map((item) => (

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Navbar } from '../components/layout/Navbar'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -295,9 +296,7 @@ export function MyRequests() {
         <NewRequestBtn to="/solicitar-cadastro">+ Nova solicitação</NewRequestBtn>
 
         {isLoading ? (
-          <EmptyState>
-            <EmptyDesc>Carregando...</EmptyDesc>
-          </EmptyState>
+          <SkeletonRows rows={3} height={96} />
         ) : requests.length === 0 ? (
           <EmptyState>
             <EmptyTitle>Nenhuma solicitação ainda</EmptyTitle>

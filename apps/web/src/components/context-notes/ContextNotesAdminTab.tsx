@@ -16,6 +16,7 @@ import {
 import { errorText } from '../../hooks/useContextNotes'
 import { useAuthStore } from '../../store/auth.store'
 import { ModerationReasonModal } from '../moderation/ModerationReasonModal'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const Row = styled.div`
   display: flex;
@@ -142,7 +143,7 @@ export function ContextNotesAdminTab() {
       {message && <Info role="status">{message}</Info>}
 
       {isLoading ? (
-        <Info>Carregando...</Info>
+        <SkeletonRows rows={3} height={90} />
       ) : !data?.data.length ? (
         <Info>Nenhuma nota encontrada.</Info>
       ) : (

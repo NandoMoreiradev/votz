@@ -9,6 +9,7 @@ import { ReportCard } from '../components/reports/ReportCard'
 import { usePostsFeed } from '../hooks/usePosts'
 import { useFollowTopic, useTopicDetail } from '../hooks/useTopics'
 import { useAuthStore } from '../store/auth.store'
+import { SkeletonBlock, SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -182,7 +183,7 @@ export function PautaDetail() {
         </BackLink>
 
         {loadingTopic ? (
-          <SideCard>Carregando pauta cívica...</SideCard>
+          <SkeletonBlock $h={220} $radius="12px" role="status" aria-label="Carregando pauta" />
         ) : !topicData ? (
           <SideCard>Pauta cívica não encontrada ainda.</SideCard>
         ) : (
@@ -247,7 +248,7 @@ export function PautaDetail() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <PostComposer initialTopic={topicData.topic.slug} />
                     {loadingPosts ? (
-                      <SideCard>Carregando publicações...</SideCard>
+                      <SkeletonRows rows={3} height={140} label="Carregando publicações" />
                     ) : (postsData?.data ?? []).length === 0 ? (
                       <SideCard>Nenhuma publicação nesta pauta ainda.</SideCard>
                     ) : (

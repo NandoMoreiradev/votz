@@ -35,6 +35,7 @@ import {
 } from '../hooks/useSla'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
+import { SkeletonRows } from '../components/ui/Skeleton'
 
 type TabKey = 'queue' | 'workload' | 'performance' | 'config' | 'reports'
 
@@ -682,7 +683,7 @@ export function EntidadePrazos() {
                   {assignError && <AlertBanner $tone="warn">{assignError}</AlertBanner>}
 
                   {queueQ.isLoading ? (
-                    <Subtitle>Carregando fila de atendimento...</Subtitle>
+                    <SkeletonRows label="Carregando fila de atendimento" />
                   ) : !queueQ.data || queueQ.data.items.length === 0 ? (
                     <Subtitle>Nenhum relato em aberto corresponde aos filtros selecionados.</Subtitle>
                   ) : (
@@ -745,7 +746,7 @@ export function EntidadePrazos() {
                   {workloadQ.data ? ` Sem atribuição na fila: ${workloadQ.data.unassignedCount}.` : ''}
                 </Subtitle>
                 {workloadQ.isLoading ? (
-                  <Subtitle>Carregando carga da equipe...</Subtitle>
+                  <SkeletonRows rows={4} height={44} label="Carregando carga da equipe" />
                 ) : (
                   <Table>
                     <thead>

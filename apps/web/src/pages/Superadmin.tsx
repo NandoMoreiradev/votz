@@ -6,6 +6,7 @@ import { Navbar } from '../components/layout/Navbar'
 import { ModerationReasonModal } from '../components/moderation/ModerationReasonModal'
 import { useAuthStore } from '../store/auth.store'
 import { api } from '../lib/api'
+import { SkeletonCards, SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.div`
   min-height: 100vh;
@@ -249,7 +250,7 @@ function OverviewTab() {
     queryFn: () => api.get('/admin/superadmin/overview').then((r) => r.data),
   })
 
-  if (isLoading) return <Empty>Carregando visão operacional...</Empty>
+  if (isLoading) return <SkeletonCards count={6} height={96} label="Carregando visão operacional" />
   if (!data) return <Empty>Não foi possível carregar os dados.</Empty>
 
   const { totals, growth7d } = data
@@ -336,7 +337,7 @@ function PlansTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          {loadingCompanies ? <Empty>Carregando...</Empty> : !companies?.data?.length ? <Empty>Nenhuma empresa encontrada.</Empty> : (
+          {loadingCompanies ? <SkeletonRows /> : !companies?.data?.length ? <Empty>Nenhuma empresa encontrada.</Empty> : (
             <Table>
               <thead>
                 <tr><Th>Empresa</Th><Th>CNPJ</Th><Th>Setor</Th><Th>Porte</Th><Th>Plano</Th></tr>
@@ -369,7 +370,7 @@ function PlansTab() {
       )}
 
       {target === 'entities' && (
-        loadingEntities ? <Empty>Carregando...</Empty> : !entities?.data?.length ? <Empty>Nenhuma entidade encontrada.</Empty> : (
+        loadingEntities ? <SkeletonRows /> : !entities?.data?.length ? <Empty>Nenhuma entidade encontrada.</Empty> : (
           <Table>
             <thead>
               <tr><Th>Entidade</Th><Th>Tipo</Th><Th>Cidade/UF</Th><Th>Plano</Th></tr>
@@ -399,7 +400,7 @@ function PlansTab() {
       )}
 
       {target === 'politicians' && (
-        loadingPoliticians ? <Empty>Carregando...</Empty> : !politicians?.data?.length ? <Empty>Nenhum político encontrado.</Empty> : (
+        loadingPoliticians ? <SkeletonRows /> : !politicians?.data?.length ? <Empty>Nenhum político encontrado.</Empty> : (
           <Table>
             <thead>
               <tr><Th>Político</Th><Th>Partido</Th><Th>Cargo / UF</Th><Th>Plano</Th></tr>
@@ -460,7 +461,7 @@ function ApiKeysTab() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhuma API Key encontrada.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhuma API Key encontrada.</Empty> : (
         <Table>
           <thead>
             <tr><Th>Nome</Th><Th>Prefixo</Th><Th>Responsável</Th><Th>Tier</Th><Th>Status</Th><Th>Ação</Th></tr>
@@ -534,7 +535,7 @@ function PostsTab() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      {isLoading ? <Empty>Carregando...</Empty> : !data?.data?.length ? <Empty>Nenhuma publicação encontrada.</Empty> : (
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhuma publicação encontrada.</Empty> : (
         <Table>
           <thead>
             <tr><Th>Tipo</Th><Th>Conteúdo</Th><Th>Autor</Th><Th>Engajamento</Th><Th>Ação</Th></tr>
@@ -592,7 +593,7 @@ function AuditTab() {
     queryFn: () => api.get('/admin/audit-logs', { params: { limit: 40 } }).then((r) => r.data),
   })
 
-  if (isLoading) return <Empty>Carregando logs de auditoria...</Empty>
+  if (isLoading) return <SkeletonRows rows={8} height={44} label="Carregando logs de auditoria" />
   if (!data?.data?.length) return <Empty>Nenhum registro de auditoria ainda.</Empty>
 
   return (

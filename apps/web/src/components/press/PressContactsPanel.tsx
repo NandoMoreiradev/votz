@@ -5,6 +5,7 @@ import { PRESS_CONTACT_STATUS_LABELS } from '@votz/shared-types'
 import { Button } from '../ui/Button'
 import { apiErrorMessage } from '../../hooks/usePressCredential'
 import { useCancelPressContact, useSentPressContacts } from '../../hooks/usePressContacts'
+import { SkeletonRows } from '../ui/Skeleton'
 
 const Box = styled.section`
   background: ${({ theme }) => theme.colors.surface};
@@ -45,7 +46,7 @@ export function PressContactsPanel() {
         Para pedir contato, abra um relato cujo autor aceitou falar com a imprensa. Aqui você acompanha as respostas.
         Quando alguém recusa, você só vê "sem disponibilidade": o motivo não é mostrado.
       </Text>
-      {isLoading && <Text>Carregando…</Text>}
+      {isLoading && <SkeletonRows rows={3} />}
       {!isLoading && rows.length === 0 && <Text>Você ainda não fez nenhum pedido.</Text>}
       {rows.map((r) => (
         <Row key={r.id}>
