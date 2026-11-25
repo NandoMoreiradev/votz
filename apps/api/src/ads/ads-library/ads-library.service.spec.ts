@@ -25,6 +25,7 @@ function record(patch: Partial<LibraryAdRecord> = {}, adSet: Partial<LibraryAdRe
       body: 'Fresquinho todo dia.',
       ctaLabel: 'Ver cardápio',
       destinationUrl: 'https://www.padaria.com.br/cardapio?utm=segredo#topo',
+      destinationKind: 'URL',
       createdAt: NOW,
       updatedAt: NOW,
       media: null,
@@ -105,6 +106,16 @@ describe('item da biblioteca', () => {
     for (const proibido of ['food-drink', '25-34', 'FEMALE', 'bidCap', 'dailyBudget', 'utm=segredo', '/cardapio', '250', '3200', 'balance', 'interests']) {
       expect(json).not.toContain(proibido)
     }
+  })
+
+  it('WhatsApp: a biblioteca pública mostra só o tipo, NUNCA o número nem a mensagem inicial', () => {
+    const base = record()
+    const whatsapp = { ...base, creative: { ...base.creative, destinationKind: 'WHATSAPP', destinationUrl: 'https://wa.me/5511987654321?text=Oi', whatsappPhone: '5511987654321', whatsappText: 'Oi, vi o anúncio' } } as unknown as LibraryAdRecord
+    const item = toLibraryItem(whatsapp, undefined, NOW, storage.getPublicUrl)
+    expect(item.destinationKind).toBe('WHATSAPP')
+    expect(item.destinationHost).toBeNull()
+    const json = JSON.stringify(item)
+    for (const proibido of ['5511987654321', '987654321', 'wa.me', 'vi o anúncio']) expect(json).not.toContain(proibido)
   })
 
   it('anúncio que parou aparece como parado; sem saldo também', () => {

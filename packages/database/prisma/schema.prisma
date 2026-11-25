@@ -2448,6 +2448,15 @@ enum AdObjective {
   AWARENESS // reconhecimento: cobrado por mil exibições
   TRAFFIC // tráfego: cobrado por clique
   CONVERSIONS // conversões: cobrado por mil exibições, otimizado para conversão
+  MESSAGES // mensagens: cobrado por clique; o botão leva a falar com a equipe (chat da página no Votz ou WhatsApp)
+}
+
+// Para onde o botão do anúncio leva. URL: site do anunciante. PAGE_MESSAGE: chat da página da empresa no Votz.
+// WHATSAPP: conversa no WhatsApp (ainda não aberto a anunciantes).
+enum AdDestinationKind {
+  URL
+  PAGE_MESSAGE
+  WHATSAPP
 }
 
 enum AdStatus {
@@ -2547,6 +2556,11 @@ model AdCreative {
   body           String
   ctaLabel       String    @map("cta_label")
   destinationUrl String    @map("destination_url")
+  // Tipo do destino. Em PAGE_MESSAGE e WHATSAPP o servidor monta destinationUrl (o anunciante não digita link).
+  destinationKind AdDestinationKind @default(URL) @map("destination_kind")
+  // Só em WHATSAPP: número (só dígitos, com 55) e mensagem inicial. destinationUrl é o wa.me montado a partir deles.
+  whatsappPhone  String?   @map("whatsapp_phone")
+  whatsappText   String?   @map("whatsapp_text")
   // Fotos ou vídeo do anúncio (padrão de mídia: 1:1, 4:5 ou 16:9), na ordem de `position`. Até 5 fotos (carrossel) ou um
   // vídeo sozinho. Sem mídia, o anúncio é só texto.
   media          MediaAsset[]
@@ -2914,6 +2928,9 @@ model AdDailyStat {
   // Conversões contadas pelo anunciante (API de conversões), no dia em que aconteceram.
   conversions         Int      @default(0)
   conversionValueCents BigInt  @default(0) @map("conversion_value_cents")
+  // Conversas iniciadas: a pessoa tocou no anúncio de mensagens e escreveu para a página da empresa (uma por clique).
+  // Contagem à parte de `conversions`: não vem do anunciante e não tem valor.
+  messageConversations Int     @default(0) @map("message_conversations")
 
   @@unique([adId, day])
   @@index([adSetId, day])
@@ -2971,6 +2988,9 @@ model AdConversion {
   keyId        String?         @map("key_id")
   key          AdConversionKey? @relation(fields: [keyId], references: [id], onDelete: SetNull)
   eventName    String          @map("event_name")
+  // De onde veio: "API" (o anunciante mandou, com a chave) ou "VOTZ_MESSAGE" (a pessoa escreveu para a página da empresa
+  // depois de tocar no anúncio de mensagens; só o fato, nunca o texto).
+  source       String          @default("API")
   valueCents   Int             @default(0) @map("value_cents")
   occurredAt   DateTime        @map("occurred_at")
   receivedAt   DateTime        @default(now()) @map("received_at")

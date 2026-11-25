@@ -380,12 +380,21 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
     return this.prisma.adAccount.findUnique({ where: { id: accountId }, select: { id: true, companyId: true } })
   }
 
+  /** Totais do período por anúncio da conta (a tabela de campanhas do Estúdio soma por público e por campanha). */
+  async listAccountAdTotals(accountId: string, since: Date) {
+    return this.prisma.adDailyStat.groupBy({
+      by: ['adId'],
+      where: { day: { gte: since }, ad: { adSet: { campaign: { accountId } } } },
+      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true, conversions: true, conversionValueCents: true, messageConversations: true },
+    })
+  }
+
   /** Contagem diária somada dos anúncios da conta. */
   async listAccountDailyStats(accountId: string, since: Date) {
     return this.prisma.adDailyStat.groupBy({
       by: ['day'],
       where: { day: { gte: since }, ad: { adSet: { campaign: { accountId } } } },
-      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true, conversions: true, conversionValueCents: true },
+      _sum: { impressions: true, viewableImpressions: true, clicks: true, hides: true, spendMillicents: true, conversions: true, conversionValueCents: true, messageConversations: true },
       orderBy: { day: 'asc' },
     })
   }

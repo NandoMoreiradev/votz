@@ -68,7 +68,7 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
 
   if (type === 'POLITICIAN') {
     return [
-      { title: '', items: [overview, publicPage, editProfile, team] },
+      { title: '', items: [overview] },
       {
         title: 'Mandato',
         items: [
@@ -89,15 +89,16 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
         ],
       },
       {
-        title: 'Dados e conta',
-        items: [{ to: '/painel-dados', label: 'Painel de dados', icon: ChartBar }, messages, plans],
+        title: 'Dados e mensagens',
+        items: [{ to: '/painel-dados', label: 'Painel de dados', icon: ChartBar }, messages],
       },
+      { title: 'Sua página', items: [publicPage, editProfile, team, plans] },
     ]
   }
 
   if (type === 'ENTITY') {
     return [
-      { title: '', items: [overview, publicPage, editProfile, team] },
+      { title: '', items: [overview] },
       {
         title: 'Atendimento',
         items: [
@@ -106,24 +107,24 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
         ],
       },
       { title: 'Conteúdo', items: [{ to: '/estudio/debates', label: 'Debates', icon: Microphone }] },
-      { title: 'Dados e conta', items: [{ to: '/painel-dados', label: 'Painel de dados', icon: ChartBar }, plans] },
+      { title: 'Dados', items: [{ to: '/painel-dados', label: 'Painel de dados', icon: ChartBar }] },
+      { title: 'Sua página', items: [publicPage, editProfile, team, plans] },
     ]
   }
 
   return [
-    { title: '', items: [overview, publicPage, team] },
-    { title: 'Atendimento', items: [messages] },
+    { title: '', items: [overview] },
     {
       title: 'Anúncios',
       items: [
-        { to: '/estudio/anuncios', label: 'Campanhas', hint: 'Contas, campanhas e saldo', icon: Megaphone, end: true },
-        { to: '/estudio/anuncios/nova', label: 'Criar campanha', icon: PencilSimple },
-        { to: '/estudio/anuncios/faturamento', label: 'Faturamento', hint: 'Saldo, recarga e extrato', icon: Receipt },
+        { to: '/estudio/anuncios', label: 'Campanhas', hint: 'Campanhas, públicos e anúncios', icon: Megaphone, end: true },
         { to: '/estudio/anuncios/relatorio', label: 'Relatório', hint: 'Exibições, cliques e gasto', icon: ChartBar },
         { to: '/estudio/anuncios/conversoes', label: 'Conversões', hint: 'Compras e contatos vindos dos anúncios', icon: Target },
+        { to: '/estudio/anuncios/faturamento', label: 'Faturamento', hint: 'Saldo, recarga e extrato', icon: Receipt },
       ],
     },
-    { title: 'Conta', items: [plans] },
+    { title: 'Atendimento', items: [messages] },
+    { title: 'Sua página', items: [publicPage, team, plans] },
   ]
 }
 
@@ -133,7 +134,7 @@ export function studioShortcuts(type: OrgContextType, id: string): StudioNavItem
   const wanted: Record<OrgContextType, string[]> = {
     POLITICIAN: ['/mandato', '/proposta/nova', '/painel-dados', '/conversas'],
     ENTITY: ['/entidade/prazos', '/painel-dados', '/conversas', '/estudio/debates'],
-    COMPANY: [publicProfilePath('COMPANY', id), '/conversas', '/estudio/planos'],
+    COMPANY: ['/estudio/anuncios/relatorio', '/conversas', publicProfilePath('COMPANY', id), '/estudio/equipe'],
   }
   const newProposal: StudioNavItem = { to: '/proposta/nova', label: 'Nova proposta', hint: 'Publique uma ideia para o seu mandato', icon: PencilSimple }
   const all = [...groups.flatMap((g) => g.items), newProposal]

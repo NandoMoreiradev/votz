@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import styled, { keyframes } from 'styled-components'
+import { Link } from 'react-router-dom'
 import { OrgProfile, MyProfilesResponse } from '../../types/api'
+import { useMe } from '../../hooks/useAuth'
 import { UserType } from '@votz/shared-types'
 
 const fadeIn = keyframes`from { opacity: 0 } to { opacity: 1 }`
@@ -280,6 +282,23 @@ const MfaSetupWarning = styled.div`
   line-height: 1.5;
 `
 
+const MfaSetupLink = styled(Link)`
+  flex: 2;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-decoration: none;
+  transition: opacity 0.15s;
+
+  &:hover { opacity: 0.9; }
+`
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function orgTypeLabel(type: string) {
@@ -320,6 +339,11 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
   const [selected, setSelected] = useState<string | null>(null)
   const [pendingOrg, setPendingOrg] = useState<OrgProfile | null>(null)
   const [mfaCode, setMfaCode] = useState('')
+  // Pergunta à API, na hora de abrir o passo do código, se o autenticador já está ativo.
+  // Sem isso o campo de código aparecia para quem nunca configurou o autenticador.
+  const { data: me, isLoading: meLoading } = useMe({ fresh: true, enabled: !!pendingOrg })
+  const needsMfaSetup = mfaSetupRequired || me?.mfaEnabled === false
+  const checkingMfa = !!pendingOrg && !me && meLoading
 
   useEffect(() => {
     if (!onClose) return
@@ -362,7 +386,11 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
             {onClose && <CloseBtn type="button" aria-label="Fechar" onClick={onClose}>✕</CloseBtn>}
             <Logo><span>◆</span> VOTZ</Logo>
             <Title>Confirme sua identidade</Title>
-            <Subtitle>Para acessar este perfil, você precisa do autenticador.</Subtitle>
+            <Subtitle>
+              {needsMfaSetup
+                ? 'Falta um passo antes de entrar neste perfil.'
+                : 'Para acessar este perfil, você precisa do autenticador.'}
+            </Subtitle>
           </Header>
 
           <MfaBody>
@@ -376,10 +404,13 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
               </ProfileInfo>
             </MfaOrgRow>
 
-            {mfaSetupRequired ? (
+            {checkingMfa ? (
+              <MfaHint>Verificando sua conta…</MfaHint>
+            ) : needsMfaSetup ? (
               <MfaSetupWarning>
-                Você ainda não configurou o autenticador de dois fatores.
-                Acesse <strong>Editar perfil → Segurança</strong> para ativar antes de usar este perfil.
+                Para agir em nome de uma organização, sua conta precisa da verificação em duas etapas
+                (um app autenticador no celular), e ela ainda não está ativada.
+                Ative em <strong>Meu perfil → Autenticação em dois fatores</strong>. Leva um minuto.
               </MfaSetupWarning>
             ) : (
               <>
@@ -408,7 +439,11 @@ export function ProfileSelectModal({ profiles, loading, error, mfaSetupRequired,
               <MfaBackBtn onClick={handleMfaBack} disabled={loading}>
                 Voltar
               </MfaBackBtn>
-              {!mfaSetupRequired && (
+              {needsMfaSetup ? (
+                <MfaSetupLink to="/meu-perfil#autenticador" onClick={() => onClose?.()}>
+                  Ativar autenticador
+                </MfaSetupLink>
+              ) : !checkingMfa && (
                 <MfaConfirmBtn
                   onClick={handleMfaConfirm}
                   disabled={loading || mfaCode.length < 6}

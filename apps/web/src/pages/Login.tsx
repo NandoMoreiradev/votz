@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
 import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
-import { useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced, useMyProfiles, useSwitchContext } from '../hooks/useAuth'
+import { useGooglePendingMfa, useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced, useMyProfiles, useSwitchContext } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { AuthUser } from '../types/api'
 import logoSrc from '../assets/brand/votz-logo.svg'
@@ -112,7 +112,7 @@ interface MfaForm {
 
 export function Login() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const redirect = searchParams.get('redirect') ?? '/'
   const user = useAuthStore((s) => s.user)
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -133,6 +133,28 @@ export function Login() {
   const { mutate: enableForced, isPending: enablePending, error: enableError } = useMfaEnableForced(mfaSetupToken ?? '')
 
   const { data: profiles } = useMyProfiles(!!pendingAuth)
+
+  // Volta do Google numa conta que exige MFA: busca o desafio (código ou configuração) e
+  // segue pelos mesmos passos do login com senha.
+  const { mutate: fetchGooglePendingMfa } = useGooglePendingMfa()
+  const [googleMfaExpired, setGoogleMfaExpired] = useState(false)
+  const googleMfaStarted = useRef(false)
+  useEffect(() => {
+    if (searchParams.get('google_mfa') !== '1' || googleMfaStarted.current) return
+    googleMfaStarted.current = true
+    setSearchParams((prev) => { prev.delete('google_mfa'); return prev }, { replace: true })
+    fetchGooglePendingMfa(undefined, {
+      onSuccess: (data) => {
+        if ('mfaToken' in data) {
+          setMfaToken(data.mfaToken)
+        } else {
+          setMfaSetupToken(data.mfaSetupToken)
+          setMfaSetupStep('intro')
+        }
+      },
+      onError: () => setGoogleMfaExpired(true),
+    })
+  }, [searchParams, setSearchParams, fetchGooglePendingMfa])
 
   const { register: regCreds, handleSubmit: handleCreds, formState: { errors: credErrors } } = useForm<CredentialsForm>({
     defaultValues: { email: '', password: '' },
@@ -463,6 +485,7 @@ export function Login() {
           </Field>
 
           {loginError && <ErrorMsg>E-mail ou senha incorretos.</ErrorMsg>}
+          {googleMfaExpired && <ErrorMsg>O login com Google expirou. Entre de novo.</ErrorMsg>}
 
           <Button variant="primary" fullWidth disabled={loginPending}>
             {loginPending ? 'Entrando...' : 'Entrar'}

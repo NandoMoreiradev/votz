@@ -28,6 +28,7 @@ import {
   Sub,
   Title,
 } from '../../components/ads/ads-ui'
+import { PageHeader, StudioPage } from '../../components/studio/studio-ui'
 
 const Steps = styled.ol`
   margin: 8px 0 0;
@@ -226,13 +227,17 @@ export function StudioAdsConversions() {
   }
 
   return (
-    <>
-      <Head>
-        <div>
-          <Title>Conversões</Title>
-          <Sub>Veja quantas compras e contatos vieram dos seus anúncios, sem rastrear ninguém.</Sub>
-        </div>
-      </Head>
+    <StudioPage>
+      <PageHeader
+        crumbs={[{ label: 'Anúncios', to: '/estudio/anuncios' }, { label: 'Conversões' }]}
+        title="Conversões"
+        description="Veja quantas compras e contatos vieram dos seus anúncios, sem rastrear ninguém."
+        actions={accounts.data && accounts.data.length > 1 && (
+          <Select aria-label="Conta de anúncios" value={accountId} onChange={(event) => setChosen(event.target.value)} style={{ width: 'auto', minHeight: 36 }}>
+            {accounts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </Select>
+        )}
+      />
 
       <Card>
         <CardTitle>Como funciona</CardTitle>
@@ -242,6 +247,10 @@ export function StudioAdsConversions() {
           <li>Seu sistema manda ao Votz: o código, o que aconteceu, o valor e a hora. Vale até {AD_ATTRIBUTION_WINDOW_DAYS} dias depois do clique.</li>
         </Steps>
         <Hint style={{ marginTop: 10 }}>O Votz nunca conta ao anunciante quem clicou. O código não mostra nome, e-mail nem nada da pessoa, e você também não manda nada dela.</Hint>
+        <Hint style={{ marginTop: 10 }}>
+          Anúncio de mensagens que abre o chat da sua página não precisa disso: o Votz conta sozinho quando alguém escreve para a sua página depois de tocar no
+          anúncio e mostra no Relatório como "Conversas iniciadas". Você vê só o número, nunca quem foi.
+        </Hint>
       </Card>
 
       {accounts.isLoading ? <Hint>Carregando…</Hint>
@@ -249,16 +258,6 @@ export function StudioAdsConversions() {
         : !accounts.data?.length ? <Card><CardTitle>Nenhuma conta de anúncios</CardTitle><Hint>Crie a conta em Anúncios › Campanhas para ligar as conversões.</Hint></Card>
         : (
           <>
-            {accounts.data.length > 1 && (
-              <Card>
-                <Field style={{ marginBottom: 0 }}>
-                  <Label htmlFor="conv-account">Conta de anúncios</Label>
-                  <Select id="conv-account" value={accountId} onChange={(event) => { setChosen(event.target.value) }}>
-                    {accounts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </Select>
-                </Field>
-              </Card>
-            )}
             {accountId && <Keys key={accountId} companyId={companyId} accountId={accountId} canManage={canManage} />}
           </>
         )}
@@ -272,6 +271,6 @@ export function StudioAdsConversions() {
           A resposta diz o que foi aceito, o que já tinha chegado e o que foi recusado, com o motivo.
         </Hint>
       </Card>
-    </>
+    </StudioPage>
   )
 }

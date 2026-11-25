@@ -14,7 +14,7 @@ export class AdsLandingRepository {
         id: true,
         status: true,
         reviewStatus: true,
-        creative: { select: { destinationUrl: true } },
+        creative: { select: { destinationUrl: true, destinationKind: true } },
         adSet: { select: { campaign: { select: { id: true, name: true, status: true, account: { select: { companyId: true } } } } } },
       },
     })
@@ -38,6 +38,8 @@ export class AdsLandingRepository {
         reviewStatus: 'APPROVED',
         status: { notIn: ['PAUSED', 'ARCHIVED'] },
         adSet: { status: { notIn: ['PAUSED', 'ARCHIVED'] }, campaign: { status: 'ACTIVE' } },
+        // Só destino de site tem página para conferir (chat da página e WhatsApp não têm).
+        creative: { destinationKind: 'URL' },
         landingChecks: { none: { checkedAt: { gte: since } } },
       },
       select: { id: true },

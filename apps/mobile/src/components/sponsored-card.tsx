@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Alert, Linking, Pressable, Text, View } from 'react-native'
+import { router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import Info from 'lucide-react-native/icons/info'
 import EyeOff from 'lucide-react-native/icons/eye-off'
 import Flag from 'lucide-react-native/icons/flag'
 import MoreHorizontal from 'lucide-react-native/icons/more-horizontal'
-import type { AdSurface, SponsoredAdView } from '@votz/shared-types'
+import { AD_WHATSAPP_COPY, type AdSurface, type SponsoredAdView } from '@votz/shared-types'
 import { api } from '../lib/api'
 import { trackAdEvent, trackAdEventOnce } from '../lib/ad-events'
 import { theme } from '../theme'
@@ -54,8 +55,23 @@ export function SponsoredCard({ ad, surface, position }: { ad: SponsoredAdView; 
     </View>
   }
 
+  // Anúncio de mensagens: o botão abre o chat da página por dentro do app (sem navegador) e leva o identificador do clique.
+  const chat = ad.destination?.kind === 'PAGE_MESSAGE' && ad.destination.orgId && ad.clickId ? ad.destination : null
+  const openLink = () => void Linking.openURL(ad.clickUrl).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.'))
   const open = () => {
+    // WhatsApp: a pessoa é avisada de que a empresa vai ver o número dela. O clique (cobrado) só conta ao confirmar.
+    if (ad.destination?.kind === 'WHATSAPP') {
+      Alert.alert(AD_WHATSAPP_COPY.title, AD_WHATSAPP_COPY.body(ad.advertiser.name), [
+        { text: AD_WHATSAPP_COPY.cancel, style: 'cancel' },
+        { text: AD_WHATSAPP_COPY.continue, onPress: () => { trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true }); openLink() } },
+      ])
+      return
+    }
     trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })
+    if (chat) {
+      router.push({ pathname: '/conversation/page', params: { orgType: 'COMPANY', orgId: chat.orgId as string, name: ad.advertiser.name, adClickId: ad.clickId } })
+      return
+    }
     void Linking.openURL(ad.clickUrl).catch(() => Alert.alert('Não foi possível abrir', 'Tente de novo em instantes.'))
   }
   return <View accessibilityLabel="Anúncio patrocinado" style={{ backgroundColor: theme.colors.surface, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
@@ -70,7 +86,7 @@ export function SponsoredCard({ ad, surface, position }: { ad: SponsoredAdView; 
     <Text style={{ fontFamily: theme.fonts.heading, fontSize: 17, color: theme.colors.text, marginBottom: 4 }}>{ad.headline}</Text>
     <Text style={{ fontFamily: theme.fonts.body, fontSize: 15, lineHeight: 22, color: theme.colors.text, marginBottom: 12 }}>{ad.body}</Text>
     {(() => { const items = ad.mediaItems ?? (ad.media ? [ad.media] : []); return items.length > 0 ? <View style={{ marginBottom: 12 }}><MediaCarousel items={items} maxHeight={FEED_MEDIA_MAX_HEIGHT} /></View> : null })()}
-    <Pressable accessibilityRole="link" accessibilityLabel={`${ad.ctaLabel}, abre o site do anunciante`} onPress={open} style={({ pressed }) => ({ alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1 })}>
+    <Pressable accessibilityRole={chat ? 'button' : 'link'} accessibilityLabel={chat ? `${ad.ctaLabel}, abre uma conversa com ${ad.advertiser.name}` : ad.destination?.kind === 'WHATSAPP' ? `${ad.ctaLabel}, abre o WhatsApp de ${ad.advertiser.name}` : `${ad.ctaLabel}, abre o site do anunciante`} onPress={open} style={({ pressed }) => ({ alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1 })}>
       <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: '#FFFFFF' }}>{ad.ctaLabel}</Text>
     </Pressable>
     {showWhy && <Text style={{ marginTop: 12, padding: 10, borderRadius: theme.radius.sm, backgroundColor: theme.colors.soft, fontFamily: theme.fonts.body, fontSize: 13, lineHeight: 19, color: theme.colors.text }}>{ad.why}</Text>}

@@ -14,7 +14,7 @@ const liveAd = (patch: Record<string, unknown> = {}, campaignStatus = 'ACTIVE') 
   id: 'ad-1',
   status: 'DRAFT',
   reviewStatus: 'APPROVED',
-  creative: { destinationUrl: 'https://padaria.com.br/oferta' },
+  creative: { destinationUrl: 'https://padaria.com.br/oferta', destinationKind: 'URL' },
   adSet: { campaign: { id: 'camp-1', name: 'Dezembro', status: campaignStatus, account: { companyId: 'co-1' } } },
   ...patch,
 })

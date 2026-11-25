@@ -115,11 +115,12 @@ export function useMyPageConversationList(enabled = true) {
 export function useSendPageMessage(orgType: OrgType, orgId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
+    mutationFn: ({ text, replyToId, adClickId }: { text: string; replyToId?: string; adClickId?: string }) =>
       api
         .post<{ conversationId: string; message: PageMessageView }>(`${base}/${orgType}/${orgId}/messages`, {
           text,
           ...(replyToId ? { replyToId } : {}),
+          ...(adClickId ? { adClickId } : {}),
         })
         .then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['page-inbox'] }),
@@ -131,6 +132,8 @@ export interface PageMediaUploadInput {
   fileName: string
   caption?: string
   replyToId?: string
+  /** Identificador do clique, quando a pessoa chegou aqui por um anúncio de mensagens. */
+  adClickId?: string
   width?: number
   height?: number
   durationMs?: number
@@ -144,6 +147,7 @@ function buildMediaForm(input: PageMediaUploadInput): FormData {
   form.append('file', input.file, input.fileName)
   if (input.caption) form.append('caption', input.caption)
   if (input.replyToId) form.append('replyToId', input.replyToId)
+  if (input.adClickId) form.append('adClickId', input.adClickId)
   if (input.width) form.append('width', String(input.width))
   if (input.height) form.append('height', String(input.height))
   if (input.durationMs) form.append('durationMs', String(input.durationMs))

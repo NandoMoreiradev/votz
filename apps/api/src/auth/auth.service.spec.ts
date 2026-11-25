@@ -595,6 +595,59 @@ describe('AuthService', () => {
   // verifyEmail()
   // ──────────────────────────────────────────────
 
+  describe('googleLogin (MFA igual ao login com senha)', () => {
+    const profile = { googleId: 'g-1', email: 'test@example.com', name: 'Test', avatarUrl: null }
+
+    it('admin sem MFA é levado a configurar e não recebe sessão', async () => {
+      mockPrismaUser.findFirst.mockResolvedValue(makeUser({ id: 'u-adm', googleId: 'g-1', type: 'ADMIN' }))
+      const res = (await service.googleLogin(profile)) as any
+      expect(res).toEqual({ requiresMfaSetup: true, mfaSetupToken: 'mock.jwt.token' })
+      expect(res.refreshToken).toBeUndefined()
+      expect(mockJwt.signAsync).toHaveBeenCalledWith(
+        { sub: 'u-adm', type: 'mfa_setup_required' },
+        expect.objectContaining({ expiresIn: '30m' }),
+      )
+      expect(mockAccessLog.record).not.toHaveBeenCalled()
+    })
+
+    it('moderador sem MFA também é levado a configurar', async () => {
+      mockPrismaUser.findFirst.mockResolvedValue(makeUser({ id: 'u-mod', googleId: 'g-1', type: 'MODERATOR' }))
+      const res = (await service.googleLogin(profile)) as any
+      expect(res.requiresMfaSetup).toBe(true)
+    })
+
+    it('quem tem MFA ativo precisa digitar o código', async () => {
+      mockPrismaUser.findFirst.mockResolvedValue(
+        makeUser({ id: 'u-mfa', googleId: 'g-1', type: 'CITIZEN', mfaEnabled: true }),
+      )
+      const res = (await service.googleLogin(profile)) as any
+      expect(res).toEqual({ requiresMfa: true, mfaToken: 'mock.jwt.token' })
+      expect(mockJwt.signAsync).toHaveBeenCalledWith(
+        { sub: 'u-mfa', type: 'mfa_pending' },
+        expect.objectContaining({ expiresIn: '5m' }),
+      )
+    })
+
+    it('cidadão sem MFA entra direto, como antes', async () => {
+      mockPrismaUser.findFirst.mockResolvedValue(makeUser({ id: 'u-cid', googleId: 'g-1' }))
+      const res = (await service.googleLogin(profile)) as any
+      expect(res.accessToken).toBe('mock.jwt.token')
+      expect(res.refreshToken).toEqual(expect.any(String))
+    })
+
+    it('readGooglePendingMfa devolve o token certo e recusa outros tipos', async () => {
+      mockJwt.verifyAsync.mockResolvedValueOnce({ sub: 'u', type: 'mfa_pending' })
+      await expect(service.readGooglePendingMfa('t1')).resolves.toEqual({ requiresMfa: true, mfaToken: 't1' })
+      mockJwt.verifyAsync.mockResolvedValueOnce({ sub: 'u', type: 'mfa_setup_required' })
+      await expect(service.readGooglePendingMfa('t2')).resolves.toEqual({ requiresMfaSetup: true, mfaSetupToken: 't2' })
+      mockJwt.verifyAsync.mockResolvedValueOnce({ sub: 'u', type: 'access' })
+      await expect(service.readGooglePendingMfa('t3')).rejects.toThrow(UnauthorizedException)
+      await expect(service.readGooglePendingMfa(undefined)).rejects.toThrow(UnauthorizedException)
+      mockJwt.verifyAsync.mockRejectedValueOnce(new Error('expired'))
+      await expect(service.readGooglePendingMfa('t4')).rejects.toThrow(UnauthorizedException)
+    })
+  })
+
   describe('verifyEmail', () => {
     it('throws BadRequestException for invalid or missing token', async () => {
       mockPrismaUser.findUnique.mockResolvedValue(null)

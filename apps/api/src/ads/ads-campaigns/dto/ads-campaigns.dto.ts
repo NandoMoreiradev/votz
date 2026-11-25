@@ -16,17 +16,21 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator'
 import {
   AD_CTA_LABELS,
+  AD_DESTINATION_KINDS,
   AD_INTEREST_IDS,
   AD_LIMITS,
   AD_MEDIA_RULES,
   AD_OBJECTIVES,
+  AD_WHATSAPP,
   AGE_BANDS,
   USER_GENDERS,
   type AdCtaLabel,
+  type AdDestinationKind,
   type AdInterestId,
   type AdObjective,
   type AgeBand,
@@ -126,10 +130,31 @@ export class AdCreativeInputDto {
   @IsIn(AD_CTA_LABELS as readonly string[] as string[], { message: 'Escolha um texto de botão da lista.' })
   ctaLabel: AdCtaLabel
 
-  @ApiProperty({ example: 'https://minhaempresa.com.br/oferta' })
+  @ApiPropertyOptional({
+    enum: AD_DESTINATION_KINDS,
+    description: 'Para onde o botão leva. Sem isto vale URL. "PAGE_MESSAGE" abre o chat da página da empresa no Votz (só no objetivo MESSAGES).',
+  })
+  @IsOptional()
+  @IsIn(AD_DESTINATION_KINDS as readonly string[] as string[], { message: 'Escolha para onde o botão leva.' })
+  destinationKind?: AdDestinationKind
+
+  @ApiPropertyOptional({ example: 'https://minhaempresa.com.br/oferta', description: 'Obrigatório quando o destino é um site. Nos outros destinos o servidor monta o endereço.' })
+  @ValidateIf((creative: { destinationKind?: string }) => (creative.destinationKind ?? 'URL') === 'URL')
   @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O link precisa começar com https:// e ser um endereço válido.' })
   @MaxLength(AD_LIMITS.URL_MAX)
-  destinationUrl: string
+  destinationUrl?: string
+
+  @ApiPropertyOptional({ example: '(11) 98765-4321', description: 'Só em WHATSAPP: o número da empresa, com DDD.' })
+  @ValidateIf((creative: { destinationKind?: string }) => creative.destinationKind === 'WHATSAPP')
+  @IsString({ message: 'Informe o número de WhatsApp da empresa.' })
+  @MaxLength(30)
+  whatsappPhone?: string
+
+  @ApiPropertyOptional({ description: `Só em WHATSAPP: mensagem que já vem escrita (até ${AD_WHATSAPP.TEXT_MAX} letras, sem link). Vazia: texto padrão.` })
+  @IsOptional()
+  @IsString()
+  @MaxLength(AD_WHATSAPP.TEXT_MAX, { message: `A mensagem inicial pode ter até ${AD_WHATSAPP.TEXT_MAX} letras.` })
+  whatsappText?: string
 
   @ApiPropertyOptional({
     type: PostMediaInputDto,
@@ -211,6 +236,18 @@ export class UpdateAdDto {
   @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'O link precisa começar com https:// e ser um endereço válido.' })
   @MaxLength(AD_LIMITS.URL_MAX)
   destinationUrl?: string
+
+  @ApiPropertyOptional({ example: '(11) 98765-4321', description: 'Só em anúncio de WhatsApp.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  whatsappPhone?: string
+
+  @ApiPropertyOptional({ description: 'Só em anúncio de WhatsApp.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(AD_WHATSAPP.TEXT_MAX, { message: `A mensagem inicial pode ter até ${AD_WHATSAPP.TEXT_MAX} letras.` })
+  whatsappText?: string
 }
 
 /** Edição do público e do orçamento: só o que vier no corpo muda. A data de início não muda. */

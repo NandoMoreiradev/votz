@@ -11,6 +11,6 @@ import { ConversionKeyGuard } from './conversion-key.guard'
   imports: [PrismaModule, OrgMembershipsModule],
   controllers: [AdsClickController, AdsConversionsController, AdsConversionKeysController],
   providers: [AdsConversionsService, AdsConversionsRepository, AdsClickLinkService, ConversionKeyGuard],
-  exports: [AdsClickLinkService],
+  exports: [AdsClickLinkService, AdsConversionsService],
 })
 export class AdsConversionsModule {}

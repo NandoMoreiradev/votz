@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { AdFraudLevel, AdFraudStatus, Prisma } from '@prisma/client'
+import { adChargeUnit } from '@votz/shared-types'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AdsBillingRepository } from '../ads-billing/ads-billing.repository'
 import { applyCreditToPending, creditMillicents, type IvtVerdict } from './ivt-rules'
@@ -84,7 +85,7 @@ export class AdsFraudRepository {
         adName: row.ad.name,
         adStatus: row.ad.status,
         campaignName: campaign.name,
-        chargeOn: campaign.objective === 'TRAFFIC' ? 'CLICK' : 'VIEWABLE_IMPRESSION',
+        chargeOn: adChargeUnit(campaign.objective),
         accountId: campaign.accountId,
         companyId: campaign.account.companyId,
       }

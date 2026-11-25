@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import styled from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowBendUpLeft,
@@ -646,6 +646,13 @@ function PageThreadShell({
 /** Conversa do cidadão com a equipe de uma página. Sem conversa ainda, a primeira mensagem a cria. */
 export function CitizenPagePane({ orgType, orgId }: { orgType: OrgType; orgId: string }) {
   const navigate = useNavigate()
+  // Veio de um anúncio de mensagens: o identificador do clique vai com a primeira mensagem e some depois (o servidor conta
+  // uma vez por clique). Vale o parâmetro tanto do caminho por dentro do app quanto do link de reserva do anúncio.
+  const [searchParams] = useSearchParams()
+  const [adClickId, setAdClickId] = useState<string | undefined>(() => {
+    const value = searchParams.get('votz_click_id')
+    return value && /^[A-Za-z0-9_-]{22}$/.test(value) ? value : undefined
+  })
   const client = useQueryClient()
   const thread = usePageThread(orgType, orgId, true)
   const threadId = thread.data?.conversation?.id ?? ''
@@ -693,8 +700,8 @@ export function CitizenPagePane({ orgType, orgId }: { orgType: OrgType; orgId: s
       canWrite={thread.isSuccess && !pendingRequest && !blocked}
       busy={send.isPending || sendMedia.isPending || remove.isPending}
       placeholder={threadId ? 'Mensagem' : `Escreva para ${name}`}
-      onSendText={(text, replyToId) => send.mutateAsync({ text, replyToId })}
-      onSendMedia={(payload) => sendMedia.mutateAsync(payload)}
+      onSendText={(text, replyToId) => send.mutateAsync({ text, replyToId, adClickId }).then((sent) => { setAdClickId(undefined); return sent })}
+      onSendMedia={(payload) => sendMedia.mutateAsync({ ...payload, adClickId }).then((sent) => { setAdClickId(undefined); return sent })}
       menuItems={
         <>
           {page && (

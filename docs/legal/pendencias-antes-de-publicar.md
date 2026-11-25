@@ -45,4 +45,5 @@ Os textos legais (Termos, Privacidade, Cookies, Diretrizes) estão em `apps/web/
 6. Risco de **difamação** e as regras sobre acusação de crime nas Diretrizes.
 7. **Votz Score** e **Mandatômetro**: o aviso de que não são avaliação oficial.
 8. **CPF de políticos** guardado no banco (princípio da minimização).
+10. **Anúncios de mensagens** (anúncio que abre o chat da página; WhatsApp ainda fechado): o fato "iniciou conversa pelo anúncio" gravado só como contagem, aviso na tela de preferências e política em [ripd-anuncios-rascunho.md](ripd-anuncios-rascunho.md) (seções 2, 4 e 5) e [politica-de-anuncios-rascunho.md](politica-de-anuncios-rascunho.md) (seções 7, 8 e 9). Antes do WhatsApp, adendo ao RIPD.
 9. **Contexto da Comunidade** (notas com fonte sobre publicações e relatos, ainda desligado): texto proposto para Diretrizes, Termos e Privacidade, termo do colaborador, teste de balanceamento e RIPD em [contexto-da-comunidade-rascunho.md](contexto-da-comunidade-rascunho.md). Inclui a lista do que o advogado precisa confirmar antes de ligar a chave.

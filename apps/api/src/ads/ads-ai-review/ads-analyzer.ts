@@ -9,6 +9,8 @@ export interface AdContentToAnalyze {
   body: string
   ctaLabel: string
   destinationUrl: string
+  /** Só em anúncio de WhatsApp: a mensagem que já vem escrita quando a pessoa abre a conversa. */
+  whatsappText?: string
   objective: string
 }
 

@@ -76,7 +76,9 @@ export function toLibraryItem(
     headline: ad.creative.headline,
     body: ad.creative.body,
     ctaLabel: ad.creative.ctaLabel,
-    destinationHost: adDestinationHost(ad.creative.destinationUrl),
+    // Só site tem endereço para mostrar; chat da página e WhatsApp mostram só o tipo (nunca o número).
+    destinationHost: ad.creative.destinationKind === 'URL' ? adDestinationHost(ad.creative.destinationUrl) : null,
+    destinationKind: ad.creative.destinationKind,
     media: mediaItems[0] ?? null,
     mediaItems,
     active: isRunning(ad, now),

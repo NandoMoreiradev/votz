@@ -6,10 +6,11 @@ import {
   adChargeUnit,
   adFloorCents,
   type AdInvalidReason,
+  type AdObjective,
   type AgeBand,
 } from '@votz/shared-types'
 
-export type Objective = 'AWARENESS' | 'TRAFFIC' | 'CONVERSIONS'
+export type Objective = AdObjective
 
 /** Quem está vendo. Só sinais da lista fechada: contexto (cidade e estado da tela) e, com aceite, faixa, gênero e interesses. */
 export interface Viewer {

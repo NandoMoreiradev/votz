@@ -70,6 +70,55 @@ describe('AuthController', () => {
     expect(redirectUrl).not.toContain('jwt-access-secret')
   })
 
+  it('googleCallback com MFA pendente guarda o desafio em cookie curto, sem sessão e sem token na URL', async () => {
+    const authService = {
+      googleLogin: jest.fn().mockResolvedValue({ requiresMfaSetup: true, mfaSetupToken: 'setup.jwt.token' }),
+    } as unknown as AuthService
+    const config = {
+      get: jest.fn((key: string, fallback?: string) => (key === 'APP_URL' ? 'https://votz.app' : fallback)),
+    } as unknown as ConfigService
+    const controller = new AuthController(authService, config)
+
+    const cookieMock = jest.fn()
+    const redirectMock = jest.fn()
+    const req = {
+      cookies: { [OAUTH_STATE_COOKIE]: 'matching-state-value-123456' },
+      query: { state: 'matching-state-value-123456' },
+    } as any
+    const res = { cookie: cookieMock, clearCookie: jest.fn(), redirect: redirectMock } as any
+
+    await controller.googleCallback(
+      { googleId: 'g1', email: 'adm@votz.app', name: 'Adm', avatarUrl: null },
+      '127.0.0.1',
+      req,
+      res,
+    )
+
+    expect(cookieMock).toHaveBeenCalledTimes(1)
+    expect(cookieMock).toHaveBeenCalledWith(
+      'votz_google_mfa',
+      'setup.jwt.token',
+      expect.objectContaining({ httpOnly: true, path: '/api/v1/auth/google', maxAge: 5 * 60 * 1000 }),
+    )
+    expect(cookieMock).not.toHaveBeenCalledWith('votz_refresh_token', expect.anything(), expect.anything())
+    const redirectUrl = redirectMock.mock.calls[0][0] as string
+    expect(redirectUrl).toBe('https://votz.app/entrar?google_mfa=1')
+    expect(redirectUrl).not.toContain('setup.jwt.token')
+  })
+
+  it('googlePendingMfa lê o cookie uma vez, apaga e devolve o desafio no corpo', async () => {
+    const readGooglePendingMfa = jest.fn().mockResolvedValue({ requiresMfa: true, mfaToken: 'pending.jwt' })
+    const controller = new AuthController({ readGooglePendingMfa } as unknown as AuthService, {} as ConfigService)
+    const clearCookie = jest.fn()
+    const out = await controller.googlePendingMfa(
+      { cookies: { votz_google_mfa: 'pending.jwt' } } as any,
+      { clearCookie } as any,
+    )
+    expect(readGooglePendingMfa).toHaveBeenCalledWith('pending.jwt')
+    expect(clearCookie).toHaveBeenCalledWith('votz_google_mfa', expect.objectContaining({ path: '/api/v1/auth/google' }))
+    expect(out).toEqual({ requiresMfa: true, mfaToken: 'pending.jwt' })
+  })
+
   it('googleCallback rejects missing or mismatched state cookie with 400 and clears cookie', async () => {
     const googleLogin = jest.fn()
     const authService = { googleLogin } as unknown as AuthService

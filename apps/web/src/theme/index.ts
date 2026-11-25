@@ -11,6 +11,12 @@ export const theme = {
     muted: '#6B7280',
     surface: '#FFFFFF',
     surfaceHover: '#F9FAFB',
+    // Estúdio: informação (azul) e atenção (âmbar), sempre com ícone e texto junto, nunca só a cor.
+    info: '#2563EB',
+    warning: '#B45309',
+    // Verde mais escuro para texto sobre fundo verde claro (o verde da marca não tem contraste para letra pequena).
+    positiveText: '#15803D',
+    borderStrong: '#D1D5DB',
     // Conversas: fundo cinza-azulado suave, balão próprio em tom claro do vermelho do Votz.
     chatBackground: '#EDEFF4',
     bubbleOwn: '#FFDDE0',

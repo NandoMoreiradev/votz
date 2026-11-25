@@ -11,12 +11,12 @@ import type { UpdateAdDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 const now = new Date('2026-11-22T15:00:00Z')
 
 const creative = (patch: Record<string, unknown> = {}) => ({
-  id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now, media: [], ...patch,
+  id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', destinationKind: 'URL', createdAt: now, updatedAt: now, media: [], ...patch,
 })
 const adRow = (reviewStatus = 'APPROVED', campaignStatus = 'ACTIVE', companyId = 'co1') => ({
   id: 'ad1', adSetId: 'set1', creativeId: 'cr1', name: 'Pão quente', status: 'DRAFT', reviewStatus, reviewNote: null, submittedAt: now, reviewedAt: now, createdAt: now, updatedAt: now,
   creative: creative(),
-  adSet: { campaign: { id: 'camp1', status: campaignStatus, account: { companyId } } },
+  adSet: { campaign: { id: 'camp1', status: campaignStatus, objective: 'TRAFFIC', account: { companyId } } },
 })
 const setRow = (patch: Record<string, unknown> = {}, campaignStatus = 'ACTIVE', companyId = 'co1') => ({
   id: 'set1', campaignId: 'camp1', name: 'Centro', status: 'ACTIVE', dailyBudgetCents: 2000, bidCapCents: null,
@@ -130,6 +130,26 @@ describe('editar anúncio', () => {
     expect(repo.updateAd).not.toHaveBeenCalled()
   })
 
+  it('anúncio que abre o chat da página: link não muda, e o botão tem de continuar combinando', async () => {
+    const service = build()
+    const chatAd = {
+      ...adRow('REJECTED'),
+      creative: creative({ destinationKind: 'PAGE_MESSAGE', ctaLabel: 'Enviar mensagem', destinationUrl: 'https://votz.org.br/conversas/pagina/COMPANY/co1' }),
+      adSet: { campaign: { id: 'camp1', status: 'ACTIVE', objective: 'MESSAGES', account: { companyId: 'co1' } } },
+    }
+    repo.findAdForEdit.mockResolvedValue(chatAd)
+    await expect(service.updateAd('co1', 'ad1', { destinationUrl: 'https://padaria.com.br' } as UpdateAdDto)).rejects.toThrow('não muda aqui')
+    await expect(service.updateAd('co1', 'ad1', { ctaLabel: 'Comprar' } as UpdateAdDto)).rejects.toThrow('Enviar mensagem')
+    expect(repo.updateAd).not.toHaveBeenCalled()
+  })
+
+  it('anúncio de site não pode virar botão de mensagem por edição', async () => {
+    const service = build()
+    repo.findAdForEdit.mockResolvedValue(adRow('REJECTED'))
+    await expect(service.updateAd('co1', 'ad1', { ctaLabel: 'Enviar mensagem' } as UpdateAdDto)).rejects.toThrow('abre uma conversa')
+    expect(repo.updateAd).not.toHaveBeenCalled()
+  })
+
   it('texto que vira vazio depois de limpar é recusado', async () => {
     const service = build()
     repo.findAdForEdit.mockResolvedValue(adRow('REJECTED'))
@@ -230,7 +250,7 @@ describe('duplicar campanha', () => {
     expect(arg.adSets[0].set).toMatchObject({ dailyBudgetCents: 2000, states: ['SP'], interests: ['food-drink'], automaticAudience: false })
     expect(arg.adSets[0].set.startAt.getTime()).toBeGreaterThanOrEqual(new Date('2026-11-22T03:00:00Z').getTime())
     expect(arg.adSets[0].set.endAt).toEqual(new Date('2099-01-01T03:00:00Z'))
-    expect(arg.adSets[0].ads[0].creative).toEqual({ headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br' })
+    expect(arg.adSets[0].ads[0].creative).toEqual({ headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', destinationKind: 'URL' })
     expect(JSON.stringify(arg)).not.toContain('media')
     expect(view.name).toBe('Cópia de Dezembro')
   })

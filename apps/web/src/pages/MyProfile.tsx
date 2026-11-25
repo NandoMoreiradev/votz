@@ -730,6 +730,12 @@ function MfaSection() {
 
   const mfaEnabled = me?.mfaEnabled ?? false
 
+  // Quem chega pelo link "Ativar autenticador" (troca de perfil) cai direto nesta seção.
+  useEffect(() => {
+    if (window.location.hash !== '#autenticador') return
+    document.getElementById('autenticador')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
   function openModal(m: MfaModal) {
     setModal(m)
     setCode('')
@@ -795,7 +801,7 @@ function MfaSection() {
   const anyPending = setupPending || enablePending || disablePending || resetPending || regenPending
 
   return (
-    <MfaCard>
+    <MfaCard id="autenticador">
       <MfaTitle>Autenticação em dois fatores</MfaTitle>
       <MfaDesc>
         O autenticador protege sua conta e é obrigatório para acessar perfis institucionais (político, entidade, empresa).

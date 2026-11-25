@@ -17,6 +17,12 @@
       "android": { "buildType": "apk" },
       "env": { "APP_VARIANT": "preview", "EXPO_PUBLIC_API_URL": "https://api-production-a1dec526.up.railway.app/api/v1" }
     },
+    "cloud-test": {
+      "extends": "preview",
+      "channel": "cloud-test",
+      "android": { "buildType": "apk" },
+      "env": { "APP_VARIANT": "preview", "EXPO_PUBLIC_API_URL": "https://votz-api-742542852298.us-central1.run.app/api/v1" }
+    },
     "production": { "autoIncrement": true, "channel": "production", "env": { "APP_VARIANT": "production" } }
   }
 }

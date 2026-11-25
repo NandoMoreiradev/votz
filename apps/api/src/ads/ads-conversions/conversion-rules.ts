@@ -64,3 +64,33 @@ export function conversionProblem(occurredAt: Date, landedAt: Date, now: Date): 
   if (occurredAt.getTime() > landedAt.getTime() + AD_ATTRIBUTION_WINDOW_DAYS * DAY_MS) return 'OUTSIDE_WINDOW'
   return null
 }
+
+export interface MessageAttributionFacts {
+  /** De quem é a exibição. */
+  userId: string
+  clickedAt: Date | null
+  landedAt: Date | null
+  objective: string
+  destinationKind: string
+  /** Empresa dona do anúncio. */
+  companyId: string
+}
+
+export type MessageAttributionProblem = 'NOT_YOURS' | 'NOT_A_MESSAGE_AD' | 'OTHER_COMPANY' | 'NO_CLICK' | 'OUTSIDE_WINDOW'
+
+/**
+ * Uma mensagem para a página conta como "conversa iniciada pelo anúncio" quando: o anúncio é de mensagens e abre o chat
+ * da página; a exibição é da mesma pessoa que escreveu; a página é a da empresa que anunciou; houve clique (o válido, que
+ * o antifraude já carimbou, ou a abertura do link de reserva); e a mensagem veio até 7 dias depois do clique.
+ */
+export function messageAttributionProblem(facts: MessageAttributionFacts, who: { userId: string; companyId: string }, now: Date): MessageAttributionProblem | null {
+  if (facts.userId !== who.userId) return 'NOT_YOURS'
+  if (facts.objective !== 'MESSAGES' || facts.destinationKind !== 'PAGE_MESSAGE') return 'NOT_A_MESSAGE_AD'
+  if (facts.companyId !== who.companyId) return 'OTHER_COMPANY'
+  const clickedAt = facts.clickedAt ?? facts.landedAt
+  if (!clickedAt) return 'NO_CLICK'
+  const skew = AD_CONVERSIONS.MAX_CLOCK_SKEW_MS
+  if (now.getTime() < clickedAt.getTime() - skew) return 'OUTSIDE_WINDOW'
+  if (now.getTime() > clickedAt.getTime() + AD_ATTRIBUTION_WINDOW_DAYS * DAY_MS) return 'OUTSIDE_WINDOW'
+  return null
+}

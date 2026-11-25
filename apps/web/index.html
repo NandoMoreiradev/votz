@@ -8,7 +8,29 @@
     <title>Votz — Vote com a voz. Cobre com o Votz.</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      Tela de abertura: aparece só enquanto o código do site chega (primeira visita ou recarregar).
+      O React substitui todo o conteúdo de #root quando desenha a primeira tela.
+      Cores iguais às do tema (primary #1A1A2E, action #E63946, neutral #F4F4F4).
+    -->
+    <div id="root">
+      <div class="votz-boot" role="status" aria-label="Carregando o Votz">
+        <div class="votz-boot__bar"><div class="votz-boot__progress"></div></div>
+        <img class="votz-boot__logo" src="/favicon.svg" alt="" width="48" height="48" />
+      </div>
+    </div>
+    <style>
+      html, body { margin: 0; background: #F4F4F4; }
+      .votz-boot { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .votz-boot__bar { position: fixed; top: 0; left: 0; right: 0; height: 56px; background: #1A1A2E; overflow: hidden; }
+      .votz-boot__progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 40%; background: #E63946; animation: votz-boot-slide 1.2s ease-in-out infinite; }
+      .votz-boot__logo { opacity: 0.85; animation: votz-boot-pulse 1.4s ease-in-out infinite; }
+      @keyframes votz-boot-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+      @keyframes votz-boot-pulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.4; } }
+      @media (prefers-reduced-motion: reduce) {
+        .votz-boot__progress, .votz-boot__logo { animation: none; }
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

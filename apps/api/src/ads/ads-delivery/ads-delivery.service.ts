@@ -430,8 +430,12 @@ export class AdsDeliveryService {
       headline: record.creative.headline,
       body: record.creative.body,
       ctaLabel: record.creative.ctaLabel,
-      destinationUrl: record.creative.destinationUrl,
+      // WhatsApp: o número da empresa não vai no anúncio do feed (nem para robô que leia a lista). Só o link do Votz, que leva ao
+      // WhatsApp depois que a pessoa confirma.
+      destinationUrl: record.creative.destinationKind === 'WHATSAPP' ? this.clickLinks.build(clickToken) : record.creative.destinationUrl,
       clickUrl: this.clickLinks.build(clickToken),
+      clickId: clickToken,
+      destination: record.creative.destinationKind === 'PAGE_MESSAGE' ? { kind: 'PAGE_MESSAGE', orgType: 'COMPANY', orgId: company.id } : { kind: record.creative.destinationKind },
       media: mediaItems[0] ?? null,
       mediaItems,
       advertiser: { id: company.id, name: company.tradeName, username: company.username, logoUrl: company.logoUrl },
@@ -614,6 +618,26 @@ export class AdsDeliveryService {
       spendCents: Math.round((row._sum.spendMillicents ?? 0) / 1000),
       conversions: row._sum.conversions ?? 0,
       conversionValueCents: Number(row._sum.conversionValueCents ?? 0),
+      messageConversations: row._sum.messageConversations ?? 0,
+    }))
+  }
+
+  /** Totais do período por anúncio da conta, para a tabela de campanhas. Só a empresa dona da conta enxerga. */
+  async statsByAd(companyId: string, accountId: string, days = 7): Promise<AdStatsByAdView[]> {
+    const account = await this.repo.findAccount(accountId)
+    if (!account || account.companyId !== companyId) throw new NotFoundException('Conta de anúncios não encontrada.')
+    const since = new Date(`${saoPauloDay(new Date(Date.now() - (days - 1) * 24 * HOUR_MS))}T00:00:00.000Z`)
+    const rows = await this.repo.listAccountAdTotals(accountId, since)
+    return rows.map((row) => ({
+      adId: row.adId,
+      impressions: row._sum.impressions ?? 0,
+      viewableImpressions: row._sum.viewableImpressions ?? 0,
+      clicks: row._sum.clicks ?? 0,
+      hides: row._sum.hides ?? 0,
+      spendCents: Math.round((row._sum.spendMillicents ?? 0) / 1000),
+      conversions: row._sum.conversions ?? 0,
+      conversionValueCents: Number(row._sum.conversionValueCents ?? 0),
+      messageConversations: row._sum.messageConversations ?? 0,
     }))
   }
 
@@ -639,6 +663,19 @@ export class AdsDeliveryService {
     }
     return closed
   }
+}
+
+/** Uma linha de `statsByAd`: os mesmos números do relatório diário, somados no período, de um anúncio. */
+export interface AdStatsByAdView {
+  adId: string
+  impressions: number
+  viewableImpressions: number
+  clicks: number
+  hides: number
+  spendCents: number
+  conversions: number
+  conversionValueCents: number
+  messageConversations: number
 }
 
 /** Anota por que ninguém ganhou, só em desenvolvimento (veja `AdsDeliveryService.debugEnabled`). */

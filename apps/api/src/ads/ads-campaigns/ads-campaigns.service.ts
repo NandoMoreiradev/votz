@@ -20,6 +20,7 @@ import { AdsAiReviewService } from '../ads-ai-review/ads-ai-review.service'
 import { AdsLandingService } from '../ads-landing/ads-landing.service'
 import { parseBlockedDomains, staticLinkProblem } from '../ads-landing/landing-rules'
 import { AdsCampaignsRepository } from './ads-campaigns.repository'
+import { destinationProblem, pageMessageUrl, whatsappDestination, whatsappOf } from './destination-rules'
 import { CreateAdCampaignDto, SetAdCampaignStatusDto, UpdateAdDto, UpdateAdSetDto } from './dto/ads-campaigns.dto'
 
 /** Quantas contas de anúncios uma empresa pode ter. */
@@ -96,9 +97,32 @@ export class AdsCampaignsService {
     const texts = { name: clean(dto.name), setName: clean(adSet.name), headline: clean(creative.headline), body: clean(creative.body) }
     if (Object.values(texts).some((text) => text.length < 2)) throw new BadRequestException('Preencha nome, título e texto do anúncio.')
 
-    // O link precisa ser de um site público, sem encurtador, rede interna nem domínio proibido (a página em si é conferida depois do envio).
-    const linkProblem = this.linkProblem(creative.destinationUrl)
-    if (linkProblem) throw new BadRequestException(linkProblem)
+    // Objetivo, destino e botão precisam combinar (mensagens vai ao chat da página; os outros vão a site).
+    const kind = creative.destinationKind ?? 'URL'
+    const mismatch = destinationProblem({
+      objective: dto.objective,
+      destinationKind: kind,
+      destinationUrl: creative.destinationUrl,
+      ctaLabel: creative.ctaLabel,
+      whatsappPhone: creative.whatsappPhone,
+      whatsappText: creative.whatsappText,
+    })
+    if (mismatch) throw new BadRequestException(mismatch)
+    // Site: o link precisa ser público, sem encurtador, rede interna nem domínio proibido (a página em si é conferida depois do envio).
+    // Chat da página: o endereço é do próprio Votz e quem monta é o servidor, nunca o anunciante.
+    let destinationUrl: string
+    let whatsapp: ReturnType<typeof whatsappDestination> = null
+    if (kind === 'URL') {
+      destinationUrl = (creative.destinationUrl as string).trim()
+      const linkProblem = this.linkProblem(destinationUrl)
+      if (linkProblem) throw new BadRequestException(linkProblem)
+    } else if (kind === 'WHATSAPP') {
+      // O servidor monta o endereço do WhatsApp a partir do número e do texto; o anunciante nunca digita link.
+      whatsapp = whatsappDestination(creative)
+      destinationUrl = (whatsapp as NonNullable<typeof whatsapp>).url
+    } else {
+      destinationUrl = pageMessageUrl(this.config.get<string>('APP_URL'), companyId)
+    }
 
     // Público automático: a IA escolhe; só objetivo e região contam (plano, seção 6.3).
     const automatic = adSet.automaticAudience
@@ -129,7 +153,7 @@ export class AdsCampaignsService {
             genders: automatic ? [] : [...new Set(adSet.genders)],
             automaticAudience: automatic,
           },
-          creative: { headline: texts.headline, body: texts.body, ctaLabel: creative.ctaLabel, destinationUrl: creative.destinationUrl.trim() },
+          creative: { headline: texts.headline, body: texts.body, ctaLabel: creative.ctaLabel, destinationUrl, destinationKind: kind, whatsappPhone: whatsapp?.phone ?? null, whatsappText: whatsapp?.text ?? null },
           ad: { name: texts.headline, reviewStatus: submit ? 'PENDING' : 'NOT_SUBMITTED', submittedAt: submit ? new Date() : null },
         },
         // A mídia entra na mesma transação do criativo: o anúncio nasce com a foto ou o vídeo, ou não nasce.
@@ -163,6 +187,11 @@ export class AdsCampaignsService {
       const approved = campaign.adSets.some((set) => set.ads.some((ad) => ad.reviewStatus === 'APPROVED'))
       if (!approved) throw new BadRequestException('Para ligar a campanha, pelo menos um anúncio precisa estar aprovado.')
       if (campaign.account.balanceCents <= 0) throw new BadRequestException('Para ligar a campanha, a conta precisa ter saldo. Recarregue em Faturamento.')
+      // Anúncio que leva ao chat da página: sem ninguém para responder, o anunciante pagaria clique que ninguém atende.
+      const opensChat = campaign.adSets.some((set) => set.ads.some((ad) => ad.creative.destinationKind === 'PAGE_MESSAGE'))
+      if (opensChat && (await this.repo.countStaffWhoCanReply(companyId)) === 0) {
+        throw new BadRequestException('Para ligar, alguém da equipe da sua página precisa poder responder mensagens. Dê essa permissão em Equipe.')
+      }
     }
     return toCampaignView(await this.repo.setCampaignStatus(campaignId, dto.status), this.publicUrl)
   }
@@ -176,8 +205,8 @@ export class AdsCampaignsService {
     if (creativeMediaFailed(ad.creative.media)) {
       throw new BadRequestException('A foto ou o vídeo deste anúncio não pôde ser preparado. Crie o anúncio de novo com outro arquivo.')
     }
-    // O endereço pode ter entrado na lista de bloqueio depois que o anúncio foi criado.
-    const linkProblem = this.linkProblem(ad.creative.destinationUrl)
+    // O endereço pode ter entrado na lista de bloqueio depois que o anúncio foi criado (só site: o chat da página é do Votz).
+    const linkProblem = ad.creative.destinationKind === 'URL' ? this.linkProblem(ad.creative.destinationUrl) : null
     if (linkProblem) throw new BadRequestException(`${linkProblem} Edite o anúncio antes de enviar.`)
     const submitted = await this.repo.submitAd(adId)
     await Promise.all([this.aiReview.enqueue(adId), this.landing.enqueue(adId, 'SUBMIT')])
@@ -198,18 +227,51 @@ export class AdsCampaignsService {
   async updateAd(companyId: string, adId: string, dto: UpdateAdDto): Promise<AdView> {
     const ad = await this.editableAd(companyId, adId)
 
+    // Anúncio que abre o chat da página não tem link para trocar; o texto do botão também precisa combinar com o destino.
+    if (ad.creative.destinationKind !== 'URL' && dto.destinationUrl !== undefined) {
+      throw new BadRequestException('Este anúncio abre o chat da sua página. O destino não muda aqui.')
+    }
+    if (ad.creative.destinationKind !== 'WHATSAPP' && (dto.whatsappPhone !== undefined || dto.whatsappText !== undefined)) {
+      throw new BadRequestException('Este anúncio não abre o WhatsApp.')
+    }
+    const mismatch = destinationProblem({
+      objective: ad.adSet.campaign.objective,
+      destinationKind: ad.creative.destinationKind,
+      destinationUrl: dto.destinationUrl ?? ad.creative.destinationUrl,
+      ctaLabel: dto.ctaLabel ?? ad.creative.ctaLabel,
+      whatsappPhone: dto.whatsappPhone ?? ad.creative.whatsappPhone,
+      whatsappText: dto.whatsappText ?? ad.creative.whatsappText,
+    })
+    if (mismatch) throw new BadRequestException(mismatch)
+
     const next = {
       headline: dto.headline !== undefined ? clean(dto.headline) : ad.creative.headline,
       body: dto.body !== undefined ? clean(dto.body) : ad.creative.body,
       ctaLabel: dto.ctaLabel ?? ad.creative.ctaLabel,
       destinationUrl: dto.destinationUrl !== undefined ? dto.destinationUrl.trim() : ad.creative.destinationUrl,
+      whatsappPhone: ad.creative.whatsappPhone,
+      whatsappText: ad.creative.whatsappText,
+    } as {
+      headline: string
+      body: string
+      ctaLabel: string
+      destinationUrl: string
+      whatsappPhone: string | null
+      whatsappText: string | null
+    }
+    // Anúncio de WhatsApp: número e mensagem novos refazem o endereço wa.me.
+    if (ad.creative.destinationKind === 'WHATSAPP' && (dto.whatsappPhone !== undefined || dto.whatsappText !== undefined)) {
+      const wa = whatsappDestination({ whatsappPhone: dto.whatsappPhone ?? ad.creative.whatsappPhone, whatsappText: dto.whatsappText ?? ad.creative.whatsappText })
+      if (wa) Object.assign(next, { whatsappPhone: wa.phone, whatsappText: wa.text, destinationUrl: wa.url })
     }
     if (next.headline.length < 2 || next.body.length < 2) throw new BadRequestException('Preencha o título e o texto do anúncio.')
     const changed: Partial<typeof next> = {}
-    for (const key of ['headline', 'body', 'ctaLabel', 'destinationUrl'] as const) if (next[key] !== ad.creative[key]) changed[key] = next[key]
+    for (const key of ['headline', 'body', 'ctaLabel', 'destinationUrl', 'whatsappPhone', 'whatsappText'] as const) {
+      if (next[key] !== ad.creative[key]) Object.assign(changed, { [key]: next[key] })
+    }
     if (!Object.keys(changed).length) return toAdView(ad, this.publicUrl)
 
-    if (changed.destinationUrl) {
+    if (changed.destinationUrl && ad.creative.destinationKind === 'URL') {
       const problem = this.linkProblem(changed.destinationUrl)
       if (problem) throw new BadRequestException(problem)
     }
@@ -352,7 +414,15 @@ export class AdsCampaignsService {
         },
         ads: set.ads.map((ad) => ({
           name: ad.name,
-          creative: { headline: ad.creative.headline, body: ad.creative.body, ctaLabel: ad.creative.ctaLabel, destinationUrl: ad.creative.destinationUrl },
+          creative: {
+            headline: ad.creative.headline,
+            body: ad.creative.body,
+            ctaLabel: ad.creative.ctaLabel,
+            destinationUrl: ad.creative.destinationUrl,
+            destinationKind: ad.creative.destinationKind,
+            whatsappPhone: ad.creative.whatsappPhone,
+            whatsappText: ad.creative.whatsappText,
+          },
         })),
       })),
     })
@@ -403,6 +473,8 @@ function toAdView(ad: AdWithCreative, publicUrl: (key: string) => string): AdVie
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
+      destinationKind: ad.creative.destinationKind,
+      whatsapp: whatsappOf(ad.creative),
       media: mediaItems[0] ?? null,
       mediaItems,
     },

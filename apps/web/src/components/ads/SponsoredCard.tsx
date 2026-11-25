@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Link } from 'react-router-dom'
-import { ArrowSquareOut, EyeSlash, Flag, Info } from '@phosphor-icons/react'
-import { AD_VIEWABILITY, type AdSurface, type SponsoredAdView } from '@votz/shared-types'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowSquareOut, ChatCircleText, EyeSlash, Flag, Info, WhatsappLogo } from '@phosphor-icons/react'
+import { AD_VIEWABILITY, adPageMessagePath, type AdSurface, type SponsoredAdView } from '@votz/shared-types'
 import { trackAdEvent, trackAdEventOnce } from '../../lib/ad-events'
 import { socialRow } from '../ui/social'
 import { OptionsMenu, type MenuItem } from '../ui/OptionsMenu'
 import { AdMedia, adMediaItems } from './AdMedia'
+import { WhatsAppConfirm } from './WhatsAppConfirm'
 
 interface SponsoredCardProps {
   ad: SponsoredAdView
@@ -87,6 +88,9 @@ const Body = styled.p`
 `
 
 const Cta = styled.a`
+  border: none;
+  font: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -137,6 +141,8 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
   const ref = useRef<HTMLElement | null>(null)
   const [state, setState] = useState<CardState>('shown')
   const [showWhy, setShowWhy] = useState(false)
+  const [confirmWhatsapp, setConfirmWhatsapp] = useState(false)
+  const navigate = useNavigate()
 
   const base = { impressionId: ad.impressionId, adId: ad.adId, surface, position }
 
@@ -241,6 +247,8 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
   }
 
   const profile = `/empresa/${ad.advertiser.id}`
+  const opensWhatsapp = ad.destination?.kind === 'WHATSAPP'
+  const chatOrgId = ad.destination?.kind === 'PAGE_MESSAGE' && ad.clickId ? ad.destination.orgId : undefined
   return (
     <Card ref={ref} aria-label="Anúncio patrocinado">
       <Avatar $src={ad.advertiser.logoUrl} aria-hidden="true">
@@ -256,15 +264,48 @@ export function SponsoredCard({ ad, surface, position }: SponsoredCardProps) {
       <Headline>{ad.headline}</Headline>
       <Body>{ad.body}</Body>
       <AdMedia items={adMediaItems(ad)} />
-      <Cta
-        href={ad.clickUrl}
-        target="_blank"
-        rel="noopener noreferrer sponsored"
-        onClick={() => trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })}
-      >
-        {ad.ctaLabel}
-        <ArrowSquareOut size={16} aria-hidden="true" />
-      </Cta>
+      {opensWhatsapp ? (
+        // WhatsApp: antes de sair, a pessoa é avisada de que a empresa vai ver o número dela. O clique (cobrado) só conta ao confirmar.
+        <>
+          <Cta as="button" type="button" onClick={() => setConfirmWhatsapp(true)}>
+            {ad.ctaLabel}
+            <WhatsappLogo size={16} aria-hidden="true" />
+          </Cta>
+          <WhatsAppConfirm
+            open={confirmWhatsapp}
+            advertiserName={ad.advertiser.name}
+            onCancel={() => setConfirmWhatsapp(false)}
+            onConfirm={() => {
+              setConfirmWhatsapp(false)
+              trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })
+              window.open(ad.clickUrl, '_blank', 'noopener,noreferrer')
+            }}
+          />
+        </>
+      ) : chatOrgId ? (
+        // Anúncio de mensagens: abre o chat da página por dentro do site (sem nova aba) e leva o identificador do clique.
+        <Cta
+          as="button"
+          type="button"
+          onClick={() => {
+            trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })
+            navigate(adPageMessagePath(chatOrgId, ad.clickId))
+          }}
+        >
+          {ad.ctaLabel}
+          <ChatCircleText size={16} aria-hidden="true" />
+        </Cta>
+      ) : (
+        <Cta
+          href={ad.clickUrl}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          onClick={() => trackAdEvent({ ...base, type: 'CLICK' }, { immediate: true })}
+        >
+          {ad.ctaLabel}
+          <ArrowSquareOut size={16} aria-hidden="true" />
+        </Cta>
+      )}
       {showWhy && (
         <Why>
           {ad.why} <Link to="/anuncios/biblioteca">Ver a biblioteca de anúncios</Link>

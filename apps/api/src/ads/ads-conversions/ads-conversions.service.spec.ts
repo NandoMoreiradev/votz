@@ -59,6 +59,20 @@ describe('AdsConversionsService — o clique', () => {
     expect(repo.markLanded).toHaveBeenCalledWith('imp-1', NOW)
   })
 
+  it('WhatsApp: leva ao wa.me como está, sem o votz_click_id, e marca a abertura', async () => {
+    const wa = 'https://wa.me/5511987654321?text=Ol%C3%A1'
+    const repo = makeRepo(impression({ landedAt: null, ad: { adSetId: 'set-1', creative: { destinationUrl: wa, destinationKind: 'WHATSAPP' }, adSet: { campaign: { accountId: 'acc-1' } } } }))
+    const url = await new AdsConversionsService(repo as never).resolveClick(TOKEN, NOW)
+    expect(url).toBe(wa)
+    expect(url).not.toContain('votz_click_id')
+    expect(repo.markLanded).toHaveBeenCalledWith('imp-1', NOW)
+  })
+
+  it('WhatsApp com endereço que não é wa.me no banco não vira redirecionamento', async () => {
+    const repo = makeRepo(impression({ ad: { adSetId: 'set-1', creative: { destinationUrl: 'https://golpe.com/x', destinationKind: 'WHATSAPP' }, adSet: { campaign: { accountId: 'acc-1' } } } }))
+    expect(await new AdsConversionsService(repo as never).resolveClick(TOKEN, NOW)).toBeNull()
+  })
+
   it('abrir de novo não muda o carimbo da primeira abertura', async () => {
     const repo = makeRepo()
     expect(await new AdsConversionsService(repo as never).resolveClick(TOKEN, NOW)).not.toBeNull()

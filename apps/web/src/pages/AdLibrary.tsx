@@ -193,6 +193,8 @@ function AdLibraryCard({ item }: { item: AdLibraryItem }) {
         <div><dt>Gasto (faixa)</dt><dd>{item.spend.label}</dd></div>
         <div><dt>Exibições (faixa)</dt><dd>{item.impressions.label}</dd></div>
         {item.destinationHost && <div><dt>Leva para o site</dt><dd>{item.destinationHost}</dd></div>}
+        {item.destinationKind === 'PAGE_MESSAGE' && <div><dt>Leva para</dt><dd>Conversa com a empresa no Votz</dd></div>}
+        {item.destinationKind === 'WHATSAPP' && <div><dt>Leva para</dt><dd>Conversa no WhatsApp</dd></div>}
         <div><dt>Da mesma empresa</dt><dd><Link to={`/anuncios/biblioteca?empresa=${encodeURIComponent(advertiser.id)}`}>Ver todos os anúncios</Link></dd></div>
       </Facts>
     </Card>

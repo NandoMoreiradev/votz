@@ -9,6 +9,7 @@ import {
   AD_RESTRICTED_CATEGORIES,
   AD_REVIEW_STATUS_LABELS,
   USER_GENDER_LABELS,
+  formatBrazilianMobile,
   type AdAiAnalysisView,
   type AdReviewQueueItem,
 } from '@votz/shared-types'
@@ -279,7 +280,15 @@ export function AdReviewQueue() {
               {adMediaItems(item.creative).some((media) => media.status === 'PROCESSING') && <Meta>A mídia ainda está sendo preparada: só dá para aprovar quando ficar pronta.</Meta>}
               {adMediaItems(item.creative).some((media) => media.status === 'FAILED') && <Meta>Uma foto ou o vídeo não pôde ser preparado: recuse e peça um novo arquivo.</Meta>}
               <Cta>{item.creative.ctaLabel}</Cta>
-              <Url href={item.creative.destinationUrl} target="_blank" rel="noopener noreferrer nofollow">{item.creative.destinationUrl}</Url>
+              {item.creative.destinationKind === 'URL' ? (
+                <Url href={item.creative.destinationUrl} target="_blank" rel="noopener noreferrer nofollow">{item.creative.destinationUrl}</Url>
+              ) : (
+                <Meta>
+                  {item.creative.destinationKind === 'PAGE_MESSAGE'
+                    ? 'O botão abre o chat da página da empresa no Votz.'
+                    : `O botão abre uma conversa no WhatsApp ${item.creative.whatsapp ? formatBrazilianMobile(item.creative.whatsapp.phone) : ''}. Mensagem que já vem escrita: "${item.creative.whatsapp?.text ?? ''}". Confira o número e o texto antes de aprovar.`}
+                </Meta>
+              )}
             </Preview>
 
             {item.landing && (

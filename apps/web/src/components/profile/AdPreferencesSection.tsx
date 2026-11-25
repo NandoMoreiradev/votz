@@ -209,6 +209,8 @@ export function AdPreferencesSection() {
       <Block>
         <BlockTitle>{COPY.neverTitle}</BlockTitle>
         <List>{COPY.neverItems.map((item) => <li key={item}>{item}</li>)}</List>
+        <BlockTitle>{COPY.messagesTitle}</BlockTitle>
+        <Hint>{COPY.messagesText}</Hint>
       </Block>
 
       <Block>

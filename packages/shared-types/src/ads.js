@@ -8,18 +8,26 @@
  * produto (decisões 1 e 2 do plano) e revisão do advogado.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_INVOICE_STATUS_LABELS = exports.AD_AUTO_TOPUP_COPY = exports.AD_AUTO_TOPUP_LIMITS = exports.AD_REFUND_LIMITS = exports.AD_REFUND_STATUS_LABELS = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_LANDING_PROBLEM_LABELS = exports.AD_LANDING_STATUS_LABELS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
-exports.AD_REACH = exports.AD_EDIT_COPY = exports.AD_FRAUD_SIGNAL_LABELS = exports.adImpressionBand = exports.adSpendBand = exports.AD_IMPRESSION_BANDS = exports.AD_SPEND_BANDS = exports.AD_LIBRARY = exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = void 0;
+exports.AD_CONVERSION_EVENT_NAMES = exports.AD_SURFACES = exports.AD_VIEWABILITY = exports.AD_EVENT_TYPES = exports.AD_INVOICE_STATUS_LABELS = exports.AD_AUTO_TOPUP_COPY = exports.AD_AUTO_TOPUP_LIMITS = exports.AD_REFUND_LIMITS = exports.AD_REFUND_STATUS_LABELS = exports.AD_LEDGER_TYPE_LABELS = exports.AD_BILLING_LIMITS = exports.AD_TOPUP_STATUS_LABELS = exports.AD_TOPUP_STATUSES = exports.AD_TOPUP_METHOD_LABELS = exports.AD_TOPUP_METHODS = exports.AD_LANDING_PROBLEM_LABELS = exports.AD_LANDING_STATUS_LABELS = exports.AD_REVIEW_LIMITS = exports.AD_MEDIA_RULES = exports.AD_CTA_LABELS = exports.AD_LIMITS = exports.AD_REVIEW_STATUS_LABELS = exports.AD_REVIEW_STATUSES = exports.AD_STATUS_LABELS = exports.AD_STATUSES = exports.AD_WHATSAPP_COPY = exports.AD_WHATSAPP = exports.AD_DESTINATION_KINDS_OPEN = exports.AD_DESTINATION_KIND_LABELS = exports.AD_DESTINATION_KINDS = exports.AD_OBJECTIVE_LABELS = exports.AD_OBJECTIVES = exports.AD_PREFERENCES_COPY = exports.AD_MAX_DECLARED_INTERESTS = exports.AD_PERSONALIZATION_CONSENT_VERSION = exports.PROFILE_DEMOGRAPHICS_PURPOSE = exports.USER_GENDER_LABELS = exports.USER_GENDERS = exports.AGE_BANDS = exports.ForbiddenAdFeatureError = exports.ADS_FORBIDDEN_SOURCES = exports.AD_FEATURE_KEYS = exports.ADS_FEATURE_ALLOWLIST = exports.AD_ADJACENCY = exports.AD_DELIVERY_LIMITS = exports.AD_RESTRICTED_CATEGORIES = exports.AD_PROHIBITED_CATEGORIES = exports.AD_SENSITIVE_TOPICS = exports.AD_INTEREST_IDS = exports.AD_INTERESTS = void 0;
+exports.AD_REACH = exports.AD_EDIT_COPY = exports.AD_FRAUD_SIGNAL_LABELS = exports.adImpressionBand = exports.adSpendBand = exports.AD_IMPRESSION_BANDS = exports.AD_SPEND_BANDS = exports.AD_LIBRARY = exports.AD_REPORT_PERIODS = exports.AD_FRAUD = exports.AD_DELIVERY = exports.AD_PRICING = exports.MILLICENTS_PER_CENT = exports.AD_EVENTS_MAX_BATCH = exports.AD_CONVERSIONS = exports.AD_ATTRIBUTION_WINDOW_DAYS = void 0;
 exports.isAdInterestId = isAdInterestId;
 exports.adNeighborIds = adNeighborIds;
 exports.assertAllowedAdFeatures = assertAllowedAdFeatures;
 exports.adFeaturesForConsent = adFeaturesForConsent;
 exports.ageOn = ageOn;
 exports.ageBandOf = ageBandOf;
+exports.adDestinationKindsFor = adDestinationKindsFor;
+exports.normalizeBrazilianMobile = normalizeBrazilianMobile;
+exports.formatBrazilianMobile = formatBrazilianMobile;
+exports.whatsappTextProblem = whatsappTextProblem;
+exports.whatsappTextOrDefault = whatsappTextOrDefault;
+exports.buildWhatsAppUrl = buildWhatsAppUrl;
+exports.adCtaLabelsFor = adCtaLabelsFor;
 exports.adMediaProblem = adMediaProblem;
 exports.adChargeUnit = adChargeUnit;
 exports.adFloorCents = adFloorCents;
 exports.adChargeMillicents = adChargeMillicents;
+exports.adPageMessagePath = adPageMessagePath;
 exports.summarizeAdStats = summarizeAdStats;
 exports.fillAdStatDays = fillAdStatDays;
 exports.adDestinationHost = adDestinationHost;
@@ -249,6 +257,8 @@ exports.AD_PREFERENCES_COPY = {
         'Seu CPF, seu endereço e sua localização exata',
         'Temas como política, religião, saúde e outros dados sensíveis',
     ],
+    messagesTitle: 'Se você escrever para uma empresa depois de tocar num anúncio',
+    messagesText: 'A empresa lê a sua mensagem, como em qualquer conversa com a página dela. Para o anúncio, só fica registrado que alguém escreveu, para contar no relatório da empresa. Quem foi e o que foi escrito não entram nessa conta, e isso não muda os anúncios que você vê.',
     interestsTitle: 'Seus interesses',
     interestsHint: 'Escolha até 10. Eles só são usados se a opção acima estiver ligada.',
     interestsLimit: 'Você já escolheu 10 interesses. Tire um para escolher outro.',
@@ -257,12 +267,91 @@ exports.AD_PREFERENCES_COPY = {
     saveError: 'Não foi possível salvar agora. Tente de novo.',
 };
 // ─── Plataforma do anunciante (Estúdio, Etapa 1) ───────────────────────────────────────────────
-exports.AD_OBJECTIVES = ['AWARENESS', 'TRAFFIC', 'CONVERSIONS'];
+exports.AD_OBJECTIVES = ['AWARENESS', 'TRAFFIC', 'CONVERSIONS', 'MESSAGES'];
 exports.AD_OBJECTIVE_LABELS = {
     AWARENESS: { label: 'Ser conhecido', hint: 'Mostrar sua marca para o maior número de pessoas da região.', billing: 'Cobrado a cada mil exibições' },
     TRAFFIC: { label: 'Levar pessoas ao seu site', hint: 'Mostrar para quem tem mais chance de tocar no anúncio.', billing: 'Cobrado por clique' },
     CONVERSIONS: { label: 'Vender ou receber contatos', hint: 'Mostrar para quem tem mais chance de comprar ou chamar você.', billing: 'Cobrado a cada mil exibições' },
+    MESSAGES: { label: 'Receber mensagens', hint: 'Levar as pessoas a falar com a sua equipe.', billing: 'Cobrado por clique' },
 };
+/**
+ * Para onde o botão do anúncio leva. `URL`: o site do anunciante. `PAGE_MESSAGE`: o chat da página da empresa no Votz.
+ * `WHATSAPP`: conversa no WhatsApp (ainda fechado: o servidor recusa até a etapa do WhatsApp abrir).
+ */
+exports.AD_DESTINATION_KINDS = ['URL', 'PAGE_MESSAGE', 'WHATSAPP'];
+exports.AD_DESTINATION_KIND_LABELS = {
+    URL: { label: 'Site da empresa', hint: 'O botão abre o endereço que você escolher.' },
+    PAGE_MESSAGE: { label: 'Chat da sua página no Votz', hint: 'O botão abre uma conversa com a equipe da sua página. Alguém da equipe precisa poder responder.' },
+    WHATSAPP: { label: 'WhatsApp', hint: 'O botão abre uma conversa no WhatsApp da empresa.' },
+};
+/** Destinos que cada objetivo aceita: mensagens vai a conversa, os outros vão a site. */
+function adDestinationKindsFor(objective) {
+    return objective === 'MESSAGES' ? ['PAGE_MESSAGE', 'WHATSAPP'] : ['URL'];
+}
+/** Destinos que o Estúdio e a API aceitam hoje. */
+exports.AD_DESTINATION_KINDS_OPEN = ['URL', 'PAGE_MESSAGE', 'WHATSAPP'];
+// ─── WhatsApp como destino do anúncio de mensagens ─────────────────────────────────────────────
+exports.AD_WHATSAPP = {
+    /** Mensagem inicial que já vem escrita quando a pessoa abre o WhatsApp. */
+    TEXT_MAX: 200,
+    /** Vale quando o anunciante não escreve nenhuma. */
+    DEFAULT_TEXT: 'Olá! Vi o anúncio de vocês no Votz.',
+};
+/**
+ * Número de WhatsApp do Brasil, só dígitos com o 55 na frente (ex.: 5511987654321), ou `null` se não serve. Aceita com
+ * ou sem +55, com espaço, parênteses e traço. Só celular (DDD + 9 + oito dígitos), porque é o que o WhatsApp usa.
+ */
+function normalizeBrazilianMobile(raw) {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    const national = digits.length === 13 && digits.startsWith('55') ? digits.slice(2) : digits.length === 11 ? digits : null;
+    if (!national)
+        return null;
+    // DDD de 11 a 99 (sem zero); o nono dígito de celular é sempre 9.
+    if (!/^[1-9][1-9]9\d{8}$/.test(national))
+        return null;
+    return `55${national}`;
+}
+/** Mostra o número como a pessoa digita: (11) 98765-4321. */
+function formatBrazilianMobile(phone) {
+    const national = phone.replace(/\D/g, '').slice(-11);
+    return national.length === 11 ? `(${national.slice(0, 2)}) ${national.slice(2, 7)}-${national.slice(7)}` : phone;
+}
+/** Motivo (português simples) de a mensagem inicial não servir, ou `null`. Vazia vale: usa o texto padrão. */
+function whatsappTextProblem(text) {
+    const value = String(text ?? '').trim();
+    if (value.length > exports.AD_WHATSAPP.TEXT_MAX)
+        return `A mensagem inicial pode ter até ${exports.AD_WHATSAPP.TEXT_MAX} letras.`;
+    // Sem link na mensagem: ninguém recebe isca pronta no WhatsApp.
+    if (/(https?:|www\.|wa\.me|bit\.ly|[a-z0-9-]+\.(com|net|org|app|link|me|ly|gl)\b)/i.test(value))
+        return 'A mensagem inicial não pode ter link.';
+    return null;
+}
+/** A mensagem inicial que vale (a do anunciante ou a padrão). */
+function whatsappTextOrDefault(text) {
+    return String(text ?? '').replace(/\s+/g, ' ').trim() || exports.AD_WHATSAPP.DEFAULT_TEXT;
+}
+/** Endereço que abre a conversa no WhatsApp. `phone` já normalizado (só dígitos, com 55). */
+function buildWhatsAppUrl(phone, text) {
+    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+}
+/** Aviso antes de abrir o WhatsApp (igual no site e no celular): a empresa vai ver o número da pessoa. */
+exports.AD_WHATSAPP_COPY = {
+    title: 'Abrir o WhatsApp?',
+    body: (name) => `Você vai conversar com ${name} no WhatsApp. A empresa vai ver o seu número de telefone.`,
+    continue: 'Abrir o WhatsApp',
+    cancel: 'Agora não',
+};
+/**
+ * Textos de botão que combinam com o destino: o botão não pode prometer uma coisa e abrir outra. Quem leva ao chat do
+ * Votz diz "Enviar mensagem"; quem leva ao WhatsApp diz "Falar no WhatsApp"; site aceita os outros.
+ */
+function adCtaLabelsFor(kind) {
+    if (kind === 'PAGE_MESSAGE')
+        return ['Enviar mensagem'];
+    if (kind === 'WHATSAPP')
+        return ['Falar no WhatsApp'];
+    return exports.AD_CTA_LABELS.filter((label) => label !== 'Enviar mensagem');
+}
 exports.AD_STATUSES = ['DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED'];
 exports.AD_STATUS_LABELS = { DRAFT: 'Rascunho', ACTIVE: 'Ativa', PAUSED: 'Pausada', ARCHIVED: 'Arquivada' };
 exports.AD_REVIEW_STATUSES = ['NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED'];
@@ -287,7 +376,7 @@ exports.AD_LIMITS = {
     MAX_CITIES: 50,
 };
 /** Textos de botão que o anunciante pode escolher (sem texto livre, para não virar isca). */
-exports.AD_CTA_LABELS = ['Saiba mais', 'Comprar', 'Pedir agora', 'Agendar', 'Falar no WhatsApp', 'Ver cardápio', 'Inscrever-se', 'Ver oferta'];
+exports.AD_CTA_LABELS = ['Saiba mais', 'Comprar', 'Pedir agora', 'Agendar', 'Falar no WhatsApp', 'Ver cardápio', 'Inscrever-se', 'Ver oferta', 'Enviar mensagem'];
 /**
  * Foto ou vídeo do anúncio: mesmas molduras das publicações (1:1, 4:5, 16:9), com exigências a mais (plano do padrão
  * de mídia, seção 2.3). Quem confere é a API; o site usa a mesma função para avisar antes de enviar.
@@ -421,6 +510,8 @@ exports.AD_PRICING = {
     MIN_CPM_CENTS: 600,
     /** R$ 0,40 por clique. */
     MIN_CPC_CENTS: 40,
+    /** R$ 0,80 por clique no objetivo "Receber mensagens" (decisão do dono, 24/11/2026: clique que leva a falar com a equipe vale mais). */
+    MIN_CPC_MESSAGES_CENTS: 80,
 };
 /** Regras de entrega do Votz (valem para qualquer anunciante). */
 exports.AD_DELIVERY = {
@@ -439,15 +530,25 @@ exports.AD_FRAUD = {
     MAX_CLOCK_SKEW_MS: 5 * 60_000,
 };
 function adChargeUnit(objective) {
-    return objective === 'TRAFFIC' ? 'CLICK' : 'VIEWABLE_IMPRESSION';
+    return objective === 'TRAFFIC' || objective === 'MESSAGES' ? 'CLICK' : 'VIEWABLE_IMPRESSION';
 }
 /** Preço mínimo, em centavos, da unidade cobrada (mil exibições visíveis ou um clique). */
 function adFloorCents(objective) {
+    if (objective === 'MESSAGES')
+        return exports.AD_PRICING.MIN_CPC_MESSAGES_CENTS;
     return adChargeUnit(objective) === 'CLICK' ? exports.AD_PRICING.MIN_CPC_CENTS : exports.AD_PRICING.MIN_CPM_CENTS;
 }
 /** Quanto custa UMA exibição visível (CPM) ou UM clique (CPC), em millicents, dado o preço em centavos da unidade. */
 function adChargeMillicents(objective, priceCents) {
     return adChargeUnit(objective) === 'CLICK' ? priceCents * exports.MILLICENTS_PER_CENT : priceCents;
+}
+/**
+ * Endereço do chat da página dentro do site, com o identificador do clique (o mesmo `votz_click_id` que o link de reserva
+ * leva). A tela do chat guarda o identificador e o manda junto com a primeira mensagem; é assim que a conversa é contada.
+ */
+function adPageMessagePath(orgId, clickId) {
+    const path = `/conversas/pagina/COMPANY/${orgId}`;
+    return clickId ? `${path}?${exports.AD_CONVERSIONS.CLICK_PARAM}=${encodeURIComponent(clickId)}` : path;
 }
 // ─── Relatório do anunciante ───────────────────────────────────────────────────────────────────
 exports.AD_REPORT_PERIODS = [7, 30, 90];
@@ -459,6 +560,7 @@ function summarizeAdStats(rows) {
     const hides = sum((row) => row.hides);
     const spendCents = sum((row) => row.spendCents);
     const conversions = sum((row) => row.conversions);
+    const messageConversations = sum((row) => row.messageConversations);
     return {
         impressions,
         viewableImpressions,
@@ -467,6 +569,8 @@ function summarizeAdStats(rows) {
         spendCents,
         conversions,
         conversionValueCents: sum((row) => row.conversionValueCents),
+        messageConversations,
+        costPerMessageCents: messageConversations > 0 ? Math.round(spendCents / messageConversations) : null,
         cpaCents: conversions > 0 ? Math.round(spendCents / conversions) : null,
         ctrPercent: viewableImpressions > 0 ? Math.round((clicks / viewableImpressions) * 10_000) / 100 : null,
         cpmCents: viewableImpressions > 0 ? Math.round((spendCents / viewableImpressions) * 1000) : null,
@@ -480,7 +584,7 @@ function fillAdStatDays(rows, days, today) {
     const result = [];
     for (let offset = days - 1; offset >= 0; offset -= 1) {
         const day = new Date(end - offset * 86_400_000).toISOString().slice(0, 10);
-        result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0 });
+        result.push(byDay.get(day) ?? { day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0, messageConversations: 0 });
     }
     return result;
 }

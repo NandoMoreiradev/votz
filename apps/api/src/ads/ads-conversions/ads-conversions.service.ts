@@ -10,7 +10,7 @@ import {
 } from '@votz/shared-types'
 import { saoPauloDay } from '../ads-delivery/delivery-rules'
 import { AdsConversionsRepository } from './ads-conversions.repository'
-import { conversionProblem, hashConversionKey, isValidClickToken, landingUrl, newConversionKey } from './conversion-rules'
+import { conversionProblem, hashConversionKey, isValidClickToken, landingUrl, messageAttributionProblem, newConversionKey } from './conversion-rules'
 
 const clean = (text: string) => DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).replace(/\s+/g, ' ').trim()
 
@@ -40,7 +40,9 @@ export class AdsConversionsService {
     if (!isValidClickToken(token)) return null
     const impression = await this.repo.findImpressionByToken(token)
     if (!impression) return null
-    const target = landingUrl(impression.ad.creative.destinationUrl, token)
+    // WhatsApp: o endereço `wa.me` vai como está, sem o identificador do clique (a empresa não precisa dele e o WhatsApp não deve receber).
+    const creative = impression.ad.creative
+    const target = creative.destinationKind === 'WHATSAPP' ? (creative.destinationUrl.startsWith('https://wa.me/') ? creative.destinationUrl : null) : landingUrl(creative.destinationUrl, token)
     if (!target) return null
     if (!impression.landedAt) {
       try {
@@ -103,6 +105,7 @@ export class AdsConversionsService {
       adSetId: impression.ad.adSetId,
       accountId: key.accountId,
       keyId: key.id,
+      source: 'API',
       eventName: event.eventName,
       valueCents: event.valueCents ?? 0,
       occurredAt,
@@ -110,6 +113,56 @@ export class AdsConversionsService {
       day: saoPauloDay(occurredAt),
     })
     return recorded ? { dedupeKey, status: 'ACCEPTED' } : { dedupeKey, status: 'DUPLICATE' }
+  }
+
+  // ── Conversa iniciada pelo anúncio ───────────────────────────────────────────────────────────
+
+  /**
+   * A pessoa escreveu para a página da empresa depois de tocar num anúncio de mensagens: conta uma conversão `CONTACT`
+   * (uma por clique). Quem chama é o chat das páginas e entrega só QUEM escreveu, PARA QUAL empresa e o identificador do
+   * clique: **nunca o texto, a conversa nem os anexos**. O que sai daqui é o fato, que vai só para o relatório do anunciante;
+   * não vira sinal de perfil, público nem modelo. Falhar aqui nunca impede a mensagem de seguir (devolve `IGNORED`).
+   */
+  async recordMessageStarted(input: { userId: string; companyId: string; clickId: string }, now = new Date()): Promise<'RECORDED' | 'DUPLICATE' | 'IGNORED'> {
+    try {
+      if (!isValidClickToken(input.clickId)) return 'IGNORED'
+      const impression = await this.repo.findImpressionForMessage(input.clickId)
+      if (!impression) return 'IGNORED'
+      const campaign = impression.ad.adSet.campaign
+      const problem = messageAttributionProblem(
+        {
+          userId: impression.userId,
+          clickedAt: impression.clickedAt,
+          landedAt: impression.landedAt,
+          objective: campaign.objective,
+          destinationKind: impression.ad.creative.destinationKind,
+          companyId: campaign.account.companyId,
+        },
+        { userId: input.userId, companyId: input.companyId },
+        now,
+      )
+      if (problem) return 'IGNORED'
+
+      const dedupeKey = `msg:${impression.id}`
+      if (await this.repo.conversionExists(campaign.accountId, dedupeKey)) return 'DUPLICATE'
+      const recorded = await this.repo.record({
+        impressionId: impression.id,
+        adId: impression.adId,
+        adSetId: impression.ad.adSetId,
+        accountId: campaign.accountId,
+        keyId: null,
+        source: 'VOTZ_MESSAGE',
+        eventName: 'CONTACT',
+        valueCents: 0,
+        occurredAt: now,
+        dedupeKey,
+        day: saoPauloDay(now),
+      })
+      return recorded ? 'RECORDED' : 'DUPLICATE'
+    } catch (error) {
+      this.logger.warn(`Não consegui contar a conversa iniciada pelo anúncio: ${error instanceof Error ? error.message : String(error)}`)
+      return 'IGNORED'
+    }
   }
 
   // ── Chaves, no Estúdio ───────────────────────────────────────────────────────────────────────

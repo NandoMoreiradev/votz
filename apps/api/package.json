@@ -12,6 +12,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "security:encrypt-mfa-secrets": "dotenv -e ../../.env -- ts-node src/crypto/encrypt-mfa-secrets.ts",
+    "auth:reset-mfa": "dotenv -e ../../.env -- ts-node src/auth/reset-mfa-cli.ts",
     "analytics:backfill": "dotenv -e ../../.env -- ts-node src/analytics/backfill-cli.ts",
     "media:backfill": "dotenv -e ../../.env -- ts-node src/media/legacy-backfill-cli.ts",
     "ads:experiment-report": "dotenv -e ../../.env -- ts-node src/ads/ads-experiments/experiment-report-cli.ts"

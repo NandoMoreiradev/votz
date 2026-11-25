@@ -151,11 +151,16 @@ export function useSwitchContext(options?: { returnTo?: string }) {
   })
 }
 
-export function useMe() {
+/**
+ * `fresh`: busca de novo ao montar (ex.: saber se o autenticador está ativo na hora de entrar
+ * num perfil de organização, sem confiar num dado de até 1 minuto atrás).
+ */
+export function useMe(options?: { fresh?: boolean; enabled?: boolean }) {
   return useQuery<AuthUser>({
     queryKey: ['auth/me'],
     queryFn: () => api.get<AuthUser>('/auth/me').then((r) => r.data),
-    staleTime: 60_000,
+    staleTime: options?.fresh ? 0 : 60_000,
+    enabled: options?.enabled ?? true,
     refetchOnWindowFocus: false,
   })
 }
@@ -167,6 +172,21 @@ export function useMyPrivateProfile(enabled: boolean) {
     queryFn: () => api.get<{ birthDate: string | null; gender: UserGender | null }>('/users/me').then((r) => r.data),
     enabled,
     staleTime: 60_000,
+  })
+}
+
+/**
+ * Fim do login com Google quando a conta exige MFA: a API guardou o desafio num cookie curto
+ * e devolve aqui o token (de código ou de configuração), uma vez só.
+ */
+export function useGooglePendingMfa() {
+  return useMutation({
+    mutationFn: () =>
+      api
+        .post<{ requiresMfa: true; mfaToken: string } | { requiresMfaSetup: true; mfaSetupToken: string }>(
+          '/auth/google/pending-mfa',
+        )
+        .then((r) => r.data),
   })
 }
 

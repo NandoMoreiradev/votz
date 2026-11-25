@@ -15,11 +15,13 @@ const Page = styled.div`
 `
 
 const Content = styled.main`
-  max-width: 1200px;
+  max-width: 1480px;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 24px 64px;
+  padding: 24px 32px 64px;
   flex: 1;
+
+  @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
 
 const HeaderRow = styled.div`
@@ -28,7 +30,7 @@ const HeaderRow = styled.div`
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 `
 
 const Eyebrow = styled.span`
@@ -49,6 +51,12 @@ const Title = styled.h1`
   color: ${({ theme }) => theme.colors.text};
 `
 
+const Subtitle = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.muted};
+  margin-top: 4px;
+`
+
 const ModLink = styled(Link)`
   padding: 8px 14px;
   border-radius: ${({ theme }) => theme.radii.md};
@@ -67,21 +75,27 @@ const ModLink = styled(Link)`
 const Tabs = styled.div`
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  border-bottom: 2px solid ${({ theme }) => theme.colors.border};
   margin-bottom: 24px;
   overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `
 
 const Tab = styled.button<{ $active: boolean }>`
-  padding: 10px 16px;
+  flex-shrink: 0;
+  padding: 0 16px 12px;
   background: none;
   border: none;
-  border-bottom: 2px solid ${({ $active, theme }) => ($active ? theme.colors.action : 'transparent')};
-  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
+  border-bottom: 2px solid ${({ $active, theme }) => ($active ? theme.colors.primary : 'transparent')};
+  margin-bottom: -2px;
+  color: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.muted)};
   font-size: 0.9375rem;
-  font-weight: ${({ $active }) => ($active ? 600 : 400)};
+  font-weight: ${({ $active }) => ($active ? 700 : 400)};
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.15s;
+  &:hover { color: ${({ theme }) => theme.colors.primary}; }
 `
 
 const Grid = styled.div`
@@ -621,6 +635,7 @@ export function Superadmin() {
           <div>
             <Eyebrow>Governança da plataforma</Eyebrow>
             <Title>Painel de Superadmin</Title>
+            <Subtitle>Planos, chaves de API, publicações e auditoria da plataforma.</Subtitle>
           </div>
           <ModLink to="/admin">Ir para Painel de Moderação →</ModLink>
         </HeaderRow>

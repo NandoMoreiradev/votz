@@ -63,23 +63,39 @@ function timeAgo(iso: string) {
 const pulse = keyframes`0%,100%{opacity:1}50%{opacity:.45}`
 
 // ─── Styled ───────────────────────────────────────────────────────────────────
-const Page = styled.div`min-height:100vh;background:#FAFAF7;`
+// Mesma moldura das outras telas (início, debates, propostas): fundo neutro, 1480px e respiros iguais.
+const Page = styled.div`
+  min-height: 100vh;
+  background: ${({ theme }) => theme.colors.neutral};
+`
 const Content = styled.div`
-  max-width:1100px;margin:0 auto;padding:32px 32px 72px;
-  @media(max-width:640px){padding:16px 16px 48px;}
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
+  @media (max-width: 640px) { padding: 16px 16px 48px; }
 `
-const PageHeader = styled.div`margin-bottom:32px;`
+const PageHeader = styled.div`margin-bottom: 28px;`
 const PageTitle = styled.h1`
-  font-family:${({ theme }) => theme.fonts.heading};
-  font-size:clamp(22px,4vw,32px);font-weight:700;letter-spacing:-0.03em;
-  color:#0D0D0D;margin-bottom:8px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: ${({ theme }) => theme.fontSizes['2xl']};
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
+  margin-bottom: 4px;
 `
-const PageSub = styled.p`font-size:14px;color:#6B6B7A;line-height:1.5;max-width:520px;`
+const PageSub = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.5;
+`
 const Tag = styled.span`
-  display:inline-block;font-family:${({ theme }) => theme.fonts.mono};
-  font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
-  background:#0D0D0D;color:#fff;padding:4px 8px;border-radius:4px;
-  margin-bottom:12px;
+  display: inline-block;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: ${({ theme }) => theme.colors.action};
+  margin-bottom: 4px;
 `
 
 // ── Stat cards ────────────────────────────────────────────────────────────────
@@ -88,26 +104,26 @@ const StatGrid = styled.div`
   gap:12px;margin-bottom:40px;
 `
 const StatCard = styled.div`
-  background:#fff;border:1px solid #E5E5E0;border-radius:10px;
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};border-radius:${({ theme }) => theme.radii.lg};
   padding:18px 20px;
 `
 const StatNum = styled.div`
   font-family:${({ theme }) => theme.fonts.heading};
-  font-size:28px;font-weight:700;letter-spacing:-0.03em;color:#0D0D0D;line-height:1;
+  font-size:28px;font-weight:700;letter-spacing:-0.03em;color:${({ theme }) => theme.colors.text};line-height:1;
   margin-bottom:4px;
 `
 const StatLabel = styled.div`
   font-family:${({ theme }) => theme.fonts.mono};
-  font-size:10px;color:#9494A0;text-transform:uppercase;letter-spacing:0.05em;
+  font-size:10px;color:${({ theme }) => theme.colors.muted};text-transform:uppercase;letter-spacing:0.05em;
 `
 
 // ── Section ───────────────────────────────────────────────────────────────────
 const Section = styled.section`margin-bottom:40px;`
 const SectionTitle = styled.h2`
   font-family:${({ theme }) => theme.fonts.heading};
-  font-size:15px;font-weight:700;letter-spacing:-0.01em;color:#0D0D0D;
+  font-size:15px;font-weight:700;letter-spacing:-0.01em;color:${({ theme }) => theme.colors.text};
   margin-bottom:16px;display:flex;align-items:center;gap:8px;
-  .ct{font-family:${({ theme }) => theme.fonts.mono};font-size:12px;color:#6B6B7A;font-weight:400;}
+  .ct{font-family:${({ theme }) => theme.fonts.mono};font-size:12px;color:${({ theme }) => theme.colors.muted};font-weight:400;}
 `
 
 // ── Tendências ────────────────────────────────────────────────────────────────
@@ -116,101 +132,104 @@ const TendGrid = styled.div`
   @media(max-width:640px){grid-template-columns:1fr;}
 `
 const TendPanel = styled.div`
-  background:#fff;border:1px solid #E5E5E0;border-radius:10px;padding:20px 24px;
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};border-radius:${({ theme }) => theme.radii.lg};padding:20px 24px;
 `
 const TendPanelTitle = styled.div`
   font-family:${({ theme }) => theme.fonts.mono};font-size:11px;
-  color:#6B6B7A;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:16px;
+  color:${({ theme }) => theme.colors.muted};text-transform:uppercase;letter-spacing:0.06em;margin-bottom:16px;
 `
 const BarRow = styled.div`display:flex;flex-direction:column;gap:10px;`
 const BarItem = styled.div`display:flex;flex-direction:column;gap:4px;`
 const BarLabel = styled.div`
   display:flex;justify-content:space-between;align-items:center;
-  font-size:13px;color:#0D0D0D;
+  font-size:13px;color:${({ theme }) => theme.colors.text};
 `
 const BarPct = styled.span`
-  font-family:${({ theme }) => theme.fonts.mono};font-size:11px;color:#6B6B7A;
+  font-family:${({ theme }) => theme.fonts.mono};font-size:11px;color:${({ theme }) => theme.colors.muted};
 `
-const BarTrack = styled.div`height:4px;background:#F0F0EC;border-radius:2px;overflow:hidden;`
+const BarTrack = styled.div`height:4px;background:${({ theme }) => theme.colors.neutral};border-radius:2px;overflow:hidden;`
 const BarFill = styled.div<{ $pct: string }>`
   height:100%;width:${({ $pct }) => $pct}%;
-  background:#0D0D0D;border-radius:2px;
+  background:${({ theme }) => theme.colors.text};border-radius:2px;
   transition:width 0.4s ease;
 `
 const CityRow = styled.div`
   display:flex;justify-content:space-between;align-items:center;
-  padding:6px 0;border-bottom:1px solid #F0F0EC;
+  padding:6px 0;border-bottom:1px solid ${({ theme }) => theme.colors.border};
   &:last-child{border-bottom:none;}
-  font-size:13px;color:#0D0D0D;
+  font-size:13px;color:${({ theme }) => theme.colors.text};
 `
 const CityCount = styled.span`
   font-family:${({ theme }) => theme.fonts.mono};font-size:11px;
-  background:#F4F4F0;padding:2px 6px;border-radius:3px;color:#6B6B7A;
+  background:${({ theme }) => theme.colors.neutral};padding:2px 6px;border-radius:3px;color:${({ theme }) => theme.colors.muted};
 `
-const CityUF = styled.span`color:#6B6B7A;font-size:12px;margin-left:4px;`
+const CityUF = styled.span`color:${({ theme }) => theme.colors.muted};font-size:12px;margin-left:4px;`
 
 // ── Relatos destaque ──────────────────────────────────────────────────────────
-const ReportList = styled.div`display:flex;flex-direction:column;gap:8px;`
+const ReportList = styled.div`
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;
+  @media(max-width:520px){grid-template-columns:1fr;}
+`
 const ReportCard = styled.article<{ $clickable?: boolean }>`
-  background:#fff;border:1px solid #E5E5E0;border-radius:10px;
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};border-radius:${({ theme }) => theme.radii.lg};
   padding:16px 20px;cursor:${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   transition:border-color 0.15s,box-shadow 0.15s;
-  &:hover{border-color:${({ $clickable }) => ($clickable ? '#0D0D0D' : '#E5E5E0')};
+  &:hover{border-color:${({ $clickable, theme }) => ($clickable ? theme.colors.text : theme.colors.border)};
     box-shadow:${({ $clickable }) => ($clickable ? '0 2px 8px rgba(0,0,0,.04)' : 'none')};}
 `
 const ReportTitle = styled.h3`
   font-family:${({ theme }) => theme.fonts.heading};font-size:14px;font-weight:600;
-  color:#0D0D0D;margin-bottom:4px;line-height:1.3;
+  color:${({ theme }) => theme.colors.text};margin-bottom:4px;line-height:1.3;
 `
 const ReportDesc = styled.p`
-  font-size:12.5px;color:#6B6B7A;line-height:1.5;margin-bottom:8px;
+  font-size:12.5px;color:${({ theme }) => theme.colors.muted};line-height:1.5;margin-bottom:8px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 `
 const ReportMeta = styled.div`
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  font-family:${({ theme }) => theme.fonts.mono};font-size:11px;color:#9494A0;
+  font-family:${({ theme }) => theme.fonts.mono};font-size:11px;color:${({ theme }) => theme.colors.muted};
 `
-const Dot = styled.span`width:3px;height:3px;border-radius:50%;background:#C4C4CC;`
+const Dot = styled.span`width:3px;height:3px;border-radius:50%;background:${({ theme }) => theme.colors.border};`
 const PressureBadge = styled.span`
-  background:#0D0D0D;color:#fff;padding:2px 7px;border-radius:4px;
+  background:${({ theme }) => theme.colors.text};color:#fff;padding:2px 7px;border-radius:4px;
   font-size:10px;font-weight:700;margin-left:auto;
 `
 const StatusBadge = styled.span<{ $resolved?: boolean }>`
   padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;
-  background:${({ $resolved }) => ($resolved ? '#DCFCE7' : '#F0F0EC')};
-  color:${({ $resolved }) => ($resolved ? '#14532D' : '#6B6B7A')};
+  background:${({ $resolved, theme }) => ($resolved ? '#DCFCE7' : theme.colors.neutral)};
+  color:${({ $resolved, theme }) => ($resolved ? '#14532D' : theme.colors.muted)};
 `
 
 // ── Entidades ranking ─────────────────────────────────────────────────────────
 const Table = styled.div`
-  background:#fff;border:1px solid #E5E5E0;border-radius:10px;overflow:hidden;
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};border-radius:${({ theme }) => theme.radii.lg};overflow:hidden;
 `
 const TableRow = styled.div`
   display:grid;grid-template-columns:2fr 1fr 80px 70px;
   align-items:center;gap:12px;padding:12px 20px;
-  border-bottom:1px solid #F0F0EC;
+  border-bottom:1px solid ${({ theme }) => theme.colors.border};
   &:last-child{border-bottom:none;}
-  &:first-child{background:#FAFAF7;}
+  &:first-child{background:${({ theme }) => theme.colors.neutral};}
   @media(max-width:640px){grid-template-columns:1fr 60px;}
 `
 const TableHead = styled(TableRow)`
   font-family:${({ theme }) => theme.fonts.mono};font-size:10px;
-  color:#9494A0;text-transform:uppercase;letter-spacing:0.05em;
+  color:${({ theme }) => theme.colors.muted};text-transform:uppercase;letter-spacing:0.05em;
 `
 const EntityName = styled.div`
-  font-size:13px;font-weight:600;color:#0D0D0D;
+  font-size:13px;font-weight:600;color:${({ theme }) => theme.colors.text};
   display:flex;align-items:center;gap:8px;
 `
 const VerifiedDot = styled.span`
-  width:7px;height:7px;border-radius:50%;background:#2DC653;flex-shrink:0;
+  width:7px;height:7px;border-radius:50%;background:${({ theme }) => theme.colors.positive};flex-shrink:0;
 `
 const EntitySub = styled.div`
-  font-family:${({ theme }) => theme.fonts.mono};font-size:10px;color:#9494A0;
+  font-family:${({ theme }) => theme.fonts.mono};font-size:10px;color:${({ theme }) => theme.colors.muted};
   margin-top:2px;
 `
 const ScoreNum = styled.div<{ $high?: boolean }>`
   font-family:${({ theme }) => theme.fonts.heading};font-size:16px;font-weight:700;
-  color:${({ $high }) => ($high ? '#2DC653' : '#E63946')};
+  color:${({ $high, theme }) => ($high ? theme.colors.positive : theme.colors.action)};
 `
 
 // ── Surtos ────────────────────────────────────────────────────────────────────
@@ -218,14 +237,14 @@ const SurtoGrid = styled.div`
   display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;
 `
 const SurtoCard = styled(Link)`
-  background:#0D0D0D;color:#fff;border-radius:10px;padding:18px 20px;
+  background:${({ theme }) => theme.colors.text};color:#fff;border-radius:${({ theme }) => theme.radii.lg};padding:18px 20px;
   display:block;text-decoration:none;
   transition:opacity 0.15s;
   &:hover{opacity:0.88;}
 `
 const SurtoTag = styled.div`
   font-family:${({ theme }) => theme.fonts.mono};font-size:10px;
-  color:#E63946;text-transform:uppercase;letter-spacing:0.06em;
+  color:${({ theme }) => theme.colors.action};text-transform:uppercase;letter-spacing:0.06em;
   margin-bottom:10px;display:flex;align-items:center;gap:5px;
 `
 const SurtoTitle = styled.div`
@@ -244,11 +263,11 @@ const SurtoCount = styled.div`
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 const Skel = styled.div<{ $h?: number; $w?: string }>`
   height:${({ $h }) => $h ?? 40}px;width:${({ $w }) => $w ?? '100%'};
-  border-radius:6px;background:#E5E5E0;animation:${pulse} 1.5s ease-in-out infinite;
+  border-radius:6px;background:${({ theme }) => theme.colors.border};animation:${pulse} 1.5s ease-in-out infinite;
 `
 const Empty = styled.div`
-  text-align:center;padding:32px 24px;color:#6B6B7A;font-size:14px;
-  background:#fff;border:1px solid #E5E5E0;border-radius:10px;
+  text-align:center;padding:32px 24px;color:${({ theme }) => theme.colors.muted};font-size:14px;
+  background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};border-radius:${({ theme }) => theme.radii.lg};
 `
 const MethodBox = styled.div`
   background:${({ theme }) => theme.colors.surface};border:1px solid ${({ theme }) => theme.colors.border};
@@ -261,12 +280,12 @@ const MethodBox = styled.div`
 
 // ── PRESS panel ───────────────────────────────────────────────────────────────
 const PressPanel = styled.div`
-  background:#0D0D0D;border-radius:12px;padding:24px 28px;margin-bottom:40px;
+  background:${({ theme }) => theme.colors.primary};border-radius:${({ theme }) => theme.radii.lg};padding:24px 28px;margin-bottom:40px;
   @media(max-width:640px){padding:18px 16px;}
 `
 const PressPanelTitle = styled.div`
   font-family:${({ theme }) => theme.fonts.mono};font-size:10px;font-weight:700;
-  letter-spacing:0.1em;text-transform:uppercase;color:#E63946;margin-bottom:4px;
+  letter-spacing:0.1em;text-transform:uppercase;color:${({ theme }) => theme.colors.action};margin-bottom:4px;
 `
 const PressPanelSub = styled.div`
   font-family:${({ theme }) => theme.fonts.heading};font-size:16px;font-weight:700;
@@ -299,7 +318,7 @@ const PressStateSelect = styled(StateSelect)`${pressSelectCss}`
 const PressCitySelect  = styled(CitySelect)`${pressSelectCss}`
 const CsvButton = styled.button<{ $loading?: boolean }>`
   padding:8px 18px;border-radius:6px;border:none;cursor:pointer;
-  background:${({ $loading }) => ($loading ? 'rgba(230,57,70,.6)' : '#E63946')};
+  background:${({ $loading, theme }) => ($loading ? 'rgba(230,57,70,.6)' : theme.colors.action)};
   color:#fff;font-family:${({ theme }) => theme.fonts.heading};
   font-size:13px;font-weight:700;letter-spacing:-0.01em;
   transition:opacity 0.15s;align-self:flex-end;
@@ -312,7 +331,7 @@ const AlertBadge = styled.div`
   color:rgba(255,255,255,.5);
 `
 const AlertDot = styled.span`
-  width:7px;height:7px;border-radius:50%;background:#2DC653;
+  width:7px;height:7px;border-radius:50%;background:${({ theme }) => theme.colors.positive};
   box-shadow:0 0 0 3px rgba(45,198,83,.2);flex-shrink:0;
 `
 

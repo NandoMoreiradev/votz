@@ -57,6 +57,7 @@ function makeRepo(pool: unknown[] = [candidate()], viewer: Record<string, unknow
     applyEvent: jest.fn().mockResolvedValue(true),
     findAccount: jest.fn(),
     listAccountDailyStats: jest.fn().mockResolvedValue([]),
+    listAccountAdTotals: jest.fn().mockResolvedValue([]),
     accountsWithPendingSpend: jest.fn().mockResolvedValue([]),
     closeSpend: jest.fn(),
   }
@@ -162,6 +163,44 @@ describe('AdsDeliveryService.next', () => {
     expect(view?.clickUrl).toBe(`https://votz.test/c/${clickToken}`)
     // O identificador do clique não é a exibição: o anunciante não chega na pessoa por ele.
     expect(view?.clickUrl).not.toContain(view?.impressionId as string)
+  })
+
+  it('a resposta diz onde o botão cai: site segue por clickUrl, chat da página abre por dentro do app com o clickId', async () => {
+    const site = candidate()
+    ;(site.creative as Record<string, unknown>).destinationKind = 'URL'
+    const siteRepo = makeRepo([site])
+    const siteView = await new AdsDeliveryService(siteRepo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
+    expect(siteView?.destination).toEqual({ kind: 'URL' })
+
+    const chat = candidate()
+    ;(chat.creative as Record<string, unknown>).destinationKind = 'PAGE_MESSAGE'
+    chat.adSet.campaign.objective = 'MESSAGES'
+    const chatRepo = makeRepo([chat])
+    const chatView = await new AdsDeliveryService(chatRepo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
+    const { clickToken } = chatRepo.createImpression.mock.calls[0][0] as { clickToken: string }
+    expect(chatView?.clickId).toBe(clickToken)
+    expect(chatView?.destination).toEqual({ kind: 'PAGE_MESSAGE', orgType: 'COMPANY', orgId: expect.any(String) })
+    // O link de reserva continua levando ao mesmo lugar para os apps antigos.
+    expect(chatView?.clickUrl).toBe(`https://votz.test/c/${clickToken}`)
+  })
+
+  it('WhatsApp: a resposta diz só o tipo; o número da empresa nunca vai no anúncio do feed', async () => {
+    const wa = candidate()
+    Object.assign(wa.creative, { destinationKind: 'WHATSAPP', destinationUrl: 'https://wa.me/5511987654321?text=Oi', whatsappPhone: '5511987654321', whatsappText: 'Oi' })
+    wa.adSet.campaign.objective = 'MESSAGES'
+    const repo = makeRepo([wa])
+    const view = await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
+    expect(view?.destination).toEqual({ kind: 'WHATSAPP' })
+    expect(JSON.stringify(view)).not.toContain('5511987654321')
+    expect(view?.clickUrl).toMatch(/^https:\/\/votz\.test\/c\//)
+  })
+
+  it('mensagens cobra por clique: R$ 0,80 = 80.000 millicents', async () => {
+    const messages = candidate()
+    messages.adSet.campaign.objective = 'MESSAGES'
+    const repo = makeRepo([messages])
+    await new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never).next(USER, query, NOW)
+    expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeOn: 'CLICK', chargeMillicents: 80_000 }))
   })
 
   it('tráfego cobra por clique: R$ 0,40 = 40.000 millicents', async () => {
@@ -303,7 +342,24 @@ describe('AdsDeliveryService.stats e fechamento', () => {
     const service = new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never)
     await expect(service.stats('outra', 'acc-1')).rejects.toBeInstanceOf(NotFoundException)
     repo.listAccountDailyStats.mockResolvedValue([{ day: new Date('2026-11-22'), _sum: { impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendMillicents: 25_400, conversions: 2, conversionValueCents: BigInt(1500) } }])
-    expect(await service.stats('co-1', 'acc-1')).toEqual([{ day: '2026-11-22', impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendCents: 25, conversions: 2, conversionValueCents: 1500 }])
+    expect(await service.stats('co-1', 'acc-1')).toEqual([{ day: '2026-11-22', impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendCents: 25, conversions: 2, conversionValueCents: 1500, messageConversations: 0 }])
+  })
+
+  it('totais por anúncio: só a empresa dona vê, e o gasto sai em centavos', async () => {
+    const repo = makeRepo()
+    repo.findAccount.mockResolvedValue({ id: 'acc-1', companyId: 'co-1' })
+    const service = new AdsDeliveryService(repo as never, storage as never, links as never, noAdjacency() as never)
+    await expect(service.statsByAd('outra', 'acc-1', 7)).rejects.toBeInstanceOf(NotFoundException)
+    expect(repo.listAccountAdTotals).not.toHaveBeenCalled()
+    repo.listAccountAdTotals.mockResolvedValue([
+      { adId: 'ad-1', _sum: { impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendMillicents: 25_400, conversions: 2, conversionValueCents: BigInt(1500), messageConversations: 3 } },
+      { adId: 'ad-2', _sum: { impressions: null, viewableImpressions: null, clicks: null, hides: null, spendMillicents: null, conversions: null, conversionValueCents: null, messageConversations: null } },
+    ])
+    expect(await service.statsByAd('co-1', 'acc-1', 7)).toEqual([
+      { adId: 'ad-1', impressions: 10, viewableImpressions: 7, clicks: 1, hides: 0, spendCents: 25, conversions: 2, conversionValueCents: 1500, messageConversations: 3 },
+      { adId: 'ad-2', impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0, messageConversations: 0 },
+    ])
+    expect(repo.listAccountAdTotals).toHaveBeenCalledWith('acc-1', expect.any(Date))
   })
 
   it('o fechamento horário passa por cada conta com gasto a lançar e não derruba o resto se uma falhar', async () => {

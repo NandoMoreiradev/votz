@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react'
 import {
-  AD_CTA_LABELS,
   AD_EDIT_COPY,
   AD_INTERESTS,
   AD_LIMITS,
+  AD_WHATSAPP,
   AGE_BANDS,
   USER_GENDERS,
   USER_GENDER_LABELS,
+  adCtaLabelsFor,
+  formatBrazilianMobile,
+  normalizeBrazilianMobile,
+  whatsappTextProblem,
   type AdCtaLabel,
   type AdInterestId,
   type AdSetView,
@@ -39,18 +43,27 @@ export function AdEditForm({ ad, companyId, accountId, onDone }: { ad: AdView; c
   const [body, setBody] = useState(ad.creative.body)
   const [cta, setCta] = useState<AdCtaLabel>(ad.creative.ctaLabel as AdCtaLabel)
   const [url, setUrl] = useState(ad.creative.destinationUrl)
+  // Só anúncio que abre um site tem link para editar; o que abre o chat da página não tem.
+  const isUrl = ad.creative.destinationKind === 'URL'
+  const isWhatsapp = ad.creative.destinationKind === 'WHATSAPP'
+  const [phone, setPhone] = useState(ad.creative.whatsapp ? formatBrazilianMobile(ad.creative.whatsapp.phone) : '')
+  const [waText, setWaText] = useState(ad.creative.whatsapp?.text ?? '')
+  const ctaOptions = adCtaLabelsFor(ad.creative.destinationKind)
 
   const changed =
-    headline.trim() !== ad.creative.headline || body.trim() !== ad.creative.body || cta !== ad.creative.ctaLabel || url.trim() !== ad.creative.destinationUrl
+    headline.trim() !== ad.creative.headline || body.trim() !== ad.creative.body || cta !== ad.creative.ctaLabel || (isUrl && url.trim() !== ad.creative.destinationUrl) ||
+    (isWhatsapp && (normalizeBrazilianMobile(phone) !== ad.creative.whatsapp?.phone || waText.trim() !== (ad.creative.whatsapp?.text ?? '')))
   const problem =
     headline.trim().length < 2 ? 'Escreva o título.'
     : body.trim().length < 2 ? 'Escreva o texto do anúncio.'
-    : !isHttpsUrl(url.trim()) ? 'O link precisa começar com https:// e ser um endereço válido.'
+    : isUrl && !isHttpsUrl(url.trim()) ? 'O link precisa começar com https:// e ser um endereço válido.'
+    : isWhatsapp && !normalizeBrazilianMobile(phone) ? 'Informe o número de WhatsApp da empresa com DDD, por exemplo (11) 98765-4321.'
+    : isWhatsapp && whatsappTextProblem(waText) ? whatsappTextProblem(waText)
     : null
   const warning = ad.reviewStatus === 'APPROVED' ? AD_EDIT_COPY.REVIEW_AGAIN : ad.reviewStatus === 'PENDING' ? AD_EDIT_COPY.REVIEW_PENDING : null
 
   function save() {
-    const input: UpdateAdInput = { headline: headline.trim(), body: body.trim(), ctaLabel: cta, destinationUrl: url.trim() }
+    const input: UpdateAdInput = { headline: headline.trim(), body: body.trim(), ctaLabel: cta, ...(isUrl ? { destinationUrl: url.trim() } : {}), ...(isWhatsapp ? { whatsappPhone: phone.trim(), whatsappText: waText.trim() } : {}) }
     update.mutate({ adId: ad.id, ...input }, { onSuccess: onDone })
   }
 
@@ -69,15 +82,30 @@ export function AdEditForm({ ad, companyId, accountId, onDone }: { ad: AdView; c
       <Grid2>
         <Field>
           <Label htmlFor={`edit-cta-${ad.id}`}>Texto do botão</Label>
-          <Select id={`edit-cta-${ad.id}`} value={cta} onChange={(event) => setCta(event.target.value as AdCtaLabel)}>
-            {AD_CTA_LABELS.map((label) => <option key={label} value={label}>{label}</option>)}
+          <Select id={`edit-cta-${ad.id}`} value={cta} disabled={ctaOptions.length === 1} onChange={(event) => setCta(event.target.value as AdCtaLabel)}>
+            {ctaOptions.map((label) => <option key={label} value={label}>{label}</option>)}
           </Select>
         </Field>
-        <Field>
-          <Label htmlFor={`edit-url-${ad.id}`}>Link do botão</Label>
-          <Input id={`edit-url-${ad.id}`} type="url" value={url} maxLength={AD_LIMITS.URL_MAX} onChange={(event) => setUrl(event.target.value)} />
-        </Field>
+        {isUrl && (
+          <Field>
+            <Label htmlFor={`edit-url-${ad.id}`}>Link do botão</Label>
+            <Input id={`edit-url-${ad.id}`} type="url" value={url} maxLength={AD_LIMITS.URL_MAX} onChange={(event) => setUrl(event.target.value)} />
+          </Field>
+        )}
+        {isWhatsapp && (
+          <Field>
+            <Label htmlFor={`edit-wa-phone-${ad.id}`}>WhatsApp da empresa</Label>
+            <Input id={`edit-wa-phone-${ad.id}`} type="tel" inputMode="tel" autoComplete="off" value={phone} maxLength={30} onChange={(event) => setPhone(event.target.value)} />
+          </Field>
+        )}
       </Grid2>
+      {isWhatsapp && (
+        <Field>
+          <Label htmlFor={`edit-wa-text-${ad.id}`}>Mensagem que já vem escrita</Label>
+          <TextArea id={`edit-wa-text-${ad.id}`} value={waText} maxLength={AD_WHATSAPP.TEXT_MAX} onChange={(event) => setWaText(event.target.value)} />
+          <Hint>{waText.length}/{AD_WHATSAPP.TEXT_MAX}. Sem link.</Hint>
+        </Field>
+      )}
       <Hint>A foto ou o vídeo não mudam por aqui: crie uma cópia da campanha para usar outro arquivo.</Hint>
       {warning && <Hint style={{ color: 'inherit', fontWeight: 600 }}>{warning}</Hint>}
       {problem && changed && <ErrorMsg role="alert">{problem}</ErrorMsg>}

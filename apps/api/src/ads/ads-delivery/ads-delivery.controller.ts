@@ -51,4 +51,17 @@ export class AdsStatsController {
     if (orgType !== 'COMPANY') throw new BadRequestException('Só empresas podem anunciar no Votz.')
     return this.service.stats(orgId, accountId, query.days)
   }
+
+  @Get('accounts/:accountId/stats/by-ad')
+  @RequireOrgPermission(OrgPermission.VIEW_ADS)
+  @ApiOperation({ summary: 'Exibições, cliques e gasto de cada anúncio da conta no período (para a tabela de campanhas)' })
+  statsByAd(
+    @Param('orgType') orgType: string,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query() query: AdStatsQueryDto,
+  ) {
+    if (orgType !== 'COMPANY') throw new BadRequestException('Só empresas podem anunciar no Votz.')
+    return this.service.statsByAd(orgId, accountId, query.days)
+  }
 }

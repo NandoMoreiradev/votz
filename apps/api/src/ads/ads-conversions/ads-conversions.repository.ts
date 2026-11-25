@@ -8,7 +8,10 @@ export interface ConversionRecord {
   adId: string
   adSetId: string
   accountId: string
-  keyId: string
+  /** Nulo quando a conversão não veio pela API do anunciante (veio do chat da página). */
+  keyId: string | null
+  /** "API" ou "VOTZ_MESSAGE". */
+  source: 'API' | 'VOTZ_MESSAGE'
   eventName: string
   valueCents: number
   occurredAt: Date
@@ -33,7 +36,28 @@ export class AdsConversionsRepository {
         id: true,
         adId: true,
         landedAt: true,
-        ad: { select: { adSetId: true, creative: { select: { destinationUrl: true } }, adSet: { select: { campaign: { select: { accountId: true } } } } } },
+        ad: { select: { adSetId: true, creative: { select: { destinationUrl: true, destinationKind: true } }, adSet: { select: { campaign: { select: { accountId: true } } } } } },
+      },
+    })
+  }
+
+  /** A exibição de um clique com o que importa para dizer se uma mensagem veio dele (dono, clique, tipo de anúncio, empresa). */
+  findImpressionForMessage(clickToken: string) {
+    return this.prisma.adImpression.findUnique({
+      where: { clickToken },
+      select: {
+        id: true,
+        userId: true,
+        adId: true,
+        clickedAt: true,
+        landedAt: true,
+        ad: {
+          select: {
+            adSetId: true,
+            creative: { select: { destinationKind: true } },
+            adSet: { select: { campaign: { select: { objective: true, accountId: true, account: { select: { companyId: true } } } } } },
+          },
+        },
       },
     })
   }
@@ -80,6 +104,7 @@ export class AdsConversionsRepository {
             adId: data.adId,
             accountId: data.accountId,
             keyId: data.keyId,
+            source: data.source,
             eventName: data.eventName,
             valueCents: data.valueCents,
             occurredAt: data.occurredAt,
@@ -87,11 +112,20 @@ export class AdsConversionsRepository {
           },
         })
         const day = dayAsDate(data.day)
-        await tx.adDailyStat.upsert({
-          where: { adId_day: { adId: data.adId, day } },
-          create: { adId: data.adId, adSetId: data.adSetId, day, conversions: 1, conversionValueCents: BigInt(data.valueCents) },
-          update: { conversions: { increment: 1 }, conversionValueCents: { increment: BigInt(data.valueCents) } },
-        })
+        // Conversa iniciada no chat da página tem contagem própria; a conversão do anunciante (compra, cadastro) soma com valor.
+        if (data.source === 'VOTZ_MESSAGE') {
+          await tx.adDailyStat.upsert({
+            where: { adId_day: { adId: data.adId, day } },
+            create: { adId: data.adId, adSetId: data.adSetId, day, messageConversations: 1 },
+            update: { messageConversations: { increment: 1 } },
+          })
+        } else {
+          await tx.adDailyStat.upsert({
+            where: { adId_day: { adId: data.adId, day } },
+            create: { adId: data.adId, adSetId: data.adSetId, day, conversions: 1, conversionValueCents: BigInt(data.valueCents) },
+            update: { conversions: { increment: 1 }, conversionValueCents: { increment: BigInt(data.valueCents) } },
+          })
+        }
       })
       return true
     } catch (error) {

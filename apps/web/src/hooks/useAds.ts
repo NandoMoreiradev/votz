@@ -326,6 +326,30 @@ export function useAdStats(companyId: string, accountId: string | undefined, day
   })
 }
 
+/** Totais do período de um anúncio (a tela soma por público e por campanha). */
+export interface AdStatsByAdRow {
+  adId: string
+  impressions: number
+  viewableImpressions: number
+  clicks: number
+  hides: number
+  spendCents: number
+  conversions: number
+  conversionValueCents: number
+  messageConversations: number
+}
+
+/** Resultados por anúncio no período, para a tabela de campanhas e o quadro "Por campanha" do relatório. */
+export function useAdStatsByAd(companyId: string, accountId: string | undefined, days: number) {
+  return useQuery({
+    queryKey: ['ads', companyId, 'accounts', accountId, 'stats-by-ad', days] as const,
+    queryFn: () => api.get<AdStatsByAdRow[]>(`${base(companyId)}/accounts/${accountId}/stats/by-ad`, { params: { days } }).then((r) => r.data),
+    enabled: !!companyId && !!accountId,
+    refetchInterval: 60_000,
+    retry: false,
+  })
+}
+
 // ─── Conversões (chaves da API de conversões) ───────────────────────────────────────────────────
 
 const conversionKeysKey = (companyId: string, accountId: string) => ['ads', companyId, 'accounts', accountId, 'conversion-keys'] as const

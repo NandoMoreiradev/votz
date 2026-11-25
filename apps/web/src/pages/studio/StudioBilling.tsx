@@ -40,26 +40,10 @@ import {
   Sub,
   Title,
 } from '../../components/ads/ads-ui'
+import { ClockCountdown, Info, Receipt, Wallet, WarningCircle } from '@phosphor-icons/react'
+import { Callout, DataTable, PageHeader, StatCard, StatGrid, StatSkeletons, StudioPage, TableScroll } from '../../components/studio/studio-ui'
 
-const Notice = styled.div`
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-left: 4px solid ${({ theme }) => theme.colors.primary};
-  border-radius: ${({ theme }) => theme.radii.md};
-  background: ${({ theme }) => theme.colors.white};
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: ${({ theme }) => theme.colors.text};
-`
 
-const Balance = styled.p`
-  margin: 4px 0 0;
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 2rem;
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.text};
-`
 
 const Code = styled.code`
   display: block;
@@ -79,23 +63,20 @@ const TopUpItem = styled.div`
   &:first-of-type { border-top: none; padding-top: 4px; }
 `
 
-/** O extrato tem quatro colunas: em tela estreita rola só ele, não a página inteira. */
-const ScrollX = styled.div`
-  overflow-x: auto;
-`
 
-const Statement = styled.table`
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid ${({ theme }) => theme.colors.border}; }
-  th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: ${({ theme }) => theme.colors.muted}; }
-  td.num, th.num { text-align: right; white-space: nowrap; }
+
+const BillingGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 0 16px;
+  align-items: start;
+
+  @media (max-width: 1180px) { grid-template-columns: minmax(0, 1fr); }
 `
 
 const Amount = styled.span<{ $negative: boolean }>`
   font-family: ${({ theme }) => theme.fonts.mono};
-  color: ${({ $negative, theme }) => ($negative ? theme.colors.action : theme.colors.positive)};
+  color: ${({ $negative, theme }) => ($negative ? theme.colors.text : theme.colors.positiveText)};
 `
 
 type Tone = 'positive' | 'action' | 'muted'
@@ -130,93 +111,92 @@ export function StudioBilling() {
   }
 
   return (
-    <>
-      <Head>
-        <div>
-          <Title>Faturamento</Title>
-          <Sub>Você paga os anúncios com saldo: recarrega antes e o Votz desconta só o que for gasto.</Sub>
-        </div>
-      </Head>
+    <StudioPage>
+      <PageHeader
+        crumbs={[{ label: 'Anúncios', to: '/estudio/anuncios' }, { label: 'Faturamento' }]}
+        title="Faturamento"
+        description="Você paga os anúncios com saldo: recarrega antes e o Votz desconta só o que for gasto."
+        actions={accounts.data && accounts.data.length > 1 && (
+          <Select aria-label="Conta de anúncios" value={accountId} onChange={(event) => setChosenAccount(event.target.value)} style={{ width: 'auto', minHeight: 36 }}>
+            {accounts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </Select>
+        )}
+      />
 
-      {accounts.isLoading ? <Hint>Carregando…</Hint>
+      {accounts.isLoading ? <StatSkeletons count={3} />
         : accounts.isError ? <ErrorMsg role="alert">{adsErrorMessage(accounts.error)}</ErrorMsg>
         : !accounts.data?.length ? <Card><CardTitle>Nenhuma conta de anúncios</CardTitle><Hint>Crie a conta em Anúncios › Campanhas para poder recarregar saldo.</Hint></Card>
-        : (
-          <>
-            {accounts.data.length > 1 && (
-              <Card>
-                <Field style={{ marginBottom: 0 }}>
-                  <Label htmlFor="billing-account">Conta de anúncios</Label>
-                  <Select id="billing-account" value={accountId} onChange={(event) => setChosenAccount(event.target.value)}>
-                    {accounts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </Select>
-                </Field>
-              </Card>
-            )}
-            {billing.isLoading ? <Hint>Carregando saldo…</Hint>
-              : billing.isError ? <ErrorMsg role="alert">{adsErrorMessage(billing.error)}</ErrorMsg>
-              : billing.data && accountId && <BillingBody companyId={companyId} accountId={accountId} billing={billing.data} canManage={canManage} />}
-          </>
-        )}
-    </>
+        : billing.isLoading ? <StatSkeletons count={3} />
+        : billing.isError ? <ErrorMsg role="alert">{adsErrorMessage(billing.error)}</ErrorMsg>
+        : billing.data && accountId && <BillingBody companyId={companyId} accountId={accountId} billing={billing.data} canManage={canManage} />}
+    </StudioPage>
   )
 }
 
 function BillingBody({ companyId, accountId, billing, canManage }: { companyId: string; accountId: string; billing: AdBillingView; canManage: boolean }) {
   const testMode = billing.mode === 'test'
+  const spent30 = billing.statement
+    .filter((line) => line.type === 'SPEND' && Date.now() - new Date(line.createdAt).getTime() <= 30 * 86_400_000)
+    .reduce((sum, line) => sum - line.amountCents, 0)
+  const pending = billing.topUps.filter((topUp) => topUp.status === 'PENDING')
   return (
     <>
       {testMode && (
-        <Notice role="note">
-          <strong>Modo de teste.</strong> Nenhum dinheiro de verdade é cobrado. Depois de gerar a recarga, use "Simular pagamento" para o saldo entrar.
-        </Notice>
+        <div style={{ marginBottom: 16 }}>
+          <Callout tone="info" icon={Info} role="note">
+            <strong>Modo de teste.</strong> Nenhum dinheiro de verdade é cobrado. Depois de gerar a recarga, use “Simular pagamento” para o saldo entrar.
+          </Callout>
+        </div>
       )}
       {!billing.reconciled && (
-        <ErrorMsg role="alert">O saldo desta conta não bate com o extrato. Não faça recargas e fale com o suporte do Votz.</ErrorMsg>
+        <div style={{ marginBottom: 16 }}>
+          <Callout tone="action" icon={WarningCircle} role="alert">O saldo desta conta não bate com o extrato. Não faça recargas e fale com o suporte do Votz.</Callout>
+        </div>
       )}
 
-      <Card>
-        <Hint>Saldo de {billing.account.name}</Hint>
-        <Balance aria-label="Saldo atual">{formatBRL(billing.account.balanceCents)}</Balance>
-        <Hint>
-          {billing.account.balanceCents > 0
-            ? 'Com saldo e um anúncio aprovado, você já pode ligar campanhas.'
-            : 'Sem saldo não dá para ligar campanhas. Recarregue abaixo.'}
-        </Hint>
-      </Card>
+      <StatGrid style={{ marginBottom: 16 }}>
+        <StatCard label={`Saldo de ${billing.account.name}`} icon={Wallet} value={<span aria-label="Saldo atual">{formatBRL(billing.account.balanceCents)}</span>} hint={billing.account.balanceCents > 0 ? 'Pronto para rodar campanhas' : 'Sem saldo, as campanhas não rodam'} />
+        <StatCard label="Gasto nos últimos 30 dias" icon={Receipt} value={formatBRL(spent30)} hint="pelo extrato" />
+        <StatCard label="Recargas esperando pagamento" icon={ClockCountdown} value={String(pending.length)} hint={pending.length ? formatBRL(pending.reduce((sum, t) => sum + t.amountCents, 0)) : 'nenhuma'} />
+      </StatGrid>
 
-      {canManage && <TopUpForm companyId={companyId} accountId={accountId} billing={billing} />}
+      <BillingGrid>
+        <div>
+          <Card>
+            <CardTitle>Recargas</CardTitle>
+            {billing.topUps.length === 0 ? <Hint>Você ainda não pediu nenhuma recarga.</Hint>
+              : billing.topUps.map((topUp) => <TopUpRow key={topUp.id} companyId={companyId} accountId={accountId} topUp={topUp} testMode={testMode} canManage={canManage} />)}
+          </Card>
 
-      <Card>
-        <CardTitle>Recargas</CardTitle>
-        {billing.topUps.length === 0 ? <Hint>Você ainda não pediu nenhuma recarga.</Hint>
-          : billing.topUps.map((topUp) => <TopUpRow key={topUp.id} companyId={companyId} accountId={accountId} topUp={topUp} testMode={testMode} canManage={canManage} />)}
-      </Card>
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            <CardTitle style={{ padding: '16px 18px 0' }}>Extrato</CardTitle>
+            {billing.statement.length === 0 ? <Hint style={{ padding: '4px 18px 16px' }}>Nada por aqui ainda. Quando o saldo mudar, aparece neste extrato.</Hint> : (
+              <TableScroll style={{ marginTop: 10 }}>
+                <DataTable>
+                  <thead><tr><th className="left">Quando</th><th className="left">O que foi</th><th>Valor</th><th>Saldo depois</th></tr></thead>
+                  <tbody>
+                    {billing.statement.map((line) => (
+                      <tr key={line.id}>
+                        <td className="left dim">{when(line.createdAt)}</td>
+                        <td className="left wrap" style={{ minWidth: 180 }}>{AD_LEDGER_TYPE_LABELS[line.type]}<Hint>{line.description}</Hint></td>
+                        <td className="num"><Amount $negative={line.amountCents < 0}>{line.amountCents > 0 ? '+' : '−'}{formatBRL(Math.abs(line.amountCents))}</Amount></td>
+                        <td className="num">{formatBRL(line.balanceAfterCents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+              </TableScroll>
+            )}
+          </Card>
+        </div>
 
-      <AutoTopUpSection key={`auto-${accountId}-${billing.autoTopUp?.consentAt ?? 'off'}-${billing.autoTopUp?.enabled}`} companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
-      <RefundSection companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
-      <InvoicesSection billing={billing} />
-
-      <Card>
-        <CardTitle>Extrato</CardTitle>
-        {billing.statement.length === 0 ? <Hint>Nada por aqui ainda. Quando o saldo mudar, aparece neste extrato.</Hint> : (
-          <ScrollX>
-          <Statement>
-            <thead><tr><th>Quando</th><th>O que foi</th><th className="num">Valor</th><th className="num">Saldo depois</th></tr></thead>
-            <tbody>
-              {billing.statement.map((line) => (
-                <tr key={line.id}>
-                  <td>{when(line.createdAt)}</td>
-                  <td>{AD_LEDGER_TYPE_LABELS[line.type]}<Hint>{line.description}</Hint></td>
-                  <td className="num"><Amount $negative={line.amountCents < 0}>{line.amountCents > 0 ? '+' : '−'}{formatBRL(Math.abs(line.amountCents))}</Amount></td>
-                  <td className="num"><Mono>{formatBRL(line.balanceAfterCents)}</Mono></td>
-                </tr>
-              ))}
-            </tbody>
-          </Statement>
-          </ScrollX>
-        )}
-      </Card>
+        <div>
+          {canManage && <TopUpForm companyId={companyId} accountId={accountId} billing={billing} />}
+          <AutoTopUpSection key={`auto-${accountId}-${billing.autoTopUp?.consentAt ?? 'off'}-${billing.autoTopUp?.enabled}`} companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
+          <RefundSection companyId={companyId} accountId={accountId} billing={billing} canManage={canManage} />
+          <InvoicesSection billing={billing} />
+        </div>
+      </BillingGrid>
     </>
   )
 }

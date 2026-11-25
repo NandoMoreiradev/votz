@@ -255,20 +255,12 @@ export class AuthService {
 
     // Se MFA habilitado → emite token temporário de 5 min para verificação
     if (user.mfaEnabled) {
-      const mfaToken = await this.jwt.signAsync(
-        { sub: user.id, type: 'mfa_pending' },
-        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '5m', algorithm: 'HS256' },
-      )
-      return { requiresMfa: true, mfaToken }
+      return { requiresMfa: true, mfaToken: await this.signMfaPendingToken(user.id) }
     }
 
     // Perfis privilegiados sem MFA ativo → bloqueio com token de setup
     if (requiresMandatoryMfa(user.type)) {
-      const mfaSetupToken = await this.jwt.signAsync(
-        { sub: user.id, type: 'mfa_setup_required' },
-        { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30m', algorithm: 'HS256' },
-      )
-      return { requiresMfaSetup: true, mfaSetupToken }
+      return { requiresMfaSetup: true, mfaSetupToken: await this.signMfaSetupToken(user.id) }
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
@@ -753,10 +745,53 @@ export class AuthService {
       data: { lastLoginAt: new Date(), inactivityNoticeSentAt: null },
     })
 
+    // Mesmas regras do login com senha: o Google prova o e-mail, não substitui o segundo fator.
+    // Quem tem MFA ativo digita o código; admin e moderador sem MFA são levados a configurar.
+    if (user.mfaEnabled) {
+      return { requiresMfa: true as const, mfaToken: await this.signMfaPendingToken(user.id) }
+    }
+    if (requiresMandatoryMfa(user.type)) {
+      return { requiresMfaSetup: true as const, mfaSetupToken: await this.signMfaSetupToken(user.id) }
+    }
+
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.type)
     void this.accessLog.record(user.id, AccessEvent.GOOGLE_LOGIN, ip)
 
     return { user: toPublicUser(user), accessToken, refreshToken }
+  }
+
+  /**
+   * Lê o desafio de MFA guardado em cookie pelo callback do Google e devolve o token ao site,
+   * no corpo da resposta (nunca na URL). Aceita só os dois tipos de token de login pendente.
+   */
+  async readGooglePendingMfa(token: string | undefined) {
+    if (!token) throw new UnauthorizedException('Login com Google expirado')
+    let payload: { sub: string; type: string }
+    try {
+      payload = await this.jwt.verifyAsync(token, {
+        secret: this.config.getOrThrow('JWT_SECRET'),
+        algorithms: ['HS256'],
+      })
+    } catch {
+      throw new UnauthorizedException('Login com Google expirado')
+    }
+    if (payload.type === 'mfa_pending') return { requiresMfa: true as const, mfaToken: token }
+    if (payload.type === 'mfa_setup_required') return { requiresMfaSetup: true as const, mfaSetupToken: token }
+    throw new UnauthorizedException('Invalid token type')
+  }
+
+  private signMfaPendingToken(userId: string) {
+    return this.jwt.signAsync(
+      { sub: userId, type: 'mfa_pending' },
+      { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '5m', algorithm: 'HS256' },
+    )
+  }
+
+  private signMfaSetupToken(userId: string) {
+    return this.jwt.signAsync(
+      { sub: userId, type: 'mfa_setup_required' },
+      { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30m', algorithm: 'HS256' },
+    )
   }
 
   // ─────────────────────────────────────────────

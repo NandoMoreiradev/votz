@@ -24,6 +24,7 @@ import { OrgPermission, OrgType } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { OrgPermissionGuard, RequireOrgPermission } from '../org-memberships/org-memberships.guard'
+import { AdsConversionsService } from '../ads/ads-conversions/ads-conversions.service'
 import { PAGE_MEDIA_MAX_BYTES, PageInboxService } from './page-inbox.service'
 import {
   PageFollowersQueryDto,
@@ -60,7 +61,19 @@ function sendMediaFile(res: Response, file: { buffer: Buffer; mimeType: string; 
 @UseGuards(JwtAuthGuard)
 @Controller('page-inbox')
 export class PageInboxController {
-  constructor(private readonly service: PageInboxService) {}
+  constructor(
+    private readonly service: PageInboxService,
+    private readonly ads: AdsConversionsService,
+  ) {}
+
+  /**
+   * Se a pessoa veio de um anúncio de mensagens, conta a conversa iniciada. Só entrega QUEM, PARA QUAL empresa e o
+   * identificador do clique ao serviço de anúncios: nunca o texto, o anexo nem a conversa. Falhar não atrapalha a mensagem.
+   */
+  private async countAdConversation(userId: string, orgType: OrgType, orgId: string, adClickId?: string) {
+    if (!adClickId || orgType !== OrgType.COMPANY) return
+    await this.ads.recordMessageStarted({ userId, companyId: orgId, clickId: adClickId })
+  }
 
   // ── Cidadão ────────────────────────────────────────────────────────────────
 
@@ -119,21 +132,23 @@ export class PageInboxController {
   @ApiOperation({ summary: 'Enviar mensagem para a equipe de uma página' })
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post(':orgType/:orgId/messages')
-  send(
+  async send(
     @CurrentUser() user: Authed,
     @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Body() dto: PageMessageDto,
   ) {
     requireVerified(user)
-    return this.service.sendAsCitizen(user.id, orgType, orgId, dto.text, dto.replyToId)
+    const sent = await this.service.sendAsCitizen(user.id, orgType, orgId, dto.text, dto.replyToId)
+    await this.countAdConversation(user.id, orgType, orgId, dto.adClickId)
+    return sent
   }
 
   @ApiOperation({ summary: 'Enviar mídia ou áudio para a equipe de uma página' })
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PAGE_MEDIA_MAX_BYTES } }))
   @Post(':orgType/:orgId/media')
-  sendMedia(
+  async sendMedia(
     @CurrentUser() user: Authed,
     @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -141,7 +156,9 @@ export class PageInboxController {
     @Body() dto: PageMediaDto,
   ) {
     requireVerified(user)
-    return this.service.sendMediaAsCitizen(user.id, orgType, orgId, file, dto)
+    const sent = await this.service.sendMediaAsCitizen(user.id, orgType, orgId, file, dto)
+    await this.countAdConversation(user.id, orgType, orgId, dto.adClickId)
+    return sent
   }
 
   // ── Equipe da página ───────────────────────────────────────────────────────

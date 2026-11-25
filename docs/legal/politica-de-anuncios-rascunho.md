@@ -57,14 +57,26 @@ Saúde (clínicas, farmácias, planos), educação (cursos, faculdades), serviç
 - "Por que estou vendo isto?" em cada anúncio.
 - Esconder um anúncio ou todos de uma empresa.
 - Os dados de anúncio entram na exportação e na exclusão de dados da LGPD.
+- A tela "Preferências de anúncios" explica o que fica registrado quando a pessoa escreve para uma empresa depois de tocar num anúncio de mensagens.
 
 ## 8. Para o anunciante
 
 - Relatórios só com números agregados, nunca com menos de 100 pessoas por recorte. O anunciante nunca sabe quem viu.
 - Sem pixel nem rastreador. Conversões só pelo identificador do clique, sem dado pessoal.
+- Em anúncio de mensagens, "Conversas iniciadas" e "Custo por conversa" aparecem só como número; o anunciante não sabe quem escreveu por causa do anúncio.
 - O anúncio passa por revisão automática e, quando preciso, humana, antes de rodar. Recusas podem ser contestadas.
 - Pagamento pré-pago, com nota fiscal em cada recarga.
 - O Votz pode suspender anúncios e contas que violem esta política, sem reembolso do que já foi entregue, e devolve o saldo não usado.
+
+### Anúncios de mensagens
+
+- O botão abre uma conversa com a **equipe da página da empresa** no Votz. A empresa lê a mensagem, como em qualquer conversa com a página dela.
+- Para o anúncio, o Votz só registra **que alguém escreveu** (uma conta por toque no anúncio), para o relatório da empresa. Quem foi e o que foi escrito não entram nessa conta, e isso não muda os anúncios que a pessoa vê.
+- O anunciante é cobrado **por clique**, não por mensagem recebida, e precisa ter alguém da equipe com permissão de responder (sem isso a campanha não liga).
+- A empresa usa a conversa só para atender a pessoa. Não pode usar a mensagem para lista de transmissão, revenda ou anúncio fora do Votz sem o aceite da pessoa.
+- **Destino WhatsApp:** o botão abre uma conversa no WhatsApp da empresa, com uma mensagem inicial que a empresa escreve (até 200 letras, sem link; a moderação confere). **A empresa vê o número de telefone de quem chamar**, e o Votz avisa a pessoa antes de abrir ("Abrir o WhatsApp? A empresa vai ver o seu número de telefone"); só depois do aviso o toque conta e é cobrado. O Votz não diz à empresa quem tocou no anúncio e não mede se a conversa começou.
+- Quem anuncia pelo WhatsApp usa o número de quem chamou **só para atender**: sem lista de transmissão, sem revenda e sem anúncio fora do Votz sem o aceite da pessoa.
+- O número de WhatsApp da empresa não aparece na biblioteca pública de anúncios.
 
 ## 9. Perguntas para o advogado
 
@@ -73,3 +85,5 @@ Saúde (clínicas, farmácias, planos), educação (cursos, faculdades), serviç
 3. Precisamos de cláusulas específicas de CDC e CONAR nos termos do anunciante? Quais setores restritos exigem documentação (ex.: saúde)?
 4. A proibição total de anúncio político é compatível com a Res. TSE 23.610 e nos dispensa do repositório de impulsionamento político?
 5. Tratamento de menores: a verificação por data de nascimento opcional é suficiente, dado que o cadastro já exige 18 anos (ECA Digital, Lei 15.211/2025)?
+6. Anúncio de mensagens: gravar só **o fato** de que alguém escreveu à página depois de tocar no anúncio (sem texto, só número para o anunciante) é compatível com "mensagens não são usadas para anúncios"? O texto da tela de preferências (`AD_PREFERENCES_COPY.messagesText`) basta como aviso?
+7. WhatsApp como destino: a empresa passa a ver o número de telefone de quem tocou. Que aviso e que cláusula no termo do anunciante (uso do número só para atender) são necessários antes de abrir?

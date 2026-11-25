@@ -42,11 +42,15 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
   padding: 24px 32px 64px;
 
   @media (max-width: 640px) { padding: 16px 16px 48px; }
+`
+
+const PageHeader = styled.div`
+  margin-bottom: 28px;
 `
 
 const PageTitle = styled.h1`
@@ -54,7 +58,12 @@ const PageTitle = styled.h1`
   font-size: ${({ theme }) => theme.fontSizes['2xl']};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 24px;
+  margin-bottom: 4px;
+`
+
+const PageSubtitle = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.muted};
 `
 
 const StatsGrid = styled.div`
@@ -91,24 +100,29 @@ const Tabs = styled.div`
   gap: 4px;
   border-bottom: 2px solid ${({ theme }) => theme.colors.border};
   margin-bottom: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `
 
 const Tab = styled.button<{ $active: boolean }>`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 16px 12px;
   border: none;
   background: none;
   cursor: pointer;
+  white-space: nowrap;
   font-size: 0.9375rem;
-  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  font-weight: ${({ $active }) => ($active ? 700 : 400)};
   color: ${({ $active, theme }) => $active ? theme.colors.primary : theme.colors.muted};
   border-bottom: 2px solid ${({ $active, theme }) => $active ? theme.colors.primary : 'transparent'};
   margin-bottom: -2px;
   transition: all 0.15s;
 
-  &:hover { color: ${({ theme }) => theme.colors.text}; }
+  &:hover { color: ${({ theme }) => theme.colors.primary}; }
 `
 
 const TabCount = styled.span`
@@ -1170,7 +1184,10 @@ export function Admin() {
     <Page>
       <Navbar />
       <Content>
-        <PageTitle>Painel de moderação</PageTitle>
+        <PageHeader>
+          <PageTitle>Painel de moderação</PageTitle>
+          <PageSubtitle>Solicitações, sinalizações e revisão de conteúdo da plataforma.</PageSubtitle>
+        </PageHeader>
 
         {stats && (
           <StatsGrid>

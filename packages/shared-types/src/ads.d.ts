@@ -369,6 +369,8 @@ export declare const AD_PREFERENCES_COPY: {
     readonly usedItems: readonly ["Sua cidade, estado e bairro do cadastro", "Sua faixa de idade e seu gênero, se você informou (nunca a data de nascimento)", "Os interesses que você escolher aqui", "As empresas que você segue", "Os anúncios que você viu, tocou ou escondeu"];
     readonly neverTitle: "O que nunca usamos";
     readonly neverItems: readonly ["Seus relatos, apoios, votos, comentários e debates", "Os políticos e órgãos públicos que você segue", "Suas conversas (só você e quem conversa com você conseguem ler)", "Seu CPF, seu endereço e sua localização exata", "Temas como política, religião, saúde e outros dados sensíveis"];
+    readonly messagesTitle: "Se você escrever para uma empresa depois de tocar num anúncio";
+    readonly messagesText: "A empresa lê a sua mensagem, como em qualquer conversa com a página dela. Para o anúncio, só fica registrado que alguém escreveu, para contar no relatório da empresa. Quem foi e o que foi escrito não entram nessa conta, e isso não muda os anúncios que você vê.";
     readonly interestsTitle: "Seus interesses";
     readonly interestsHint: "Escolha até 10. Eles só são usados se a opção acima estiver ligada.";
     readonly interestsLimit: "Você já escolheu 10 interesses. Tire um para escolher outro.";
@@ -376,13 +378,58 @@ export declare const AD_PREFERENCES_COPY: {
     readonly saved: "Preferências salvas.";
     readonly saveError: "Não foi possível salvar agora. Tente de novo.";
 };
-export declare const AD_OBJECTIVES: readonly ["AWARENESS", "TRAFFIC", "CONVERSIONS"];
+export declare const AD_OBJECTIVES: readonly ["AWARENESS", "TRAFFIC", "CONVERSIONS", "MESSAGES"];
 export type AdObjective = (typeof AD_OBJECTIVES)[number];
 export declare const AD_OBJECTIVE_LABELS: Record<AdObjective, {
     label: string;
     hint: string;
     billing: string;
 }>;
+/**
+ * Para onde o botão do anúncio leva. `URL`: o site do anunciante. `PAGE_MESSAGE`: o chat da página da empresa no Votz.
+ * `WHATSAPP`: conversa no WhatsApp (ainda fechado: o servidor recusa até a etapa do WhatsApp abrir).
+ */
+export declare const AD_DESTINATION_KINDS: readonly ["URL", "PAGE_MESSAGE", "WHATSAPP"];
+export type AdDestinationKind = (typeof AD_DESTINATION_KINDS)[number];
+export declare const AD_DESTINATION_KIND_LABELS: Record<AdDestinationKind, {
+    label: string;
+    hint: string;
+}>;
+/** Destinos que cada objetivo aceita: mensagens vai a conversa, os outros vão a site. */
+export declare function adDestinationKindsFor(objective: AdObjective): readonly AdDestinationKind[];
+/** Destinos que o Estúdio e a API aceitam hoje. */
+export declare const AD_DESTINATION_KINDS_OPEN: readonly AdDestinationKind[];
+export declare const AD_WHATSAPP: {
+    /** Mensagem inicial que já vem escrita quando a pessoa abre o WhatsApp. */
+    readonly TEXT_MAX: 200;
+    /** Vale quando o anunciante não escreve nenhuma. */
+    readonly DEFAULT_TEXT: "Olá! Vi o anúncio de vocês no Votz.";
+};
+/**
+ * Número de WhatsApp do Brasil, só dígitos com o 55 na frente (ex.: 5511987654321), ou `null` se não serve. Aceita com
+ * ou sem +55, com espaço, parênteses e traço. Só celular (DDD + 9 + oito dígitos), porque é o que o WhatsApp usa.
+ */
+export declare function normalizeBrazilianMobile(raw: string): string | null;
+/** Mostra o número como a pessoa digita: (11) 98765-4321. */
+export declare function formatBrazilianMobile(phone: string): string;
+/** Motivo (português simples) de a mensagem inicial não servir, ou `null`. Vazia vale: usa o texto padrão. */
+export declare function whatsappTextProblem(text: string | null | undefined): string | null;
+/** A mensagem inicial que vale (a do anunciante ou a padrão). */
+export declare function whatsappTextOrDefault(text: string | null | undefined): string;
+/** Endereço que abre a conversa no WhatsApp. `phone` já normalizado (só dígitos, com 55). */
+export declare function buildWhatsAppUrl(phone: string, text: string): string;
+/** Aviso antes de abrir o WhatsApp (igual no site e no celular): a empresa vai ver o número da pessoa. */
+export declare const AD_WHATSAPP_COPY: {
+    readonly title: "Abrir o WhatsApp?";
+    readonly body: (name: string) => string;
+    readonly continue: "Abrir o WhatsApp";
+    readonly cancel: "Agora não";
+};
+/**
+ * Textos de botão que combinam com o destino: o botão não pode prometer uma coisa e abrir outra. Quem leva ao chat do
+ * Votz diz "Enviar mensagem"; quem leva ao WhatsApp diz "Falar no WhatsApp"; site aceita os outros.
+ */
+export declare function adCtaLabelsFor(kind: AdDestinationKind): readonly AdCtaLabel[];
 export declare const AD_STATUSES: readonly ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"];
 export type AdStatus = (typeof AD_STATUSES)[number];
 export declare const AD_STATUS_LABELS: Record<AdStatus, string>;
@@ -404,7 +451,7 @@ export declare const AD_LIMITS: {
     readonly MAX_CITIES: 50;
 };
 /** Textos de botão que o anunciante pode escolher (sem texto livre, para não virar isca). */
-export declare const AD_CTA_LABELS: readonly ["Saiba mais", "Comprar", "Pedir agora", "Agendar", "Falar no WhatsApp", "Ver cardápio", "Inscrever-se", "Ver oferta"];
+export declare const AD_CTA_LABELS: readonly ["Saiba mais", "Comprar", "Pedir agora", "Agendar", "Falar no WhatsApp", "Ver cardápio", "Inscrever-se", "Ver oferta", "Enviar mensagem"];
 export type AdCtaLabel = (typeof AD_CTA_LABELS)[number];
 export interface AdAccountView {
     id: string;
@@ -443,7 +490,14 @@ export interface AdCreativeView {
     headline: string;
     body: string;
     ctaLabel: string;
+    /** Em `PAGE_MESSAGE` e `WHATSAPP` é o endereço que o servidor montou; o anunciante não digita. */
     destinationUrl: string;
+    destinationKind: AdDestinationKind;
+    /** Só em `WHATSAPP`: o número (dígitos com 55) e a mensagem inicial. Nunca vai para a biblioteca nem para o feed. */
+    whatsapp: {
+        phone: string;
+        text: string;
+    } | null;
     /** A primeira foto ou o vídeo do anúncio; null se é só texto. Existe para os apps antigos, que só sabem desenhar uma. */
     media: MediaItemDto | null;
     /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: o anúncio é só texto. `media` é o primeiro item. */
@@ -502,7 +556,13 @@ export interface CreateAdCampaignInput {
         headline: string;
         body: string;
         ctaLabel: AdCtaLabel;
-        destinationUrl: string;
+        /** Para onde o botão leva. Sem isto vale `URL`. O objetivo "Receber mensagens" só aceita `PAGE_MESSAGE` (e `WHATSAPP`, quando abrir). */
+        destinationKind?: AdDestinationKind;
+        /** Só em `URL`. Nos outros destinos o servidor monta o endereço. */
+        destinationUrl?: string;
+        /** Só em `WHATSAPP`: o número da empresa (com ou sem +55) e a mensagem inicial (opcional, até `AD_WHATSAPP.TEXT_MAX` letras). */
+        whatsappPhone?: string;
+        whatsappText?: string;
         /** Uma foto ou vídeo enviado pelo Estúdio (`POST .../media`) com a moldura e o enquadramento escolhidos. */
         media?: {
             id: string;
@@ -898,6 +958,8 @@ export declare const AD_PRICING: {
     readonly MIN_CPM_CENTS: 600;
     /** R$ 0,40 por clique. */
     readonly MIN_CPC_CENTS: 40;
+    /** R$ 0,80 por clique no objetivo "Receber mensagens" (decisão do dono, 24/11/2026: clique que leva a falar com a equipe vale mais). */
+    readonly MIN_CPC_MESSAGES_CENTS: 80;
 };
 /** Regras de entrega do Votz (valem para qualquer anunciante). */
 export declare const AD_DELIVERY: {
@@ -916,11 +978,26 @@ export declare const AD_FRAUD: {
     readonly MAX_CLOCK_SKEW_MS: number;
 };
 export type AdInvalidReason = 'IMPRESSION_UNKNOWN' | 'IMPRESSION_EXPIRED' | 'NOT_VIEWABLE' | 'CLICK_TOO_FAST' | 'TOO_MANY_CLICKS' | 'CLOCK_SKEW' | 'DUPLICATE_ACTION';
-export declare function adChargeUnit(objective: 'AWARENESS' | 'TRAFFIC' | 'CONVERSIONS'): 'VIEWABLE_IMPRESSION' | 'CLICK';
+export declare function adChargeUnit(objective: AdObjective): 'VIEWABLE_IMPRESSION' | 'CLICK';
 /** Preço mínimo, em centavos, da unidade cobrada (mil exibições visíveis ou um clique). */
-export declare function adFloorCents(objective: 'AWARENESS' | 'TRAFFIC' | 'CONVERSIONS'): number;
+export declare function adFloorCents(objective: AdObjective): number;
 /** Quanto custa UMA exibição visível (CPM) ou UM clique (CPC), em millicents, dado o preço em centavos da unidade. */
-export declare function adChargeMillicents(objective: 'AWARENESS' | 'TRAFFIC' | 'CONVERSIONS', priceCents: number): number;
+export declare function adChargeMillicents(objective: AdObjective, priceCents: number): number;
+/**
+ * Para onde o botão do anúncio leva, dito de um jeito que o site e o celular abrem por dentro do app. Só `PAGE_MESSAGE`
+ * tem destino interno hoje (o chat da página da empresa); site e WhatsApp seguem por `clickUrl`.
+ */
+export interface SponsoredAdDestination {
+    kind: AdDestinationKind;
+    /** Só em `PAGE_MESSAGE`: a página que recebe a mensagem. */
+    orgType?: 'COMPANY';
+    orgId?: string;
+}
+/**
+ * Endereço do chat da página dentro do site, com o identificador do clique (o mesmo `votz_click_id` que o link de reserva
+ * leva). A tela do chat guarda o identificador e o manda junto com a primeira mensagem; é assim que a conversa é contada.
+ */
+export declare function adPageMessagePath(orgId: string, clickId?: string): string;
 /** O anúncio como o feed mostra. Nunca leva dado do anunciante além da página dele; nunca leva o alvo escolhido. */
 export interface SponsoredAdView {
     /** Identifica esta exibição; volta em todos os eventos (visível, clique, esconder). */
@@ -935,6 +1012,10 @@ export interface SponsoredAdView {
      * link. É isso que deixa o anunciante contar conversões sem rastrear a pessoa.
      */
     clickUrl: string;
+    /** Identificador do clique (o mesmo do final de `clickUrl`). Quem abre o chat por dentro do app manda isto com a primeira mensagem. */
+    clickId: string;
+    /** Onde o botão cai. Apps antigos ignoram e abrem `clickUrl`, que leva ao mesmo lugar. */
+    destination: SponsoredAdDestination;
     /** A primeira foto ou o vídeo (para os apps antigos, que só desenham uma); null se é só texto. */
     media: MediaItemDto | null;
     /** Todas as fotos do carrossel (ou o vídeo), prontas para desenhar e na ordem. Vazio: só texto. `media` é o primeiro. */
@@ -965,6 +1046,8 @@ export interface AdDailyStatView {
     conversions: number;
     /** Soma dos valores das conversões, em centavos. */
     conversionValueCents: number;
+    /** Conversas iniciadas: pessoas que tocaram no anúncio de mensagens e escreveram para a página da empresa (uma por clique). */
+    messageConversations: number;
 }
 export declare const AD_REPORT_PERIODS: readonly [7, 30, 90];
 export type AdReportPeriod = (typeof AD_REPORT_PERIODS)[number];
@@ -976,6 +1059,10 @@ export interface AdReportTotals {
     spendCents: number;
     conversions: number;
     conversionValueCents: number;
+    /** Conversas iniciadas pelos anúncios de mensagens no período. */
+    messageConversations: number;
+    /** Gasto por conversa iniciada, em centavos. Nulo se ninguém escreveu ainda. */
+    costPerMessageCents: number | null;
     /** Custo por conversão, em centavos. Nulo se não houve conversão. */
     cpaCents: number | null;
     /** Cliques sobre exibições vistas, em %. Nulo se ninguém viu ainda. */
@@ -1021,6 +1108,8 @@ export interface AdLibraryItem {
     ctaLabel: string;
     /** Só o endereço do site (ex.: padaria.com.br), sem caminho nem parâmetros. */
     destinationHost: string | null;
+    /** Para onde o botão leva. Chat da página e WhatsApp não mostram endereço: só o tipo. */
+    destinationKind: AdDestinationKind;
     media: MediaItemDto | null;
     /** Todas as fotos do carrossel (ou o vídeo), na ordem. Vazio: só texto. `media` é o primeiro. */
     mediaItems: MediaItemDto[];
@@ -1106,6 +1195,9 @@ export interface UpdateAdInput {
     body?: string;
     ctaLabel?: AdCtaLabel;
     destinationUrl?: string;
+    /** Só em anúncio de WhatsApp. */
+    whatsappPhone?: string;
+    whatsappText?: string;
 }
 /** Público e orçamento do conjunto. A data de início não muda depois de criada. Não precisa de nova revisão. */
 export interface UpdateAdSetInput {

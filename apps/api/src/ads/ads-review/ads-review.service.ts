@@ -1,3 +1,4 @@
+import { whatsappOf } from '../ads-campaigns/destination-rules'
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { NotificationsService } from '../../notifications/notifications.service'
 import * as DOMPurify from 'isomorphic-dompurify'
@@ -130,6 +131,9 @@ function creativeSnapshot(creative: {
   body: string
   ctaLabel: string
   destinationUrl: string
+  destinationKind?: string
+  whatsappPhone?: string | null
+  whatsappText?: string | null
   media: { id: string; kind: string; format: string | null }[]
 }) {
   const items = creative.media.map((media) => ({ id: media.id, kind: media.kind, format: media.format }))
@@ -138,6 +142,8 @@ function creativeSnapshot(creative: {
     body: creative.body,
     ctaLabel: creative.ctaLabel,
     destinationUrl: creative.destinationUrl,
+    destinationKind: creative.destinationKind ?? 'URL',
+    ...(creative.whatsappPhone ? { whatsappPhone: creative.whatsappPhone, whatsappText: creative.whatsappText ?? null } : {}),
     // `media` é o primeiro (como nos registros antigos); `mediaItems` guarda o carrossel inteiro, na ordem.
     media: items[0] ?? null,
     mediaItems: items,
@@ -170,6 +176,8 @@ function toQueueItem(ad: QueueAd, publicUrl: (key: string) => string): AdReviewQ
       body: ad.creative.body,
       ctaLabel: ad.creative.ctaLabel,
       destinationUrl: ad.creative.destinationUrl,
+      destinationKind: ad.creative.destinationKind,
+      whatsapp: whatsappOf(ad.creative),
       media: mediaItems[0] ?? null,
       mediaItems,
     },

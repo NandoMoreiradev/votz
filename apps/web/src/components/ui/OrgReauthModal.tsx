@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import styled, { keyframes } from 'styled-components'
+import { Link } from 'react-router-dom'
 import { OrgProfile } from '../../types/api'
+import { useMe } from '../../hooks/useAuth'
 
 const fadeIn = keyframes`from { opacity: 0 } to { opacity: 1 }`
 const slideUp = keyframes`from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) }`
@@ -145,6 +147,22 @@ const WarningBox = styled.div`
   line-height: 1.5;
 `
 
+const SetupLink = styled(Link)`
+  flex: 2;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => theme.colors.primary};
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-decoration: none;
+
+  &:hover { opacity: 0.9; }
+`
+
 const CodeInput = styled.input`
   width: 100%;
   height: 52px;
@@ -228,6 +246,10 @@ export function OrgReauthModal({
   onCancel,
 }: OrgReauthModalProps) {
   const [mfaCode, setMfaCode] = useState('')
+  // Confere na API se o autenticador está ativo antes de pedir o código.
+  const { data: me, isLoading: meLoading } = useMe({ fresh: true })
+  const needsMfaSetup = mfaSetupRequired || me?.mfaEnabled === false
+  const checkingMfa = !me && meLoading
   const titleId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -266,7 +288,11 @@ export function OrgReauthModal({
             <span>◆</span> VOTZ
           </Logo>
           <Title id={titleId}>Confirme sua identidade</Title>
-          <Subtitle>Para retomar o perfil da organização, informe o código MFA.</Subtitle>
+          <Subtitle>
+            {needsMfaSetup
+              ? 'Falta um passo antes de retomar o perfil da organização.'
+              : 'Para retomar o perfil da organização, informe o código MFA.'}
+          </Subtitle>
         </Header>
 
         <form onSubmit={handleSubmit}>
@@ -281,10 +307,13 @@ export function OrgReauthModal({
               </div>
             </OrgRow>
 
-            {mfaSetupRequired ? (
+            {checkingMfa ? (
+              <Hint>Verificando sua conta…</Hint>
+            ) : needsMfaSetup ? (
               <WarningBox>
-                Você ainda não configurou o autenticador de dois fatores. Acesse{' '}
-                <strong>Editar perfil → Segurança</strong> para ativar antes de usar este perfil.
+                Para agir em nome de uma organização, sua conta precisa da verificação em duas etapas
+                (um app autenticador no celular), e ela ainda não está ativada. Ative em{' '}
+                <strong>Meu perfil → Autenticação em dois fatores</strong>. Leva um minuto.
               </WarningBox>
             ) : (
               <>
@@ -317,7 +346,11 @@ export function OrgReauthModal({
               <CancelBtn type="button" onClick={onCancel} disabled={loading}>
                 Cancelar
               </CancelBtn>
-              {!mfaSetupRequired && (
+              {needsMfaSetup ? (
+                <SetupLink to="/meu-perfil#autenticador" onClick={onCancel}>
+                  Ativar autenticador
+                </SetupLink>
+              ) : !checkingMfa && (
                 <ConfirmBtn type="submit" disabled={loading || mfaCode.length < 6}>
                   {loading ? 'Verificando…' : 'Confirmar'}
                 </ConfirmBtn>

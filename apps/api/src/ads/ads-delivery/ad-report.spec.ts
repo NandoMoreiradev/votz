@@ -1,6 +1,6 @@
 import { fillAdStatDays, summarizeAdStats, type AdDailyStatView } from '@votz/shared-types'
 
-const row = (day: string, patch: Partial<AdDailyStatView> = {}): AdDailyStatView => ({ day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0, ...patch })
+const row = (day: string, patch: Partial<AdDailyStatView> = {}): AdDailyStatView => ({ day, impressions: 0, viewableImpressions: 0, clicks: 0, hides: 0, spendCents: 0, conversions: 0, conversionValueCents: 0, messageConversations: 0, ...patch })
 
 describe('relatório do anunciante', () => {
   it('completa os dias sem movimento, do mais antigo até hoje', () => {
@@ -40,5 +40,26 @@ describe('relatório do anunciante', () => {
       row('2026-11-22', { spendCents: 450, conversions: 2, conversionValueCents: 4000 }),
     ])
     expect(totals).toMatchObject({ conversions: 3, conversionValueCents: 6500, cpaCents: 250 })
+  })
+})
+
+describe('conversas iniciadas pelos anúncios de mensagens', () => {
+  it('soma as conversas e calcula quanto custou cada uma, à parte das conversões do anunciante', () => {
+    const totals = summarizeAdStats([
+      row('2026-11-21', { spendCents: 240, messageConversations: 1 }),
+      row('2026-11-22', { spendCents: 400, messageConversations: 2, conversions: 1, conversionValueCents: 5000 }),
+    ])
+    expect(totals).toMatchObject({ messageConversations: 3, costPerMessageCents: 213, conversions: 1, cpaCents: 640 })
+  })
+
+  it('sem conversa, sem custo por conversa (não divide por zero)', () => {
+    const totals = summarizeAdStats([row('2026-11-21', { spendCents: 300 })])
+    expect(totals.messageConversations).toBe(0)
+    expect(totals.costPerMessageCents).toBeNull()
+  })
+
+  it('o dia sem movimento vem com zero conversas', () => {
+    const filled = fillAdStatDays([], 2, '2026-11-22')
+    expect(filled.map((day) => day.messageConversations)).toEqual([0, 0])
   })
 })

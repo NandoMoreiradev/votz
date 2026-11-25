@@ -50,6 +50,8 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'POST /auth/mfa/enable/forced',
   'POST /auth/mfa/setup/forced',
   'POST /auth/mfa/verify',
+  // Fim do login com Google quando há MFA: só devolve o token guardado no cookie curto do callback.
+  'POST /auth/google/pending-mfa',
   'POST /auth/refresh',
   'POST /auth/register',
   'POST /auth/verify-email',

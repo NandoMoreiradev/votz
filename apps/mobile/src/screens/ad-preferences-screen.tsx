@@ -73,6 +73,8 @@ export default function AdPreferencesScreen() {
         <View style={{ gap: 6 }}>
           <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary }}>{COPY.neverTitle}</Text>
           {COPY.neverItems.map((item) => <Text key={item} style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>• {item}</Text>)}
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary, marginTop: 8 }}>{COPY.messagesTitle}</Text>
+          <Text style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>{COPY.messagesText}</Text>
         </View>
 
         <View style={{ gap: 8 }}>

@@ -16,7 +16,7 @@ const notifications = { notify: jest.fn() }
 const storage = { getPublicUrl: (key: string) => `https://cdn.test/${key}` }
 
 const now = new Date('2026-11-22T12:00:00Z')
-const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: [] }
+const creative = { id: 'cr1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', destinationKind: 'URL', media: [] }
 const pendingAd = { id: 'ad1', reviewStatus: 'PENDING', creative, adSet: { campaign: { name: 'Dezembro', account: { companyId: 'co1' } } } }
 const mediaRow = (overrides: Record<string, unknown> = {}) => ({
   id: 'media-1', kind: 'VIDEO', status: 'READY', format: 'PORTRAIT', key: 'posts/m1.mp4', feedKey: null, thumbKey: null, posterKey: 'posts/m1.poster.jpg',
@@ -106,7 +106,7 @@ describe('AdsReviewService', () => {
         decision: 'APPROVED',
         reason: null,
         reviewerId: 'mod1',
-        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', media: null, mediaItems: [] },
+        creativeSnapshot: { headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', destinationKind: 'URL', media: null, mediaItems: [] },
       })
     })
 

@@ -115,8 +115,10 @@ interface DecoratedPageMessage {
   time: string
 }
 
-function PageThread({ orgType, orgId, initialName }: { orgType: OrgType; orgId: string; initialName?: string }) {
+function PageThread({ orgType, orgId, initialName, adClickId: arrivedWithClick }: { orgType: OrgType; orgId: string; initialName?: string; adClickId?: string }) {
   const client = useQueryClient()
+  // Veio de um anúncio de mensagens: o identificador vai com a primeira mensagem e some depois (o servidor conta uma vez por clique).
+  const [adClickId, setAdClickId] = useState<string | undefined>(arrivedWithClick && /^[A-Za-z0-9_-]{22}$/.test(arrivedWithClick) ? arrivedWithClick : undefined)
   const network = useNetworkState()
   const settingsQuery = useConversationSettings()
   const chatSettings = settingsQuery.data ?? DEFAULT_CONVERSATION_SETTINGS
@@ -216,8 +218,9 @@ function PageThread({ orgType, orgId, initialName }: { orgType: OrgType; orgId: 
     setReplyTo(null)
     setLocalError('')
     send.mutate(
-      { text: value, replyToId: replying?.eventId },
+      { text: value, replyToId: replying?.eventId, adClickId },
       {
+        onSuccess: () => setAdClickId(undefined),
         onError: (err) => {
           setDraft((c) => c || value)
           setReplyTo((c) => c ?? replying)
@@ -243,6 +246,7 @@ function PageThread({ orgType, orgId, initialName }: { orgType: OrgType; orgId: 
         mimeType: picked.mimeType,
         caption,
         replyToId: replying?.eventId,
+        adClickId,
         width: picked.width,
         height: picked.height,
         durationMs: picked.durationMs,
@@ -252,6 +256,7 @@ function PageThread({ orgType, orgId, initialName }: { orgType: OrgType; orgId: 
       setDraft('')
       setReplyTo(null)
       setQualityOverride(null)
+      setAdClickId(undefined)
     } catch (err) {
       if (!controller.signal.aborted) setLocalError(errorMessage(err))
     } finally {
@@ -477,7 +482,7 @@ function PageThread({ orgType, orgId, initialName }: { orgType: OrgType; orgId: 
 
 /** Conversa do cidadão com uma página dentro do módulo unificado de Conversas. */
 export default function PageConversationScreen() {
-  const { orgType, orgId, name } = useLocalSearchParams<{ orgType: OrgType; orgId: string; name?: string }>()
+  const { orgType, orgId, name, adClickId } = useLocalSearchParams<{ orgType: OrgType; orgId: string; name?: string; adClickId?: string }>()
   if (!orgType || !orgId) {
     return (
       <Screen>
@@ -489,7 +494,7 @@ export default function PageConversationScreen() {
   return (
     <Screen>
       <ConversationGate allowWithoutChat>
-        <PageThread orgType={orgType} orgId={orgId} initialName={name} />
+        <PageThread orgType={orgType} orgId={orgId} initialName={name} adClickId={adClickId} />
       </ConversationGate>
     </Screen>
   )

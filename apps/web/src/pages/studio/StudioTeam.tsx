@@ -7,24 +7,7 @@ import { usePolitician } from '../../hooks/usePoliticians'
 import { useEntity } from '../../hooks/useEntities'
 import { useCompany } from '../../hooks/useCompanies'
 import type { OrgType } from '../../hooks/useOrgMemberships'
-
-const Head = styled.header`
-  margin-bottom: 20px;
-`
-
-const Title = styled.h1`
-  margin: 0 0 4px;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes['2xl']};
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.text};
-`
-
-const Sub = styled.p`
-  margin: 0;
-  font-size: 0.9375rem;
-  color: ${({ theme }) => theme.colors.muted};
-`
+import { PageHeader, StudioPage } from '../../components/studio/studio-ui'
 
 const Stack = styled.div`
   display: flex;
@@ -56,16 +39,17 @@ export function StudioTeam() {
   const hasYoutube = activeContext.type === 'POLITICIAN' || activeContext.type === 'ENTITY'
 
   return (
-    <>
-      <Head>
-        <Title>Equipe e acesso</Title>
-        <Sub>Quem pode agir em nome de {activeContext.name}, o @usuário da página e os canais ligados a ela.</Sub>
-      </Head>
+    <StudioPage>
+      <PageHeader
+        crumbs={[{ label: 'Sua página' }, { label: 'Equipe e acesso' }]}
+        title="Equipe e acesso"
+        description={<>Quem pode agir em nome de {activeContext.name}, o @usuário da página e os canais ligados a ela.</>}
+      />
       <Stack>
         <TeamPanel orgType={activeContext.type} orgId={activeContext.id} currentUserId={user.id} />
         {canManageProfile && <HandleFor type={activeContext.type} id={activeContext.id} />}
         {hasYoutube && <YoutubeChannelsPanel />}
       </Stack>
-    </>
+    </StudioPage>
   )
 }

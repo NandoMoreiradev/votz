@@ -28,6 +28,8 @@ import { Public } from './decorators/public.decorator'
 import { ConfigService } from '@nestjs/config'
 
 const REFRESH_COOKIE = 'votz_refresh_token'
+// Desafio de MFA do login com Google: guardado em cookie curto para o token nunca ir na URL.
+const GOOGLE_MFA_COOKIE = 'votz_google_mfa'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -37,6 +39,13 @@ const COOKIE_OPTIONS = {
   sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000,
   path: '/',
+}
+
+const GOOGLE_MFA_COOKIE_BASE = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  path: '/api/v1/auth/google',
 }
 
 @ApiTags('auth')
@@ -262,10 +271,29 @@ export class AuthController {
   ) {
     assertValidOAuthState(req, res, true)
 
-    const { refreshToken } = await this.authService.googleLogin(profile, ip)
+    const result = await this.authService.googleLogin(profile, ip)
     const appUrl = this.config.get('APP_URL', 'http://localhost:5173')
 
-    res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS)
+    if ('requiresMfa' in result || 'requiresMfaSetup' in result) {
+      const pending = 'requiresMfa' in result ? result.mfaToken : result.mfaSetupToken
+      res.cookie(GOOGLE_MFA_COOKIE, pending, { ...GOOGLE_MFA_COOKIE_BASE, maxAge: 5 * 60 * 1000 })
+      res.redirect(`${appUrl}/entrar?google_mfa=1`)
+      return
+    }
+
+    res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS)
     res.redirect(`${appUrl}/auth/google/callback`)
+  }
+
+  @Public()
+  @Post('google/pending-mfa')
+  @UseGuards(OriginCsrfGuard)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ short: { limit: 3, ttl: 1_000 }, medium: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Finish Google login when MFA is required: returns mfaToken or mfaSetupToken (read once from cookie)' })
+  async googlePendingMfa(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = (req.cookies as Record<string, string | undefined> | undefined)?.[GOOGLE_MFA_COOKIE]
+    res.clearCookie(GOOGLE_MFA_COOKIE, GOOGLE_MFA_COOKIE_BASE)
+    return this.authService.readGooglePendingMfa(token)
   }
 }

@@ -59,6 +59,8 @@ export class AdsLandingService {
   async check(adId: string, trigger: LandingTrigger, now = new Date()): Promise<LandingOutcome> {
     const ad = await this.repo.findAdForCheck(adId)
     if (!ad) return 'skipped'
+    // Anúncio que abre o chat da página (ou o WhatsApp) não tem site para conferir.
+    if (ad.creative.destinationKind !== 'URL') return 'skipped'
 
     const result = await this.fetcher.fetch(ad.creative.destinationUrl)
     const previous = await this.repo.previousCheck(adId, now)

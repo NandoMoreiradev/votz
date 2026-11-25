@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { AdObjective, AdReviewStatus, AdStatus, Prisma, UserGender } from '@prisma/client'
+import { AdDestinationKind, AdObjective, AdReviewStatus, AdStatus, Prisma, UserGender } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CREATIVE_WITH_MEDIA } from '../ad-creative-media'
 
@@ -27,7 +27,7 @@ export interface NewCampaignData {
     genders: UserGender[]
     automaticAudience: boolean
   }
-  creative: { headline: string; body: string; ctaLabel: string; destinationUrl: string }
+  creative: { headline: string; body: string; ctaLabel: string; destinationUrl: string; destinationKind: AdDestinationKind; whatsappPhone?: string | null; whatsappText?: string | null }
   ad: { name: string; reviewStatus: AdReviewStatus; submittedAt: Date | null }
 }
 
@@ -50,6 +50,16 @@ export class AdsCampaignsRepository {
 
   createAccount(companyId: string, name: string, createdById: string) {
     return this.prisma.adAccount.create({ data: { companyId, name, createdById } })
+  }
+
+  /**
+   * Quantas pessoas da equipe da empresa podem responder mensagens da página (permissão REPLY_MESSAGES). Anúncio que leva
+   * ao chat da página só liga com pelo menos uma.
+   */
+  countStaffWhoCanReply(companyId: string) {
+    return this.prisma.orgMembership.count({
+      where: { orgType: 'COMPANY', orgId: companyId, status: 'ACTIVE', role: { permissions: { has: 'REPLY_MESSAGES' } } },
+    })
   }
 
   findAccount(accountId: string) {
@@ -113,7 +123,7 @@ export class AdsCampaignsRepository {
       where: { id: adId },
       include: {
         creative: CREATIVE_WITH_MEDIA,
-        adSet: { select: { campaign: { select: { id: true, status: true, account: { select: { companyId: true } } } } } },
+        adSet: { select: { campaign: { select: { id: true, status: true, objective: true, account: { select: { companyId: true } } } } } },
       },
     })
   }
@@ -129,7 +139,7 @@ export class AdsCampaignsRepository {
       expectedReviewStatus: AdReviewStatus
       backToReview: boolean
       name?: string
-      creative: { headline?: string; body?: string; ctaLabel?: string; destinationUrl?: string }
+      creative: { headline?: string; body?: string; ctaLabel?: string; destinationUrl?: string; whatsappPhone?: string | null; whatsappText?: string | null }
       /** Roda na mesma transação, depois de a situação de revisão ser conferida (usado para trocar a foto ou o vídeo). */
       inTransaction?: (tx: Prisma.TransactionClient, creativeId: string) => Promise<void>
     },

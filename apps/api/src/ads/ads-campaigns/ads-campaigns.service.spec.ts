@@ -19,6 +19,7 @@ import { CreateAdCampaignDto } from './dto/ads-campaigns.dto'
 
 const repo = {
   findCompany: jest.fn(),
+  countStaffWhoCanReply: jest.fn(),
   listAccounts: jest.fn(),
   countAccounts: jest.fn(),
   createAccount: jest.fn(),
@@ -33,7 +34,7 @@ const repo = {
 
 const now = new Date('2026-11-21T15:00:00Z')
 const account = { id: 'acc1', companyId: 'co1', name: 'Conta', currency: 'BRL', timezone: 'America/Sao_Paulo', balanceCents: 0, createdById: 'u1', createdAt: now, updatedAt: now }
-const creative = { id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', createdAt: now, updatedAt: now, media: [] }
+const creative = { id: 'cr1', accountId: 'acc1', headline: 'Pão quente', body: 'Entrega rápida', ctaLabel: 'Saiba mais', destinationUrl: 'https://padaria.com.br', destinationKind: 'URL', createdAt: now, updatedAt: now, media: [] }
 const ad = (reviewStatus: string) => ({ id: 'ad1', adSetId: 'set1', creativeId: 'cr1', name: 'Pão quente', status: 'DRAFT', reviewStatus, reviewNote: null, submittedAt: null, reviewedAt: null, createdAt: now, updatedAt: now, creative })
 const tree = (overrides: Record<string, unknown> = {}, reviewStatus = 'NOT_SUBMITTED') => ({
   id: 'camp1', accountId: 'acc1', name: 'Dezembro', objective: 'TRAFFIC', status: 'DRAFT', createdAt: now, updatedAt: now,
@@ -129,6 +130,105 @@ describe('AdsCampaignsService', () => {
       repo.createCampaign.mockResolvedValue(tree())
       await service.createCampaign('co1', 'acc1', validCampaign(), 'u1')
       expect(landing.enqueue).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('objetivo "Receber mensagens" (o botão abre o chat da página)', () => {
+    const messages = (patch: Record<string, unknown> = {}): CreateAdCampaignDto => ({
+      ...validCampaign(),
+      objective: 'MESSAGES',
+      creative: { headline: 'Fale com a gente', body: 'Tire suas dúvidas.', ctaLabel: 'Enviar mensagem', destinationKind: 'PAGE_MESSAGE', ...patch },
+    })
+
+    it('cria com destino no chat da página: o servidor monta o endereço, o anunciante não digita', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      config.get.mockImplementation((key: string) => (key === 'APP_URL' ? 'http://localhost:5173' : undefined))
+      repo.createCampaign.mockResolvedValue(tree())
+      await service.createCampaign('co1', 'acc1', messages(), 'u1')
+      const data = repo.createCampaign.mock.calls[0][0]
+      expect(data.objective).toBe('MESSAGES')
+      expect(data.creative).toMatchObject({ destinationKind: 'PAGE_MESSAGE', destinationUrl: 'http://localhost:5173/conversas/pagina/COMPANY/co1', ctaLabel: 'Enviar mensagem' })
+    })
+
+    it('link que o anunciante mandar junto é ignorado (nunca vira destino)', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      repo.createCampaign.mockResolvedValue(tree())
+      await service.createCampaign('co1', 'acc1', messages({ destinationUrl: 'https://golpe.com.br/x' }), 'u1')
+      expect(repo.createCampaign.mock.calls[0][0].creative.destinationUrl).toBe('https://votz.org.br/conversas/pagina/COMPANY/co1')
+    })
+
+    it('site com objetivo de mensagens, chat com objetivo de site, botão trocado e WhatsApp: tudo recusado antes de criar', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      const attempts: CreateAdCampaignDto[] = [
+        messages({ destinationKind: 'URL', destinationUrl: 'https://padaria.com.br', ctaLabel: 'Saiba mais' }),
+        { ...validCampaign(), creative: { ...validCampaign().creative, destinationKind: 'PAGE_MESSAGE', destinationUrl: undefined, ctaLabel: 'Enviar mensagem' } },
+        messages({ ctaLabel: 'Falar no WhatsApp' }),
+        messages({ destinationKind: 'WHATSAPP', ctaLabel: 'Falar no WhatsApp' }),
+      ]
+      for (const dto of attempts) await expect(service.createCampaign('co1', 'acc1', dto, 'u1')).rejects.toBeInstanceOf(BadRequestException)
+      expect(repo.createCampaign).not.toHaveBeenCalled()
+      expect(mediaAssets.prepareForAdCreative).not.toHaveBeenCalled()
+    })
+
+    describe('destino WhatsApp', () => {
+      const whatsapp = (patch: Record<string, unknown> = {}): CreateAdCampaignDto => messages({ destinationKind: 'WHATSAPP', ctaLabel: 'Falar no WhatsApp', whatsappPhone: '(11) 98765-4321', ...patch })
+
+      it('o servidor normaliza o número, usa o texto padrão e monta o wa.me; o link do anunciante é ignorado', async () => {
+        repo.findAccount.mockResolvedValue(account)
+        repo.createCampaign.mockResolvedValue(tree())
+        await service.createCampaign('co1', 'acc1', whatsapp({ destinationUrl: 'https://golpe.com.br/x' }), 'u1')
+        const data = repo.createCampaign.mock.calls[0][0]
+        expect(data.objective).toBe('MESSAGES')
+        expect(data.creative).toMatchObject({
+          destinationKind: 'WHATSAPP',
+          whatsappPhone: '5511987654321',
+          whatsappText: 'Olá! Vi o anúncio de vocês no Votz.',
+          destinationUrl: 'https://wa.me/5511987654321?text=Ol%C3%A1!%20Vi%20o%20an%C3%BAncio%20de%20voc%C3%AAs%20no%20Votz.',
+          ctaLabel: 'Falar no WhatsApp',
+        })
+      })
+
+      it('guarda a mensagem que o anunciante escreveu', async () => {
+        repo.findAccount.mockResolvedValue(account)
+        repo.createCampaign.mockResolvedValue(tree())
+        await service.createCampaign('co1', 'acc1', whatsapp({ whatsappText: 'Oi! Quero o bolo de fubá.' }), 'u1')
+        expect(repo.createCampaign.mock.calls[0][0].creative).toMatchObject({ whatsappText: 'Oi! Quero o bolo de fubá.', destinationUrl: expect.stringContaining('text=Oi!%20Quero') })
+      })
+
+      it('número ruim, texto com link, botão trocado e objetivo errado: recusados antes de criar', async () => {
+        repo.findAccount.mockResolvedValue(account)
+        const attempts: CreateAdCampaignDto[] = [
+          whatsapp({ whatsappPhone: '(11) 3456-7890' }),
+          whatsapp({ whatsappPhone: undefined }),
+          whatsapp({ whatsappText: 'fale em golpe.com.br' }),
+          whatsapp({ ctaLabel: 'Enviar mensagem' }),
+          { ...whatsapp(), objective: 'TRAFFIC' },
+        ]
+        for (const dto of attempts) await expect(service.createCampaign('co1', 'acc1', dto, 'u1')).rejects.toBeInstanceOf(BadRequestException)
+        expect(repo.createCampaign).not.toHaveBeenCalled()
+      })
+
+      it('anúncio de WhatsApp não exige equipe que responda no Votz para ligar (a conversa é no WhatsApp)', async () => {
+        const campaign = withAccountFor('WHATSAPP')
+        repo.findCampaign.mockResolvedValue(campaign)
+        repo.setCampaignStatus.mockResolvedValue(tree({ status: 'ACTIVE' }, 'APPROVED'))
+        await service.setCampaignStatus('co1', 'camp1', { status: 'ACTIVE' })
+        expect(repo.countStaffWhoCanReply).not.toHaveBeenCalled()
+      })
+    })
+
+    it('chat da página não passa pela conferência de link (o endereço é do Votz, mesmo em http no teste local)', async () => {
+      repo.findAccount.mockResolvedValue(account)
+      config.get.mockImplementation((key: string) => (key === 'APP_URL' ? 'http://localhost:5173' : undefined))
+      repo.createCampaign.mockResolvedValue(tree())
+      await expect(service.createCampaign('co1', 'acc1', messages(), 'u1')).resolves.toBeDefined()
+    })
+
+    it('enviar para revisão anúncio de chat não confere link', async () => {
+      const chatAd = { id: 'ad1', reviewStatus: 'NOT_SUBMITTED', creative: { ...creative, destinationKind: 'PAGE_MESSAGE', ctaLabel: 'Enviar mensagem', destinationUrl: 'http://localhost:5173/conversas/pagina/COMPANY/co1' }, adSet: { campaign: { account: { companyId: 'co1' } } } }
+      repo.findAd.mockResolvedValue(chatAd)
+      repo.submitAd.mockResolvedValue({ ...chatAd, reviewStatus: 'PENDING', status: 'DRAFT', reviewNote: null })
+      await expect(service.submitAd('co1', 'ad1')).resolves.toBeDefined()
     })
   })
 
@@ -296,6 +396,12 @@ describe('AdsCampaignsService', () => {
     })
   })
 
+  const withAccountFor = (kind: string) => {
+    const campaign = { ...tree({ objective: 'MESSAGES' }, 'APPROVED'), account: { id: 'acc1', companyId: 'co1', balanceCents: 5000 } }
+    campaign.adSets[0].ads[0].creative = { ...creative, destinationKind: kind, ctaLabel: 'Falar no WhatsApp' } as never
+    return campaign
+  }
+
   describe('ligar, pausar e arquivar', () => {
     const withAccount = (overrides = {}, reviewStatus = 'NOT_SUBMITTED', balanceCents = 0) =>
       ({ ...tree(overrides, reviewStatus), account: { id: 'acc1', companyId: 'co1', balanceCents } })
@@ -314,6 +420,34 @@ describe('AdsCampaignsService', () => {
       repo.findCampaign.mockResolvedValue(withAccount({}, 'APPROVED', 5000))
       repo.setCampaignStatus.mockResolvedValue(tree({ status: 'ACTIVE' }, 'APPROVED'))
       await expect(service.setCampaignStatus('co1', 'camp1', { status: 'ACTIVE' })).resolves.toEqual(expect.objectContaining({ status: 'ACTIVE' }))
+    })
+
+    const chatCampaign = (balanceCents = 5000) => {
+      const campaign = withAccount({ objective: 'MESSAGES' }, 'APPROVED', balanceCents)
+      campaign.adSets[0].ads[0].creative = { ...creative, destinationKind: 'PAGE_MESSAGE', ctaLabel: 'Enviar mensagem' } as never
+      return campaign
+    }
+
+    it('chat da página: sem ninguém da equipe que possa responder, não liga', async () => {
+      repo.findCampaign.mockResolvedValue(chatCampaign())
+      repo.countStaffWhoCanReply.mockResolvedValue(0)
+      await expect(service.setCampaignStatus('co1', 'camp1', { status: 'ACTIVE' })).rejects.toThrow('responder mensagens')
+      expect(repo.setCampaignStatus).not.toHaveBeenCalled()
+    })
+
+    it('chat da página: com alguém que responde, liga', async () => {
+      repo.findCampaign.mockResolvedValue(chatCampaign())
+      repo.countStaffWhoCanReply.mockResolvedValue(1)
+      repo.setCampaignStatus.mockResolvedValue(tree({ status: 'ACTIVE' }, 'APPROVED'))
+      await expect(service.setCampaignStatus('co1', 'camp1', { status: 'ACTIVE' })).resolves.toEqual(expect.objectContaining({ status: 'ACTIVE' }))
+      expect(repo.countStaffWhoCanReply).toHaveBeenCalledWith('co1')
+    })
+
+    it('campanha de site não consulta a equipe', async () => {
+      repo.findCampaign.mockResolvedValue(withAccount({}, 'APPROVED', 5000))
+      repo.setCampaignStatus.mockResolvedValue(tree({ status: 'ACTIVE' }, 'APPROVED'))
+      await service.setCampaignStatus('co1', 'camp1', { status: 'ACTIVE' })
+      expect(repo.countStaffWhoCanReply).not.toHaveBeenCalled()
     })
 
     it('pausar sempre pode; arquivada não volta', async () => {
@@ -375,6 +509,25 @@ describe('CreateAdCampaignDto', () => {
     expect(await errorsOf((d) => { d.creative.destinationUrl = 'javascript:alert(1)' })).toBeGreaterThan(0)
     expect(await errorsOf((d) => { d.adSet.dailyBudgetCents = 599 })).toBeGreaterThan(0)
     expect(await errorsOf((d) => { d.creative.ctaLabel = 'Clique aqui agora!!!' as never })).toBeGreaterThan(0)
+  })
+
+  it('chat da página dispensa o link; site continua exigindo', async () => {
+    const chat = { ...validCampaign(), objective: 'MESSAGES', creative: { headline: 'Oi', body: 'Fale com a gente', ctaLabel: 'Enviar mensagem', destinationKind: 'PAGE_MESSAGE' } }
+    expect(await check(chat)).toHaveLength(0)
+    expect(await errorsOf((d) => { delete (d.creative as { destinationUrl?: string }).destinationUrl })).toBeGreaterThan(0)
+    expect(await errorsOf((d) => { d.creative.destinationKind = 'URL'; delete (d.creative as { destinationUrl?: string }).destinationUrl })).toBeGreaterThan(0)
+  })
+
+  it('WhatsApp exige o número; texto inicial tem teto', async () => {
+    const wa = { ...validCampaign(), objective: 'MESSAGES', creative: { headline: 'Oi', body: 'Fale com a gente', ctaLabel: 'Falar no WhatsApp', destinationKind: 'WHATSAPP', whatsappPhone: '(11) 98765-4321' } }
+    expect(await check(wa)).toHaveLength(0)
+    expect(await check({ ...wa, creative: { ...wa.creative, whatsappPhone: undefined } })).not.toHaveLength(0)
+    expect(await check({ ...wa, creative: { ...wa.creative, whatsappText: 'a'.repeat(201) } })).not.toHaveLength(0)
+  })
+
+  it('destino fora da lista é recusado e o objetivo novo é aceito', async () => {
+    expect(await errorsOf((d) => { (d.creative as { destinationKind?: string }).destinationKind = 'FAX' })).toBeGreaterThan(0)
+    expect(await errorsOf((d) => { d.objective = 'MESSAGES' })).toBe(0)
   })
 
   it('estado só pela sigla', async () => {

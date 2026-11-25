@@ -86,6 +86,7 @@ export class AdsAiReviewService {
         body: creative.body,
         ctaLabel: creative.ctaLabel,
         destinationUrl: creative.destinationUrl,
+        ...(creative.whatsappText ? { whatsappText: creative.whatsappText } : {}),
         objective: ad.adSet.campaign.objective,
       },
       reading,
@@ -99,7 +100,7 @@ export class AdsAiReviewService {
     // Trava por palavras, independente do modelo: um texto esperto não convence a IA a aprovar o que é óbvio.
     // O texto escrito dentro da foto ou do vídeo, e o que foi falado no áudio, passam pela mesma trava.
     const heardText = reading?.audio ? (result.audioText ?? '') : ''
-    const everything = [creative.headline, creative.body, creative.destinationUrl, result.mediaText ?? '', heardText]
+    const everything = [creative.headline, creative.body, creative.destinationUrl, creative.whatsappText ?? '', result.mediaText ?? '', heardText]
     const violations = mergeViolations(result.violations, obviousViolations(everything))
     // Ordem escondida para a IA (no texto, na imagem ou no som): nunca aprova sozinha, e o parecer avisa a pessoa.
     const manipulation = manipulationAttempt(everything)

@@ -75,10 +75,10 @@ export function useMyPageConversationList(enabled = true) {
 export function useSendPageMessage(orgType: OrgType | undefined, orgId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
+    mutationFn: ({ text, replyToId, adClickId }: { text: string; replyToId?: string; adClickId?: string }) =>
       api<{ conversationId: string; message: PageMessageView }>(`/page-inbox/${orgType}/${orgId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ text, ...(replyToId ? { replyToId } : {}) }),
+        body: JSON.stringify({ text, ...(replyToId ? { replyToId } : {}), ...(adClickId ? { adClickId } : {}) }),
       }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox'] }),
   })
@@ -89,6 +89,8 @@ export interface MobilePageMediaInput {
   mimeType: string
   caption?: string
   replyToId?: string
+  /** Identificador do clique, quando a pessoa chegou aqui por um anúncio de mensagens. */
+  adClickId?: string
   width?: number
   height?: number
   durationMs?: number
@@ -109,6 +111,7 @@ export function useSendPageMedia(orgType: OrgType | undefined, orgId: string) {
           parameters: {
             ...(input.caption ? { caption: input.caption } : {}),
             ...(input.replyToId ? { replyToId: input.replyToId } : {}),
+            ...(input.adClickId ? { adClickId: input.adClickId } : {}),
             ...(input.width ? { width: String(input.width) } : {}),
             ...(input.height ? { height: String(input.height) } : {}),
             ...(input.durationMs ? { durationMs: String(input.durationMs) } : {}),
