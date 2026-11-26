@@ -25,7 +25,7 @@ import { useSession } from '../lib/session'
 import { buildLocationPayload, emptyLocation, locationError, type LocationDraft } from '../lib/report-location'
 import { POST_MEDIA_LIMIT, REPORT_MEDIA_LIMIT, mediaSlots, prepareMedia, type MediaItem } from '../lib/report-media'
 import type { Recipient, RecipientKind } from '../lib/types'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 const categories: Record<Category, string> = {
   HEALTH: 'Saúde', MOBILITY: 'Mobilidade', SAFETY: 'Segurança', EDUCATION: 'Educação',
@@ -64,6 +64,7 @@ function recipientFromParams(params: { recipientType?: string; recipientId?: str
 }
 
 export default function ComposeScreen() {
+  const { colors, theme } = useAppTheme()
   const user = useSession((s) => s.user)
   const params = useLocalSearchParams<{ kind?: string; recipientType?: string; recipientId?: string; recipientName?: string }>()
   const initialRecipient = recipientFromParams(params)
@@ -250,25 +251,25 @@ export default function ComposeScreen() {
 
   return <Screen>
     <Toolbar title={isReport ? 'Novo relato' : 'Nova publicação'}
-      left={<IconButton label="Cancelar publicação" onPress={() => router.back()} disabled={publish.isPending}><X size={23} color={theme.colors.primary} /></IconButton>}
+      left={<IconButton label="Cancelar publicação" onPress={() => router.back()} disabled={publish.isPending}><X size={23} color={colors.primary} /></IconButton>}
       right={<Button title={isReport ? 'Registrar' : 'Publicar'} loading={publish.isPending} disabled={!valid || !user.emailVerified || busy || postStateInvalid} onPress={() => publish.mutate()} />} />
     <FormScroll contentContainerStyle={{ paddingTop: 16, paddingBottom: 24, gap: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Avatar name={anonymous && isReport ? 'Anônimo' : user.name} uri={anonymous && isReport ? null : user.avatarUrl} size={38} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: theme.fonts.medium, color: theme.colors.primary, fontSize: 14 }}>{anonymous && isReport ? 'Relato anônimo' : user.name}</Text>
-          <Text style={{ color: theme.colors.muted, fontSize: 11, marginTop: 2 }}>Público · Comunidade Votz</Text>
+          <Text style={{ fontFamily: theme.fonts.medium, color: colors.primary, fontSize: 14 }}>{anonymous && isReport ? 'Relato anônimo' : user.name}</Text>
+          <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>Público · Comunidade Votz</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Alternar publicação e relato" disabled={publish.isPending} onPress={switchKind} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 18, padding: 8 }}>
-          <Text style={{ fontSize: 12, color: theme.colors.action, fontFamily: theme.fonts.medium }}>{isReport ? 'Relato' : 'Publicação'}</Text>
-          <ChevronDown size={13} color={theme.colors.action} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Alternar publicação e relato" disabled={publish.isPending} onPress={switchKind} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 18, padding: 8 }}>
+          <Text style={{ fontSize: 12, color: colors.action, fontFamily: theme.fonts.medium }}>{isReport ? 'Relato' : 'Publicação'}</Text>
+          <ChevronDown size={13} color={colors.action} />
         </Pressable>
       </View>
       {!user.emailVerified && <ErrorText message="Confirme seu e-mail para publicar no Votz." />}
 
       {isReport && <View style={{ gap: 4 }}>
         <Field bare accessibilityLabel="Título do relato" placeholder="O que precisa mudar?" value={title} onChangeText={setTitle} maxLength={120} editable={!publish.isPending} style={{ fontFamily: theme.fonts.heading, fontSize: 22, minHeight: 44 }} />
-        <Text style={{ alignSelf: 'flex-end', fontSize: 11, color: title.length > 110 ? theme.colors.action : theme.colors.muted }}>{title.length}/120</Text>
+        <Text style={{ alignSelf: 'flex-end', fontSize: 11, color: title.length > 110 ? colors.action : colors.muted }}>{title.length}/120</Text>
       </View>}
       {isReport && (
         <SimilarReportsCard
@@ -284,22 +285,22 @@ export default function ComposeScreen() {
       <Field bare accessibilityLabel={isReport ? 'Descrição do relato' : 'Texto da publicação'} placeholder={isReport ? 'Conte onde e como o problema acontece…' : 'O que está acontecendo?'} value={content} onChangeText={setContent} multiline maxLength={2000} editable={!publish.isPending} style={{ fontSize: 18, lineHeight: 27, minHeight: 148, maxHeight: 240 }} />
 
       {isReport && <View style={{ gap: 12 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Escolher categoria do relato" onPress={() => setCategorySheet(true)} disabled={publish.isPending} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 18, backgroundColor: category ? theme.colors.soft : theme.colors.tint, borderWidth: category ? 0 : 1, borderColor: theme.colors.action }}>
-          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: category ? theme.colors.primary : theme.colors.action }}>{category ? categories[category] : 'Escolher categoria (obrigatório)'}</Text>
-          <ChevronDown size={14} color={theme.colors.muted} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Escolher categoria do relato" onPress={() => setCategorySheet(true)} disabled={publish.isPending} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 18, backgroundColor: category ? colors.soft : colors.tint, borderWidth: category ? 0.5 : 1, borderColor: category ? colors.border : colors.action }}>
+          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: category ? colors.primary : colors.action }}>{category ? categories[category] : 'Escolher categoria (obrigatório)'}</Text>
+          <ChevronDown size={14} color={colors.muted} />
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ color: theme.colors.muted, fontSize: 13, flex: 1, paddingRight: 12 }}>Relatar anonimamente (seu nome não aparece publicamente)</Text>
-          <Switch accessibilityLabel="Publicar relato anônimo" value={anonymous} onValueChange={setAnonymous} disabled={publish.isPending} trackColor={{ true: theme.colors.action }} />
+          <Text style={{ color: colors.muted, fontSize: 13, flex: 1, paddingRight: 12 }}>Relatar anonimamente (seu nome não aparece publicamente)</Text>
+          <Switch accessibilityLabel="Publicar relato anônimo" value={anonymous} onValueChange={setAnonymous} disabled={publish.isPending} trackColor={{ false: colors.border, true: colors.action }} />
         </View>
-        <Text style={{ color: theme.colors.muted, fontSize: 11 }}>Título: mínimo de 10 caracteres · Descrição: mínimo de 30</Text>
+        <Text style={{ color: colors.muted, fontSize: 11 }}>Título: mínimo de 10 caracteres · Descrição: mínimo de 30</Text>
         <RecipientPicker value={recipient} onChange={setRecipient} disabled={publish.isPending} />
       </View>}
 
-      {poll && !isReport && <View style={{ borderWidth: 0.5, borderColor: theme.colors.border, borderRadius: 12, padding: 12, gap: 12 }}>
+      {poll && !isReport && <View style={{ borderWidth: 0.5, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontFamily: theme.fonts.medium, color: theme.colors.primary }}>Enquete · 24 horas</Text>
-          <IconButton label="Remover enquete" onPress={() => setPoll(false)} disabled={publish.isPending}><X size={18} color={theme.colors.muted} /></IconButton>
+          <Text style={{ fontFamily: theme.fonts.medium, color: colors.primary }}>Enquete · 24 horas</Text>
+          <IconButton label="Remover enquete" onPress={() => setPoll(false)} disabled={publish.isPending}><X size={18} color={colors.muted} /></IconButton>
         </View>
         <Field label="Pergunta (opcional)" value={question} onChangeText={setQuestion} maxLength={280} editable={!publish.isPending} />
         {options.map((option, index) => <Field key={index} label={`Opção ${index + 1}`} value={option} onChangeText={(value) => setOptions((current) => current.map((item, at) => at === index ? value : item))} maxLength={100} editable={!publish.isPending} />)}
@@ -312,17 +313,17 @@ export default function ComposeScreen() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {media.map((item, index) => {
                 const asset = assets[item.uri]
-                return <View key={`${item.uri}-${index}`} style={{ width: '48%', aspectRatio: MEDIA_FORMATS[format].ratio, borderRadius: 12, overflow: 'hidden', backgroundColor: theme.colors.primary }}>
+                return <View key={`${item.uri}-${index}`} style={{ width: '48%', aspectRatio: MEDIA_FORMATS[format].ratio, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.badgeBg }}>
                   {asset && <CroppedPreview item={{ uri: item.uri, kind: asset.kind, width: asset.width, height: asset.height, view: asset.view }} format={format} />}
                   <Pressable accessibilityRole="button" accessibilityLabel={`Ajustar enquadramento do item ${index + 1}`} disabled={publish.isPending} onPress={() => setCropSheet({ open: true, start: index })} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-                  {asset?.status === 'uploading' && <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: `${theme.colors.primary}88` }}><ActivityIndicator color={theme.colors.surface} /></View>}
-                  {asset?.status === 'error' && <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 6, backgroundColor: theme.colors.action }}><Text style={{ color: theme.colors.surface, fontSize: 11, fontFamily: theme.fonts.medium }}>Não enviou. Remova e tente de novo.</Text></View>}
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Remover arquivo ${index + 1}`} disabled={publish.isPending} onPress={() => removeMedia(index)} style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }}><X color={theme.colors.surface} size={16} /></Pressable>
+                  {asset?.status === 'uploading' && <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10, 12, 16, 0.55)' }}><ActivityIndicator color={colors.onAccent} /></View>}
+                  {asset?.status === 'error' && <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 6, backgroundColor: colors.action }}><Text style={{ color: colors.onAccent, fontSize: 11, fontFamily: theme.fonts.medium }}>Não enviou. Remova e tente de novo.</Text></View>}
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Remover arquivo ${index + 1}`} disabled={publish.isPending} onPress={() => removeMedia(index)} style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: 14, backgroundColor: colors.badgeBg, alignItems: 'center', justifyContent: 'center' }}><X color={colors.onAccent} size={16} /></Pressable>
                 </View>
               })}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Mudar formato e enquadramento" disabled={publish.isPending} onPress={() => setCropSheet({ open: true, start: 0 })} style={{ alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 0.5, borderColor: theme.colors.border }}>
-              <Text style={{ fontSize: 12, color: theme.colors.primary }}>Formato: <Text style={{ fontFamily: theme.fonts.medium }}>{MEDIA_FORMATS[format].label} ({MEDIA_FORMATS[format].ratioLabel})</Text> · Ajustar</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Mudar formato e enquadramento" disabled={publish.isPending} onPress={() => setCropSheet({ open: true, start: 0 })} style={{ alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 0.5, borderColor: colors.border, backgroundColor: colors.surface }}>
+              <Text style={{ fontSize: 12, color: colors.primary }}>Formato: <Text style={{ fontFamily: theme.fonts.medium }}>{MEDIA_FORMATS[format].label} ({MEDIA_FORMATS[format].ratioLabel})</Text> · Ajustar</Text>
             </Pressable>
           </View>}
 
@@ -345,13 +346,13 @@ export default function ComposeScreen() {
 
       <ErrorText message={pick.isError ? pick.error.message : publish.isError ? errorMessage(publish.error) : undefined} />
     </FormScroll>
-    <View style={{ borderTopWidth: 0.5, borderTopColor: theme.colors.border, paddingHorizontal: 12, paddingVertical: 4, flexDirection: 'row', alignItems: 'center' }}>
-      <IconButton label="Adicionar fotos ou vídeos" disabled={busy || full} onPress={() => pick.mutate('library')}><ImagePlus size={21} color={theme.colors.action} /></IconButton>
-      <IconButton label="Abrir câmera para foto ou vídeo" disabled={busy || full} onPress={() => pick.mutate('camera')}><Camera size={21} color={theme.colors.action} /></IconButton>
-      {isReport && <IconButton label="Adicionar PDF" disabled={busy || full} onPress={() => pick.mutate('document')}><FileUp size={21} color={theme.colors.action} /></IconButton>}
-      <IconButton label="Local do conteúdo" disabled={busy} onPress={() => setDetails(!details)}><MapPin size={21} color={details ? theme.colors.action : theme.colors.muted} /></IconButton>
-      {!isReport && <IconButton label={poll ? 'Remover enquete' : 'Adicionar enquete'} disabled={busy} onPress={() => setPoll(!poll)}><ChartNoAxesColumn size={21} color={poll ? theme.colors.action : theme.colors.muted} /></IconButton>}
-      <Text style={{ flex: 1, textAlign: 'right', color: theme.colors.muted, fontSize: 12, paddingRight: 6 }}>{media.length}/{mediaLimit} · {content.length}/2000</Text>
+    <View style={{ borderTopWidth: 0.5, borderTopColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 4, flexDirection: 'row', alignItems: 'center' }}>
+      <IconButton label="Adicionar fotos ou vídeos" disabled={busy || full} onPress={() => pick.mutate('library')}><ImagePlus size={21} color={colors.action} /></IconButton>
+      <IconButton label="Abrir câmera para foto ou vídeo" disabled={busy || full} onPress={() => pick.mutate('camera')}><Camera size={21} color={colors.action} /></IconButton>
+      {isReport && <IconButton label="Adicionar PDF" disabled={busy || full} onPress={() => pick.mutate('document')}><FileUp size={21} color={colors.action} /></IconButton>}
+      <IconButton label="Local do conteúdo" disabled={busy} onPress={() => setDetails(!details)}><MapPin size={21} color={details ? colors.action : colors.muted} /></IconButton>
+      {!isReport && <IconButton label={poll ? 'Remover enquete' : 'Adicionar enquete'} disabled={busy} onPress={() => setPoll(!poll)}><ChartNoAxesColumn size={21} color={poll ? colors.action : colors.muted} /></IconButton>}
+      <Text style={{ flex: 1, textAlign: 'right', color: colors.muted, fontSize: 12, paddingRight: 6 }}>{media.length}/{mediaLimit} · {content.length}/2000</Text>
     </View>
     <ChoiceSheet visible={categorySheet} title="Categoria do relato" options={Object.entries(categories).map(([value, label]) => ({ value: value as Category, label }))} value={category} onChange={setCategory} onClose={() => setCategorySheet(false)} />
   </Screen>

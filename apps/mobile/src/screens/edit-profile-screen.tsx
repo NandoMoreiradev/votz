@@ -14,8 +14,8 @@ import { useDetail } from '../hooks/use-content'
 import { ApiError, api, errorMessage, uploadFile } from '../lib/api'
 import { mimeFromName } from '../lib/report-media'
 import { useSession } from '../lib/session'
+import { useAppTheme } from '../theme-context'
 import type { PublicProfile } from '../lib/types'
-import { theme } from '../theme'
 
 type ImageKind = 'cover' | 'photo'
 /** Medidas pedidas ao cidadão (iguais às do web). O recorte do celular já abre na proporção certa. */
@@ -26,6 +26,7 @@ const IMAGE_SPEC = {
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
 export default function EditProfileScreen() {
+  const { colors, theme } = useAppTheme()
   const user = useSession((s) => s.user)
   const profile = useDetail<PublicProfile>('users', user?.id || '')
   const [name, setName] = useState('')
@@ -86,30 +87,30 @@ export default function EditProfileScreen() {
   return <Screen><Toolbar title="Editar perfil" back right={<Button title="Salvar" loading={save.isPending} disabled={!profile.data || !valid} onPress={() => save.mutate()} />} />
     {!profile.data ? <State loading={profile.isPending} title={profile.isPending ? 'Carregando perfil…' : 'Não foi possível carregar'} retry={() => { void profile.refetch() }} /> : <FormScroll>
       <View>
-        <View style={{ borderRadius: 12, overflow: 'hidden', backgroundColor: theme.colors.primary }}>
+        <View style={{ borderRadius: 12, overflow: 'hidden', backgroundColor: colors.badgeBg }}>
           {profile.data.coverUrl ? <Image source={profile.data.coverUrl} recyclingKey={profile.data.coverUrl} accessibilityLabel="Capa atual" style={{ width: '100%', aspectRatio: 3 }} contentFit="cover" /> : <View style={{ width: '100%', aspectRatio: 3 }} />}
           <Pressable accessibilityRole="button" accessibilityLabel="Alterar capa" disabled={pickImage.isPending} onPress={() => pickImage.mutate('cover')} style={{ position: 'absolute', right: 8, top: 8, minHeight: 36, paddingHorizontal: 12, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0D0D0D99', opacity: pickImage.isPending ? 0.5 : 1 }}><Camera size={15} color="#FFFFFF" /><Text style={{ color: '#FFFFFF', fontFamily: theme.fonts.medium, fontSize: 13 }}>{pickImage.isPending && pickImage.variables === 'cover' ? 'Enviando…' : 'Alterar capa'}</Text></Pressable>
         </View>
         <View style={{ alignItems: 'center', marginTop: -38, gap: 8 }}>
-          <View style={{ borderWidth: 4, borderColor: theme.colors.surface, borderRadius: 44, backgroundColor: theme.colors.surface }}><Avatar name={name || user.name} uri={profile.data.avatarUrl} size={76} /></View>
+          <View style={{ borderWidth: 4, borderColor: colors.background, borderRadius: 44, backgroundColor: colors.background }}><Avatar name={name || user.name} uri={profile.data.avatarUrl} size={76} /></View>
           <Button secondary title={pickImage.isPending && pickImage.variables === 'photo' ? 'Enviando…' : 'Alterar foto'} disabled={pickImage.isPending} onPress={() => pickImage.mutate('photo')} />
         </View>
       </View>
-      <Text style={{ color: theme.colors.muted, fontSize: 12, lineHeight: 18 }}>Capa: 1500 × 500 px (bem larga, 3:1). Foto: 400 × 400 px (quadrada). JPG, PNG ou WebP, até 5 MB. O celular abre o recorte para você ajustar.</Text>
+      <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>Capa: 1500 × 500 px (bem larga, 3:1). Foto: 400 × 400 px (quadrada). JPG, PNG ou WebP, até 5 MB. O celular abre o recorte para você ajustar.</Text>
       <ErrorText message={pickImage.isError ? errorMessage(pickImage.error) : undefined} />
       <Field label="Nome" value={name} onChangeText={setName} maxLength={80} autoComplete="name" editable={!save.isPending} />
       <Field label="Nome de usuário" value={username} onChangeText={setUsername} placeholder="seu_nome" autoCapitalize="none" autoCorrect={false} maxLength={30} editable={!save.isPending} />
-      <Text style={{ color: theme.colors.muted, fontSize: 12 }}>De 3 a 30 caracteres: letras, números e sublinhado.</Text>
+      <Text style={{ color: colors.muted, fontSize: 12 }}>De 3 a 30 caracteres: letras, números e sublinhado.</Text>
       <Field label="Bio" value={bio} onChangeText={setBio} placeholder="Como você participa da sua comunidade?" multiline maxLength={300} editable={!save.isPending} />
-      <Text style={{ textAlign: 'right', color: theme.colors.muted, fontSize: 12 }}>{bio.length}/300</Text>
+      <Text style={{ textAlign: 'right', color: colors.muted, fontSize: 12 }}>{bio.length}/300</Text>
       <View style={{ gap: 10, paddingTop: 6 }}>
-        <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: theme.colors.primary }}>Sobre você</Text>
-        <Text style={{ color: theme.colors.muted, fontSize: 12, lineHeight: 18 }}>{PROFILE_DEMOGRAPHICS_PURPOSE}</Text>
+        <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: colors.primary }}>Sobre você</Text>
+        <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>{PROFILE_DEMOGRAPHICS_PURPOSE}</Text>
         <Field label="Data de nascimento (opcional)" value={shownBirthDate} onChangeText={(value) => setBirthDate(maskBirthDate(value))} placeholder="DD/MM/AAAA" keyboardType="number-pad" maxLength={10} editable={!save.isPending && !privateData.isPending} accessibilityHint="Opcional. Não aparece no seu perfil." />
         <ErrorText message={birthDateProblem ?? undefined} />
-        <Pressable accessibilityRole="button" accessibilityLabel={`Gênero (opcional): ${shownGender ? USER_GENDER_LABELS[shownGender] : 'não informado'}`} disabled={save.isPending || privateData.isPending} onPress={() => setGenderSheet(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' }}>
-          <Text style={{ color: theme.colors.muted, fontSize: 12 }}>Gênero (opcional)</Text>
-          <Text style={{ color: theme.colors.primary, fontSize: 15 }}>{shownGender ? USER_GENDER_LABELS[shownGender] : 'Não informar'}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Gênero (opcional): ${shownGender ? USER_GENDER_LABELS[shownGender] : 'não informado'}`} disabled={save.isPending || privateData.isPending} onPress={() => setGenderSheet(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' }}>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>Gênero (opcional)</Text>
+          <Text style={{ color: colors.primary, fontSize: 15 }}>{shownGender ? USER_GENDER_LABELS[shownGender] : 'Não informar'}</Text>
         </Pressable>
         {!!shownGender && <Button secondary title="Não informar gênero" disabled={save.isPending} onPress={() => setGender(null)} />}
       </View>

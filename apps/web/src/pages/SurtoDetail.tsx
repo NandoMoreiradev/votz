@@ -40,10 +40,10 @@ const Page = styled.div`
   background: #FAFAF7;
 `
 const Content = styled.div`
-  max-width: 960px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 28px 32px 64px;
-  @media (max-width: 640px) { padding: 16px 16px 48px; }
+  padding: 24px 32px 64px;
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 const Back = styled(Link)`
   display: inline-flex;

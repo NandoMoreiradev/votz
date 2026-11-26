@@ -59,7 +59,12 @@ describe('AlertsService', () => {
 
     expect(mockRepo.linkReportsToSurto).toHaveBeenCalled()
     expect(mockNotifications.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'ent-user-1', type: 'SURTO_DETECTED' }),
+      expect.objectContaining({
+        userId: 'ent-user-1',
+        type: 'SURTO_DETECTED',
+        reportId: null,
+        metadata: expect.objectContaining({ surtoId: 'surto-1' }),
+      }),
     )
     expect(mockMail.sendSurtoAlert).toHaveBeenCalledWith(
       'jornal@ex.com',

@@ -24,11 +24,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 640px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 24px 80px;
+  padding: 24px 32px 64px;
 
-  @media (max-width: 640px) { padding: 16px 16px 64px; }
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const InstitutionalBanner = styled.div`

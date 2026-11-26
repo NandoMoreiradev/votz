@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
 import { router } from 'expo-router'
 import CheckCircle2 from 'lucide-react-native/icons/check-circle-2'
 import Lock from 'lucide-react-native/icons/lock'
@@ -11,11 +11,12 @@ import {
   SURVEY_ORIGIN_LABELS,
   type SurveyIneligibleReason,
 } from '@votz/shared-types'
+import { ConfirmModal } from '../components/confirm-modal'
 import { Screen, Toolbar } from '../components/screen'
 import { Button, Card, State } from '../components/ui'
 import { useSubmitSurveyVote, useSurveyDetail, useSurveyResults } from '../hooks/use-surveys'
 import { errorMessage } from '../lib/api'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 function formatSegmentLabel(seg: string): string {
   if (seg === 'ALL') return 'Todos'
@@ -51,10 +52,12 @@ function ineligibleText(reason: SurveyIneligibleReason | null): { text: string; 
 }
 
 export default function SurveyDetailScreen({ slug }: { slug: string }) {
+  const { colors, theme, resolvedMode } = useAppTheme()
   const { data: survey, isPending, isError, refetch } = useSurveyDetail(slug)
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [votedSuccess, setVotedSuccess] = useState(false)
+  const [voteError, setVoteError] = useState<string | null>(null)
   const [segment, setSegment] = useState('ALL')
 
   const showResults =
@@ -69,7 +72,7 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
   if (isPending || isError || !survey) {
     return (
       <Screen>
-        <Toolbar title="Pesquisa Votz" />
+        <Toolbar title="Pesquisa Votz" back />
         <State
           loading={isPending}
           title={isPending ? 'Carregando pesquisa…' : 'Pesquisa indisponível'}
@@ -98,7 +101,10 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
         setConfirmOpen(false)
         setVotedSuccess(true)
       },
-      onError: (err) => Alert.alert('Não foi possível votar', errorMessage(err)),
+      onError: (err) => {
+        setConfirmOpen(false)
+        setVoteError(errorMessage(err))
+      },
     })
   }
 
@@ -106,35 +112,37 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
     ? ineligibleText(survey.ineligibleReason)
     : null
 
+  const isDark = resolvedMode === 'dark'
+
   return (
     <Screen>
-      <Toolbar title="Pesquisa Votz" />
-      <ScrollView style={{ flex: 1, backgroundColor: theme.colors.soft }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 48 }}>
+      <Toolbar title="Pesquisa Votz" back />
+      <ScrollView style={{ flex: 1, backgroundColor: colors.soft }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 48 }}>
         <Card>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.primary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 }}>
-              <ShieldCheck size={12} color={theme.colors.surface} />
-              <Text style={{ color: theme.colors.surface, fontFamily: theme.fonts.medium, fontSize: 11 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.badgeBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 }}>
+              <ShieldCheck size={12} color={colors.onAccent} />
+              <Text style={{ color: colors.onAccent, fontFamily: theme.fonts.medium, fontSize: 11 }}>
                 {SURVEY_ORIGIN_LABELS[survey.origin].toUpperCase()}
               </Text>
             </View>
-            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: theme.colors.muted }}>
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.muted }}>
               {SURVEY_KIND_LABELS[survey.kind]}
             </Text>
           </View>
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 20, color: theme.colors.primary, lineHeight: 26 }}>
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 20, color: colors.primary, lineHeight: 26 }}>
             {survey.title}
           </Text>
-          <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted, lineHeight: 21 }}>
+          <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: colors.muted, lineHeight: 21 }}>
             {survey.description}
           </Text>
         </Card>
 
         {(survey.hasVoted || votedSuccess) && (
-          <Card style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}>
+          <Card style={{ backgroundColor: isDark ? '#122B1D' : '#DCFCE7', borderColor: isDark ? '#1F5A38' : '#86EFAC' }}>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-              <CheckCircle2 size={18} color="#14532D" style={{ marginTop: 2 }} />
-              <Text style={{ flex: 1, fontFamily: theme.fonts.body, fontSize: 14, color: '#14532D', lineHeight: 20 }}>
+              <CheckCircle2 size={18} color={isDark ? '#4ADE80' : '#14532D'} style={{ marginTop: 2 }} />
+              <Text style={{ flex: 1, fontFamily: theme.fonts.body, fontSize: 14, color: isDark ? '#DCFCE7' : '#14532D', lineHeight: 20 }}>
                 Participação registrada com anonimato. Sua resposta entrou na fila embaralhada sem vínculo com sua conta.
               </Text>
             </View>
@@ -142,8 +150,8 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
         )}
 
         {inelig && (
-          <Card style={{ backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }}>
-            <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: '#78350F', lineHeight: 20 }}>
+          <Card style={{ backgroundColor: isDark ? '#2B2210' : '#FEF3C7', borderColor: isDark ? '#6B5014' : '#FCD34D' }}>
+            <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: isDark ? '#FDE68A' : '#78350F', lineHeight: 20 }}>
               {inelig.text}
             </Text>
             {inelig.route && inelig.cta && (
@@ -159,10 +167,10 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
               const isMulti = q.type === 'MULTIPLE_CHOICE'
               return (
                 <Card key={q.id}>
-                  <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: theme.colors.primary }}>
+                  <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: colors.primary }}>
                     {idx + 1}. {q.prompt}
                   </Text>
-                  <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.muted }}>
+                  <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
                     {q.helpText || (isMulti ? `Escolha até ${q.maxSelections} opções.` : 'Escolha uma opção.')}
                   </Text>
 
@@ -182,21 +190,21 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
                             padding: 12,
                             borderRadius: 10,
                             borderWidth: 1.5,
-                            borderColor: isSel ? theme.colors.primary : theme.colors.border,
-                            backgroundColor: isSel ? '#F0F1F8' : theme.colors.surface,
+                            borderColor: isSel ? colors.action : colors.border,
+                            backgroundColor: isSel ? colors.tint : colors.surface,
                           }}
                         >
                           <View style={{ flex: 1, paddingRight: 8 }}>
-                            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: theme.colors.text }}>
+                            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: colors.text }}>
                               {opt.label}
                             </Text>
                             {opt.subtitle ? (
-                              <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.muted }}>
+                              <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
                                 {opt.subtitle}
                               </Text>
                             ) : null}
                           </View>
-                          <Text style={{ fontSize: 16, color: theme.colors.primary }}>{isSel ? '●' : '○'}</Text>
+                          <Text style={{ fontSize: 16, color: isSel ? colors.action : colors.muted }}>{isSel ? '●' : '○'}</Text>
                         </Pressable>
                       )
                     })}
@@ -215,10 +223,10 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
 
         {showResults && results && (
           <Card>
-            <Text style={{ fontFamily: theme.fonts.heading, fontSize: 17, color: theme.colors.primary }}>
+            <Text style={{ fontFamily: theme.fonts.heading, fontSize: 17, color: colors.primary }}>
               {survey.status === 'OPEN' ? 'Resultados parciais' : 'Resultados oficiais'}
             </Text>
-            <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.muted }}>
+            <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
               {results.totalBallots.toLocaleString('pt-BR')} cédulas apuradas
             </Text>
 
@@ -232,10 +240,10 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
                       paddingHorizontal: 12,
                       paddingVertical: 6,
                       borderRadius: 99,
-                      backgroundColor: segment === seg ? theme.colors.primary : theme.colors.soft,
+                      backgroundColor: segment === seg ? colors.action : colors.soft,
                     }}
                   >
-                    <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: segment === seg ? theme.colors.surface : theme.colors.text }}>
+                    <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: segment === seg ? colors.onAccent : colors.text }}>
                       {formatSegmentLabel(seg)}
                     </Text>
                   </Pressable>
@@ -244,29 +252,29 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
             )}
 
             {!results.quorumReached ? (
-              <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted }}>
+              <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.muted }}>
                 Os percentuais serão exibidos ao atingir o quórum mínimo de {survey.minQuorumToPublish} participações.
               </Text>
             ) : results.kAnonymitySuppressed ? (
-              <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted }}>
+              <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.muted }}>
                 Este recorte tem menos de {results.kAnonymityThreshold} respostas e foi ocultado para preservar o anonimato.
               </Text>
             ) : (
               results.questions.map((q) => (
                 <View key={q.questionId} style={{ gap: 8, marginTop: 6 }}>
-                  <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: theme.colors.text }}>{q.prompt}</Text>
+                  <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: colors.text }}>{q.prompt}</Text>
                   {q.options.map((opt) => (
                     <View key={opt.optionId} style={{ gap: 4 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.text, flex: 1 }}>
+                        <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.text, flex: 1 }}>
                           {opt.label}
                         </Text>
-                        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: theme.colors.primary }}>
+                        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: colors.primary }}>
                           {opt.percentage.toFixed(1).replace('.', ',')}%
                         </Text>
                       </View>
-                      <View style={{ height: 8, borderRadius: 99, backgroundColor: theme.colors.soft, overflow: 'hidden' }}>
-                        <View style={{ height: '100%', width: `${Math.min(100, opt.percentage)}%`, backgroundColor: theme.colors.primary }} />
+                      <View style={{ height: 8, borderRadius: 99, backgroundColor: colors.soft, overflow: 'hidden' }}>
+                        <View style={{ height: '100%', width: `${Math.min(100, opt.percentage)}%`, backgroundColor: colors.action }} />
                       </View>
                     </View>
                   ))}
@@ -277,39 +285,39 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
         )}
 
         <Card>
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary }}>
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: colors.primary }}>
             Ficha técnica e transparência
           </Text>
-          <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.muted, lineHeight: 19 }}>
+          <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.muted, lineHeight: 19 }}>
             {survey.methodologyNote}
           </Text>
-          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: theme.colors.text }}>
+          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.text }}>
             Metodologia: {SURVEY_METHODOLOGY_LABELS[survey.methodologyType]}
           </Text>
           {survey.tseRegistrationCode ? (
-            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: theme.colors.text }}>
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.text }}>
               Registro TSE: {survey.tseRegistrationCode}
             </Text>
           ) : null}
-          <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.muted, lineHeight: 18 }}>
+          <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted, lineHeight: 18 }}>
             {survey.disclaimerText}
           </Text>
         </Card>
       </ScrollView>
 
       <Modal visible={confirmOpen} transparent animationType="fade" onRequestClose={() => setConfirmOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center', padding: 20 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(10, 12, 16, 0.62)', justifyContent: 'center', padding: 20 }}>
           <Card style={{ padding: 20, gap: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Lock size={18} color={theme.colors.positive} />
-              <Text style={{ fontFamily: theme.fonts.heading, fontSize: 18, color: theme.colors.primary }}>
+              <Lock size={18} color={colors.positive} />
+              <Text style={{ fontFamily: theme.fonts.heading, fontSize: 18, color: colors.primary }}>
                 Confirmar voto anônimo
               </Text>
             </View>
-            <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted, lineHeight: 20 }}>
+            <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: colors.muted, lineHeight: 20 }}>
               {SURVEY_ANONYMITY_NOTICE}
             </Text>
-            <View style={{ backgroundColor: theme.colors.soft, borderRadius: 10, padding: 12, gap: 6 }}>
+            <View style={{ backgroundColor: colors.soft, borderRadius: 10, padding: 12, gap: 6 }}>
               {survey.questions.map((q) => {
                 const chosen = (answers[q.id] ?? [])
                   .map((id) => q.options.find((o) => o.id === id)?.label)
@@ -317,8 +325,8 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
                   .join(', ')
                 return (
                   <View key={q.id}>
-                    <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: theme.colors.text }}>{q.prompt}</Text>
-                    <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.primary }}>{chosen || 'Sem resposta'}</Text>
+                    <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: colors.text }}>{q.prompt}</Text>
+                    <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.primary }}>{chosen || 'Sem resposta'}</Text>
                   </View>
                 )
               })}
@@ -330,6 +338,14 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
           </Card>
         </View>
       </Modal>
+
+      <ConfirmModal
+        visible={!!voteError}
+        title="Não foi possível votar"
+        message={voteError ?? undefined}
+        danger
+        onClose={() => setVoteError(null)}
+      />
     </Screen>
   )
 }

@@ -38,6 +38,7 @@ import {
 import { useMyPageConversationList, type MyPageConversationRow } from '../../hooks/use-page-inbox'
 import { errorMessage } from '../../lib/api'
 import { theme } from '../../theme'
+import { useAppTheme } from '../../theme-context'
 
 /** Linha da lista: nome, última mensagem (prévia só se este aparelho a abriu), horário e não lidas. */
 function InboxRow({
@@ -158,6 +159,7 @@ type UnifiedInboxItem =
   | { key: string; kind: 'page'; sortAt: string; pinned: false; page: MyPageConversationRow }
 
 function Inbox() {
+  const { colors } = useAppTheme()
   const [folder, setFolder] = useState<'active' | 'requests'>('active')
   const capabilities = useConversationCapabilities()
   const chatEnabled = !!capabilities.data?.enabled
@@ -204,7 +206,7 @@ function Inbox() {
   const hasMore = (chatEnabled && !!list.hasNextPage) || (folder === 'active' && !!pageList.hasNextPage)
   const fetchingMore = list.isFetchingNextPage || pageList.isFetchingNextPage
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {action.isError && (
         <View style={{ padding: 16 }}>
           <ErrorText message={errorMessage(action.error)} />
@@ -336,6 +338,7 @@ function Inbox() {
 
 /** Menu dos três pontinhos: tudo que não é conversa fica aqui, fora da vista. */
 function InboxMenu() {
+  const { colors } = useAppTheme()
   const [open, setOpen] = useState(false)
   const go = (path: '/conversation/settings' | '/conversation/devices' | '/conversation/blocked') => {
     setOpen(false)
@@ -344,7 +347,7 @@ function InboxMenu() {
   return (
     <>
       <IconButton label="Mais opções" onPress={() => setOpen(true)}>
-        <EllipsisVertical size={22} color={theme.colors.primary} />
+        <EllipsisVertical size={22} color={colors.primary} />
       </IconButton>
       <PopoverMenu visible={open} onClose={() => setOpen(false)}>
         <MenuItem

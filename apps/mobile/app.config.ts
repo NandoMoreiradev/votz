@@ -18,7 +18,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   version: '0.1.0',
   icon: './assets/votz-icon.png',
   orientation: 'portrait',
-  userInterfaceStyle: 'light',
+  userInterfaceStyle: 'automatic',
   // Atualizações sem build: mudanças só de JavaScript chegam por `eas update`. O "fingerprint" amarra cada
   // atualização a builds com o mesmo código nativo, então nenhuma atualização cai num app incompatível.
   runtimeVersion: { policy: 'fingerprint' },

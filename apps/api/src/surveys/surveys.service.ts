@@ -5,10 +5,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { ConfigService } from '@nestjs/config'
-import { Prisma, SurveyResultsVisibility, SurveyStatus } from '@prisma/client'
+import { NotificationType, Prisma, SurveyResultsVisibility, SurveyStatus } from '@prisma/client'
 import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
 import {
@@ -21,6 +22,7 @@ import {
   type SurveySummaryView,
 } from '@votz/shared-types'
 import { CryptoService, parseHexKey } from '../crypto/crypto.service'
+import { NotificationsService } from '../notifications/notifications.service'
 import {
   CancelSurveyDto,
   CreateInstituteDto,
@@ -77,6 +79,7 @@ export class SurveysService {
     private readonly crypto: CryptoService,
     private readonly config: ConfigService,
     @InjectQueue(SURVEYS_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {
     const rawKey = this.config.get<string>('SURVEY_NULLIFIER_KEY')?.trim()
     if (rawKey && /^[0-9a-fA-F]{64}$/.test(rawKey)) {
@@ -815,10 +818,38 @@ export class SurveysService {
     if (survey.status !== 'DRAFT' && survey.status !== 'SCHEDULED') {
       throw new BadRequestException('Apenas pesquisas em rascunho ou agendadas podem ser revisadas.')
     }
-    return this.repo.updateSurvey(id, {
+    const updated = await this.repo.updateSurvey(id, {
       reviewStatus: dto.reviewStatus,
       reviewNote: dto.reviewNote ? sanitizeText(dto.reviewNote) : null,
     })
+
+    const reviewMeta = {
+      surveyId: survey.id,
+      surveySlug: survey.slug,
+      surveyTitle: survey.title,
+      reviewStatus: dto.reviewStatus,
+      reviewNote: dto.reviewNote ? sanitizeText(dto.reviewNote) : null,
+    }
+    if (survey.createdById) {
+      this.notifications
+        ?.notify({
+          userId: survey.createdById,
+          type: NotificationType.SURVEY_REVIEWED,
+          metadata: reviewMeta,
+        })
+        .catch(() => null)
+    }
+    if (survey.sponsorEntityId) {
+      this.notifications
+        ?.notifyRecipient?.('ENTITY', survey.sponsorEntityId, {
+          type: NotificationType.SURVEY_REVIEWED,
+          metadata: reviewMeta,
+          excludeUserIds: survey.createdById ? [survey.createdById] : [],
+        })
+        ?.catch(() => null)
+    }
+
+    return updated
   }
 
   /**
@@ -861,6 +892,21 @@ export class SurveysService {
       userIds: selected,
       expiresAt,
     })
+
+    if (selected.length > 0) {
+      this.notifications
+        ?.notifyMany?.({
+          userIds: selected,
+          type: NotificationType.OFFICIAL_SURVEY_PUBLISHED,
+          metadata: {
+            surveyId: survey.id,
+            surveySlug: survey.slug,
+            surveyTitle: survey.title,
+            invited: true,
+          },
+        })
+        ?.catch(() => null)
+    }
 
     return {
       surveyId: survey.id,

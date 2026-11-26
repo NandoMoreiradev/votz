@@ -46,6 +46,10 @@ export async function registerChatPushToken(userId: string): Promise<void> {
         // Sem o campo "sound" o Android usa o som padrão de notificação. Passar 'default' faz o
         // expo-notifications procurar um arquivo de som chamado "default" (que não existe) e reclamar.
       })
+      await notifications.setNotificationChannelAsync('votz-notifications', {
+        name: 'Notificações do Votz',
+        importance: notifications.AndroidImportance?.HIGH ?? 4,
+      })
     }
     const existing = await notifications.getPermissionsAsync()
     let status = existing.status
@@ -120,6 +124,34 @@ export function subscribeChatPushOpen(
         }
       },
     )
+    remove = () => sub.remove()
+  })
+  return () => {
+    cancelled = true
+    remove()
+  }
+}
+
+export function subscribeGeneralPushOpen(
+  onNavigate: (target: { pathname: string; params?: Record<string, string> }) => void,
+): () => void {
+  let remove = () => {}
+  let cancelled = false
+  void loadNotifications().then((notifications) => {
+    if (!notifications || cancelled) return
+    const sub = notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data
+      if (!data || data.type === 'chat_message') return
+      if (typeof data.reportId === 'string' && data.reportId) {
+        onNavigate({ pathname: '/report/[id]', params: { id: data.reportId } })
+      } else if (typeof data.postId === 'string' && data.postId) {
+        onNavigate({ pathname: '/post/[id]', params: { id: data.postId } })
+      } else if (typeof data.surveySlug === 'string' && data.surveySlug) {
+        onNavigate({ pathname: '/pesquisas/[slug]', params: { slug: data.surveySlug } })
+      } else {
+        onNavigate({ pathname: '/notifications' })
+      }
+    })
     remove = () => sub.remove()
   })
   return () => {

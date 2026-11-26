@@ -122,6 +122,23 @@ export class ReportsService {
       this.alerts.enqueueCheck(report.category, report.city, report.state ?? '').catch(() => null)
     }
 
+    // Fire-and-forget: notifica in-app/push o destinatário do relato (Político, Entidade, Empresa ou Filial)
+    if (report.recipientType && report.recipientId) {
+      this.notifications
+        .notifyRecipient?.(report.recipientType, report.recipientId, {
+          type: 'NEW_REPORT_RECEIVED',
+          reportId: report.id,
+          metadata: {
+            reportTitle: report.title,
+            category: report.category,
+            city: report.city,
+            state: report.state,
+          },
+          excludeUserIds: [user.id],
+        })
+        ?.catch(() => null)
+    }
+
     // Fire-and-forget: avalia regras de alerta configuráveis e webhooks de novo relato
     this.alertRules?.enqueueReportRuleCheck(report.id).catch(() => null)
     if (
@@ -351,22 +368,36 @@ export class ReportsService {
           )
           .catch(() => null)
       }
+      const statusMeta = {
+        previousStatus: report.status,
+        newStatus: dto.status,
+        reportTitle: report.title,
+      }
       if (report.author?.id && report.author.id !== user.id) {
         this.notifications.notify({
           userId: report.author.id,
           type: 'STATUS_CHANGED',
           reportId,
-          metadata: { previousStatus: report.status, newStatus: dto.status },
+          metadata: statusMeta,
         }).catch(() => null)
       }
       this.repository.getFollowerUserIds(reportId).then(userIds => {
-        for (const userId of userIds) {
-          if (userId !== user.id && userId !== report.author?.id) {
+        const targets = userIds.filter((uid) => uid !== user.id && uid !== report.author?.id)
+        if (targets.length === 0) return
+        if (this.notifications.notifyMany) {
+          this.notifications.notifyMany({
+            userIds: targets,
+            type: 'STATUS_CHANGED',
+            reportId,
+            metadata: statusMeta,
+          }).catch(() => null)
+        } else {
+          for (const userId of targets) {
             this.notifications.notify({
               userId,
               type: 'STATUS_CHANGED',
               reportId,
-              metadata: { previousStatus: report.status, newStatus: dto.status },
+              metadata: statusMeta,
             }).catch(() => null)
           }
         }
@@ -382,6 +413,25 @@ export class ReportsService {
       authorId: user.id,
       metadata: { media: dto.media ?? [] },
     })
+    const updateMeta = { reportTitle: report.title }
+    if (report.author?.id && report.author.id !== user.id) {
+      this.notifications.notify({
+        userId: report.author.id,
+        type: 'REPORT_UPDATE',
+        reportId,
+        metadata: updateMeta,
+      }).catch(() => null)
+    }
+    this.repository.getFollowerUserIds(reportId).then((userIds) => {
+      const targets = userIds.filter((uid) => uid !== user.id && uid !== report.author?.id)
+      if (targets.length === 0) return
+      this.notifications.notifyMany?.({
+        userIds: targets,
+        type: 'REPORT_UPDATE',
+        reportId,
+        metadata: updateMeta,
+      })?.catch(() => null)
+    }).catch(() => null)
     return { id: reportId, status: report.status }
   }
 
@@ -438,7 +488,17 @@ export class ReportsService {
       },
     })
 
-    return this.repository.findById(reportId)
+    const updated = await this.repository.findById(reportId)
+    this.notifications
+      .notifyRecipient?.(dto.recipientType, dto.recipientId, {
+        type: 'REPORT_REASSIGNED',
+        reportId,
+        metadata: { reportTitle: updated?.title },
+        excludeUserIds: [userId],
+      })
+      ?.catch(() => null)
+
+    return updated
   }
 
   // ── Follow ───────────────────────────────────────────────────────────────────
@@ -518,6 +578,17 @@ export class ReportsService {
       metadata: { evidence: dto.evidence ?? [] },
     })
 
+    if (report.recipientType && report.recipientId) {
+      this.notifications
+        .notifyRecipient?.(report.recipientType, report.recipientId, {
+          type: 'REPORT_DISPUTED',
+          reportId,
+          metadata: { reportTitle: report.title },
+          excludeUserIds: [userId],
+        })
+        ?.catch(() => null)
+    }
+
     return { id: reportId, status: ReportStatus.DISPUTED }
   }
 
@@ -549,13 +620,29 @@ export class ReportsService {
     })
 
     const authorId = await this.repository.findAuthorId(reportId)
+    const disputeMeta = {
+      decision: dto.decision,
+      previousStatus: ReportStatus.DISPUTED,
+      newStatus,
+      reportTitle: report.title,
+    }
     if (authorId) {
       this.notifications.notify({
         userId: authorId,
         type: 'STATUS_CHANGED',
         reportId,
-        metadata: { decision: dto.decision, newStatus },
+        metadata: disputeMeta,
       }).catch(() => null)
+    }
+    if (report.recipientType && report.recipientId) {
+      this.notifications
+        .notifyRecipient?.(report.recipientType, report.recipientId, {
+          type: 'STATUS_CHANGED',
+          reportId,
+          metadata: disputeMeta,
+          excludeUserIds: [user.id, ...(authorId ? [authorId] : [])],
+        })
+        ?.catch(() => null)
     }
 
     return updated

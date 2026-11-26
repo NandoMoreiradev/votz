@@ -102,13 +102,48 @@ export class CommentsService {
       mediaDuration: dto.mediaDuration,
     })
 
+    const notifiedUserIds = new Set<string>([authorId])
     if (report.authorId && report.authorId !== authorId) {
+      notifiedUserIds.add(report.authorId)
       this.notifications.notify({
         userId: report.authorId,
         type: 'NEW_COMMENT',
         reportId,
-        metadata: { commentId: comment.id, actorId: authorId },
+        metadata: { commentId: comment.id, actorId: authorId, reportTitle: report.title },
       }).catch(() => null)
+    }
+
+    if (dto.parentId) {
+      this.prisma.comment
+        .findUnique({ where: { id: dto.parentId }, select: { authorId: true } })
+        .then((parent) => {
+          if (parent?.authorId && !notifiedUserIds.has(parent.authorId)) {
+            notifiedUserIds.add(parent.authorId)
+            return this.notifications.notify({
+              userId: parent.authorId,
+              type: 'COMMENT_REPLY',
+              reportId,
+              metadata: {
+                commentId: comment.id,
+                parentId: dto.parentId,
+                actorId: authorId,
+                reportTitle: report.title,
+              },
+            })
+          }
+        })
+        .catch(() => null)
+    }
+
+    if (report.recipientType && report.recipientId) {
+      this.notifications
+        .notifyRecipient?.(report.recipientType, report.recipientId, {
+          type: 'NEW_COMMENT',
+          reportId,
+          metadata: { commentId: comment.id, actorId: authorId, reportTitle: report.title },
+          excludeUserIds: Array.from(notifiedUserIds),
+        })
+        ?.catch(() => null)
     }
 
     this.pressure.enqueueReport(reportId).catch(() => null)

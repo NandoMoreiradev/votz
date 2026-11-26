@@ -6,7 +6,7 @@ import { Image } from 'expo-image'
 import ArrowLeft from 'lucide-react-native/icons/arrow-left'
 import ChevronDown from 'lucide-react-native/icons/chevron-down'
 import { IconButton, styles } from './ui'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 import { RevealInput, type InputHandle } from './keyboard-context'
 
 // The avoiding view owns the full screen (including our toolbar), so it needs
@@ -22,12 +22,23 @@ function useKeyboardVisible() {
   return visible
 }
 export function Screen({ children, tabs = false }: PropsWithChildren<{ tabs?: boolean }>) {
+  const { colors } = useAppTheme()
   const keyboard = useKeyboardVisible()
-  return <KeyboardAvoidingView behavior="padding" style={styles.page}>
-    <SafeAreaView edges={tabs || keyboard ? ['top'] : ['top', 'bottom']} style={styles.page}>{children}</SafeAreaView>
+  const bg = { flex: 1, backgroundColor: colors.background }
+  return <KeyboardAvoidingView behavior="padding" style={bg}>
+    <SafeAreaView edges={tabs || keyboard ? ['top'] : ['top', 'bottom']} style={bg}>{children}</SafeAreaView>
   </KeyboardAvoidingView>
 }
 export function Brand() {
+  const { resolvedMode, colors, theme } = useAppTheme()
+  if (resolvedMode === 'dark') {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }} accessibilityLabel="Votz">
+        <Image source={require('../../assets/votz-mark.svg')} style={{ width: 28, height: 28 }} contentFit="contain" />
+        <Text style={{ fontFamily: theme.fonts.heading, fontSize: 20, letterSpacing: 1.2, color: colors.text }}>VOTZ</Text>
+      </View>
+    )
+  }
   return <Image source={require('../../assets/votz-logo.svg')} style={{ width: 105, height: 30 }} contentFit="contain" accessibilityLabel="Votz" />
 }
 /** Só o V do Votz: ocupa o lugar do botão voltar nas telas de aba, que não têm para onde voltar. */
@@ -36,9 +47,10 @@ export function BrandMark() {
 }
 /** `onBrandPress` faz do logo um botão com seta (como o Instagram): usado para abrir o menu de qual feed ver. */
 export function Toolbar({ title, back, left, right, brand, onBrandPress, brandLabel }: { title?: string; back?: boolean; left?: ReactNode; right?: ReactNode; brand?: boolean; onBrandPress?: () => void; brandLabel?: string }) {
-  return <View style={{ height: 52, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.surface, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>
-    <View style={{ minWidth: 36 }}>{left || (back ? <IconButton label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}><ArrowLeft size={23} color={theme.colors.primary} /></IconButton> : !brand && <BrandMark />)}</View>
-    <View style={{ flex: 1, alignItems: brand ? 'center' : 'flex-start' }}>{brand ? (onBrandPress ? <Pressable accessibilityRole="button" accessibilityLabel={brandLabel || 'Escolher o que ver'} onPress={onBrandPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 }}><Brand /><ChevronDown size={18} color={theme.colors.primary} /></Pressable> : <Brand />) : <Text numberOfLines={1} style={{ fontFamily: theme.fonts.heading, fontSize: 19, color: theme.colors.primary }}>{title}</Text>}</View>
+  const { colors, theme } = useAppTheme()
+  return <View style={{ height: 52, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
+    <View style={{ minWidth: 36 }}>{left || (back ? <IconButton label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')}><ArrowLeft size={23} color={colors.primary} /></IconButton> : !brand && <BrandMark />)}</View>
+    <View style={{ flex: 1, alignItems: brand ? 'center' : 'flex-start' }}>{brand ? (onBrandPress ? <Pressable accessibilityRole="button" accessibilityLabel={brandLabel || 'Escolher o que ver'} onPress={onBrandPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 }}><Brand /><ChevronDown size={18} color={colors.primary} /></Pressable> : <Brand />) : <Text numberOfLines={1} style={{ fontFamily: theme.fonts.heading, fontSize: 19, color: colors.primary }}>{title}</Text>}</View>
     <View style={{ minWidth: 36, alignItems: 'flex-end' }}>{right}</View>
   </View>
 }
@@ -46,6 +58,7 @@ export function Toolbar({ title, back, left, right, brand, onBrandPress, brandLa
 // A focused field near the end of a long form must be scrolled as well as
 // avoiding the keyboard. Measurements use screen coordinates, like keyboard metrics.
 export function FormScroll({ children, contentContainerStyle, ...props }: ScrollViewProps) {
+  const { colors } = useAppTheme()
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null)
   const focused = useRef<InputHandle | null>(null)
   const offset = useRef(0)
@@ -66,7 +79,7 @@ export function FormScroll({ children, contentContainerStyle, ...props }: Scroll
     return () => { listener.remove(); if (timer.current) clearTimeout(timer.current) }
   }, [schedule])
   return <RevealInput.Provider value={(input) => { focused.current = input; schedule() }}>
-    <ScrollView {...props} ref={scroll} style={{ flex: 1 }} contentContainerStyle={[styles.content, contentContainerStyle]}
+    <ScrollView {...props} ref={scroll} style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={[styles.content, contentContainerStyle]}
       keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       scrollEventThrottle={16} onScroll={(event) => { offset.current = event.nativeEvent.contentOffset.y; props.onScroll?.(event) }}
       onLayout={(event) => { schedule(); props.onLayout?.(event) }}>

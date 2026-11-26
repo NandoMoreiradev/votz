@@ -57,6 +57,7 @@ const AcceptInvite = lazyPage(() => import('./pages/AcceptInvite'), 'AcceptInvit
 const Imprensa = lazyPage(() => import('./pages/Imprensa'), 'Imprensa', ['/imprensa'])
 const PressEmailConfirm = lazyPage(() => import('./pages/PressEmailConfirm'), 'PressEmailConfirm', ['/imprensa/confirmar-email'])
 const PressContactInbox = lazyPage(() => import('./pages/PressContactInbox'), 'PressContactInbox', ['/pedidos-da-imprensa'])
+const NotificationsPage = lazyPage(() => import('./pages/NotificationsPage'), 'NotificationsPage', ['/notificacoes'])
 const CreateProposta = lazyPage(() => import('./pages/CreateProposta'), 'CreateProposta', ['/proposta/nova'])
 const Planos = lazyPage(() => import('./pages/Planos'), 'Planos', ['/planos', '/estudio/planos'])
 const PagamentoSucesso = lazyPage(() => import('./pages/PagamentoSucesso'), 'PagamentoSucesso', ['/pagamento/sucesso'])
@@ -101,8 +102,8 @@ function RouteErrorBoundary({ children }: { children: ReactNode }) {
   return <PageErrorBoundary resetKey={useLocation().pathname}>{children}</PageErrorBoundary>
 }
 
-/** Telas de trabalho (Conversas, Estúdio) e detalhe de publicação ocupam a tela inteira, sem o rodapé institucional. */
-const NO_FOOTER_PREFIXES = ['/conversas', '/estudio', '/mandato', '/painel-dados', '/entidade/prazos', '/proposta/nova', '/publicacoes/']
+/** Telas de trabalho (Conversas, Estúdio), login/cadastro e detalhe de publicação ocupam a tela inteira, sem o rodapé institucional. */
+const NO_FOOTER_PREFIXES = ['/entrar', '/cadastro', '/conversas', '/estudio', '/mandato', '/painel-dados', '/entidade/prazos', '/proposta/nova', '/publicacoes/']
 
 function RouteFooter() {
   const path = useLocation().pathname
@@ -188,6 +189,7 @@ function App() {
                   <Route path="/imprensa" element={<Imprensa />} />
                   <Route path="/imprensa/confirmar-email" element={<PressEmailConfirm />} />
                   <Route path="/pedidos-da-imprensa" element={<PressContactInbox />} />
+                  <Route path="/notificacoes" element={<NotificationsPage />} />
                   <Route path="/propostas" element={<PropostasList />} />
                   <Route path="/propostas/:id" element={<PropostaDetail />} />
                   <Route path="/planos" element={<Planos />} />

@@ -6,9 +6,10 @@ import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import X from 'lucide-react-native/icons/x'
 import { SURVEY_KIND_LABELS, SURVEY_ORIGIN_LABELS } from '@votz/shared-types'
 import { useFeaturedSurveys } from '../hooks/use-surveys'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 export function FeaturedSurveyCard() {
+  const { colors, theme } = useAppTheme()
   const { data } = useFeaturedSurveys()
   const [dismissed, setDismissed] = useState<string[]>([])
 
@@ -25,10 +26,10 @@ export function FeaturedSurveyCard() {
   return (
     <View
       style={{
-        backgroundColor: theme.colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 0.5,
         borderTopWidth: 0.5,
-        borderColor: theme.colors.border,
+        borderColor: colors.border,
         padding: 16,
         marginBottom: 8,
         gap: 8,
@@ -41,18 +42,18 @@ export function FeaturedSurveyCard() {
               flexDirection: 'row',
               alignItems: 'center',
               gap: 4,
-              backgroundColor: theme.colors.primary,
+              backgroundColor: colors.badgeBg,
               paddingHorizontal: 8,
               paddingVertical: 3,
               borderRadius: 99,
             }}
           >
-            <ShieldCheck size={12} color={theme.colors.surface} />
-            <Text style={{ color: theme.colors.surface, fontFamily: theme.fonts.medium, fontSize: 11 }}>
+            <ShieldCheck size={12} color={colors.onAccent} />
+            <Text style={{ color: colors.onAccent, fontFamily: theme.fonts.medium, fontSize: 11 }}>
               {SURVEY_ORIGIN_LABELS[survey.origin].toUpperCase()}
             </Text>
           </View>
-          <Text style={{ color: theme.colors.muted, fontFamily: theme.fonts.medium, fontSize: 12 }}>
+          <Text style={{ color: colors.muted, fontFamily: theme.fonts.medium, fontSize: 12 }}>
             {SURVEY_KIND_LABELS[survey.kind]}{scopeLabel ? ` · ${scopeLabel}` : ''}
           </Text>
         </View>
@@ -62,23 +63,23 @@ export function FeaturedSurveyCard() {
           onPress={() => setDismissed((prev) => [...prev, survey.id])}
           style={{ padding: 4 }}
         >
-          <X size={16} color={theme.colors.muted} />
+          <X size={16} color={colors.muted} />
         </Pressable>
       </View>
 
-      <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: theme.colors.primary, lineHeight: 22 }}>
+      <Text style={{ fontFamily: theme.fonts.heading, fontSize: 16, color: colors.primary, lineHeight: 22 }}>
         {survey.title}
       </Text>
       {survey.subtitle ? (
-        <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted, lineHeight: 20 }}>
+        <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: colors.muted, lineHeight: 20 }}>
           {survey.subtitle}
         </Text>
       ) : null}
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Lock size={13} color={theme.colors.positive} />
-          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: theme.colors.positive }}>
+          <Lock size={13} color={colors.positive} />
+          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.positive }}>
             Voto anônimo e seguro
           </Text>
         </View>
@@ -86,13 +87,13 @@ export function FeaturedSurveyCard() {
           accessibilityRole="button"
           onPress={() => router.push(`/pesquisas/${survey.slug}` as Href)}
           style={{
-            backgroundColor: theme.colors.primary,
+            backgroundColor: colors.action,
             paddingHorizontal: 14,
             paddingVertical: 8,
-            borderRadius: 10,
+            borderRadius: 999,
           }}
         >
-          <Text style={{ color: theme.colors.surface, fontFamily: theme.fonts.medium, fontSize: 13 }}>
+          <Text style={{ color: colors.onAccent, fontFamily: theme.fonts.medium, fontSize: 13 }}>
             {survey.hasVoted ? 'Ver pesquisa' : 'Participar'}
           </Text>
         </Pressable>

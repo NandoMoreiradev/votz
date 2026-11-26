@@ -33,11 +33,13 @@ const Page = styled.div`
   flex-direction: column;
 `
 const Content = styled.main`
-  max-width: 760px;
+  max-width: 1480px;
   width: 100%;
   margin: 0 auto;
-  padding: ${({ theme }) => theme.spacing[8]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[12]};
+  padding: 24px 32px 64px;
   flex: 1;
+
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 const Panel = styled.section`
   background: ${({ theme }) => theme.colors.white};

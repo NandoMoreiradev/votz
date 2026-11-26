@@ -13,7 +13,7 @@ import { useSession } from '../lib/session'
 import { AppThemeProvider, useAppTheme } from '../theme-context'
 import { ConversationsLive } from '../hooks/use-conversations'
 import { DeviceLinkPrompt } from '../components/device-link-prompt'
-import { subscribeChatPushOpen } from '../lib/chat-push'
+import { subscribeChatPushOpen, subscribeGeneralPushOpen } from '../lib/chat-push'
 
 void SplashScreen.preventAutoHideAsync()
 export { ErrorBoundary } from 'expo-router'
@@ -30,6 +30,7 @@ function AppStack() {
       <Stack.Screen name="profile/[kind]/[id]" options={{ title: 'Perfil público' }} />
       <Stack.Screen name="debates" options={{ title: 'Debates' }} />
       <Stack.Screen name="debate/[id]" options={{ title: 'Debate' }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notificações' }} />
     </Stack>
   )
 }
@@ -45,10 +46,17 @@ export default function RootLayout() {
     return () => listener.remove()
   }, [])
   useEffect(() => {
-    return subscribeChatPushOpen((conversationId) => {
+    const offChat = subscribeChatPushOpen((conversationId) => {
       if (useSession.getState().user)
         router.push({ pathname: '/conversation/[id]', params: { id: conversationId } })
     })
+    const offGeneral = subscribeGeneralPushOpen((target) => {
+      if (useSession.getState().user) router.push(target as never)
+    })
+    return () => {
+      offChat()
+      offGeneral()
+    }
   }, [])
   useEffect(() => { if ((loaded || fontError) && ready) void SplashScreen.hideAsync() }, [loaded, fontError, ready])
   if ((!loaded && !fontError) || !ready) return null

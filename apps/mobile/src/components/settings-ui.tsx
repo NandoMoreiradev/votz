@@ -2,13 +2,14 @@ import type { PropsWithChildren, ReactNode } from 'react'
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ChevronRight from 'lucide-react-native/icons/chevron-right'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 /** Bloco de configurações com título pequeno, como nos aplicativos de mensagem. */
 export function SettingsSection({ title, children }: PropsWithChildren<{ title: string }>) {
+  const { colors, theme } = useAppTheme()
   return (
-    <View style={styles.section}>
-      <Text accessibilityRole="header" style={styles.sectionTitle}>
+    <View style={[styles.section, { borderBottomColor: colors.border }]}>
+      <Text accessibilityRole="header" style={[styles.sectionTitle, { fontFamily: theme.fonts.medium, color: colors.action }]}>
         {title}
       </Text>
       {children}
@@ -40,17 +41,18 @@ export function SettingsRow({
   /** Ação sem volta ou que afasta alguém (sair, bloquear, denunciar): título em vermelho. */
   danger?: boolean
 }) {
+  const { colors, theme } = useAppTheme()
   const content = (
     <View style={[styles.row, soon && { opacity: 0.55 }]}>
-      <View style={styles.icon}>{icon}</View>
+      <View style={[styles.icon, { backgroundColor: colors.soft }]}>{icon}</View>
       <View style={styles.texts}>
-        <Text style={[styles.title, danger && { color: theme.colors.action }]}>{title}</Text>
+        <Text style={[styles.title, { fontFamily: theme.fonts.body, color: danger ? colors.action : colors.text }]}>{title}</Text>
         {subtitle || soon ? (
-          <Text style={styles.subtitle}>{soon ? 'Em breve' : subtitle}</Text>
+          <Text style={[styles.subtitle, { fontFamily: theme.fonts.body, color: colors.muted }]}>{soon ? 'Em breve' : subtitle}</Text>
         ) : null}
       </View>
       {right}
-      {chevron && <ChevronRight size={20} color={theme.colors.muted} />}
+      {chevron && <ChevronRight size={20} color={colors.muted} />}
     </View>
   )
   return onPress && !soon ? (
@@ -58,7 +60,7 @@ export function SettingsRow({
       accessibilityRole="button"
       accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
       onPress={onPress}
-      style={({ pressed }) => pressed && { backgroundColor: theme.colors.soft }}
+      style={({ pressed }) => pressed && { backgroundColor: colors.soft }}
     >
       {content}
     </Pressable>
@@ -85,6 +87,7 @@ export function OptionSheet<T extends string>({
   onSelect: (value: T) => void
   onClose: () => void
 }) {
+  const { colors, theme } = useAppTheme()
   const insets = useSafeAreaInsets()
   return (
     <Modal
@@ -99,9 +102,12 @@ export function OptionSheet<T extends string>({
         style={[StyleSheet.absoluteFill, styles.dim]}
         onPress={onClose}
       />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
-        <Text style={styles.sheetTitle}>{title}</Text>
-        {help ? <Text style={styles.sheetHelp}>{help}</Text> : null}
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 12, backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border }]}>
+        <View style={{ alignItems: 'center', marginBottom: 10 }}>
+          <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+        </View>
+        <Text style={[styles.sheetTitle, { fontFamily: theme.fonts.heading, color: colors.primary }]}>{title}</Text>
+        {help ? <Text style={[styles.sheetHelp, { fontFamily: theme.fonts.body, color: colors.muted }]}>{help}</Text> : null}
         {options.map(([key, label]) => (
           <Pressable
             key={key}
@@ -111,12 +117,12 @@ export function OptionSheet<T extends string>({
               onSelect(key)
               onClose()
             }}
-            style={({ pressed }) => [styles.option, pressed && { backgroundColor: theme.colors.soft }]}
+            style={({ pressed }) => [styles.option, pressed && { backgroundColor: colors.soft }]}
           >
-            <View style={[styles.radio, key === value && styles.radioOn]}>
-              {key === value && <View style={styles.radioDot} />}
+            <View style={[styles.radio, { borderColor: key === value ? colors.action : colors.muted }]}>
+              {key === value && <View style={[styles.radioDot, { backgroundColor: colors.action }]} />}
             </View>
-            <Text style={styles.optionText}>{label}</Text>
+            <Text style={[styles.optionText, { fontFamily: theme.fonts.body, color: colors.text }]}>{label}</Text>
           </Pressable>
         ))}
       </View>
@@ -129,16 +135,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     borderBottomWidth: 0.5,
-    borderBottomColor: theme.colors.border,
   },
   sectionTitle: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 6,
-    fontFamily: theme.fonts.medium,
     fontSize: 13,
     letterSpacing: 0.3,
-    color: theme.colors.action,
   },
   row: {
     flexDirection: 'row',
@@ -154,49 +157,40 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.soft,
   },
   texts: {
     flex: 1,
     gap: 2,
   },
   title: {
-    fontFamily: theme.fonts.body,
     fontSize: 16,
-    color: theme.colors.text,
   },
   subtitle: {
-    fontFamily: theme.fonts.body,
     fontSize: 13,
     lineHeight: 18,
-    color: theme.colors.muted,
   },
   dim: {
-    backgroundColor: 'rgba(13,13,13,0.45)',
+    backgroundColor: 'rgba(10,12,16,0.56)',
   },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    paddingTop: 18,
+    paddingTop: 10,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    backgroundColor: theme.colors.surface,
   },
   sheetTitle: {
     paddingHorizontal: 20,
-    fontFamily: theme.fonts.heading,
     fontSize: 18,
-    color: theme.colors.primary,
   },
   sheetHelp: {
     paddingHorizontal: 20,
     paddingTop: 4,
-    fontFamily: theme.fonts.body,
+    paddingBottom: 6,
     fontSize: 13,
     lineHeight: 18,
-    color: theme.colors.muted,
   },
   option: {
     flexDirection: 'row',
@@ -207,26 +201,19 @@ const styles = StyleSheet.create({
   },
   optionText: {
     flex: 1,
-    fontFamily: theme.fonts.body,
     fontSize: 16,
-    color: theme.colors.text,
   },
   radio: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: theme.colors.muted,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  radioOn: {
-    borderColor: theme.colors.action,
   },
   radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: theme.colors.action,
   },
 })

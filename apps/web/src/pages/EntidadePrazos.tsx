@@ -52,9 +52,11 @@ const Page = styled.main`
 const Container = styled.div`
   width: 100%;
   box-sizing: border-box;
-  max-width: 1180px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: ${({ theme }) => theme.spacing[6]} ${({ theme }) => theme.spacing[4]};
+  padding: 24px 32px 64px;
+
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const Header = styled.header`

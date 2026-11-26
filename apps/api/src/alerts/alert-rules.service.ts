@@ -31,6 +31,7 @@ import { ActingUser, requireActingOrg } from '../auth/acting-org'
 import { recordOrgAudit } from '../common/audit/org-audit'
 import { MailService } from '../mail/mail.service'
 import { NotificationsService } from '../notifications/notifications.service'
+import { getSaoPauloHour } from '../notifications/notification-preferences.helper'
 import { PrismaService } from '../prisma/prisma.service'
 import { WebhooksService } from '../webhooks/webhooks.service'
 import { ALERTS_QUEUE } from './alerts.service'
@@ -526,8 +527,10 @@ export class AlertRulesService {
       }
     }
 
-    // Flush DAILY_DIGEST triggers once per day (group pending triggers)
+    // Flush DAILY_DIGEST triggers once per day (às 08h+ em Brasília ou se houver item aguardando >= 24h)
     let digestBatches = 0
+    const spHour = getSaoPauloHour(now)
+    const startOfSpDay = new Date(now.getTime() - spHour * 3_600_000)
     const pendingDaily = await this.prisma.alertTriggerLog.findMany({
       where: {
         digestSentAt: null,
@@ -546,7 +549,32 @@ export class AlertRulesService {
         groupedByRule.set(row.ruleId, group)
       }
 
+      const allReportIds = Array.from(
+        new Set(pendingDaily.map((l) => l.reportId).filter((id): id is string => Boolean(id))),
+      )
+      const reportMap = new Map<string, { title: string; category: string }>()
+      if (allReportIds.length > 0) {
+        const reports = await this.prisma.report.findMany({
+          where: { id: { in: allReportIds } },
+          select: { id: true, title: true, category: true },
+        })
+        for (const r of reports) {
+          reportMap.set(r.id, { title: r.title, category: r.category })
+        }
+      }
+
       for (const { rule, logs } of groupedByRule.values()) {
+        const oldestMs = logs[0]?.deliveredAt ? now.getTime() - logs[0].deliveredAt.getTime() : 0
+        const alreadySentToday = await this.prisma.alertTriggerLog.findFirst({
+          where: {
+            ruleId: rule.id,
+            digestSentAt: { gte: startOfSpDay },
+          },
+          select: { id: true },
+        })
+        const dueNow = (!alreadySentToday && spHour >= 8) || oldestMs >= 24 * 3_600_000
+        if (!dueNow) continue
+
         const key = `${rule.orgType}:${rule.orgId}`
         const territory =
           scopeCache.get(key) ?? (await this.resolveTerritoryForOrg(rule.orgType, rule.orgId))
@@ -555,15 +583,18 @@ export class AlertRulesService {
         await this.deliverBatch(
           rule,
           territory,
-          logs.map((l) => ({
-            reportId: l.reportId,
-            surtoId: l.surtoId,
-            dedupKey: l.dedupKey,
-            title: l.reportId ? `Relato ${l.reportId.slice(0, 8)}` : `Surto ativo`,
-            category: rule.categories[0] ?? 'GERAL',
-            detail: 'resumo diário',
-            pressureScore: 0,
-          })),
+          logs.map((l) => {
+            const rep = l.reportId ? reportMap.get(l.reportId) : undefined
+            return {
+              reportId: l.reportId,
+              surtoId: l.surtoId,
+              dedupKey: l.dedupKey,
+              title: rep?.title ?? (l.reportId ? `Relato ${l.reportId.slice(0, 8)}` : 'Surto ativo'),
+              category: rep?.category ?? rule.categories[0] ?? 'GERAL',
+              detail: 'resumo diário',
+              pressureScore: 0,
+            }
+          }),
         )
         await this.prisma.alertTriggerLog.updateMany({
           where: { id: { in: logs.map((l) => l.id) } },
@@ -626,20 +657,32 @@ export class AlertRulesService {
     const firstReportId = items.find((i) => i.reportId)?.reportId ?? null
 
     if (rule.channels.includes(AlertChannel.IN_APP)) {
-      for (const m of members) {
+      const meta = {
+        ruleId: rule.id,
+        ruleName: rule.name,
+        count: items.length,
+        summary: items[0].title,
+      }
+      if (this.notifications.notifyMany) {
         await this.notifications
-          .notify({
-            userId: m.userId,
+          .notifyMany({
+            userIds: members.map((m) => m.userId),
             type: 'ALERT_RULE_MATCHED',
             reportId: firstReportId,
-            metadata: {
-              ruleId: rule.id,
-              ruleName: rule.name,
-              count: items.length,
-              summary: items[0].title,
-            },
+            metadata: meta,
           })
           .catch(() => null)
+      } else {
+        for (const m of members) {
+          await this.notifications
+            .notify({
+              userId: m.userId,
+              type: 'ALERT_RULE_MATCHED',
+              reportId: firstReportId,
+              metadata: meta,
+            })
+            .catch(() => null)
+        }
       }
     }
 

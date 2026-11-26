@@ -32,12 +32,13 @@ export function useSocket() {
       auth: { token: `Bearer ${token}` },
       transports: ['websocket'],
       reconnectionDelay: 2000,
-      reconnectionAttempts: 5,
+      reconnectionDelayMax: 15_000,
     })
 
     socket.on('notification', () => {
-      // Invalida contagem e lista — o bell e o painel atualizam automaticamente
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      // Invalida contagem e lista — o bell, o painel e /notificacoes atualizam em tempo real
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      void queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
     })
     socket.on('conversation:changed', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
@@ -56,6 +57,8 @@ export function useSocket() {
     })
     socket.on('connect', () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      void queryClient.invalidateQueries({ queryKey: ['notifications-unread'] })
     })
 
     socket.on('debate:live', (data: { debateId: string; title: string }) => {

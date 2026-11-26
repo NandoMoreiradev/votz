@@ -181,7 +181,15 @@ export function ConversationsLive() {
     const invalidate = () => {
       void client.invalidateQueries({ queryKey: ['conversations', userId] })
     }
-    socket.on('connect', invalidate)
+    const invalidateNotifications = () => {
+      void client.invalidateQueries({ queryKey: ['notifications'] })
+      void client.invalidateQueries({ queryKey: ['notifications-unread'] })
+    }
+    socket.on('connect', () => {
+      invalidate()
+      invalidateNotifications()
+    })
+    socket.on('notification', invalidateNotifications)
     socket.on('conversation:changed', invalidate)
     socket.on('chat:device-link', invalidate)
     socket.on('chat:device-link-decided', invalidate)

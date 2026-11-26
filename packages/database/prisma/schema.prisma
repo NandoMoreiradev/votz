@@ -176,7 +176,12 @@ enum RegistrationRequestStatus {
 
 enum NotificationType {
   NEW_COMMENT
+  COMMENT_REPLY
   STATUS_CHANGED
+  REPORT_UPDATE
+  NEW_REPORT_RECEIVED
+  REPORT_REASSIGNED
+  REPORT_DISPUTED
   SURTO_DETECTED
   ALERT_RULE_MATCHED
   WEEKLY_DIGEST
@@ -186,8 +191,12 @@ enum NotificationType {
   REPORT_ASSIGNED
   POST_LIKE
   POST_COMMENT
+  POST_COMMENT_REPLY
   POST_REPOST
+  POST_QUOTE
   POST_MENTION
+  OFFICIAL_SURVEY_PUBLISHED
+  SURVEY_REVIEWED
   AD_APPROVED
   AD_REJECTED
   AD_LOW_BALANCE
@@ -994,6 +1003,9 @@ model Notification {
   metadata  Json?
   createdAt DateTime         @default(now())
 
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, read])
+  @@index([userId, type, createdAt(sort: Desc)])
   @@map("notifications")
 }
 

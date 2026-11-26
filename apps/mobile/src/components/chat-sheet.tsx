@@ -1,7 +1,7 @@
 import type { PropsWithChildren, ReactNode } from 'react'
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 /** Linha de um menu (cabeçalho ou mensagem): ícone, texto e, se quiser, algo à direita. */
 export function MenuItem({
@@ -15,15 +15,16 @@ export function MenuItem({
   trailing?: ReactNode
   onPress?: () => void
 }) {
+  const { colors, theme } = useAppTheme()
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.soft }]}
+      style={({ pressed }) => [styles.item, pressed && { backgroundColor: colors.soft }]}
     >
       {icon}
-      <Text style={styles.itemText}>{label}</Text>
+      <Text style={[styles.itemText, { fontFamily: theme.fonts.body, color: colors.text }]}>{label}</Text>
       {trailing}
     </Pressable>
   )
@@ -36,6 +37,7 @@ export function PopoverMenu({
   children,
 }: PropsWithChildren<{ visible: boolean; onClose: () => void }>) {
   const insets = useSafeAreaInsets()
+  const { colors } = useAppTheme()
   return (
     <Modal
       transparent
@@ -49,7 +51,7 @@ export function PopoverMenu({
         style={StyleSheet.absoluteFill}
         onPress={onClose}
       />
-      <View style={[styles.popover, { top: insets.top + 48 }]}>{children}</View>
+      <View style={[styles.popover, { top: insets.top + 48, backgroundColor: colors.surface, borderColor: colors.border }]}>{children}</View>
     </Modal>
   )
 }
@@ -76,12 +78,6 @@ const GAP = 8
 const MARGIN = 8
 const REACTION_SIZE = 46
 
-/**
- * Menu da mensagem como no WhatsApp: o resto da tela escurece, a mensagem
- * tocada continua em destaque, as reações aparecem acima dela e as ações
- * (responder, encaminhar, copiar) logo abaixo. Se faltar espaço de um lado,
- * o menu muda de lado para continuar inteiro na tela.
- */
 export function MessageMenu({
   anchor,
   onClose,
@@ -95,12 +91,12 @@ export function MessageMenu({
   onReact: (emoji: string) => void
   actions: MenuAction[]
 }) {
+  const { colors } = useAppTheme()
   const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
   if (!anchor) return null
   const limitTop = insets.top + MARGIN
   const limitBottom = height - insets.bottom - MARGIN
-  // Parte da mensagem que está visível (mensagens altas podem passar da tela).
   const top = Math.max(anchor.y, limitTop)
   const bottom = Math.min(anchor.y + anchor.height, limitBottom)
   const visibleHeight = Math.max(bottom - top, 0)
@@ -145,25 +141,24 @@ export function MessageMenu({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      {/* Quatro faixas escuras em volta da mensagem: ela fica clara, em destaque. */}
       {dim({ top: 0, left: 0, right: 0, height: top }, 'Fechar menu da mensagem')}
       {dim({ top: bottom, left: 0, right: 0, bottom: 0 })}
       {dim({ top, left: 0, width: anchor.x, height: visibleHeight })}
       {dim({ top, left: anchor.x + anchor.width, right: 0, height: visibleHeight })}
-      <View style={[styles.bar, { top: barY, left: place(barWidth), width: barWidth }]}>
+      <View style={[styles.bar, { top: barY, left: place(barWidth), width: barWidth, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border }]}>
         {reactions.map((emoji) => (
           <Pressable
             key={emoji}
             accessibilityRole="button"
             accessibilityLabel={`Reagir com ${emoji}`}
             onPress={() => onReact(emoji)}
-            style={({ pressed }) => [styles.reaction, pressed && { backgroundColor: theme.colors.soft }]}
+            style={({ pressed }) => [styles.reaction, pressed && { backgroundColor: colors.soft }]}
           >
             <Text style={styles.reactionText}>{emoji}</Text>
           </Pressable>
         ))}
       </View>
-      <View style={[styles.card, { top: cardY, left: place(cardWidth), width: cardWidth }]}>
+      <View style={[styles.card, { top: cardY, left: place(cardWidth), width: cardWidth, backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border }]}>
         {actions.map((action) => (
           <MenuItem
             key={action.label}
@@ -179,8 +174,8 @@ export function MessageMenu({
 
 const shadow = {
   elevation: 8,
-  shadowColor: theme.colors.primary,
-  shadowOpacity: 0.18,
+  shadowColor: '#000000',
+  shadowOpacity: 0.24,
   shadowRadius: 12,
   shadowOffset: { width: 0, height: 4 },
 } as const
@@ -195,9 +190,7 @@ const styles = StyleSheet.create({
   },
   itemText: {
     flex: 1,
-    fontFamily: theme.fonts.body,
     fontSize: 16,
-    color: theme.colors.text,
   },
   popover: {
     position: 'absolute',
@@ -205,14 +198,12 @@ const styles = StyleSheet.create({
     minWidth: 240,
     paddingVertical: 6,
     borderRadius: 14,
-    backgroundColor: theme.colors.surface,
     borderWidth: 0.5,
-    borderColor: theme.colors.border,
     ...shadow,
   },
   dim: {
     position: 'absolute',
-    backgroundColor: 'rgba(13,13,13,0.45)',
+    backgroundColor: 'rgba(10,12,16,0.52)',
   },
   bar: {
     position: 'absolute',
@@ -222,7 +213,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 6,
     borderRadius: BAR_HEIGHT / 2,
-    backgroundColor: theme.colors.surface,
     ...shadow,
   },
   reaction: {
@@ -239,7 +229,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     paddingVertical: CARD_PADDING / 2,
     borderRadius: 14,
-    backgroundColor: theme.colors.surface,
     ...shadow,
   },
 })

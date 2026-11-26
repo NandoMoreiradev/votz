@@ -522,9 +522,11 @@ const PageShell = styled.div`
 `
 
 const Page = styled.main`
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 0 ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[16]};
+  padding: 0 32px ${({ theme }) => theme.spacing[16]};
+
+  @media (max-width: 720px) { padding: 0 16px ${({ theme }) => theme.spacing[12]}; }
 `
 
 const Hero = styled.section`

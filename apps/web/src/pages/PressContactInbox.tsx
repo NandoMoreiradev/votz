@@ -18,7 +18,7 @@ import { useReceivedPressContacts, useRespondPressContact } from '../hooks/usePr
 import { SkeletonRows } from '../components/ui/Skeleton'
 
 const Page = styled.div`min-height: 100vh; background: ${({ theme }) => theme.colors.neutral};`
-const Content = styled.div`max-width: 760px; margin: 0 auto; padding: 32px 24px 72px; @media (max-width: 640px) { padding: 16px 16px 48px; }`
+const Content = styled.div`max-width: 1480px; margin: 0 auto; padding: 24px 32px 64px; @media (max-width: 720px) { padding: 16px 16px 48px; }`
 const H1 = styled.h1`font-family: ${({ theme }) => theme.fonts.heading}; font-size: ${({ theme }) => theme.fontSizes['3xl']}; color: ${({ theme }) => theme.colors.primary}; margin: 0 0 8px;`
 const Lead = styled.p`font-size: ${({ theme }) => theme.fontSizes.md}; color: ${({ theme }) => theme.colors.muted}; line-height: 1.6; margin: 0 0 24px; max-width: 620px;`
 const Card = styled.section`

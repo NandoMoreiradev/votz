@@ -528,20 +528,24 @@ export class MandateService {
       }
     })
 
-    if (report.authorId && this.notifications) {
-      try {
-        await this.notifications.notify({
-          userId: report.authorId,
-          type: NotificationType.STATUS_CHANGED,
-          reportId: report.id,
-          metadata: {
-            orgName: ctx.orgName,
-            reportTitle: report.title,
-            status: updatedStatus,
-          },
-        })
-      } catch {
-        // Notificação é best-effort e nunca bloqueia a resposta oficial
+    if (this.notifications) {
+      const notifMetadata = {
+        orgName: ctx.orgName,
+        reportTitle: report.title,
+        status: updatedStatus,
+        newStatus: updatedStatus,
+      }
+      if (report.authorId && report.authorId !== user.id) {
+        try {
+          await this.notifications.notify({
+            userId: report.authorId,
+            type: NotificationType.STATUS_CHANGED,
+            reportId: report.id,
+            metadata: notifMetadata,
+          })
+        } catch {
+          // Notificação é best-effort e nunca bloqueia a resposta oficial
+        }
       }
     }
 

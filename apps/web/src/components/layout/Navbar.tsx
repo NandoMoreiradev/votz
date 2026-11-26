@@ -604,7 +604,7 @@ function NotificationsPanel() {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { data: count = 0 } = useUnreadCount()
-  const { data, isLoading, isError, refetch } = useNotifications()
+  const { data, isLoading, isError, refetch } = useNotifications({ enabled: open })
   const { mutate: markRead } = useMarkRead()
   const { mutate: markAll } = useMarkAllRead()
 
@@ -650,6 +650,15 @@ function NotificationsPanel() {
               })
             )}
           </NotifList>
+          <div style={{ borderTop: '1px solid #E5E7EB', padding: '10px 16px', textAlign: 'center' }}>
+            <Link
+              to="/notificacoes"
+              onClick={() => setOpen(false)}
+              style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', textDecoration: 'none' }}
+            >
+              Ver todas as notificações
+            </Link>
+          </div>
         </NotifDropdown>
       )}
     </BellWrapper>
@@ -998,7 +1007,6 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
             <NavLink to="/politicos">Políticos</NavLink>
             <NavLink to="/debates">Debates</NavLink>
             <NavLink to="/propostas">Propostas</NavLink>
-            <NavLink to="/sobre">Sobre</NavLink>
             {(isPressOrResearch || isStaff) && <NavLink to="/imprensa">Imprensa</NavLink>}
             {hasOrgContext && (
               <OrgMenuButton as={Link as any} to="/estudio">
@@ -1217,7 +1225,6 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
           <MobileNavLink to="/politicos" onClick={() => setMobileOpen(false)}>Políticos</MobileNavLink>
           <MobileNavLink to="/debates" onClick={() => setMobileOpen(false)}>Debates</MobileNavLink>
           <MobileNavLink to="/propostas" onClick={() => setMobileOpen(false)}>Propostas</MobileNavLink>
-          <MobileNavLink to="/sobre" onClick={() => setMobileOpen(false)}>Sobre o Votz</MobileNavLink>
           {(isPressOrResearch || isStaff) && (
             <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
           )}

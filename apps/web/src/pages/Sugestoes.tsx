@@ -29,11 +29,13 @@ const Page = styled.div`
 `
 
 const Content = styled.main`
-  max-width: 960px;
+  max-width: 1480px;
   width: 100%;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 24px 32px 64px;
   flex: 1;
+
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const Hero = styled.div`
@@ -108,9 +110,11 @@ const Select = styled.select`
 `
 
 const List = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: 16px;
+
+  @media (max-width: 560px) { grid-template-columns: 1fr; }
 `
 
 const Card = styled.article`

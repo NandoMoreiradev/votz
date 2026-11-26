@@ -17,9 +17,11 @@ const Page = styled.div`
 `
 
 const Content = styled.main`
-  max-width: 820px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 24px 32px 64px;
+
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const Header = styled.div`
@@ -91,22 +93,25 @@ const Select = styled.select`
 `
 
 const List = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const SurveyCard = styled(Link)`
-  display: block;
+  display: flex;
+  flex-direction: column;
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 20px;
+  padding: 20px 22px;
   transition: border-color 0.15s, box-shadow 0.15s;
 
   &:hover {
     border-color: ${({ theme }) => theme.colors.primary};
-    box-shadow: ${({ theme }) => theme.shadows.sm};
+    box-shadow: ${({ theme }) => theme.shadows.md};
   }
 `
 
@@ -166,6 +171,8 @@ const CardFoot = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-top: auto;
+  padding-top: 8px;
   font-size: 0.8125rem;
   color: ${({ theme }) => theme.colors.muted};
   flex-wrap: wrap;

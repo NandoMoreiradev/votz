@@ -80,16 +80,45 @@ export class AlertsService {
         `[surto] ${category} em ${city} — ${count} relatos em ${SURGE_WINDOW_HOURS}h (${linked} vinculados)`,
       )
 
-      // Notifica a entidade mais citada e jornalistas PRESS apenas na primeira ativação
+      // Notifica a entidade mais citada, cidadãos da cidade e jornalistas PRESS apenas na primeira ativação
       if (justActivated) {
         const entityUserId = await this.repo.findTopEntityUserForSurto(category, city, since)
         if (entityUserId) {
           this.notifications.notify({
             userId: entityUserId,
             type: 'SURTO_DETECTED',
-            reportId: surto.id,
-            metadata: { category, city, state, count },
+            reportId: null,
+            metadata: { surtoId: surto.id, category, city, state, count },
           }).catch(() => null)
+        }
+
+        // Cidadãos da cidade com alerta de surtos locais habilitado (respeita UserNotificationPreference via notifyMany)
+        if (this.prisma && this.notifications.notifyMany) {
+          this.prisma.user
+            .findMany({
+              where: {
+                banned: false,
+                city: { equals: city, mode: 'insensitive' },
+                ...(state ? { state: { equals: state, mode: 'insensitive' } } : {}),
+                OR: [
+                  { notificationPreference: null },
+                  { notificationPreference: { localSurges: true } },
+                ],
+              },
+              select: { id: true },
+              take: 2000,
+            })
+            .then((citizens) => {
+              if (citizens.length === 0) return
+              return this.notifications.notifyMany({
+                userIds: citizens.map((c) => c.id),
+                type: 'SURTO_DETECTED',
+                reportId: null,
+                metadata: { surtoId: surto.id, category, city, state, count },
+                excludeUserIds: entityUserId ? [entityUserId] : [],
+              })
+            })
+            .catch(() => null)
         }
 
         // Radar de imprensa: quem criou avisos de surto recebe pelas regras dele (cidade, tema, frequência)

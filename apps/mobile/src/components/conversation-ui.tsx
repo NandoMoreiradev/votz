@@ -8,7 +8,7 @@ import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import { useConversationCapabilities, useConversationScope } from '../hooks/use-conversations'
 import { Avatar, Button, State } from './ui'
 import { errorMessage } from '../lib/api'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 import { conversationUnreadLabel, type ConversationPerson } from '@votz/shared-types'
 
 export function ConversationGate({ children, allowWithoutChat = false }: PropsWithChildren<{ allowWithoutChat?: boolean }>) {
@@ -65,6 +65,7 @@ export function ConversationHero({
   title: string
   subtitle?: string
 }) {
+  const { colors, theme } = useAppTheme()
   return (
     <View style={{ alignItems: 'center', gap: 6, paddingTop: 24, paddingBottom: 12, paddingHorizontal: 24 }}>
       {group ? (
@@ -75,21 +76,21 @@ export function ConversationHero({
             borderRadius: 48,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: theme.colors.soft,
+            backgroundColor: colors.soft,
           }}
         >
-          <Users size={44} color={theme.colors.primary} />
+          <Users size={44} color={colors.primary} />
         </View>
       ) : (
         <Avatar name={person?.name || title} uri={person?.avatarUrl} size={96} />
       )}
       <Text
-        style={{ marginTop: 8, fontFamily: theme.fonts.heading, fontSize: 22, color: theme.colors.primary, textAlign: 'center' }}
+        style={{ marginTop: 8, fontFamily: theme.fonts.heading, fontSize: 22, color: colors.primary, textAlign: 'center' }}
       >
         {title}
       </Text>
       {subtitle ? (
-        <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.muted, textAlign: 'center' }}>
+        <Text style={{ fontFamily: theme.fonts.body, fontSize: 14, color: colors.muted, textAlign: 'center' }}>
           {subtitle}
         </Text>
       ) : null}
@@ -97,20 +98,23 @@ export function ConversationHero({
   )
 }
 export function ConversationNotice({ closed }: { closed: boolean }) {
+  const { colors, theme } = useAppTheme()
   return (
     <View
       style={{
         padding: 16,
         margin: 16,
         borderRadius: 14,
-        backgroundColor: theme.colors.soft,
+        backgroundColor: colors.soft,
+        borderWidth: 0.5,
+        borderColor: colors.border,
         flexDirection: 'row',
         gap: 10,
       }}
     >
-      <ShieldCheck size={22} color={theme.colors.muted} />
+      <ShieldCheck size={22} color={colors.muted} />
       <Text
-        style={{ flex: 1, fontFamily: theme.fonts.body, color: theme.colors.muted, lineHeight: 21 }}
+        style={{ flex: 1, fontFamily: theme.fonts.body, color: colors.muted, lineHeight: 21 }}
       >
         {closed
           ? 'Este grupo foi encerrado. Não é possível convidar ou alterar participantes.'
@@ -136,18 +140,14 @@ export function ConversationPersonRow({
   group?: boolean
   title?: string
   subtitle?: string
-  /** Horário da última mensagem, à direita do nome. */
   meta?: string
-  /** Mensagens não lidas: vira um selo e destaca nome e horário. */
   unread?: number
-  /** Conversa fixada no topo: mostra um alfinete. */
   pinned?: boolean
-  /** Conversa silenciada: mostra o sininho cortado. */
   muted?: boolean
-  /** Algo à direita da linha (por exemplo, a marca de selecionado). */
   trailing?: ReactNode
   onPress?: () => void
 }>) {
+  const { colors, theme } = useAppTheme()
   const content = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
       {group ? (
@@ -158,10 +158,10 @@ export function ConversationPersonRow({
             borderRadius: 26,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: theme.colors.soft,
+            backgroundColor: colors.soft,
           }}
         >
-          <Users size={26} color={theme.colors.primary} />
+          <Users size={26} color={colors.primary} />
         </View>
       ) : (
         <Avatar name={person?.name || title || 'Conversa'} uri={person?.avatarUrl} size={52} />
@@ -173,7 +173,7 @@ export function ConversationPersonRow({
               flex: 1,
               fontFamily: theme.fonts.medium,
               fontSize: 16,
-              color: theme.colors.text,
+              color: colors.text,
             }}
             numberOfLines={meta ? 1 : 2}
           >
@@ -184,7 +184,7 @@ export function ConversationPersonRow({
               style={{
                 fontFamily: unread ? theme.fonts.medium : theme.fonts.body,
                 fontSize: 12,
-                color: unread ? theme.colors.action : theme.colors.muted,
+                color: unread ? colors.action : colors.muted,
               }}
             >
               {meta}
@@ -202,7 +202,7 @@ export function ConversationPersonRow({
               numberOfLines={meta ? 1 : undefined}
               style={{
                 flex: 1,
-                color: unread ? theme.colors.text : theme.colors.muted,
+                color: unread ? colors.text : colors.muted,
                 fontFamily: unread ? theme.fonts.medium : theme.fonts.body,
                 fontSize: 13,
                 lineHeight: 20,
@@ -212,12 +212,12 @@ export function ConversationPersonRow({
             </Text>
             {muted && (
               <View accessible accessibilityLabel="Conversa silenciada">
-                <BellOff size={15} color={theme.colors.muted} />
+                <BellOff size={15} color={colors.muted} />
               </View>
             )}
             {pinned && (
               <View accessible accessibilityLabel="Conversa fixada">
-                <Pin size={15} color={theme.colors.muted} />
+                <Pin size={15} color={colors.muted} />
               </View>
             )}
             {unread > 0 && (
@@ -229,12 +229,12 @@ export function ConversationPersonRow({
                   paddingHorizontal: 6,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: theme.colors.action,
+                  backgroundColor: colors.action,
                 }}
               >
                 <Text
                   style={{
-                    color: theme.colors.surface,
+                    color: colors.onAccent,
                     fontFamily: theme.fonts.medium,
                     fontSize: 12,
                   }}
@@ -250,7 +250,7 @@ export function ConversationPersonRow({
     </View>
   )
   return (
-    <View>
+    <View style={{ backgroundColor: colors.surface }}>
       <View style={{ paddingVertical: 12, paddingHorizontal: 16, gap: 12 }}>
         {onPress ? (
           <Pressable accessibilityRole="button" onPress={onPress}>
@@ -262,7 +262,7 @@ export function ConversationPersonRow({
         {children}
       </View>
       {/* Divisória começa depois do avatar, como nos aplicativos de mensagem. */}
-      <View style={{ height: 0.5, marginLeft: 80, backgroundColor: theme.colors.border }} />
+      <View style={{ height: 0.5, marginLeft: 80, backgroundColor: colors.border }} />
     </View>
   )
 }
@@ -275,8 +275,9 @@ export function ConversationLoadingMore({
   more?: boolean
   onMore: () => void
 }) {
+  const { colors } = useAppTheme()
   return loading ? (
-    <ActivityIndicator style={{ padding: 18 }} color={theme.colors.action} />
+    <ActivityIndicator style={{ padding: 18 }} color={colors.action} />
   ) : more ? (
     <View style={{ padding: 16 }}>
       <Button title="Carregar mais" secondary onPress={onMore} />

@@ -17,8 +17,10 @@ export class NotificationsController {
     @CurrentUser() user: { id: string },
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('unreadOnly') unreadOnly?: string,
   ) {
-    return this.service.list(user.id, page, Math.min(limit, 50))
+    const onlyUnread = unreadOnly === 'true' || unreadOnly === '1'
+    return this.service.list(user.id, Math.max(page, 1), Math.min(Math.max(limit, 1), 50), onlyUnread)
   }
 
   @Get('unread-count')

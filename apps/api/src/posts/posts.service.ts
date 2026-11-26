@@ -193,6 +193,12 @@ export class PostsService {
       await this.topics.syncPostTopics(created.id, cleanContent).catch(() => null)
     }
 
+    // Fire-and-forget: notifica quote post, relato mencionado e @menções no texto
+    this.notifyPostCreation(created.id, user.id, cleanContent, {
+      quotePostId: dto.quotePostId,
+      mentionedReportId: dto.mentionedReportId,
+    }).catch(() => null)
+
     const refreshed = await this.repo.findRawById(created.id)
     const viewer = this.buildViewerIdentity(user)
     const [hydrated] = await this.repo.hydratePosts([refreshed ?? created], viewer)
@@ -355,6 +361,8 @@ export class PostsService {
           userId: post.authorUserId,
           type: 'POST_LIKE',
           metadata: { postId, actorId: user.id },
+          dedupWindowMs: 24 * 60 * 60 * 1000,
+          dedupMeta: { postId, actorId: user.id },
         })
         .catch(() => null)
     }
@@ -377,6 +385,8 @@ export class PostsService {
           userId: post.authorUserId,
           type: 'POST_REPOST',
           metadata: { postId, actorId: user.id },
+          dedupWindowMs: 24 * 60 * 60 * 1000,
+          dedupMeta: { postId, actorId: user.id },
         })
         .catch(() => null)
     }
@@ -444,14 +454,16 @@ export class PostsService {
     })
     if (!post) throw new NotFoundException('Publicação não encontrada')
 
+    let parentAuthorId: string | null = null
     if (dto.parentId) {
       const parent = await this.prisma.postComment.findUnique({
         where: { id: dto.parentId },
-        select: { id: true, postId: true },
+        select: { id: true, postId: true, authorId: true },
       })
       if (!parent || parent.postId !== postId) {
         throw new BadRequestException('Comentário pai inválido')
       }
+      parentAuthorId = parent.authorId
     }
 
     const mediaType = dto.mediaType ?? PostCommentMediaType.TEXT
@@ -512,7 +524,9 @@ export class PostsService {
       mediaDuration: mediaType === PostCommentMediaType.AUDIO ? dto.mediaDuration : undefined,
     })
 
+    const alreadyNotified = new Set<string>([user.id])
     if (post.authorUserId !== user.id) {
+      alreadyNotified.add(post.authorUserId)
       this.notifications
         .notify({
           userId: post.authorUserId,
@@ -520,6 +534,26 @@ export class PostsService {
           metadata: { postId, commentId: comment.id, actorId: user.id },
         })
         .catch(() => null)
+    }
+
+    if (parentAuthorId && !alreadyNotified.has(parentAuthorId)) {
+      alreadyNotified.add(parentAuthorId)
+      this.notifications
+        .notify({
+          userId: parentAuthorId,
+          type: 'POST_COMMENT_REPLY',
+          metadata: { postId, commentId: comment.id, parentId: dto.parentId, actorId: user.id },
+        })
+        .catch(() => null)
+    }
+
+    if (cleanContent) {
+      this.notifyMentionsInText(cleanContent, {
+        postId,
+        commentId: comment.id,
+        actorId: user.id,
+        excludeUserIds: Array.from(alreadyNotified),
+      }).catch(() => null)
     }
 
     this.ranking.enqueuePost(postId).catch(() => null)
@@ -616,6 +650,107 @@ export class PostsService {
       userId: user?.id,
       activeOrgType: user?.ctx?.type ?? null,
       activeOrgId: user?.ctx?.id ?? null,
+    }
+  }
+
+  private extractMentionHandles(text: string): string[] {
+    if (!text) return []
+    const matches = new Set<string>()
+    const regex = /(?:^|[\s(])@([a-z0-9._-]{3,30})/gi
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(text)) !== null) {
+      matches.add(match[1].toLowerCase())
+      if (matches.size >= 10) break
+    }
+    return Array.from(matches)
+  }
+
+  private async notifyMentionsInText(
+    text: string,
+    opts: { postId: string; commentId?: string; actorId: string; excludeUserIds: string[] },
+  ): Promise<void> {
+    const handles = this.extractMentionHandles(text)
+    if (handles.length === 0) return
+
+    const [users, politicians, entities, companies] = await Promise.all([
+      this.prisma.user.findMany({ where: { username: { in: handles }, banned: false }, select: { id: true } }),
+      this.prisma.politician.findMany({ where: { username: { in: handles } }, select: { id: true } }),
+      this.prisma.entity.findMany({ where: { username: { in: handles } }, select: { id: true } }),
+      this.prisma.company.findMany({ where: { username: { in: handles } }, select: { id: true } }),
+    ])
+
+    const targetUserIds = new Set<string>(users.map((u) => u.id))
+    const orgFilters = [
+      ...politicians.map((p) => ({ orgType: OrgType.POLITICIAN, orgId: p.id })),
+      ...entities.map((e) => ({ orgType: OrgType.ENTITY, orgId: e.id })),
+      ...companies.map((c) => ({ orgType: OrgType.COMPANY, orgId: c.id })),
+    ]
+    if (orgFilters.length > 0) {
+      const members = await this.prisma.orgMembership.findMany({
+        where: { status: 'ACTIVE', OR: orgFilters },
+        select: { userId: true },
+      })
+      for (const m of members) targetUserIds.add(m.userId)
+    }
+
+    if (targetUserIds.size === 0) return
+    await this.notifications.notifyMany?.({
+      userIds: Array.from(targetUserIds),
+      type: 'POST_MENTION',
+      metadata: {
+        postId: opts.postId,
+        ...(opts.commentId ? { commentId: opts.commentId } : {}),
+        actorId: opts.actorId,
+      },
+      excludeUserIds: opts.excludeUserIds,
+    })
+  }
+
+  private async notifyPostCreation(
+    postId: string,
+    actorId: string,
+    cleanContent: string,
+    refs: { quotePostId?: string; mentionedReportId?: string },
+  ): Promise<void> {
+    const excluded = new Set<string>([actorId])
+
+    if (refs.quotePostId) {
+      const quoted = await this.prisma.post.findUnique({
+        where: { id: refs.quotePostId },
+        select: { authorUserId: true },
+      })
+      if (quoted?.authorUserId && !excluded.has(quoted.authorUserId)) {
+        excluded.add(quoted.authorUserId)
+        await this.notifications.notify({
+          userId: quoted.authorUserId,
+          type: 'POST_QUOTE',
+          metadata: { postId, quotedPostId: refs.quotePostId, actorId },
+        })
+      }
+    }
+
+    if (refs.mentionedReportId) {
+      const rep = await this.prisma.report.findUnique({
+        where: { id: refs.mentionedReportId },
+        select: { authorId: true, title: true },
+      })
+      if (rep?.authorId && !excluded.has(rep.authorId)) {
+        excluded.add(rep.authorId)
+        await this.notifications.notify({
+          userId: rep.authorId,
+          type: 'POST_MENTION',
+          reportId: refs.mentionedReportId,
+          metadata: { postId, actorId, reportTitle: rep.title },
+        })
+      }
+    }
+
+    if (cleanContent) {
+      await this.notifyMentionsInText(cleanContent, {
+        postId,
+        actorId,
+        excludeUserIds: Array.from(excluded),
+      })
     }
   }
 

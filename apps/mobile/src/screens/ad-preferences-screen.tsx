@@ -14,13 +14,14 @@ import { ErrorText, State } from '../components/ui'
 import { FormScroll, Screen, Toolbar } from '../components/screen'
 import { api, errorMessage } from '../lib/api'
 import { useSession } from '../lib/session'
-import { theme } from '../theme'
+import { useAppTheme } from '../theme-context'
 
 const KEY = ['ads', 'preferences', 'me']
 const INTEREST_GROUPS = [...new Set(AD_INTERESTS.map((interest) => interest.group))]
 
 /** "Preferências de anúncios": aceite da personalização (opt-in) e interesses. Mesmos textos do site. */
 export default function AdPreferencesScreen() {
+  const { colors, theme } = useAppTheme()
   const user = useSession((s) => s.user)
   const client = useQueryClient()
   const preferences = useQuery({ queryKey: KEY, queryFn: () => api<AdPreferencesView>('/ads/preferences/me'), enabled: !!user })
@@ -48,40 +49,40 @@ export default function AdPreferencesScreen() {
     {preferences.isPending ? <State loading title="Carregando" />
       : preferences.isError || !data ? <State title="Não foi possível carregar" description={errorMessage(preferences.error)} retry={() => preferences.refetch()} />
       : <FormScroll>
-        <Text style={{ color: theme.colors.muted, fontSize: 14, lineHeight: 21 }}>{COPY.intro}</Text>
+        <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 21 }}>{COPY.intro}</Text>
 
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.colors.border }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: theme.colors.text }}>{COPY.toggleLabel}</Text>
-            <Text style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>{data.personalizationConsent ? COPY.toggleOn : COPY.toggleOff}</Text>
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: colors.text }}>{COPY.toggleLabel}</Text>
+            <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>{data.personalizationConsent ? COPY.toggleOn : COPY.toggleOff}</Text>
           </View>
           <Switch
             accessibilityLabel={COPY.toggleLabel}
             value={data.personalizationConsent}
             disabled={update.isPending}
             onValueChange={(value) => update.mutate({ personalizationConsent: value })}
-            trackColor={{ false: theme.colors.border, true: theme.colors.positive }}
+            trackColor={{ false: colors.border, true: colors.positive }}
           />
         </View>
 
         <View style={{ gap: 6 }}>
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary }}>{COPY.usedTitle}</Text>
-          {COPY.usedItems.map((item) => <Text key={item} style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>• {item}</Text>)}
-          {!!demographics && <Text style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19, paddingTop: 4 }}>Hoje: {demographics}. {COPY.demographicsHint}</Text>}
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: colors.primary }}>{COPY.usedTitle}</Text>
+          {COPY.usedItems.map((item) => <Text key={item} style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>• {item}</Text>)}
+          {!!demographics && <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19, paddingTop: 4 }}>Hoje: {demographics}. {COPY.demographicsHint}</Text>}
         </View>
 
         <View style={{ gap: 6 }}>
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary }}>{COPY.neverTitle}</Text>
-          {COPY.neverItems.map((item) => <Text key={item} style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>• {item}</Text>)}
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary, marginTop: 8 }}>{COPY.messagesTitle}</Text>
-          <Text style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>{COPY.messagesText}</Text>
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: colors.primary }}>{COPY.neverTitle}</Text>
+          {COPY.neverItems.map((item) => <Text key={item} style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>• {item}</Text>)}
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: colors.primary, marginTop: 8 }}>{COPY.messagesTitle}</Text>
+          <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>{COPY.messagesText}</Text>
         </View>
 
         <View style={{ gap: 8 }}>
-          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.primary }}>{COPY.interestsTitle}</Text>
-          <Text style={{ color: theme.colors.muted, fontSize: 13, lineHeight: 19 }}>{COPY.interestsHint}</Text>
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 15, color: colors.primary }}>{COPY.interestsTitle}</Text>
+          <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>{COPY.interestsHint}</Text>
           {INTEREST_GROUPS.map((group) => <View key={group} style={{ gap: 8 }}>
-            <Text style={{ color: theme.colors.muted, fontSize: 11, fontFamily: theme.fonts.medium, textTransform: 'uppercase', letterSpacing: 0.5, paddingTop: 6 }}>{group}</Text>
+            <Text style={{ color: colors.muted, fontSize: 11, fontFamily: theme.fonts.medium, textTransform: 'uppercase', letterSpacing: 0.5, paddingTop: 6 }}>{group}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {AD_INTERESTS.filter((interest) => interest.group === group).map((interest) => {
                 const isSelected = selected.has(interest.id)
@@ -93,18 +94,18 @@ export default function AdPreferencesScreen() {
                   accessibilityLabel={interest.label}
                   disabled={blocked}
                   onPress={() => toggleInterest(interest.id)}
-                  style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 999, borderWidth: 1.5, borderColor: isSelected ? theme.colors.primary : theme.colors.border, backgroundColor: isSelected ? theme.colors.primary : theme.colors.surface, opacity: blocked && !isSelected ? 0.45 : 1 }}
+                  style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 999, borderWidth: 1.5, borderColor: isSelected ? colors.action : colors.border, backgroundColor: isSelected ? colors.action : colors.surface, opacity: blocked && !isSelected ? 0.45 : 1 }}
                 >
-                  <Text style={{ fontSize: 14, color: isSelected ? '#FFFFFF' : theme.colors.text }}>{interest.label}</Text>
+                  <Text style={{ fontSize: 14, color: isSelected ? colors.onAccent : colors.text }}>{interest.label}</Text>
                 </Pressable>
               })}
             </View>
           </View>)}
-          {full && <Text style={{ color: theme.colors.muted, fontSize: 13 }}>{COPY.interestsLimit}</Text>}
+          {full && <Text style={{ color: colors.muted, fontSize: 13 }}>{COPY.interestsLimit}</Text>}
         </View>
 
         <ErrorText message={update.isError ? COPY.saveError : undefined} />
-        {update.isSuccess && !update.isPending && <Text accessibilityRole="alert" style={{ color: theme.colors.positive, fontSize: 13 }}>{COPY.saved}</Text>}
+        {update.isSuccess && !update.isPending && <Text accessibilityRole="alert" style={{ color: colors.positive, fontSize: 13 }}>{COPY.saved}</Text>}
       </FormScroll>}
   </Screen>
 }

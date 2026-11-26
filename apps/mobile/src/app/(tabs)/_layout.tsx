@@ -6,17 +6,18 @@ import Map from 'lucide-react-native/icons/map'
 import MessageCircle from 'lucide-react-native/icons/message-circle'
 import { useConversationCapabilities } from '../../hooks/use-conversations'
 import { useSession } from '../../lib/session'
-import { theme } from '../../theme'
+import { useAppTheme } from '../../theme-context'
 
 export default function TabLayout() {
   const user = useSession((s) => s.user)
   const conversations = useConversationCapabilities()
+  const { colors, theme } = useAppTheme()
   return <Tabs screenOptions={{
-    headerShown: false, tabBarActiveTintColor: theme.colors.action, tabBarInactiveTintColor: theme.colors.muted,
+    headerShown: false, tabBarActiveTintColor: colors.action, tabBarInactiveTintColor: colors.muted,
     tabBarHideOnKeyboard: true,
     tabBarLabelStyle: { fontFamily: theme.fonts.medium, fontSize: 11 },
-    tabBarStyle: { borderTopColor: theme.colors.border, backgroundColor: theme.colors.surface },
-    sceneStyle: { backgroundColor: theme.colors.background },
+    tabBarStyle: { borderTopColor: colors.border, backgroundColor: colors.surface },
+    sceneStyle: { backgroundColor: colors.background },
   }}>
     <Tabs.Screen name="index" options={{ title: 'Início', tabBarIcon: ({ color, size }) => <House color={color} size={size} /> }} />
     <Tabs.Screen name="explore" options={{ title: 'Explorar', tabBarIcon: ({ color, size }) => <Compass color={color} size={size} /> }} />

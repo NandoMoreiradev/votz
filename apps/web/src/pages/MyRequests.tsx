@@ -70,11 +70,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 680px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 32px 24px 80px;
+  padding: 24px 32px 64px;
 
-  @media (max-width: 640px) { padding: 16px 16px 64px; }
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const BackLink = styled.button`
@@ -107,9 +107,11 @@ const Subtitle = styled.p`
 `
 
 const List = styled.div`
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 16px;
+
+  @media (max-width: 520px) { grid-template-columns: 1fr; }
 `
 
 const Card = styled.div`

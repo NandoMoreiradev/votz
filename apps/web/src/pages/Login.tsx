@@ -1,50 +1,267 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import {
+  ArrowLeft,
+  ChartLineUp,
+  Eye,
+  EyeSlash,
+  LockKey,
+  Megaphone,
+  ShieldCheck,
+} from '@phosphor-icons/react'
 import { Button } from '../components/ui/Button'
 import { GoogleButton } from '../components/ui/GoogleButton'
 import { ProfileSelectModal } from '../components/ui/ProfileSelectModal'
-import { useGooglePendingMfa, useLogin, useMfaVerify, useMfaSetupForced, useMfaEnableForced, useMyProfiles, useSwitchContext } from '../hooks/useAuth'
+import {
+  useGooglePendingMfa,
+  useLogin,
+  useMfaVerify,
+  useMfaSetupForced,
+  useMfaEnableForced,
+  useMyProfiles,
+  useSwitchContext,
+} from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
+import { useAppTheme } from '../theme/ThemeContext'
 import { AuthUser } from '../types/api'
-import logoSrc from '../assets/brand/votz-logo.svg'
+import logoLightSrc from '../assets/brand/votz-logo.svg'
+import logoDarkSrc from '../assets/brand/votz-logo-dark.svg'
+
+// ── Layout ─────────────────────────────────────────────────────────────────
 
 const Page = styled.div`
   min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(380px, 46%) 1fr;
   background: ${({ theme }) => theme.colors.neutral};
+
+  @media (max-width: 960px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+const BrandPanel = styled.aside`
+  position: relative;
+  overflow: hidden;
+  background: #141724;
+  color: #ffffff;
+  padding: 40px 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(620px circle at 12% 18%, rgba(230, 57, 70, 0.22), transparent 60%),
+      radial-gradient(520px circle at 88% 85%, rgba(45, 198, 83, 0.14), transparent 58%);
+    pointer-events: none;
+  }
+
+  @media (max-width: 960px) {
+    display: none;
+  }
+`
+
+const BrandTop = styled.div`
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 24px;
+  justify-content: space-between;
+  gap: 16px;
 `
 
-const Card = styled.div`
-  width: 100%;
-  max-width: 400px;
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 40px;
+const BrandLogoLink = styled(Link)`
+  display: inline-flex;
+  align-items: center;
 `
 
-const Logo = styled(Link)`
-  display: flex;
-  justify-content: center;
-  margin-bottom: 12px;
-`
-
-const LogoImg = styled.img`
-  height: 44px;
+const BrandLogoImg = styled.img`
+  height: 36px;
   width: auto;
   display: block;
 `
 
+const BrandCenter = styled.div`
+  position: relative;
+  z-index: 1;
+  max-width: 440px;
+`
+
+const BrandEyebrow = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ff6b76;
+  margin-bottom: 16px;
+`
+
+const BrandHeadline = styled.h1`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: clamp(1.875rem, 2.6vw, 2.5rem);
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin-bottom: 16px;
+`
+
+const BrandLead = styled.p`
+  font-size: 1rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 32px;
+`
+
+const Highlights = styled.ul`
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+`
+
+const HighlightItem = styled.li`
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
+`
+
+const HighlightIcon = styled.span`
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+`
+
+const BrandBottom = styled.div`
+  position: relative;
+  z-index: 1;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+`
+
+const FormPanel = styled.main`
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 28px 32px;
+
+  @media (max-width: 640px) {
+    padding: 20px 16px 32px;
+  }
+`
+
+const TopBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto 24px;
+`
+
+const BackHome = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+  color: ${({ theme }) => theme.colors.muted};
+  transition: color 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+  }
+`
+
+const MobileLogo = styled(Link)`
+  display: none;
+
+  @media (max-width: 960px) {
+    display: inline-flex;
+    align-items: center;
+  }
+`
+
+const MobileLogoImg = styled.img`
+  height: 30px;
+  width: auto;
+  display: block;
+`
+
+const FormWrap = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const Card = styled.div`
+  width: 100%;
+  max-width: 440px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 16px;
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  padding: 36px 36px 32px;
+
+  @media (max-width: 520px) {
+    padding: 28px 22px 24px;
+  }
+`
+
+const CardTitle = styled.h2`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 1.5rem;
+  font-weight: ${({ theme }) => theme.fontWeights.bold};
+  color: ${({ theme }) => theme.colors.text};
+  letter-spacing: -0.015em;
+  margin-bottom: 6px;
+`
+
 const Subtitle = styled.p`
-  text-align: center;
   color: ${({ theme }) => theme.colors.muted};
   font-size: 0.9375rem;
-  margin-bottom: 32px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+`
+
+const BodyText = styled.p`
+  font-size: 0.9375rem;
+  color: ${({ theme }) => theme.colors.text};
+  line-height: 1.6;
+  margin-bottom: 16px;
+`
+
+const MutedText = styled.p`
+  font-size: 0.875rem;
+  color: ${({ theme }) => theme.colors.muted};
+  line-height: 1.55;
+  margin-bottom: 24px;
 `
 
 const Form = styled.form`
@@ -65,23 +282,54 @@ const Label = styled.label`
   color: ${({ theme }) => theme.colors.text};
 `
 
-const Input = styled.input<{ $error?: boolean }>`
+const InputWrap = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+`
+
+const Input = styled.input<{ $error?: boolean; $hasTrailing?: boolean }>`
   width: 100%;
-  padding: 10px 14px;
-  border: 1.5px solid ${({ $error, theme }) => $error ? theme.colors.action : theme.colors.border};
+  height: 44px;
+  padding: ${({ $hasTrailing }) => ($hasTrailing ? '0 44px 0 14px' : '0 14px')};
+  border: 1.5px solid ${({ $error, theme }) => ($error ? theme.colors.action : theme.colors.border)};
   border-radius: ${({ theme }) => theme.radii.md};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.9375rem;
   color: ${({ theme }) => theme.colors.text};
   background: ${({ theme }) => theme.colors.white};
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 
   &:focus {
-    border-color: ${({ theme }) => theme.colors.primary};
+    border-color: ${({ theme }) => theme.colors.primaryText};
+    box-shadow: 0 0 0 3px ${({ theme }) => `${theme.colors.primaryText}18`};
   }
 
-  &::placeholder { color: ${({ theme }) => theme.colors.muted}; }
+  &::placeholder {
+    color: ${({ theme }) => theme.colors.muted};
+  }
+`
+
+const TogglePasswordBtn = styled.button`
+  position: absolute;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
 `
 
 const ErrorMsg = styled.span`
@@ -89,17 +337,190 @@ const ErrorMsg = styled.span`
   color: ${({ theme }) => theme.colors.action};
 `
 
-const Footer = styled.p`
+const ErrorAlert = styled.div`
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  background: ${({ theme }) => `${theme.colors.action}12`};
+  border: 1px solid ${({ theme }) => `${theme.colors.action}38`};
+  color: ${({ theme }) => theme.colors.action};
+  font-size: 0.875rem;
+  line-height: 1.45;
+`
+
+const Divider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: ${({ theme }) => theme.colors.border};
+  }
+
+  span {
+    font-size: 0.8125rem;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+`
+
+const CardFoot = styled.p`
   text-align: center;
   font-size: 0.875rem;
   color: ${({ theme }) => theme.colors.muted};
-  margin-top: 20px;
+  margin-top: 22px;
 
   a {
-    color: ${({ theme }) => theme.colors.primary};
+    color: ${({ theme }) => theme.colors.action};
     font-weight: ${({ theme }) => theme.fontWeights.semibold};
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 `
+
+const BackStepBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 0.875rem;
+  font-weight: ${({ theme }) => theme.fontWeights.medium};
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+  }
+`
+
+const QrWrap = styled.div`
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+
+  img {
+    width: 200px;
+    height: 200px;
+    border-radius: ${({ theme }) => theme.radii.md};
+    background: #ffffff;
+    padding: 8px;
+    border: 1px solid ${({ theme }) => theme.colors.border};
+  }
+`
+
+const SecretCode = styled.code`
+  display: block;
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.text};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  font-size: 0.875rem;
+  text-align: center;
+  letter-spacing: 0.14em;
+  margin-bottom: 24px;
+  word-break: break-all;
+`
+
+const BackupGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 24px;
+
+  code {
+    background: ${({ theme }) => theme.colors.neutral};
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    color: ${({ theme }) => theme.colors.text};
+    font-family: ${({ theme }) => theme.fonts.mono};
+    padding: 8px 10px;
+    border-radius: ${({ theme }) => theme.radii.sm};
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+`
+
+const MfaBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => `${theme.colors.action}14`};
+  color: ${({ theme }) => theme.colors.action};
+  font-size: 0.75rem;
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  margin-bottom: 12px;
+`
+
+// ── Shell ──────────────────────────────────────────────────────────────────
+
+function AuthShell({ children }: { children: ReactNode }) {
+  const { resolvedMode } = useAppTheme()
+  const mobileLogoSrc = resolvedMode === 'dark' ? logoDarkSrc : logoLightSrc
+
+  return (
+    <Page>
+      <BrandPanel>
+        <BrandTop>
+          <BrandLogoLink to="/" aria-label="Votz — página inicial">
+            <BrandLogoImg src={logoDarkSrc} alt="Votz" />
+          </BrandLogoLink>
+        </BrandTop>
+
+        <BrandCenter>
+          <BrandEyebrow>Accountability cívico</BrandEyebrow>
+          <BrandHeadline>
+            Reclamação vira registro. Registro vira pressão. Pressão vira ação.
+          </BrandHeadline>
+          <BrandLead>
+            Entre para apoiar relatos da sua cidade, participar de debates públicos e acompanhar o que entidades e políticos realmente entregam.
+          </BrandLead>
+
+          <Highlights>
+            <HighlightItem>
+              <HighlightIcon><Megaphone size={18} weight="bold" /></HighlightIcon>
+              <span>Registre problemas reais com foto, vídeo e localização — de graça e com opção de anonimato.</span>
+            </HighlightItem>
+            <HighlightItem>
+              <HighlightIcon><ChartLineUp size={18} weight="bold" /></HighlightIcon>
+              <span>Acompanhe prazos, respostas oficiais e o desempenho público de órgãos e mandatos.</span>
+            </HighlightItem>
+            <HighlightItem>
+              <HighlightIcon><ShieldCheck size={18} weight="bold" /></HighlightIcon>
+              <span>Histórico público imutável, sem partido e com proteção aos seus dados.</span>
+            </HighlightItem>
+          </Highlights>
+        </BrandCenter>
+
+        <BrandBottom>Dados abertos. Sem partido. Pelo Brasil.</BrandBottom>
+      </BrandPanel>
+
+      <FormPanel>
+        <TopBar>
+          <BackHome to="/">
+            <ArrowLeft size={16} weight="bold" />
+            Voltar ao início
+          </BackHome>
+          <MobileLogo to="/" aria-label="Votz — página inicial">
+            <MobileLogoImg src={mobileLogoSrc} alt="Votz" />
+          </MobileLogo>
+        </TopBar>
+
+        <FormWrap>{children}</FormWrap>
+      </FormPanel>
+    </Page>
+  )
+}
+
+// ── Types & Component ──────────────────────────────────────────────────────
 
 interface CredentialsForm {
   email: string
@@ -122,6 +543,7 @@ export function Login() {
     returnTo: redirect,
   })
 
+  const [showPassword, setShowPassword] = useState(false)
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [mfaSetupToken, setMfaSetupToken] = useState<string | null>(null)
   const [mfaSetupStep, setMfaSetupStep] = useState<'intro' | 'qr' | 'code' | 'backup'>('intro')
@@ -249,39 +671,38 @@ export function Login() {
   if (mfaSetupToken) {
     if (mfaSetupStep === 'intro') {
       return (
-        <Page>
+        <AuthShell>
           <Card>
-            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-            <Subtitle>Segurança obrigatória</Subtitle>
-            <p style={{ fontSize: '0.9375rem', color: '#374151', marginBottom: 24, lineHeight: 1.6 }}>
-              Sua conta exige autenticação em dois fatores (MFA). Configure agora para continuar.
-            </p>
-            <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: 24 }}>
+            <MfaBadge><LockKey size={14} weight="bold" /> Segurança obrigatória</MfaBadge>
+            <CardTitle>Configure a verificação em 2 fatores</CardTitle>
+            <BodyText>
+              Sua conta exige autenticação em dois fatores (MFA). Configure agora para continuar com segurança.
+            </BodyText>
+            <MutedText>
               Você vai precisar de um app autenticador como <strong>Google Authenticator</strong> ou <strong>Authy</strong>.
-            </p>
+            </MutedText>
             <Button variant="primary" fullWidth disabled={setupPending} onClick={onStartMfaSetup}>
               {setupPending ? 'Gerando QR code...' : 'Configurar agora'}
             </Button>
           </Card>
-        </Page>
+        </AuthShell>
       )
     }
 
     if (mfaSetupStep === 'qr' && qrData) {
       return (
-        <Page>
+        <AuthShell>
           <Card>
-            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-            <Subtitle>Escaneie o QR code</Subtitle>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <img src={qrData.qrCode} alt="QR Code MFA" style={{ width: 200, height: 200 }} />
-            </div>
-            <p style={{ fontSize: '0.8125rem', color: '#6B7280', textAlign: 'center', marginBottom: 8 }}>
+            <MfaBadge><LockKey size={14} weight="bold" /> Passo 1 de 2</MfaBadge>
+            <CardTitle>Escaneie o QR code</CardTitle>
+            <Subtitle>Abra seu app autenticador e aponte a câmera para o código abaixo.</Subtitle>
+            <QrWrap>
+              <img src={qrData.qrCode} alt="QR Code MFA" />
+            </QrWrap>
+            <MutedText style={{ textAlign: 'center', marginBottom: 8 }}>
               Ou insira o código manualmente:
-            </p>
-            <code style={{ display: 'block', background: '#F3F4F6', padding: '8px 12px', borderRadius: 6, fontSize: '0.875rem', textAlign: 'center', letterSpacing: 2, marginBottom: 24 }}>
-              {qrData.secret}
-            </code>
+            </MutedText>
+            <SecretCode>{qrData.secret}</SecretCode>
             <Button
               variant="primary"
               fullWidth
@@ -293,17 +714,18 @@ export function Login() {
               Já escaneei — inserir código
             </Button>
           </Card>
-        </Page>
+        </AuthShell>
       )
     }
 
     if (mfaSetupStep === 'code') {
       const regCode = regMfa('code', { required: 'Obrigatório' })
       return (
-        <Page>
+        <AuthShell>
           <Card>
-            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-            <Subtitle>Confirme o código</Subtitle>
+            <MfaBadge><LockKey size={14} weight="bold" /> Passo 2 de 2</MfaBadge>
+            <CardTitle>Confirme o código</CardTitle>
+            <Subtitle>Digite os 6 dígitos exibidos no seu aplicativo autenticador.</Subtitle>
             <Form key="mfa-setup-form" onSubmit={handleMfa(onConfirmMfaSetup)}>
               <Field>
                 <Label htmlFor="mfa-setup-code">Código do autenticador (6 dígitos)</Label>
@@ -326,37 +748,35 @@ export function Login() {
                 />
                 {mfaErrors.code && <ErrorMsg>{mfaErrors.code.message}</ErrorMsg>}
               </Field>
-              {enableError && <ErrorMsg>Código inválido. Tente novamente.</ErrorMsg>}
+              {enableError && <ErrorAlert>Código inválido. Tente novamente.</ErrorAlert>}
               <Button variant="primary" fullWidth disabled={enablePending}>
                 {enablePending ? 'Verificando...' : 'Confirmar e entrar'}
               </Button>
             </Form>
-            <Footer>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMfaSetupStep('qr')}>
-                ← Voltar
-              </button>
-            </Footer>
+            <CardFoot>
+              <BackStepBtn type="button" onClick={() => setMfaSetupStep('qr')}>
+                <ArrowLeft size={14} /> Voltar
+              </BackStepBtn>
+            </CardFoot>
           </Card>
-        </Page>
+        </AuthShell>
       )
     }
 
     if (mfaSetupStep === 'backup') {
       return (
-        <Page>
+        <AuthShell>
           <Card>
-            <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-            <Subtitle>Guarde seus códigos de backup</Subtitle>
-            <p style={{ fontSize: '0.875rem', color: '#374151', marginBottom: 16, lineHeight: 1.5 }}>
+            <MfaBadge><ShieldCheck size={14} weight="bold" /> Quase pronto</MfaBadge>
+            <CardTitle>Guarde seus códigos de backup</CardTitle>
+            <MutedText>
               Se perder acesso ao autenticador, use um destes códigos. Cada um funciona uma única vez.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 24 }}>
+            </MutedText>
+            <BackupGrid>
               {backupCodes.map((code) => (
-                <code key={code} style={{ background: '#F3F4F6', padding: '6px 10px', borderRadius: 4, fontSize: '0.8125rem', textAlign: 'center' }}>
-                  {code}
-                </code>
+                <code key={code}>{code}</code>
               ))}
-            </div>
+            </BackupGrid>
             <Button
               variant="primary"
               fullWidth
@@ -381,7 +801,7 @@ export function Login() {
               onSelect={onProfileSelect}
             />
           )}
-        </Page>
+        </AuthShell>
       )
     }
   }
@@ -389,10 +809,11 @@ export function Login() {
   if (mfaToken) {
     const regCode = regMfa('code', { required: 'Obrigatório' })
     return (
-      <Page>
+      <AuthShell>
         <Card>
-          <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-          <Subtitle>Autenticação em dois fatores</Subtitle>
+          <MfaBadge><LockKey size={14} weight="bold" /> Verificação em 2 fatores</MfaBadge>
+          <CardTitle>Confirme sua identidade</CardTitle>
+          <Subtitle>Digite o código de 6 dígitos do seu aplicativo autenticador.</Subtitle>
 
           <Form key="mfa-verify-form" onSubmit={handleMfa(onMfa)}>
             <Field>
@@ -417,24 +838,24 @@ export function Login() {
               {mfaErrors.code && <ErrorMsg>{mfaErrors.code.message}</ErrorMsg>}
             </Field>
 
-            {mfaError && <ErrorMsg>Código inválido. Tente novamente.</ErrorMsg>}
+            {mfaError && <ErrorAlert>Código inválido. Tente novamente.</ErrorAlert>}
 
             <Button variant="primary" fullWidth disabled={mfaPending}>
               {mfaPending ? 'Verificando...' : 'Confirmar'}
             </Button>
           </Form>
 
-          <Footer>
-            <button
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+          <CardFoot>
+            <BackStepBtn
+              type="button"
               onClick={() => {
                 resetMfa({ code: '' })
                 setMfaToken(null)
               }}
             >
-              ← Voltar
-            </button>
-          </Footer>
+              <ArrowLeft size={14} /> Voltar
+            </BackStepBtn>
+          </CardFoot>
         </Card>
         {pendingAuth && profiles && profiles.orgs.length > 0 && (
           <ProfileSelectModal
@@ -445,15 +866,21 @@ export function Login() {
             onSelect={onProfileSelect}
           />
         )}
-      </Page>
+      </AuthShell>
     )
   }
 
   return (
-    <Page>
+    <AuthShell>
       <Card>
-        <Logo to="/" aria-label="Votz — página inicial"><LogoImg src={logoSrc} alt="Votz" /></Logo>
-        <Subtitle>Entre para apoiar e cobrar.</Subtitle>
+        <CardTitle>Entrar na sua conta</CardTitle>
+        <Subtitle>Entre para apoiar relatos, participar e cobrar soluções.</Subtitle>
+
+        <GoogleButton />
+
+        <Divider>
+          <span>ou continue com e-mail</span>
+        </Divider>
 
         <Form key="credentials-form" onSubmit={handleCreds(onCredentials)}>
           <Field>
@@ -472,38 +899,41 @@ export function Login() {
 
           <Field>
             <Label htmlFor="login-password">Senha</Label>
-            <Input
-              key="cred-password"
-              id="login-password"
-              type="password"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              $error={!!credErrors.password}
-              {...regCreds('password', { required: 'Obrigatório' })}
-            />
+            <InputWrap>
+              <Input
+                key="cred-password"
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                $error={!!credErrors.password}
+                $hasTrailing
+                {...regCreds('password', { required: 'Obrigatório' })}
+              />
+              <TogglePasswordBtn
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                title={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+              >
+                {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+              </TogglePasswordBtn>
+            </InputWrap>
             {credErrors.password && <ErrorMsg>{credErrors.password.message}</ErrorMsg>}
           </Field>
 
-          {loginError && <ErrorMsg>E-mail ou senha incorretos.</ErrorMsg>}
-          {googleMfaExpired && <ErrorMsg>O login com Google expirou. Entre de novo.</ErrorMsg>}
+          {loginError && <ErrorAlert>E-mail ou senha incorretos.</ErrorAlert>}
+          {googleMfaExpired && <ErrorAlert>O login com Google expirou. Entre de novo.</ErrorAlert>}
 
           <Button variant="primary" fullWidth disabled={loginPending}>
             {loginPending ? 'Entrando...' : 'Entrar'}
           </Button>
         </Form>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #E5E5E5' }} />
-          <span style={{ fontSize: '0.8125rem', color: '#9CA3AF' }}>ou</span>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #E5E5E5' }} />
-        </div>
-
-        <GoogleButton />
-
-        <Footer>
+        <CardFoot>
           Não tem conta?{' '}
           <Link to="/cadastro">Cadastre-se grátis</Link>
-        </Footer>
+        </CardFoot>
       </Card>
 
       {pendingAuth && profiles && profiles.orgs.length > 0 && (
@@ -515,6 +945,6 @@ export function Login() {
           onSelect={onProfileSelect}
         />
       )}
-    </Page>
+    </AuthShell>
   )
 }

@@ -6,11 +6,37 @@ export function notificationContent(notification: AppNotification): { label: str
   const postLabels: Record<string, string> = {
     POST_LIKE: 'Sua publicação recebeu uma curtida.',
     POST_COMMENT: 'Novo comentário na sua publicação.',
+    POST_COMMENT_REPLY: 'Alguém respondeu ao seu comentário em uma publicação.',
     POST_REPOST: 'Sua publicação foi repostada.',
+    POST_QUOTE: 'Sua publicação foi citada em outra publicação.',
     POST_MENTION: 'Você foi mencionado em uma publicação.',
   }
   if (Object.prototype.hasOwnProperty.call(postLabels, type)) {
-    return { label: postLabels[type], href: postId ? `/publicacoes/${encodeURIComponent(postId)}${type === 'POST_COMMENT' ? '#responder' : ''}` : null }
+    const hash = type === 'POST_COMMENT' || type === 'POST_COMMENT_REPLY' ? '#responder' : ''
+    return { label: postLabels[type], href: postId ? `/publicacoes/${encodeURIComponent(postId)}${hash}` : null }
+  }
+  if (type === 'OFFICIAL_SURVEY_PUBLISHED') {
+    const surveyTitle = typeof metadata?.surveyTitle === 'string' && metadata.surveyTitle.trim() ? ` "${metadata.surveyTitle.trim()}"` : ''
+    const slug = typeof metadata?.surveySlug === 'string' && metadata.surveySlug.trim() ? metadata.surveySlug.trim() : null
+    const invited = metadata?.invited === true
+    return {
+      label: invited
+        ? `Você foi convidado para a Pesquisa Votz${surveyTitle}.`
+        : `Nova Pesquisa Votz disponível${surveyTitle}.`,
+      href: slug ? `/pesquisas/${encodeURIComponent(slug)}` : '/pesquisas',
+    }
+  }
+  if (type === 'SURVEY_REVIEWED') {
+    const surveyTitle = typeof metadata?.surveyTitle === 'string' && metadata.surveyTitle.trim() ? `"${metadata.surveyTitle.trim()}"` : 'Sua pesquisa'
+    const slug = typeof metadata?.surveySlug === 'string' && metadata.surveySlug.trim() ? metadata.surveySlug.trim() : null
+    const status = metadata?.reviewStatus
+    const note = typeof metadata?.reviewNote === 'string' && metadata.reviewNote.trim() ? ` Motivo: ${metadata.reviewNote.trim()}` : ''
+    const label = status === 'APPROVED'
+      ? `${surveyTitle} foi aprovada na revisão editorial.`
+      : status === 'REJECTED'
+        ? `${surveyTitle} não foi aprovada na revisão editorial.${note}`
+        : `Atualização na revisão de ${surveyTitle}.${note}`
+    return { label, href: slug ? `/pesquisas/${encodeURIComponent(slug)}` : '/pesquisas' }
   }
   if (type === 'CONTEXT_NOTE_SHOWN') {
     const targetId = typeof metadata?.targetId === 'string' && metadata.targetId.trim() ? metadata.targetId : null
@@ -96,18 +122,39 @@ export function notificationContent(notification: AppNotification): { label: str
     return { label, href: '/imprensa' }
   }
   const href = report?.id ? `/relatos/${encodeURIComponent(report.id)}` : null
-  const title = report?.title ? `"${report.title}"` : 'um relato'
+  const title = report?.title
+    ? `"${report.title}"`
+    : typeof metadata?.reportTitle === 'string' && metadata.reportTitle.trim()
+      ? `"${metadata.reportTitle.trim()}"`
+      : 'um relato'
   if (type === 'NEW_COMMENT') return { label: `Novo comentário em ${title}.`, href }
+  if (type === 'COMMENT_REPLY') return { label: `Alguém respondeu ao seu comentário em ${title}.`, href }
+  if (type === 'NEW_REPORT_RECEIVED') return { label: `Novo relato direcionado à sua equipe: ${title}.`, href }
+  if (type === 'REPORT_REASSIGNED') return { label: `O relato ${title} foi reatribuído à sua equipe.`, href }
+  if (type === 'REPORT_DISPUTED') return { label: `O autor contestou a resolução de ${title}.`, href }
+  if (type === 'REPORT_UPDATE') return { label: `Nova atualização oficial em ${title}.`, href }
   if (type === 'STATUS_CHANGED') {
-    const status = typeof metadata?.newStatus === 'string' ? metadata.newStatus : ''
+    const status =
+      typeof metadata?.newStatus === 'string'
+        ? metadata.newStatus
+        : typeof metadata?.status === 'string'
+          ? metadata.status
+          : ''
     const labels: Record<string, string> = {
       OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento',
       RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado',
     }
     return { label: `Atualização em ${title}${labels[status] ? ` → ${labels[status]}` : '.'}`, href }
   }
+  if (type === 'SURTO_DETECTED') {
+    const surtoId = typeof metadata?.surtoId === 'string' && metadata.surtoId.trim() ? metadata.surtoId.trim() : null
+    const city = typeof metadata?.city === 'string' && metadata.city.trim() ? ` em ${metadata.city.trim()}` : ' na região'
+    return {
+      label: `Foi detectado um aumento de relatos${city}.`,
+      href: surtoId ? `/surtos/${encodeURIComponent(surtoId)}` : href,
+    }
+  }
   const labels: Record<string, string> = {
-    SURTO_DETECTED: 'Foi detectado um aumento de relatos na região.',
     ALERT_RULE_MATCHED: 'Um novo relato corresponde ao seu alerta.',
     WEEKLY_DIGEST: 'Seu resumo semanal está disponível.',
     SLA_AT_RISK: `O prazo de atendimento de ${title} está em risco.`,

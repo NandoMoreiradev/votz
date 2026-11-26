@@ -20,9 +20,11 @@ const Page = styled.div`
 `
 
 const Content = styled.div`
-  max-width: 680px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 40px 24px 80px;
+  padding: 24px 32px 64px;
+
+  @media (max-width: 720px) { padding: 16px 16px 48px; }
 `
 
 const Title = styled.h1`
