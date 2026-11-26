@@ -35,6 +35,7 @@ export interface ContentFlagItem {
   reason: FlagReason
   details: string | null
   status: FlagStatus
+  source?: 'USER' | 'AUTO_AI'
   resolvedById: string | null
   resolvedAt: string | null
   resolutionNote: string | null
@@ -45,6 +46,7 @@ export interface ContentFlagItem {
     excerpt: string
     link: string | null
     exists: boolean
+    moderationStatus?: 'PUBLISHED' | 'UNDER_REVIEW' | 'HIDDEN'
   }
 }
 

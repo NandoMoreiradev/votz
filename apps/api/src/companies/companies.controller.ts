@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { CompaniesService } from './companies.service'
 import { ListCompaniesDto } from './dto/list-companies.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
+import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
@@ -67,5 +68,42 @@ export class CompaniesController {
     @CurrentUser() user: { id: string },
   ) {
     return this.companiesService.update(id, user.id, dto)
+  }
+
+  @Post(':id/branches')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cadastrar nova filial da empresa (requer MANAGE_PROFILE)' })
+  createBranch(
+    @Param('id') id: string,
+    @Body() dto: CreateBranchDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.companiesService.createBranch(id, user.id, dto)
+  }
+
+  @Patch(':id/branches/:branchId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Editar filial da empresa (requer MANAGE_PROFILE)' })
+  updateBranch(
+    @Param('id') id: string,
+    @Param('branchId') branchId: string,
+    @Body() dto: UpdateBranchDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.companiesService.updateBranch(id, branchId, user.id, dto)
+  }
+
+  @Delete(':id/branches/:branchId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remover filial da empresa (requer MANAGE_PROFILE)' })
+  deleteBranch(
+    @Param('id') id: string,
+    @Param('branchId') branchId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.companiesService.deleteBranch(id, branchId, user.id)
   }
 }

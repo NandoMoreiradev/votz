@@ -1,5 +1,4 @@
 import { createGlobalStyle } from 'styled-components'
-import { theme } from './index'
 
 export const GlobalStyle = createGlobalStyle`
   *, *::before, *::after {
@@ -11,21 +10,23 @@ export const GlobalStyle = createGlobalStyle`
   html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
+    color-scheme: ${({ theme }) => theme.mode};
   }
 
   body {
-    font-family: ${theme.fonts.body};
-    font-size: ${theme.fontSizes.md};
-    color: ${theme.colors.text};
-    background-color: ${theme.colors.neutral};
+    font-family: ${({ theme }) => theme.fonts.body};
+    font-size: ${({ theme }) => theme.fontSizes.md};
+    color: ${({ theme }) => theme.colors.text};
+    background-color: ${({ theme }) => theme.colors.neutral};
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: ${theme.fonts.heading};
-    font-weight: ${theme.fontWeights.bold};
+    font-family: ${({ theme }) => theme.fonts.heading};
+    font-weight: ${({ theme }) => theme.fontWeights.bold};
     line-height: 1.2;
   }
 

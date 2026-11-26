@@ -21,6 +21,7 @@ import { InviteMemberDto } from './dto/invite-member.dto'
 import { CreateRoleDto } from './dto/create-role.dto'
 import { UpdateRoleDto } from './dto/update-role.dto'
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto'
+import { UpdateMemberStatusDto } from './dto/update-member-status.dto'
 
 @ApiTags('org-memberships')
 @ApiBearerAuth()
@@ -28,6 +29,19 @@ import { UpdateMemberRoleDto } from './dto/update-member-role.dto'
 @Controller('org-memberships')
 export class OrgMembershipsController {
   constructor(private readonly service: OrgMembershipsService) {}
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+
+  @ApiOperation({ summary: 'Resumo da equipe e limite de assentos do plano' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
+  @Get(':orgType/:orgId/summary')
+  getSummary(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+  ) {
+    return this.service.getTeamSummary(orgType, orgId)
+  }
 
   // ── Roles ──────────────────────────────────────────────────────────────────
 
@@ -46,8 +60,8 @@ export class OrgMembershipsController {
   @UseGuards(OrgPermissionGuard)
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Post('roles')
-  createRole(@Body() dto: CreateRoleDto) {
-    return this.service.createRole(dto)
+  createRole(@Body() dto: CreateRoleDto, @CurrentUser() actor: { id: string }) {
+    return this.service.createRole(dto, actor.id)
   }
 
   @ApiOperation({ summary: 'Atualizar role customizada' })
@@ -59,11 +73,15 @@ export class OrgMembershipsController {
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
+    @CurrentUser() actor: { id: string },
   ) {
-    return this.service.updateRole(orgType, orgId, id, {
-      name: dto.name,
-      permissions: dto.permissions,
-    })
+    return this.service.updateRole(
+      orgType,
+      orgId,
+      id,
+      { name: dto.name, permissions: dto.permissions },
+      actor.id,
+    )
   }
 
   @ApiOperation({ summary: 'Excluir role customizada' })
@@ -100,8 +118,23 @@ export class OrgMembershipsController {
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateMemberRoleDto,
+    @CurrentUser() actor: { id: string },
   ) {
-    return this.service.updateMemberRole(userId, orgType, orgId, dto.roleId)
+    return this.service.updateMemberRole(userId, orgType, orgId, dto.roleId, actor.id)
+  }
+
+  @ApiOperation({ summary: 'Suspender ou reativar um membro' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
+  @Patch(':orgType/:orgId/members/:userId/status')
+  updateMemberStatus(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: UpdateMemberStatusDto,
+    @CurrentUser() actor: { id: string },
+  ) {
+    return this.service.updateMemberStatus(userId, orgType, orgId, dto.status, actor.id)
   }
 
   @ApiOperation({ summary: 'Remover membro da organização' })
@@ -112,18 +145,54 @@ export class OrgMembershipsController {
     @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() actor: { id: string },
   ) {
-    return this.service.removeMember(userId, orgType, orgId)
+    return this.service.removeMember(userId, orgType, orgId, actor.id)
   }
 
   // ── Invites ────────────────────────────────────────────────────────────────
+
+  @ApiOperation({ summary: 'Listar convites pendentes de uma organização' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
+  @Get(':orgType/:orgId/invites')
+  listPendingInvites(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+  ) {
+    return this.service.listPendingInvites(orgType, orgId)
+  }
 
   @ApiOperation({ summary: 'Convidar usuário por e-mail' })
   @UseGuards(OrgPermissionGuard)
   @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
   @Post('invites')
-  invite(@Body() dto: InviteMemberDto) {
-    return this.service.invite(dto)
+  invite(@Body() dto: InviteMemberDto, @CurrentUser() actor: { id: string }) {
+    return this.service.invite(dto, actor.id)
+  }
+
+  @ApiOperation({ summary: 'Reenviar convite pendente' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
+  @Post(':orgType/:orgId/invites/:id/resend')
+  resendInvite(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.resendInvite(orgType, orgId, id)
+  }
+
+  @ApiOperation({ summary: 'Cancelar convite pendente' })
+  @UseGuards(OrgPermissionGuard)
+  @RequireOrgPermission(OrgPermission.MANAGE_MEMBERS)
+  @Delete(':orgType/:orgId/invites/:id')
+  cancelInvite(
+    @Param('orgType', new ParseEnumPipe(OrgType)) orgType: OrgType,
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.cancelInvite(orgType, orgId, id)
   }
 
   @ApiOperation({ summary: 'Preview de convite (público)' })

@@ -10,6 +10,7 @@ import { HandlesService } from '../handles/handles.service'
 import { AdsViewerCacheService } from '../ads/ads-viewer/ads-viewer-cache.service'
 import { UsersRepository } from './users.repository'
 import { UpdateProfileDto } from './dto/update-profile.dto'
+import { UpdatePreferencesDto } from './dto/update-preferences.dto'
 import { AcceptConsentDto } from './dto/accept-consent.dto'
 import { DeleteAccountDto } from './dto/delete-account.dto'
 import { LGPD_QUEUE, LgpdExportJob } from './lgpd.processor'
@@ -95,7 +96,50 @@ export class UsersService {
       // `null` apaga; ausente não muda. Data só (sem hora), como a pessoa informou.
       birthDate: dto.birthDate === undefined ? undefined : dto.birthDate === null ? null : new Date(`${dto.birthDate}T00:00:00Z`),
       gender: dto.gender,
+      themePreference: dto.themePreference,
     })
+  }
+
+  async getPreferences(userId: string) {
+    const saved = await this.repo.findPreferences(userId)
+    return {
+      inAppEnabled: saved?.inAppEnabled ?? true,
+      emailEnabled: saved?.emailEnabled ?? true,
+      pushEnabled: saved?.pushEnabled ?? true,
+      reportUpdates: saved?.reportUpdates ?? true,
+      reportComments: saved?.reportComments ?? true,
+      officialResponses: saved?.officialResponses ?? true,
+      localSurges: saved?.localSurges ?? true,
+      officialSurveys: saved?.officialSurveys ?? true,
+      mentions: saved?.mentions ?? true,
+      weeklyDigest: saved?.weeklyDigest ?? false,
+      quietHoursStart: saved?.quietHoursStart ?? null,
+      quietHoursEnd: saved?.quietHoursEnd ?? null,
+      defaultAnonymousReports: saved?.defaultAnonymousReports ?? false,
+      publicActivityVisible: saved?.publicActivityVisible ?? true,
+      acceptPressContact: saved?.acceptPressContact ?? false,
+    }
+  }
+
+  async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
+    const saved = await this.repo.upsertPreferences(userId, dto)
+    return {
+      inAppEnabled: saved.inAppEnabled,
+      emailEnabled: saved.emailEnabled,
+      pushEnabled: saved.pushEnabled,
+      reportUpdates: saved.reportUpdates,
+      reportComments: saved.reportComments,
+      officialResponses: saved.officialResponses,
+      localSurges: saved.localSurges,
+      officialSurveys: saved.officialSurveys,
+      mentions: saved.mentions,
+      weeklyDigest: saved.weeklyDigest,
+      quietHoursStart: saved.quietHoursStart,
+      quietHoursEnd: saved.quietHoursEnd,
+      defaultAnonymousReports: saved.defaultAnonymousReports,
+      publicActivityVisible: saved.publicActivityVisible,
+      acceptPressContact: saved.acceptPressContact,
+    }
   }
 
   async acceptConsent(userId: string, dto: AcceptConsentDto) {

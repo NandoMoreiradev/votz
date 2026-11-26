@@ -40,6 +40,8 @@ describe('AdminController (A0 setUserType RBAC & DTO validation)', () => {
       listPoliticians: jest.fn(),
       verifyPolitician: jest.fn(),
       setPoliticianPlan: jest.fn(),
+      listCompanies: jest.fn(async () => ({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } })),
+      verifyCompany: jest.fn(async (id: string, verified: boolean) => ({ id, verified })),
       setCompanyPlan: jest.fn(),
       setApiKeyTier: jest.fn(async (id: string, tier: string, actorId: string, reason: string) => ({
         id,
@@ -179,5 +181,37 @@ describe('AdminController (A0 setUserType RBAC & DTO validation)', () => {
       'adm-1',
       'Concessão aprovada para portal de notícias.',
     )
+  })
+
+  it('PATCH /admin/companies/:id/verify allows MODERATOR/ADMIN, validates boolean, and GET /admin/companies supports verified filter', async () => {
+    const badRes = await fetch(`${baseUrl}/admin/companies/c-1/verify`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify({ id: 'mod-1', type: UserType.MODERATOR }),
+      },
+      body: JSON.stringify({ verified: 'sim' }),
+    })
+    expect(badRes.status).toBe(400)
+    expect(adminService.verifyCompany).not.toHaveBeenCalled()
+
+    const okRes = await fetch(`${baseUrl}/admin/companies/c-1/verify`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-user': JSON.stringify({ id: 'mod-1', type: UserType.MODERATOR }),
+      },
+      body: JSON.stringify({ verified: true }),
+    })
+    expect(okRes.status).toBe(200)
+    expect(adminService.verifyCompany).toHaveBeenCalledWith('c-1', true)
+
+    const listRes = await fetch(`${baseUrl}/admin/companies?verified=false&search=colegio`, {
+      headers: {
+        'x-test-user': JSON.stringify({ id: 'mod-1', type: UserType.MODERATOR }),
+      },
+    })
+    expect(listRes.status).toBe(200)
+    expect(adminService.listCompanies).toHaveBeenCalledWith('colegio', false, 1, 20)
   })
 })

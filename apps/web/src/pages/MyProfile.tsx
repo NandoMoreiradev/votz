@@ -11,6 +11,9 @@ import { useMe, useMyProfiles, useMyPrivateProfile, useMfaSetup, useMfaEnable, u
 import { AuthenticatedUser, type UserGender } from '@votz/shared-types'
 import { DemographicsFields } from '../components/profile/DemographicsFields'
 import { AdPreferencesSection } from '../components/profile/AdPreferencesSection'
+import { AppearanceSection } from '../components/profile/AppearanceSection'
+import { SecuritySessionsSection } from '../components/profile/SecuritySessionsSection'
+import { NotificationsPrivacySection } from '../components/profile/NotificationsPrivacySection'
 import { MfaSetupResponse } from '../types/api'
 
 // ── Styled ─────────────────────────────────────────────────────────────────
@@ -198,6 +201,31 @@ const ErrorMsg = styled.p`
   color: ${({ theme }) => theme.colors.action};
 `
 
+const SettingsTabs = styled.div`
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+`
+
+const SettingsTab = styled.button<{ $active: boolean }>`
+  padding: 7px 14px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.border)};
+  background: ${({ $active, theme }) => ($active ? theme.colors.primary : theme.colors.white)};
+  color: ${({ $active, theme }) => ($active ? '#FFFFFF' : theme.colors.text)};
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+`
+
+type ProfileTab = 'perfil' | 'seguranca' | 'aparencia' | 'notificacoes' | 'anuncios' | 'privacidade'
+
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
 interface UploadResult {
@@ -378,13 +406,22 @@ export function MyProfile() {
 
   const hasAddress = !!address?.city
   const { data: profiles } = useMyProfiles(!!user && sessionReady)
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
+    const hash = typeof window !== 'undefined' ? window.location.hash : ''
+    if (hash === '#autenticador' || hash === '#seguranca') return 'seguranca'
+    if (hash === '#aparencia') return 'aparencia'
+    if (hash === '#notificacoes') return 'notificacoes'
+    if (hash === '#anuncios') return 'anuncios'
+    if (hash === '#privacidade') return 'privacidade'
+    return 'perfil'
+  })
 
   return (
     <Page>
       <Navbar />
       <Content>
         <TitleRow>
-          <PageTitle>Editar perfil</PageTitle>
+          <PageTitle>Configurações da conta</PageTitle>
           <ViewPublicLink to={`/perfil/${user.id}`}>Ver meu perfil público →</ViewPublicLink>
         </TitleRow>
 
@@ -400,8 +437,35 @@ export function MyProfile() {
             <Link to={`/politico/${org.id}`}>perfil do político →</Link>
           </InstitutionalBanner>
         ))}
+        {profiles?.orgs.filter(o => o.type === 'COMPANY').map(org => (
+          <InstitutionalBanner key={org.id}>
+            <span>Edite dados, SLA e filiais no</span>
+            <Link to={`/empresa/${org.id}/editar`}>perfil da empresa →</Link>
+          </InstitutionalBanner>
+        ))}
 
-        <Card>
+        <SettingsTabs role="tablist" aria-label="Seções de configurações da conta">
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'perfil'} $active={activeTab === 'perfil'} onClick={() => setActiveTab('perfil')}>
+            Perfil
+          </SettingsTab>
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'seguranca'} $active={activeTab === 'seguranca'} onClick={() => setActiveTab('seguranca')}>
+            Segurança e Sessões
+          </SettingsTab>
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'aparencia'} $active={activeTab === 'aparencia'} onClick={() => setActiveTab('aparencia')}>
+            Aparência
+          </SettingsTab>
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'notificacoes'} $active={activeTab === 'notificacoes'} onClick={() => setActiveTab('notificacoes')}>
+            Notificações
+          </SettingsTab>
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'anuncios'} $active={activeTab === 'anuncios'} onClick={() => setActiveTab('anuncios')}>
+            Anúncios
+          </SettingsTab>
+          <SettingsTab type="button" role="tab" aria-selected={activeTab === 'privacidade'} $active={activeTab === 'privacidade'} onClick={() => setActiveTab('privacidade')}>
+            Privacidade (LGPD)
+          </SettingsTab>
+        </SettingsTabs>
+
+        {activeTab === 'perfil' && <Card>
           {/* Avatar */}
           <AvatarSection>
             <AvatarPreview $src={avatarPreview}>
@@ -569,11 +633,18 @@ export function MyProfile() {
               </Button>
             </FormActions>
           </form>
-        </Card>
+        </Card>}
 
-        <MfaSection />
-        <AdPreferencesSection />
-        <PrivacySection />
+        {activeTab === 'seguranca' && (
+          <>
+            <MfaSection />
+            <SecuritySessionsSection />
+          </>
+        )}
+        {activeTab === 'aparencia' && <AppearanceSection />}
+        {activeTab === 'notificacoes' && <NotificationsPrivacySection />}
+        {activeTab === 'anuncios' && <AdPreferencesSection />}
+        {activeTab === 'privacidade' && <PrivacySection />}
       </Content>
     </Page>
   )

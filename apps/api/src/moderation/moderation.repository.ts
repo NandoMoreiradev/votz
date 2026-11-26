@@ -7,6 +7,7 @@ export interface FlagTargetPreview {
   excerpt: string
   link: string | null
   exists: boolean
+  moderationStatus?: string
 }
 
 @Injectable()
@@ -91,6 +92,7 @@ export class ModerationRepository {
           reason: true,
           details: true,
           status: true,
+          source: true,
           resolvedById: true,
           resolvedAt: true,
           resolutionNote: true,
@@ -116,7 +118,7 @@ export class ModerationRepository {
       reportIds.length > 0
         ? this.prisma.report.findMany({
             where: { id: { in: reportIds } },
-            select: { id: true, title: true, description: true },
+            select: { id: true, title: true, description: true, moderationStatus: true },
           })
         : Promise.resolve([]),
       commentIds.length > 0
@@ -166,6 +168,7 @@ export class ModerationRepository {
               excerpt: rep.description.slice(0, 200),
               link: `/relatos/${rep.id}`,
               exists: true,
+              moderationStatus: rep.moderationStatus,
             }
           : {
               title: null,
@@ -277,6 +280,13 @@ export class ModerationRepository {
         resolvedAt: true,
         resolutionNote: true,
       },
+    })
+  }
+
+  restoreReportModerationStatus(reportId: string) {
+    return this.prisma.report.updateMany({
+      where: { id: reportId, moderationStatus: { not: 'PUBLISHED' } },
+      data: { moderationStatus: 'PUBLISHED' },
     })
   }
 

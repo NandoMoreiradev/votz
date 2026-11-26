@@ -179,6 +179,8 @@ export const ADS_FORBIDDEN_SOURCES = [
   'propostas', 'debates', 'debate_questions', 'debate_messages', 'debate_poll_votes', 'posts.content',
   'post_comments', 'conversations', 'conversation_members', 'chat_attachments', 'page_messages',
   'registration_requests', 'users.cpf', 'users.latitude', 'users.longitude', 'users.street', 'users.zip_code',
+  'official_surveys', 'official_survey_participations', 'official_survey_pending_ballots',
+  'official_survey_ballots', 'official_survey_aggregates', 'official_survey_invitations', 'research_institutes',
 ] as const
 
 export class ForbiddenAdFeatureError extends Error {

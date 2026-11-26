@@ -22,6 +22,7 @@ import { SUGGESTION_CATEGORY_LABEL, SUGGESTION_STATUS_META } from './Sugestoes'
 import { AdReviewQueue } from '../components/ads/AdReviewQueue'
 import { PressCredentialQueue } from '../components/press/PressCredentialQueue'
 import { ContextNotesAdminTab } from '../components/context-notes/ContextNotesAdminTab'
+import { SurveysAdminTab } from '../components/surveys/SurveysAdminTab'
 import { useAdReviewQueue } from '../hooks/useAds'
 import { SkeletonRows } from '../components/ui/Skeleton'
 
@@ -303,6 +304,22 @@ function useAdminPoliticians(verified: boolean | undefined, page: number) {
   return useQuery({
     queryKey: ['admin-politicians', verified, page],
     queryFn: () => api.get('/admin/politicians', { params: { verified: verified === undefined ? undefined : String(verified), page, limit: 20 } }).then(r => r.data),
+    staleTime: 10_000,
+  })
+}
+
+function useAdminCompanies(verified: boolean | undefined, search: string, page: number) {
+  return useQuery({
+    queryKey: ['admin-companies', verified, search, page],
+    queryFn: () =>
+      api.get('/admin/companies', {
+        params: {
+          search: search || undefined,
+          verified: verified === undefined ? undefined : String(verified),
+          page,
+          limit: 20,
+        },
+      }).then(r => r.data),
     staleTime: 10_000,
   })
 }
@@ -607,6 +624,9 @@ function FlagsTab() {
                         ? 'Comentário de publicação'
                         : 'Comentário'}
                     </Badge>
+                    {flag.targetPreview.moderationStatus === 'HIDDEN' && (
+                      <Badge style={{ marginLeft: 6 }}>Quarentena (oculto)</Badge>
+                    )}
                     {flag.targetPreview.link && (
                       <span style={{ marginLeft: 8 }}>
                         <PreviewLink to={flag.targetPreview.link}>Ver conteúdo</PreviewLink>
@@ -624,7 +644,13 @@ function FlagsTab() {
                   </div>
                   {flag.details && <PreviewExcerpt>"{flag.details}"</PreviewExcerpt>}
                 </Td>
-                <Td>{flag.reporter?.name ?? 'Conta excluída'}</Td>
+                <Td>
+                  {flag.source === 'AUTO_AI' ? (
+                    <Badge>Triagem automática (IA)</Badge>
+                  ) : (
+                    flag.reporter?.name ?? 'Conta excluída'
+                  )}
+                </Td>
                 <Td>{new Date(flag.createdAt).toLocaleDateString('pt-BR')}</Td>
                 <Td>
                   {status === FlagStatus.OPEN ? (
@@ -635,7 +661,7 @@ function FlagsTab() {
                           setPendingAction({ flag, action: 'DISMISS' })
                         }}
                       >
-                        Descartar
+                        {flag.targetPreview.moderationStatus === 'HIDDEN' ? 'Restaurar' : 'Descartar'}
                       </ActionBtn>
                       <ActionBtn
                         $variant="danger"
@@ -707,7 +733,10 @@ function EntitiesTab() {
 
   const verify = useMutation({
     mutationFn: ({ id, v }: { id: string; v: boolean }) => api.patch(`/admin/entities/${id}/verify`, { verified: v }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-entities'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-entities'] })
+      qc.invalidateQueries({ queryKey: ['admin-stats'] })
+    },
   })
 
   const setPlan = useMutation({
@@ -773,7 +802,10 @@ function PoliticiansTab() {
 
   const verify = useMutation({
     mutationFn: ({ id, v }: { id: string; v: boolean }) => api.patch(`/admin/politicians/${id}/verify`, { verified: v }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-politicians'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-politicians'] })
+      qc.invalidateQueries({ queryKey: ['admin-stats'] })
+    },
   })
 
   const setPlan = useMutation({
@@ -820,6 +852,92 @@ function PoliticiansTab() {
                     onClick={() => verify.mutate({ id: p.id, v: !p.verified })}
                   >
                     {p.verified ? 'Remover verificação' : 'Verificar'}
+                  </ActionBtn>
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  )
+}
+
+function CompaniesTab() {
+  const qc = useQueryClient()
+  const currentUser = useAuthStore((s) => s.user)
+  const isAdmin = currentUser?.type === 'ADMIN'
+  const [verified, setVerified] = useState<boolean | undefined>(false)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const { data, isLoading } = useAdminCompanies(verified, search, page)
+
+  const verify = useMutation({
+    mutationFn: ({ id, v }: { id: string; v: boolean }) => api.patch(`/admin/companies/${id}/verify`, { verified: v }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-companies'] })
+      qc.invalidateQueries({ queryKey: ['admin-stats'] })
+    },
+  })
+
+  const setPlan = useMutation({
+    mutationFn: ({ id, plan }: { id: string; plan: string }) => api.patch(`/admin/companies/${id}/plan`, { plan }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-companies'] }),
+  })
+
+  return (
+    <div>
+      <SearchInput
+        placeholder="Buscar empresa por nome ou CNPJ..."
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+      />
+      <FilterRow>
+        <FilterBtn $active={verified === false} onClick={() => { setVerified(false); setPage(1) }}>Pendentes</FilterBtn>
+        <FilterBtn $active={verified === true} onClick={() => { setVerified(true); setPage(1) }}>Verificadas</FilterBtn>
+        <FilterBtn $active={verified === undefined} onClick={() => { setVerified(undefined); setPage(1) }}>Todas</FilterBtn>
+      </FilterRow>
+      {isLoading ? <SkeletonRows /> : !data?.data?.length ? <Empty>Nenhuma empresa encontrada.</Empty> : (
+        <Table>
+          <thead>
+            <tr><Th>Empresa</Th><Th>CNPJ</Th><Th>Setor</Th><Th>Porte</Th><Th>Status</Th><Th>Plano</Th><Th>Ações</Th></tr>
+          </thead>
+          <tbody>
+            {data.data.map((c: any) => (
+              <Tr key={c.id}>
+                <Td>
+                  <Link to={`/empresa/${c.id}`} style={{ color: 'inherit', textDecoration: 'underline' }}>
+                    {c.tradeName || c.legalName}
+                  </Link>
+                </Td>
+                <Td style={{ fontFamily: 'monospace', color: '#6B7280' }}>{c.cnpj}</Td>
+                <Td><Badge>{c.sector}</Badge></Td>
+                <Td>{c.size}</Td>
+                <Td>{c.verified ? <Badge $color="#2DC653">Verificada</Badge> : <Badge $color="#F59E0B">Pendente</Badge>}</Td>
+                <Td>
+                  {isAdmin ? (
+                    <select
+                      value={c.plan ?? 'STARTER'}
+                      disabled={setPlan.isPending}
+                      onChange={(ev) => setPlan.mutate({ id: c.id, plan: ev.target.value })}
+                      style={{ fontSize: '0.8125rem', padding: '2px 6px', borderRadius: 4, border: '1px solid #E5E5E5' }}
+                    >
+                      <option value="STARTER">STARTER</option>
+                      <option value="BUSINESS">BUSINESS</option>
+                      <option value="ENTERPRISE">ENTERPRISE</option>
+                      <option value="WHITE_LABEL">WHITE_LABEL</option>
+                    </select>
+                  ) : (
+                    <Badge>{c.plan ?? 'STARTER'}</Badge>
+                  )}
+                </Td>
+                <Td>
+                  <ActionBtn
+                    $variant={c.verified ? 'danger' : 'success'}
+                    disabled={verify.isPending}
+                    onClick={() => verify.mutate({ id: c.id, v: !c.verified })}
+                  >
+                    {c.verified ? 'Remover verificação' : 'Verificar'}
                   </ActionBtn>
                 </Td>
               </Tr>
@@ -1166,7 +1284,7 @@ function SuggestionsTab() {
   )
 }
 
-type TabId = 'context' | 'ads' | 'press' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'requests' | 'suggestions'
+type TabId = 'context' | 'surveys' | 'ads' | 'press' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'companies' | 'requests' | 'suggestions'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
@@ -1212,6 +1330,12 @@ export function Admin() {
               </StatNum>
               <StatLabel>Políticos pendentes</StatLabel>
             </StatCard>
+            <StatCard>
+              <StatNum style={{ color: (stats.pendingCompanies ?? 0) > 0 ? '#F59E0B' : undefined }}>
+                {stats.pendingCompanies ?? 0}
+              </StatNum>
+              <StatLabel>Empresas pendentes</StatLabel>
+            </StatCard>
           </StatsGrid>
         )}
 
@@ -1226,9 +1350,11 @@ export function Admin() {
             {(pendingAds?.meta.pendingCount ?? 0) > 0 && <TabCount>{pendingAds?.meta.pendingCount}</TabCount>}
           </Tab>
           <Tab $active={tab === 'context'} onClick={() => setTab('context')}>Contexto</Tab>
+          {isAdmin && <Tab $active={tab === 'surveys'} onClick={() => setTab('surveys')}>Pesquisas</Tab>}
           <Tab $active={tab === 'press'} onClick={() => setTab('press')}>Imprensa</Tab>
           <Tab $active={tab === 'entities'} onClick={() => setTab('entities')}>Entidades</Tab>
           <Tab $active={tab === 'politicians'} onClick={() => setTab('politicians')}>Políticos</Tab>
+          <Tab $active={tab === 'companies'} onClick={() => setTab('companies')}>Empresas</Tab>
           <Tab $active={tab === 'reports'} onClick={() => setTab('reports')}>Relatos</Tab>
           <Tab $active={tab === 'suggestions'} onClick={() => setTab('suggestions')}>Sugestões</Tab>
           {isAdmin && <Tab $active={tab === 'users'} onClick={() => setTab('users')}>Usuários</Tab>}
@@ -1239,8 +1365,10 @@ export function Admin() {
         {tab === 'ads'         && <AdReviewQueue />}
         {tab === 'press'       && <PressCredentialQueue />}
         {tab === 'context'     && <ContextNotesAdminTab />}
+        {tab === 'surveys'     && isAdmin && <SurveysAdminTab />}
         {tab === 'entities'    && <EntitiesTab />}
         {tab === 'politicians' && <PoliticiansTab />}
+        {tab === 'companies'   && <CompaniesTab />}
         {tab === 'reports'     && <ReportsTab />}
         {tab === 'suggestions' && <SuggestionsTab />}
         {tab === 'users'       && isAdmin && <UsersTab />}

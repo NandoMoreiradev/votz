@@ -118,7 +118,7 @@ interface Props {
 }
 
 export function SimilarReportsCard({ reports, isLoading, isError }: Props) {
-  if (isLoading) return null
+  if (isLoading && reports.length === 0) return null
   if (isError) return (
     <div style={{ fontSize: '0.8125rem', color: '#E63946', padding: '8px 0' }}>
       Não foi possível verificar relatos similares no momento.

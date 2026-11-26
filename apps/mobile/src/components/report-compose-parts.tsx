@@ -30,8 +30,22 @@ function SectionTitle({ title, optional }: { title: string; optional?: boolean }
 
 // ── Relatos parecidos ───────────────────────────────────────────────────────
 
-export function SimilarReportsCard({ title, description, enabled }: { title: string; description: string; enabled: boolean }) {
-  const similar = useSimilarReports(title, description, enabled)
+export function SimilarReportsCard({
+  title,
+  description,
+  enabled,
+  category,
+  city,
+  state,
+}: {
+  title: string
+  description: string
+  enabled: boolean
+  category?: string
+  city?: string
+  state?: string
+}) {
+  const similar = useSimilarReports(title, description, enabled, { category, city, state })
   if (!enabled || (similar.isFetching && !similar.data)) return null
   if (similar.isError) return <Text style={{ color: theme.colors.muted, fontSize: 12 }}>Não foi possível checar relatos parecidos agora.</Text>
   if (!similar.data?.length) return null

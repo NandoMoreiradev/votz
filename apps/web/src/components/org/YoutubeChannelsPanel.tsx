@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import styled from 'styled-components'
+import { Check, Copy, Trash, WarningCircle } from '@phosphor-icons/react'
 import {
   useAddYoutubeChannel,
   useRemoveYoutubeChannel,
@@ -7,120 +8,114 @@ import {
   useYoutubeChannels,
 } from '../../hooks/useYoutubeChannels'
 import { YoutubeChannel } from '../../types/api'
-
-// ── Styled ──────────────────────────────────────────────────────────────────
-
-const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.lg};
-  padding: 28px;
-  margin-top: 24px;
-`
-
-const Title = styled.h2`
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ theme }) => theme.fontSizes.lg};
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.text};
-  margin-bottom: 6px;
-`
-
-const Intro = styled.p`
-  font-size: ${({ theme }) => theme.fontSizes.sm};
-  color: ${({ theme }) => theme.colors.muted};
-  line-height: 1.5;
-  margin-bottom: 18px;
-`
+import {
+  Callout,
+  DarkButton,
+  GhostButton,
+  Panel,
+  PanelBody,
+  PanelHead,
+  Skeleton,
+  StatusPill,
+} from '../studio/studio-ui'
 
 const List = styled.div`
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 `
 
 const Row = styled.div`
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.md};
   background: ${({ theme }) => theme.colors.neutral};
-  padding: 14px 16px;
+  padding: 12px 14px;
 `
 
 const RowTop = styled.div`
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 `
 
 const ChannelName = styled.div`
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   color: ${({ theme }) => theme.colors.text};
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `
 
-const Badge = styled.span<{ $ok: boolean }>`
-  font-size: ${({ theme }) => theme.fontSizes.xs};
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  padding: 3px 10px;
-  border-radius: ${({ theme }) => theme.radii.full};
-  color: ${({ theme }) => theme.colors.white};
-  background: ${({ $ok, theme }) => ($ok ? theme.colors.positive : theme.colors.muted)};
+const RowActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 `
 
-const Btn = styled.button<{ $danger?: boolean }>`
-  padding: 6px 14px;
-  border-radius: ${({ theme }) => theme.radii.sm};
-  font-size: 0.8125rem;
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  cursor: pointer;
-  border: 1px solid ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.primary)};
-  background: ${({ $danger, theme }) => ($danger ? 'transparent' : theme.colors.primary)};
-  color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.white)};
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+const SmallBtn = styled(GhostButton)`
+  height: 30px;
+  padding: 0 10px;
+  font-size: 0.75rem;
+`
+
+const DangerBtn = styled(SmallBtn)`
+  color: ${({ theme }) => theme.colors.action};
+  border-color: ${({ theme }) => theme.colors.action}55;
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.colors.action}12;
+    border-color: ${({ theme }) => theme.colors.action};
+  }
 `
 
 const Steps = styled.ol`
-  margin: 12px 0 0 18px;
+  margin: 10px 0 0 16px;
   padding: 0;
-  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-size: 0.8125rem;
   color: ${({ theme }) => theme.colors.text};
-  line-height: 1.6;
+  line-height: 1.55;
+
+  li + li { margin-top: 4px; }
 `
 
 const Code = styled.code`
   font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 0.75rem;
   background: ${({ theme }) => theme.colors.white};
   border: 1px dashed ${({ theme }) => theme.colors.muted};
   border-radius: ${({ theme }) => theme.radii.sm};
-  padding: 2px 8px;
+  padding: 1px 6px;
   user-select: all;
 `
 
 const AddForm = styled.div`
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 `
 
 const Input = styled.input`
   flex: 1;
-  min-width: 220px;
-  height: 38px;
-  padding: 0 12px;
+  min-width: 180px;
+  height: 36px;
+  padding: 0 10px;
   border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.md};
-  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-size: 0.875rem;
   color: ${({ theme }) => theme.colors.text};
-`
+  background: ${({ theme }) => theme.colors.white};
 
-const ErrorText = styled.p`
-  margin-top: 10px;
-  font-size: ${({ theme }) => theme.fontSizes.sm};
-  color: ${({ theme }) => theme.colors.action};
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.primary};
+    box-shadow: 0 0 0 3px ${({ theme }) => theme.colors.primary}1A;
+  }
 `
 
 function apiMessage(err: unknown, fallback: string): string {
@@ -128,8 +123,6 @@ function apiMessage(err: unknown, fallback: string): string {
   if (Array.isArray(message)) return message[0] ?? fallback
   return message ?? fallback
 }
-
-// ── Componente ──────────────────────────────────────────────────────────────
 
 function ChannelRow({ channel, onError }: { channel: YoutubeChannel; onError: (msg: string) => void }) {
   const verify = useVerifyYoutubeChannel()
@@ -150,10 +143,29 @@ function ChannelRow({ channel, onError }: { channel: YoutubeChannel; onError: (m
   return (
     <Row>
       <RowTop>
-        <ChannelName>{channel.title}</ChannelName>
-        <Badge $ok={verified}>{verified ? 'Verificado' : 'Falta verificar'}</Badge>
+        <ChannelName title={channel.title}>{channel.title}</ChannelName>
+        <StatusPill $tone={verified ? 'positive' : 'warning'}>
+          {verified ? 'Verificado' : 'Falta verificar'}
+        </StatusPill>
+      </RowTop>
+
+      {!verified && (
+        <Steps>
+          <li>
+            Copie o código: <Code>{channel.verificationCode}</Code>{' '}
+            <SmallBtn type="button" onClick={copyCode} style={{ height: 24, marginLeft: 4 }}>
+              {copied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+            </SmallBtn>
+          </li>
+          <li>No YouTube Studio, abra Personalização › Informações básicas e cole na descrição do canal.</li>
+          <li>Salve e clique em Verificar. O YouTube pode levar alguns minutos para atualizar.</li>
+        </Steps>
+      )}
+
+      <RowActions>
         {!verified && (
-          <Btn
+          <SmallBtn
+            type="button"
             disabled={verify.isPending}
             onClick={() => {
               onError('')
@@ -162,11 +174,11 @@ function ChannelRow({ channel, onError }: { channel: YoutubeChannel; onError: (m
               })
             }}
           >
-            {verify.isPending ? 'Verificando...' : 'Verificar'}
-          </Btn>
+            {verify.isPending ? 'Verificando…' : 'Verificar agora'}
+          </SmallBtn>
         )}
-        <Btn
-          $danger
+        <DangerBtn
+          type="button"
           disabled={remove.isPending}
           onClick={() => {
             if (!confirm(`Tirar o canal "${channel.title}"? Debates já marcados continuam como estão.`)) return
@@ -176,20 +188,9 @@ function ChannelRow({ channel, onError }: { channel: YoutubeChannel; onError: (m
             })
           }}
         >
-          Remover
-        </Btn>
-      </RowTop>
-
-      {!verified && (
-        <Steps>
-          <li>
-            Copie este código: <Code>{channel.verificationCode}</Code>{' '}
-            <Btn type="button" onClick={copyCode}>{copied ? 'Copiado' : 'Copiar'}</Btn>
-          </li>
-          <li>No YouTube Studio, abra Personalização, Informações básicas, e cole o código na descrição do canal.</li>
-          <li>Salve e volte aqui para clicar em Verificar. O YouTube pode levar alguns minutos para mostrar.</li>
-        </Steps>
-      )}
+          <Trash size={13} aria-hidden="true" /> Remover
+        </DangerBtn>
+      </RowActions>
     </Row>
   )
 }
@@ -200,7 +201,6 @@ export function YoutubeChannelsPanel() {
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
 
-  // 403: o perfil ativo não pode mexer em canais. Não mostra o painel.
   if (isError) return null
 
   function handleAdd() {
@@ -215,37 +215,43 @@ export function YoutubeChannelsPanel() {
 
   return (
     <Panel>
-      <Title>Canais do YouTube</Title>
-      <Intro>
-        Os debates do Votz passam ao vivo pelo YouTube. Ligue aqui o canal de onde sai a live e prove que ele é seu.
-        Só canal verificado pode transmitir um debate.
-      </Intro>
+      <PanelHead
+        title="Canais do YouTube"
+        hint="Só canal verificado pode transmitir debates ao vivo."
+      />
+      <PanelBody>
+        {isLoading ? (
+          <Skeleton $h={52} style={{ marginBottom: 14 }} />
+        ) : (
+          !!channels?.length && (
+            <List>
+              {channels.map((c) => (
+                <ChannelRow key={c.id} channel={c} onError={setError} />
+              ))}
+            </List>
+          )
+        )}
 
-      {isLoading ? (
-        <Intro>Carregando...</Intro>
-      ) : (
-        !!channels?.length && (
-          <List>
-            {channels.map((c) => (
-              <ChannelRow key={c.id} channel={c} onError={setError} />
-            ))}
-          </List>
-        )
-      )}
+        <AddForm>
+          <Input
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            placeholder="youtube.com/@seucanal"
+            aria-label="Link do canal do YouTube"
+            maxLength={200}
+          />
+          <DarkButton type="button" onClick={handleAdd} disabled={!link.trim() || add.isPending}>
+            {add.isPending ? 'Adicionando…' : 'Adicionar'}
+          </DarkButton>
+        </AddForm>
 
-      <AddForm>
-        <Input
-          value={link}
-          onChange={(e) => setLink(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          placeholder="Link do canal (youtube.com/@nome)"
-          maxLength={200}
-        />
-        <Btn type="button" onClick={handleAdd} disabled={!link.trim() || add.isPending}>
-          {add.isPending ? 'Adicionando...' : 'Adicionar canal'}
-        </Btn>
-      </AddForm>
-      {error && <ErrorText>{error}</ErrorText>}
+        {error && (
+          <div style={{ marginTop: 10 }}>
+            <Callout tone="action" icon={WarningCircle} role="alert">{error}</Callout>
+          </div>
+        )}
+      </PanelBody>
     </Panel>
   )
 }

@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -899,7 +899,14 @@ export function CreateReport() {
   const description = watch('description') ?? ''
   const title = watch('title') ?? ''
 
-  const { data: similarReports = [], isFetching: isFetchingSimilar, isError: isSimilarError } = useSimilarReports(title, description)
+  const similarCity = locationMode === 'cep' ? address?.city : manualCity.trim() || undefined
+  const similarState = locationMode === 'cep' ? address?.state : manualState.trim().toUpperCase() || undefined
+
+  const { data: similarReports = [], isLoading: isLoadingSimilar, isError: isSimilarError } = useSimilarReports(
+    title,
+    description,
+    { category: selectedCategory, city: similarCity, state: similarState },
+  )
 
   if (!user) {
     return (
@@ -1039,7 +1046,7 @@ export function CreateReport() {
                 </div>
               </Field>
 
-              <SimilarReportsCard reports={similarReports} isLoading={isFetchingSimilar} isError={isSimilarError} />
+              <SimilarReportsCard reports={similarReports} isLoading={isLoadingSimilar} isError={isSimilarError} />
             </div>
 
             <Field>

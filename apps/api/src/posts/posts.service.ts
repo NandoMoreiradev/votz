@@ -29,6 +29,7 @@ import {
 } from './feed-ranking.service'
 import { PostsRepository, ViewerIdentity } from './posts.repository'
 import { FOR_YOU_MIX, hasFewFollows, mixForYouFeed } from './feed-mix'
+import { ContentSafetyService } from '../content-safety/content-safety.service'
 
 function toCityKey(city?: string | null): string | null {
   if (!city) return null
@@ -53,10 +54,19 @@ export class PostsService {
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
     @Optional() private readonly mediaAssets?: MediaAssetsService,
+    @Optional() private readonly contentSafety?: ContentSafetyService,
   ) {}
 
   async create(dto: CreatePostDto, user: ActingUser & { emailVerified?: boolean }) {
     const cleanContent = DOMPurify.sanitize(dto.content ?? '').trim()
+    const postTextsToCheck = [
+      cleanContent,
+      dto.poll?.question ? DOMPurify.sanitize(dto.poll.question).trim() : '',
+      ...(dto.poll?.options?.map((opt) => DOMPurify.sanitize(opt).trim()) ?? []),
+    ].filter(Boolean)
+    if (postTextsToCheck.length > 0) {
+      this.contentSafety?.assertCleanOrThrow(postTextsToCheck, 'publicação')
+    }
     const legacyMedia = dto.media ?? []
     const mediaInputs = dto.mediaAssets ?? []
     if (legacyMedia.length && mediaInputs.length)
@@ -171,6 +181,12 @@ export class PostsService {
       await this.mediaAssets!.finalizeForPost(created.id, prepared).catch((error) =>
         this.logger.error(`Mídia da publicação ${created.id} não foi ligada: ${error instanceof Error ? error.message : String(error)}`),
       )
+    }
+
+    if (postTextsToCheck.length > 0) {
+      this.contentSafety
+        ?.enqueueReview({ targetType: 'POST', targetId: created.id, texts: postTextsToCheck })
+        .catch(() => null)
     }
 
     if (cleanContent) {
@@ -440,6 +456,9 @@ export class PostsService {
 
     const mediaType = dto.mediaType ?? PostCommentMediaType.TEXT
     const cleanContent = DOMPurify.sanitize(dto.content ?? '').trim()
+    if (cleanContent.length > 0) {
+      this.contentSafety?.assertCleanOrThrow([cleanContent], 'comentário')
+    }
     const viewer = this.buildViewerIdentity(user)
 
     if (mediaType === PostCommentMediaType.AUDIO) {
@@ -504,6 +523,11 @@ export class PostsService {
     }
 
     this.ranking.enqueuePost(postId).catch(() => null)
+    if (cleanContent.length > 0) {
+      this.contentSafety
+        ?.enqueueReview({ targetType: 'POST_COMMENT', targetId: comment.id, texts: [cleanContent] })
+        .catch(() => null)
+    }
     return comment
   }
 

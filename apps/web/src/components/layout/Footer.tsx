@@ -130,6 +130,7 @@ export function Footer() {
           <Col>
             <ColTitle>Plataforma</ColTitle>
             <NavList>
+              <NavItem><NavLink to="/sobre">Sobre o Votz</NavLink></NavItem>
               <NavItem><NavLink to="/">Explorar relatos</NavLink></NavItem>
               <NavItem><NavLink to="/entidades">Entidades</NavLink></NavItem>
               <NavItem><NavLink to="/politicos">Políticos</NavLink></NavItem>
@@ -142,10 +143,11 @@ export function Footer() {
           <Col>
             <ColTitle>Recursos</ColTitle>
             <NavList>
+              <NavItem><NavLink to="/planos">Planos e organizações</NavLink></NavItem>
               <NavItem><NavLink to="/solicitar-cadastro">Registrar organização</NavLink></NavItem>
               <NavItem><NavLink to="/minhas-solicitacoes">Minhas solicitações</NavLink></NavItem>
               <NavItem><NavLink to="/sugestoes">Sugestões e melhorias</NavLink></NavItem>
-              <NavItem><NavA href="#imprensa">Para a imprensa</NavA></NavItem>
+              <NavItem><NavLink to="/imprensa">Para a imprensa</NavLink></NavItem>
               <NavItem><NavA href="/api/v1/docs" target="_blank" rel="noreferrer">API pública</NavA></NavItem>
             </NavList>
           </Col>

@@ -33,7 +33,11 @@ export class ReportsController {
   @Get('similar')
   @ApiOperation({ summary: 'Buscar relatos similares por trigram, full-text e embedding semântico' })
   findSimilar(@Query() query: SimilarReportsQueryDto) {
-    return this.reportsService.findSimilar(query.title, query.description, query.limit ?? 5)
+    return this.reportsService.findSimilar(query.title, query.description, query.limit ?? 5, {
+      category: query.category,
+      state: query.state,
+      city: query.city,
+    })
   }
 
   @Public()

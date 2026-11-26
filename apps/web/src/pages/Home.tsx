@@ -13,6 +13,7 @@ import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
 import { SponsoredSlot } from '../components/ads/SponsoredSlot'
 import { SuggestedProfilesCard } from '../components/posts/SuggestedProfilesCard'
+import { FeaturedSurveyCard } from '../components/surveys/FeaturedSurveyCard'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { socialRow, socialTab } from '../components/ui/social'
@@ -1505,6 +1506,8 @@ export function Home() {
                 }, 3000)
               }}
             />
+
+            <FeaturedSurveyCard />
 
             <Feed>
               {loadingPosts && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}

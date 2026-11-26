@@ -205,22 +205,29 @@ export class AdminRepository {
     return this.prisma.politician.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
   }
 
+  async setCompanyVerified(id: string, verified: boolean) {
+    return this.prisma.company.update({ where: { id }, data: { verified }, select: { id: true, verified: true } })
+  }
+
   async setCompanyPlan(id: string, plan: string) {
     return this.prisma.company.update({ where: { id }, data: { plan: plan as any }, select: { id: true, plan: true } })
   }
 
   // ── Companies ─────────────────────────────────────────────────────────────
 
-  async listCompanies(params: { search?: string; page: number; limit: number }) {
-    const where = params.search
-      ? {
-          OR: [
-            { legalName: { contains: params.search, mode: 'insensitive' as const } },
-            { tradeName: { contains: params.search, mode: 'insensitive' as const } },
-            { cnpj: { contains: params.search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {}
+  async listCompanies(params: { search?: string; verified?: boolean; page: number; limit: number }) {
+    const where = {
+      ...(params.verified !== undefined ? { verified: params.verified } : {}),
+      ...(params.search
+        ? {
+            OR: [
+              { legalName: { contains: params.search, mode: 'insensitive' as const } },
+              { tradeName: { contains: params.search, mode: 'insensitive' as const } },
+              { cnpj: { contains: params.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    }
     const skip = (params.page - 1) * params.limit
     const [data, total] = await Promise.all([
       this.prisma.company.findMany({
@@ -380,13 +387,14 @@ export class AdminRepository {
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   async stats() {
-    const [users, reports, entities, politicians] = await Promise.all([
+    const [users, reports, entities, politicians, companies] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.report.count(),
       this.prisma.entity.count({ where: { verified: false } }),
       this.prisma.politician.count({ where: { verified: false } }),
+      this.prisma.company.count({ where: { verified: false } }),
     ])
-    return { users, reports, pendingEntities: entities, pendingPoliticians: politicians }
+    return { users, reports, pendingEntities: entities, pendingPoliticians: politicians, pendingCompanies: companies }
   }
 
   async superadminOverview() {

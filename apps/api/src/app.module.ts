@@ -60,6 +60,7 @@ import { AccessLogModule } from './access-log/access-log.module'
 import { VerificationRetentionModule } from './verification-retention/verification-retention.module'
 import { InactivityModule } from './inactivity/inactivity.module'
 import { ModerationModule } from './moderation/moderation.module'
+import { ContentSafetyModule } from './content-safety/content-safety.module'
 import { AnalyticsModule } from './analytics/analytics.module'
 import { AccountabilityModule } from './accountability/accountability.module'
 import { MandateModule } from './mandate/mandate.module'
@@ -71,6 +72,7 @@ import { TopicsModule } from './topics/topics.module'
 import { PostsModule } from './posts/posts.module'
 import { SuggestionsModule } from './suggestions/suggestions.module'
 import { ContextNotesModule } from './context-notes/context-notes.module'
+import { SurveysModule } from './surveys/surveys.module'
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'
 import { validateEnv } from './config/env.validation'
 import { RedisThrottlerStorage } from './common/security/redis-throttler-storage'
@@ -179,6 +181,7 @@ import { SecurityModule } from './common/security/security.module'
     VerificationRetentionModule,
     InactivityModule,
     ModerationModule,
+    ContentSafetyModule,
     AnalyticsModule,
     WebhooksModule,
     AccountabilityModule,
@@ -190,6 +193,7 @@ import { SecurityModule } from './common/security/security.module'
     PostsModule,
     SuggestionsModule,
     ContextNotesModule,
+    SurveysModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

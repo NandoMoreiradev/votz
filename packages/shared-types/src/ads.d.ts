@@ -318,7 +318,7 @@ export declare const AD_FEATURE_KEYS: AdFeatureKey[];
  * Origens que NUNCA podem alimentar anúncios (seção 3.2 do plano): atividade política, conteúdo livre,
  * mensagens, documentos. Usado pelo teste do muro e pela revisão de código.
  */
-export declare const ADS_FORBIDDEN_SOURCES: readonly ["politician_followers", "entity_followers", "reports", "report_media", "votes", "comments", "proposta_votos", "propostas", "debates", "debate_questions", "debate_messages", "debate_poll_votes", "posts.content", "post_comments", "conversations", "conversation_members", "chat_attachments", "page_messages", "registration_requests", "users.cpf", "users.latitude", "users.longitude", "users.street", "users.zip_code"];
+export declare const ADS_FORBIDDEN_SOURCES: readonly ["politician_followers", "entity_followers", "reports", "report_media", "votes", "comments", "proposta_votos", "propostas", "debates", "debate_questions", "debate_messages", "debate_poll_votes", "posts.content", "post_comments", "conversations", "conversation_members", "chat_attachments", "page_messages", "registration_requests", "users.cpf", "users.latitude", "users.longitude", "users.street", "users.zip_code", "official_surveys", "official_survey_participations", "official_survey_pending_ballots", "official_survey_ballots", "official_survey_aggregates", "official_survey_invitations", "research_institutes"];
 export declare class ForbiddenAdFeatureError extends Error {
     readonly features: string[];
     constructor(features: string[]);

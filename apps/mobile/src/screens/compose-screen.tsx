@@ -270,7 +270,16 @@ export default function ComposeScreen() {
         <Field bare accessibilityLabel="Título do relato" placeholder="O que precisa mudar?" value={title} onChangeText={setTitle} maxLength={120} editable={!publish.isPending} style={{ fontFamily: theme.fonts.heading, fontSize: 22, minHeight: 44 }} />
         <Text style={{ alignSelf: 'flex-end', fontSize: 11, color: title.length > 110 ? theme.colors.action : theme.colors.muted }}>{title.length}/120</Text>
       </View>}
-      {isReport && <SimilarReportsCard title={title} description={content} enabled={!publish.isPending} />}
+      {isReport && (
+        <SimilarReportsCard
+          title={title}
+          description={content}
+          enabled={!publish.isPending}
+          category={category || undefined}
+          city={location.city.trim() || undefined}
+          state={location.state.trim().toUpperCase() || undefined}
+        />
+      )}
 
       <Field bare accessibilityLabel={isReport ? 'Descrição do relato' : 'Texto da publicação'} placeholder={isReport ? 'Conte onde e como o problema acontece…' : 'O que está acontecendo?'} value={content} onChangeText={setContent} multiline maxLength={2000} editable={!publish.isPending} style={{ fontSize: 18, lineHeight: 27, minHeight: 148, maxHeight: 240 }} />
 

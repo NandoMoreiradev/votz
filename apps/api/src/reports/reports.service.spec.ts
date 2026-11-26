@@ -34,6 +34,9 @@ const mockRepo = {
   addFollower: jest.fn(),
   removeFollower: jest.fn(),
   findFollower: jest.fn(),
+  findByTrigram: jest.fn(),
+  findByFullText: jest.fn(),
+  findByEmbedding: jest.fn(),
 }
 
 const mockTimeline = { record: jest.fn() }
@@ -574,6 +577,83 @@ describe('ReportsService', () => {
       )
       expect(mockReportMedia.attach).toHaveBeenCalledWith(undefined, 'u1')
       expect(mockRepo.create).toHaveBeenCalled()
+    })
+  })
+
+  // ──────────────────────────────────────────────
+  // findSimilar()
+  // ──────────────────────────────────────────────
+
+  describe('findSimilar', () => {
+    const row = (id: string, score: number, overrides: Partial<Record<string, unknown>> = {}) => ({
+      id,
+      title: `Relato ${id}`,
+      description: 'Descrição do relato',
+      category: 'INFRASTRUCTURE',
+      status: 'OPEN',
+      city: 'São Paulo',
+      state: 'SP',
+      createdAt: new Date('2026-11-20T00:00:00Z'),
+      pressureScore: 10,
+      score,
+      ...overrides,
+    })
+
+    beforeEach(() => {
+      mockRepo.findByTrigram.mockResolvedValue([])
+      mockRepo.findByFullText.mockResolvedValue([])
+      mockRepo.findByEmbedding.mockResolvedValue([])
+      mockEmbedding.embed.mockResolvedValue([0.1, 0.2, 0.3])
+    })
+
+    it('combina trigram, full-text e semântico com peso 1.5 e usa embedding em modo query', async () => {
+      mockRepo.findByTrigram.mockResolvedValue([row('r1', 0.4), row('r2', 0.6)])
+      mockRepo.findByFullText.mockResolvedValue([row('r1', 0.3)])
+      mockRepo.findByEmbedding.mockResolvedValue([row('r1', 0.8), row('r3', 0.9)])
+
+      const results = await service.findSimilar('  Buraco na avenida principal  ', 'Perto da escola', 5)
+
+      expect(mockEmbedding.embed).toHaveBeenCalledWith('Buraco na avenida principal Perto da escola', 'query')
+      expect(results.map((r) => r.id)).toEqual(['r1', 'r3', 'r2'])
+      expect(results[0].sources).toEqual(['trigram', 'fulltext', 'semantic'])
+      expect(results[0].score).toBeCloseTo(0.4 + 0.3 + 0.8 * 1.5)
+    })
+
+    it('repassa filtros normalizados de categoria, estado e cidade para todas as buscas', async () => {
+      await service.findSimilar('Falta de luz no bairro', undefined, 5, {
+        category: 'INFRASTRUCTURE' as any,
+        state: 'sp',
+        city: 'São Paulo',
+      })
+
+      const expectedFilters = {
+        category: 'INFRASTRUCTURE',
+        state: 'SP',
+        cityKey: 'sao paulo',
+        cityLower: 'são paulo',
+      }
+      expect(mockRepo.findByTrigram).toHaveBeenCalledWith('Falta de luz no bairro', '', 5, expectedFilters)
+      expect(mockRepo.findByFullText).toHaveBeenCalledWith('Falta de luz no bairro', 5, expectedFilters)
+      expect(mockRepo.findByEmbedding).toHaveBeenCalledWith([0.1, 0.2, 0.3], 5, undefined, expectedFilters)
+    })
+
+    it('reaproveita o embedding em cache para consultas repetidas sem chamar o Gemini novamente', async () => {
+      await service.findSimilar('Poste queimado na praça', 'Sem iluminação há dias', 5)
+      await service.findSimilar('  poste   queimado na praça ', 'sem iluminação há dias', 5, { state: 'RJ' })
+
+      expect(mockEmbedding.embed).toHaveBeenCalledTimes(1)
+      expect(mockRepo.findByEmbedding).toHaveBeenCalledTimes(2)
+    })
+
+    it('continua retornando resultados lexicais quando a busca semântica falha', async () => {
+      mockEmbedding.embed.mockRejectedValueOnce(new Error('429 quota exceeded'))
+      mockRepo.findByTrigram.mockResolvedValue([row('r1', 0.5)])
+
+      const results = await service.findSimilar('Vazamento de água na esquina', undefined, 5)
+
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe('r1')
+      expect(results[0].sources).toEqual(['trigram'])
     })
   })
 })

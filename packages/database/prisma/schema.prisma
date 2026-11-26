@@ -343,6 +343,12 @@ enum ReactionType {
   DISAGREEMENT
 }
 
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -391,8 +397,9 @@ model User {
   ageConfirmedAt           DateTime?
   // Opcionais (plano de anúncios, decisão 3). Nunca aparecem no perfil público; para anúncios só circulam
   // como faixa de idade e só com a personalização ligada (ver ADS_FEATURE_ALLOWLIST em @votz/shared-types).
-  birthDate                DateTime?   @map("birth_date") @db.Date
+  birthDate                DateTime?       @map("birth_date") @db.Date
   gender                   UserGender?
+  themePreference          ThemePreference @default(SYSTEM) @map("theme_preference")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -459,6 +466,7 @@ model User {
   contextNoteRatings       ContextNoteRating[]    @relation("ContextNoteRater")
   contextNoteRequests      ContextNoteRequest[]   @relation("ContextNoteRequester")
   contextContributor       ContextContributor?    @relation("ContextContributorUser")
+  notificationPreference   UserNotificationPreference?
 
   @@map("users")
 }
@@ -768,7 +776,10 @@ model Report {
   media            String[]
 
   // Pressure score (calculated hourly by BullMQ job — section 8.3)
-  pressureScore    Float          @default(0)
+  pressureScore    Float            @default(0)
+
+  // Triagem automática de segurança (quarentena separada do ciclo cívico OPEN/RESOLVED)
+  moderationStatus ModerationStatus @default(PUBLISHED) @map("moderation_status")
 
   // Polymorphic recipient (section 15.4)
   recipientType    RecipientType?
@@ -1566,6 +1577,17 @@ enum FlagStatus {
   DISMISSED
 }
 
+enum FlagSource {
+  USER
+  AUTO_AI
+}
+
+enum ModerationStatus {
+  PUBLISHED
+  UNDER_REVIEW
+  HIDDEN
+}
+
 model ContentFlag {
   id             String         @id @default(uuid())
   targetType     FlagTargetType
@@ -1573,6 +1595,7 @@ model ContentFlag {
   reason         FlagReason
   details        String?        @db.VarChar(500)
   status         FlagStatus     @default(OPEN)
+  source         FlagSource     @default(USER)
   reporterId     String?
   reporter       User?          @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: SetNull)
   resolvedById   String?
@@ -3224,4 +3247,328 @@ model ContextNoteStatusLog {
 
   @@index([noteId, createdAt])
   @@map("context_note_status_log")
+}
+
+// ==================== PESQUISA VOTZ (OFICIAL ANONIMIZADA) ====================
+
+enum SurveyKind {
+  VOTING_INTENTION  // Intenção de voto (estimulada, 1º/2º turno, rejeição)
+  APPROVAL_RATING   // Avaliação de gestão (Executivo / Legislativo)
+  CIVIC_TOPIC       // Pesquisa cívica / temática / consulta pública
+}
+
+enum SurveyOrigin {
+  VOTZ              // Iniciativa oficial da equipe Votz
+  PARTNER_INSTITUTE // Instituto de pesquisa / universidade parceira credenciada
+  PUBLIC_ENTITY     // Consulta pública de entidade pública (prefeitura, secretaria, câmara)
+}
+
+enum SurveyDistributionMode {
+  OPEN           // Aberta na vitrine /pesquisas a todos os cidadãos elegíveis
+  INVITED_SAMPLE // Amostra sorteada com quarentena de tema/cargo entre institutos (Fase 2)
+}
+
+enum SurveyMethodologyType {
+  OPEN_PANEL       // Sondagem aberta entre usuários do Votz (amostra não probabilística)
+  WEIGHTED_QUOTA   // Amostra estratificada / ponderada por cotas (IBGE)
+  REGISTERED_TSE   // Pesquisa eleitoral registrada no PesqEle (TSE)
+}
+
+enum SurveyStatus {
+  DRAFT       // Em preparação pelo Admin
+  SCHEDULED   // Publicação agendada
+  OPEN        // Coleta aberta
+  CLOSED      // Coleta encerrada (resultados congelados e salt destruído)
+  ARCHIVED    // Arquivada (histórico público preservado)
+  CANCELLED   // Cancelada (trava eleitoral ou irregularidade)
+}
+
+enum SurveyScope {
+  NATIONAL
+  STATE
+  MUNICIPAL
+}
+
+enum SurveyVerificationLevel {
+  STANDARD      // E-mail verificado + idade mínima da conta
+  VERIFIED_CPF  // Exige CPF cadastrado (dedup por CPF normalizado)
+}
+
+enum SurveyQuestionType {
+  SINGLE_CHOICE    // Escolha única (ex.: 1º turno, avaliação)
+  MULTIPLE_CHOICE  // Múltipla escolha limitada (ex.: rejeição, até maxSelections)
+  SCALE_5          // Escala 1..5 (ex.: Ótimo a Péssimo)
+}
+
+enum SurveyResultsVisibility {
+  AFTER_VOTE   // Cidadão vê parciais após votar (e público após atingir quórum mínimo)
+  AFTER_CLOSE  // Resultados só aparecem quando a pesquisa encerrar (evita efeito manada)
+}
+
+enum SurveyReviewStatus {
+  APPROVED          // Aprovada pelo Admin do Votz (padrão para pesquisas criadas pelo Admin)
+  PENDING_REVIEW    // Submetida por Entidade / Parceiro aguardando revisão editorial
+  CHANGES_REQUESTED // Admin solicitou ajustes antes de aprovar
+  REJECTED          // Recusada (ex.: pergunta tendenciosa ou fora do escopo)
+}
+
+enum SurveyInvitationStatus {
+  INVITED   // Sorteado e convidado para responder
+  RESPONDED // Participou (sem vínculo com a cédula anônima)
+  DECLINED  // Recusou o convite
+  EXPIRED   // Janela encerrada sem resposta
+}
+
+/// Instituto de pesquisa ou universidade credenciada no Votz (página pública + ficha técnica).
+model ResearchInstitute {
+  id               String           @id @default(uuid())
+  slug             String           @unique
+  name             String           @db.VarChar(160)
+  legalName        String           @map("legal_name") @db.VarChar(200)
+  cnpj             String?          @unique @db.VarChar(18)
+  logoUrl          String?          @map("logo_url") @db.VarChar(500)
+  website          String?          @db.VarChar(300)
+  description      String?          @db.Text
+  statisticianLead String?          @map("statistician_lead") @db.VarChar(140)
+  conreLead        String?          @map("conre_lead") @db.VarChar(40)
+  verified         Boolean          @default(false)
+  active           Boolean          @default(true)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  surveys          OfficialSurvey[]
+
+  @@map("research_institutes")
+}
+
+model OfficialSurvey {
+  id                  String                  @id @default(uuid())
+  slug                String                  @unique
+  title               String                  @db.VarChar(180)
+  subtitle            String?                 @db.VarChar(320)
+  description         String                  @db.Text
+  kind                SurveyKind
+  origin              SurveyOrigin            @default(VOTZ)
+  distributionMode    SurveyDistributionMode  @default(OPEN) @map("distribution_mode")
+  methodologyType     SurveyMethodologyType   @default(OPEN_PANEL) @map("methodology_type")
+  status              SurveyStatus            @default(DRAFT)
+  reviewStatus        SurveyReviewStatus      @default(APPROVED) @map("review_status")
+  reviewNote          String?                 @map("review_note") @db.Text
+  submittedByUserId   String?                 @map("submitted_by_user_id")
+  scope               SurveyScope             @default(NATIONAL)
+  targetState         String?                 @map("target_state") @db.VarChar(2)
+  targetCity          String?                 @map("target_city") @db.VarChar(120)
+  targetIbgeCode      String?                 @map("target_ibge_code") @db.VarChar(10)
+
+  // Chave de tema/cargo para quarentena de 30 dias entre institutos e comparador histórico
+  // Ex.: "ELECTION:PREFEITO:SP:SAO_PAULO" ou "ELECTION:PRESIDENTE:BR"
+  topicKey            String?                 @map("topic_key") @db.VarChar(120)
+  cooldownDays        Int                     @default(30) @map("cooldown_days")
+  targetSampleSize    Int?                    @map("target_sample_size")
+
+  // Parceiro / Instituto / Entidade / Contratante (ficha técnica padronizada)
+  instituteId         String?                 @map("institute_id")
+  institute           ResearchInstitute?      @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  sponsorEntityId     String?                 @map("sponsor_entity_id")
+  partnerName         String?                 @map("partner_name") @db.VarChar(160)
+  partnerLogoUrl      String?                 @map("partner_logo_url") @db.VarChar(500)
+  contractorName      String?                 @map("contractor_name") @db.VarChar(160)
+  marginOfError       Float?                  @map("margin_of_error")
+  confidenceLevel     Int?                    @map("confidence_level")
+
+  // Elegibilidade, quórum e anonimato
+  verificationLevel   SurveyVerificationLevel @default(STANDARD) @map("verification_level")
+  minAccountAgeDays   Int                     @default(7) @map("min_account_age_days")
+  resultsVisibility   SurveyResultsVisibility @default(AFTER_CLOSE) @map("results_visibility")
+  minQuorumToPublish  Int                     @default(100) @map("min_quorum_to_publish")
+  kAnonymityThreshold Int                     @default(30) @map("k_anonymity_threshold")
+  featuredInFeed      Boolean                 @default(false) @map("featured_in_feed")
+
+  // Janela de coleta
+  startsAt            DateTime?               @map("starts_at")
+  endsAt              DateTime?               @map("ends_at")
+  closedAt            DateTime?               @map("closed_at")
+
+  // Segredo exclusivo desta pesquisa cifrado via CryptoService (AES-256-GCM).
+  // Destruído (setado para null) no encerramento após esvaziar o Mix Pool (crypto-shredding).
+  nullifierSaltEnc    String?                 @map("nullifier_salt_enc")
+  saltDestroyedAt     DateTime?               @map("salt_destroyed_at")
+
+  // Conformidade TSE / Transparência metodológica
+  isElectoral         Boolean                 @default(false) @map("is_electoral")
+  tseRegistrationCode String?                 @map("tse_registration_code") @db.VarChar(60)
+  statisticianName    String?                 @map("statistician_name") @db.VarChar(140)
+  statisticianConre   String?                 @map("statistician_conre") @db.VarChar(40)
+  methodologyNote     String                  @map("methodology_note") @db.Text
+  disclaimerText      String                  @map("disclaimer_text") @db.Text
+
+  // Auditoria administrativa (quem criou/publicou/cancelou — nunca quem votou)
+  createdById         String                  @map("created_by_id")
+  publishedById       String?                 @map("published_by_id")
+  cancelReason        String?                 @map("cancel_reason") @db.Text
+  totalBallots        Int                     @default(0) @map("total_ballots")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+
+  questions           OfficialSurveyQuestion[]
+  participations      OfficialSurveyParticipation[]
+  pendingBallots      OfficialSurveyPendingBallot[]
+  ballots             OfficialSurveyBallot[]
+  aggregates          OfficialSurveyAggregate[]
+  invitations         OfficialSurveyInvitation[]
+
+  @@index([status, featuredInFeed, startsAt])
+  @@index([scope, targetState, targetIbgeCode, status])
+  @@index([topicKey, status])
+  @@index([sponsorEntityId, status])
+  @@index([reviewStatus, status])
+  @@map("official_surveys")
+}
+
+/// Convite de amostra sorteada (Fase 2 — INVITED_SAMPLE) com quarentena por `topicKey`.
+/// NUNCA aponta para cédula nem resposta; serve apenas para controle de convite e quarentena.
+model OfficialSurveyInvitation {
+  id              String                 @id @default(uuid())
+  surveyId        String                 @map("survey_id")
+  survey          OfficialSurvey         @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  userId          String                 @map("user_id")
+  topicKey        String?                @map("topic_key") @db.VarChar(120)
+  status          SurveyInvitationStatus @default(INVITED)
+  invitedAt       DateTime               @default(now()) @map("invited_at")
+  expiresAt       DateTime?              @map("expires_at")
+  respondedBucket DateTime?              @map("responded_bucket")
+
+  @@unique([surveyId, userId])
+  @@index([userId, status])
+  @@index([userId, topicKey, invitedAt])
+  @@map("official_survey_invitations")
+}
+
+model OfficialSurveyQuestion {
+  id                  String                 @id @default(uuid())
+  surveyId            String                 @map("survey_id")
+  survey              OfficialSurvey         @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  position            Int
+  prompt              String                 @db.VarChar(300)
+  helpText            String?                @db.VarChar(300) @map("help_text")
+  type                SurveyQuestionType     @default(SINGLE_CHOICE)
+  required            Boolean                @default(true)
+  maxSelections       Int                    @default(1) @map("max_selections")
+  randomizeOptions    Boolean                @default(true) @map("randomize_options")
+  options             OfficialSurveyOption[]
+
+  @@unique([surveyId, position])
+  @@map("official_survey_questions")
+}
+
+model OfficialSurveyOption {
+  id                  String                 @id @default(uuid())
+  questionId          String                 @map("question_id")
+  question            OfficialSurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  position            Int
+  label               String                 @db.VarChar(160)
+  subtitle            String?                @db.VarChar(160)
+  imageUrl            String?                @map("image_url") @db.VarChar(500)
+  politicianId        String?                @map("politician_id")
+  isPinnedBottom      Boolean                @default(false) @map("is_pinned_bottom")
+
+  @@unique([questionId, position])
+  @@map("official_survey_options")
+}
+
+/// TABELA A: Controle estrito de 1 voto por pessoa.
+/// ZERO resposta, ZERO apontamento para cédula, ZERO IP.
+model OfficialSurveyParticipation {
+  id                  String         @id @default(uuid())
+  surveyId            String         @map("survey_id")
+  survey              OfficialSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  nullifierHash       String         @map("nullifier_hash") @db.VarChar(64)
+  participatedBucket  DateTime       @map("participated_bucket")
+
+  @@unique([surveyId, nullifierHash])
+  @@index([surveyId])
+  @@map("official_survey_participations")
+}
+
+/// FILA TRANSITÓRIA (Mix Pool persistente em banco): guarda cédulas cifradas sem qualquer
+/// ligação com User/CPF/nullifier até o worker BullMQ drenar e embaralhar em lote (Fisher-Yates).
+model OfficialSurveyPendingBallot {
+  id                  String         @id @default(uuid())
+  surveyId            String         @map("survey_id")
+  survey              OfficialSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  payloadEnc          String         @map("payload_enc") @db.Text
+  queuedBucket        DateTime       @map("queued_bucket")
+
+  @@index([surveyId])
+  @@map("official_survey_pending_ballots")
+}
+
+/// TABELA B: Cédula 100% anônima, gravada fora de ordem via lote embaralhado.
+/// ZERO referência a User, CPF, nullifierHash, IP ou deviceId.
+model OfficialSurveyBallot {
+  id                  String         @id @default(uuid())
+  surveyId            String         @map("survey_id")
+  survey              OfficialSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answersJson         Json           @map("answers_json")
+  ageBand             String?        @map("age_band") @db.VarChar(16)
+  gender              String?        @db.VarChar(24)
+  state               String?        @db.VarChar(2)
+  ibgeCode            String?        @map("ibge_code") @db.VarChar(10)
+  submittedBucket     DateTime       @map("submitted_bucket")
+
+  @@index([surveyId, submittedBucket])
+  @@index([surveyId, state])
+  @@map("official_survey_ballots")
+}
+
+/// Agregados pré-calculados por segmento para leitura rápida e proteção garantida por k-anonimato.
+model OfficialSurveyAggregate {
+  id                  String         @id @default(uuid())
+  surveyId            String         @map("survey_id")
+  survey              OfficialSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  questionId          String         @map("question_id")
+  optionId            String         @map("option_id")
+  segmentKey          String         @map("segment_key") @db.VarChar(64)
+  votesCount          Int            @default(0) @map("votes_count")
+  segmentTotal        Int            @default(0) @map("segment_total")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  @@unique([surveyId, questionId, optionId, segmentKey])
+  @@index([surveyId, segmentKey])
+  @@map("official_survey_aggregates")
+}
+
+// ==================== CONFIGURAÇÕES DE CONTA E NOTIFICAÇÕES ====================
+
+model UserNotificationPreference {
+  userId                  String   @id @map("user_id")
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Canais
+  inAppEnabled            Boolean  @default(true) @map("in_app_enabled")
+  emailEnabled            Boolean  @default(true) @map("email_enabled")
+  pushEnabled             Boolean  @default(true) @map("push_enabled")
+
+  // Eventos
+  reportUpdates           Boolean  @default(true) @map("report_updates")
+  reportComments          Boolean  @default(true) @map("report_comments")
+  officialResponses       Boolean  @default(true) @map("official_responses")
+  localSurges             Boolean  @default(true) @map("local_surges")
+  officialSurveys         Boolean  @default(true) @map("official_surveys")
+  mentions                Boolean  @default(true)
+  weeklyDigest            Boolean  @default(false) @map("weekly_digest")
+
+  // Horário de silêncio ("Não perturbe", 0..23 em horário de Brasília; null = desligado)
+  quietHoursStart         Int?     @map("quiet_hours_start")
+  quietHoursEnd           Int?     @map("quiet_hours_end")
+
+  // Privacidade cívica do cidadão
+  defaultAnonymousReports Boolean  @default(false) @map("default_anonymous_reports")
+  publicActivityVisible   Boolean  @default(true) @map("public_activity_visible")
+  acceptPressContact      Boolean  @default(false) @map("accept_press_contact")
+
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@map("user_notification_preferences")
 }

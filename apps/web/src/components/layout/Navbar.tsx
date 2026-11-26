@@ -15,6 +15,8 @@ import { notificationContent } from '../../lib/notification-content'
 import { useMyProfiles, useSwitchContext } from '../../hooks/useAuth'
 import { api } from '../../lib/api'
 import { useContextNotesEnabled } from '../../hooks/useContextNotes'
+import { useSurveysEnabled } from '../../hooks/useSurveys'
+import { useAppTheme } from '../../theme/ThemeContext'
 
 const Nav = styled.nav`
   position: sticky;
@@ -685,6 +687,10 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
 
   const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const contextNotesEnabled = useContextNotesEnabled()
+  const surveysEnabled = useSurveysEnabled()
+  const { preference: themePref, setPreference: setThemePref } = useAppTheme()
+  const nextThemePref = themePref === 'SYSTEM' ? 'DARK' : themePref === 'DARK' ? 'LIGHT' : 'SYSTEM'
+  const themeLabel = themePref === 'DARK' ? 'Escuro' : themePref === 'LIGHT' ? 'Claro' : 'Automático'
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
 
   const closeMobileMenu = useCallback((restoreFocus = false) => {
@@ -833,6 +839,7 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
             <NavLink to="/politicos">Políticos</NavLink>
             <NavLink to="/debates">Debates</NavLink>
             <NavLink to="/propostas">Propostas</NavLink>
+            <NavLink to="/sobre">Sobre</NavLink>
             {(isPressOrResearch || isStaff) && <NavLink to="/imprensa">Imprensa</NavLink>}
             {hasOrgContext && (
               <OrgMenuButton as={Link as any} to="/estudio">
@@ -929,6 +936,14 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
                           Contexto da Comunidade
                         </DropdownItem>
                       )}
+                      {surveysEnabled && (
+                        <DropdownItem to="/pesquisas" onClick={() => setOpen(false)}>
+                          Pesquisa Votz
+                        </DropdownItem>
+                      )}
+                      <DropdownAction onClick={() => setThemePref(nextThemePref)}>
+                        Tema: {themeLabel}
+                      </DropdownAction>
                       <DropdownAction onClick={() => { setShowInviteModal(true); setOpen(false) }}>
                         Convidar pessoas
                       </DropdownAction>
@@ -981,6 +996,7 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
           <MobileNavLink to="/politicos" onClick={() => setMobileOpen(false)}>Políticos</MobileNavLink>
           <MobileNavLink to="/debates" onClick={() => setMobileOpen(false)}>Debates</MobileNavLink>
           <MobileNavLink to="/propostas" onClick={() => setMobileOpen(false)}>Propostas</MobileNavLink>
+          <MobileNavLink to="/sobre" onClick={() => setMobileOpen(false)}>Sobre o Votz</MobileNavLink>
           {(isPressOrResearch || isStaff) && (
             <MobileNavLink to="/imprensa" onClick={() => setMobileOpen(false)}>Imprensa</MobileNavLink>
           )}
@@ -1054,6 +1070,11 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
               {contextNotesEnabled && (
                 <MobileNavLink to="/contexto" onClick={() => setMobileOpen(false)}>
                   Contexto da Comunidade
+                </MobileNavLink>
+              )}
+              {surveysEnabled && (
+                <MobileNavLink to="/pesquisas" onClick={() => setMobileOpen(false)}>
+                  Pesquisa Votz
                 </MobileNavLink>
               )}
               <MobileDrawerAction

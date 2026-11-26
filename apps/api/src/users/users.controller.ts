@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import { UsersService } from './users.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
+import { UpdatePreferencesDto } from './dto/update-preferences.dto'
 import { AcceptConsentDto } from './dto/accept-consent.dto'
 import { DeleteAccountDto } from './dto/delete-account.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
@@ -20,6 +21,25 @@ export class UsersController {
   @ApiOperation({ summary: 'Get own profile (private data included)' })
   getMe(@CurrentUser() user: { id: string }) {
     return this.usersService.findMe(user.id)
+  }
+
+  @Get('me/preferences')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Obter preferências de notificações e privacidade cívica da conta' })
+  getPreferences(@CurrentUser() user: { id: string }) {
+    return this.usersService.getPreferences(user.id)
+  }
+
+  @Patch('me/preferences')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Atualizar preferências de notificações e privacidade cívica da conta' })
+  updatePreferences(
+    @CurrentUser() user: { id: string },
+    @Body() dto: UpdatePreferencesDto,
+  ) {
+    return this.usersService.updatePreferences(user.id, dto)
   }
 
   @Post('me/consent')

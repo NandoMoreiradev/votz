@@ -32,6 +32,9 @@ describe('OrgMembershipsController (M2 BOLA & DTO validation)', () => {
         }
         return null
       }),
+      findRoleByName: jest.fn().mockResolvedValue(null),
+      countMembersByRole: jest.fn().mockResolvedValue(0),
+      countPendingInvitesByRole: jest.fn().mockResolvedValue(0),
       createRole: jest.fn(async (orgType, orgId, name, permissions, isDefault) => ({
         id: 'new-role',
         orgType,

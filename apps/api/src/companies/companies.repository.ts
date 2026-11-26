@@ -20,9 +20,9 @@ const COMPANY_PUBLIC_SELECT = {
   website: true,
   createdAt: true,
   branches: {
-    select: { id: true, name: true, city: true, state: true },
+    select: { id: true, name: true, address: true, city: true, state: true },
     orderBy: { name: 'asc' as const },
-    take: 20,
+    take: 50,
   },
 } as const
 
@@ -112,6 +112,40 @@ export class CompaniesRepository {
 
   update(id: string, data: Prisma.CompanyUpdateInput) {
     return this.prisma.company.update({ where: { id }, data, select: COMPANY_PUBLIC_SELECT })
+  }
+
+  createBranch(companyId: string, data: { name: string; address: string; city: string; state: string; latitude?: number; longitude?: number }) {
+    return this.prisma.branch.create({
+      data: {
+        companyId,
+        name: data.name,
+        address: data.address,
+        city: data.city,
+        state: data.state.toUpperCase(),
+        latitude: data.latitude ?? null,
+        longitude: data.longitude ?? null,
+      },
+    })
+  }
+
+  findBranch(companyId: string, branchId: string) {
+    return this.prisma.branch.findFirst({ where: { id: branchId, companyId } })
+  }
+
+  updateBranch(branchId: string, data: { name?: string; address?: string; city?: string; state?: string }) {
+    return this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.city !== undefined ? { city: data.city } : {}),
+        ...(data.state !== undefined ? { state: data.state.toUpperCase() } : {}),
+      },
+    })
+  }
+
+  deleteBranch(branchId: string) {
+    return this.prisma.branch.delete({ where: { id: branchId } })
   }
 
   async findReports(companyId: string, page: number, limit: number, status?: string) {

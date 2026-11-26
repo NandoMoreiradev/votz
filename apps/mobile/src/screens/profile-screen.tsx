@@ -18,12 +18,17 @@ import { errorMessage } from '../lib/api'
 import { SECTOR_LABELS, formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
 import { useContextNotesEnabled } from '../hooks/use-context-notes'
+import { useSurveysEnabled } from '../hooks/use-surveys'
+import { useAppTheme } from '../theme-context'
+import { THEME_PREFERENCE_LABELS } from '@votz/shared-types'
 import type { PostDto, ProfileKind, PublicProfile, ReportSummary } from '../lib/types'
 import { theme } from '../theme'
 
 export default function ProfileScreen({ kind, id, tabs = false }: { kind: ProfileKind; id: string; tabs?: boolean }) {
   const user = useSession((s) => s.user)
   const contextEnabled = useContextNotesEnabled()
+  const surveysEnabled = useSurveysEnabled()
+  const { preference: themePref, setPreference: setThemePref } = useAppTheme()
   const own = kind === 'users' && user?.id === id
   const company = kind === 'companies'
   const profile = useDetail<PublicProfile>(kind, id)
@@ -62,7 +67,7 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
     </View>
     {company ? <Text style={{ paddingHorizontal: 16, paddingVertical: 12, fontFamily: theme.fonts.medium, fontSize: 14, color: theme.colors.primary, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}>Relatos recebidos</Text> : <TabStrip tabs={[{ value: 'posts', label: 'Publicações' }, { value: 'reports', label: 'Relatos' }]} value={tab} onChange={setTab} />}
   </>
-  return <Screen tabs={tabs}><Toolbar title={tabs ? 'Meu perfil' : name} back={!tabs} right={own ? <IconButton label="Opções da conta" onPress={() => Alert.alert('Sua conta', undefined, [{ text: 'Editar perfil', onPress: () => router.push('/edit-profile') }, { text: 'Preferências de anúncios', onPress: () => router.push('/ad-preferences') }, ...(contextEnabled ? [{ text: 'Contexto da Comunidade', onPress: () => router.push('/contexto' as Href) }] : []), { text: 'Sair da conta', style: 'destructive', onPress: () => logout.mutate() }, { text: 'Cancelar', style: 'cancel' }])}><MoreHorizontal size={23} color={theme.colors.primary} /></IconButton> : undefined} />
+  return <Screen tabs={tabs}><Toolbar title={tabs ? 'Meu perfil' : name} back={!tabs} right={own ? <IconButton label="Opções da conta" onPress={() => Alert.alert('Sua conta', undefined, [{ text: 'Editar perfil', onPress: () => router.push('/edit-profile') }, { text: `Aparência (${THEME_PREFERENCE_LABELS[themePref]})`, onPress: () => Alert.alert('Aparência', 'Escolha o tema salvo no seu perfil:', [{ text: 'Automático (sistema)', onPress: () => setThemePref('SYSTEM') }, { text: 'Claro', onPress: () => setThemePref('LIGHT') }, { text: 'Escuro', onPress: () => setThemePref('DARK') }, { text: 'Cancelar', style: 'cancel' }]) }, { text: 'Preferências de anúncios', onPress: () => router.push('/ad-preferences') }, ...(contextEnabled ? [{ text: 'Contexto da Comunidade', onPress: () => router.push('/contexto' as Href) }] : []), ...(surveysEnabled ? [{ text: 'Pesquisa Votz', onPress: () => router.push('/pesquisas' as Href) }] : []), { text: 'Sair da conta', style: 'destructive', onPress: () => logout.mutate() }, { text: 'Cancelar', style: 'cancel' }])}><MoreHorizontal size={23} color={theme.colors.primary} /></IconButton> : undefined} />
     {!profileData ? <State loading={profile.isPending} title={profile.isPending ? 'Abrindo perfil…' : 'Não foi possível abrir'} description={profile.isError ? errorMessage(profile.error) : undefined} retry={() => { void profile.refetch() }} /> : <View style={{ flex: 1 }}>
       <FlatList data={data} keyExtractor={(item) => item.id} contentContainerStyle={{ paddingBottom: 84 }} ListHeaderComponent={header}
         renderItem={({ item }) => tab === 'posts' ? <PostCard post={item as PostDto} /> : <Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato: ${(item as ReportSummary).title}`} onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.id } })} style={{ paddingHorizontal: 16, paddingVertical: 16, gap: 5, borderBottomWidth: 0.5, borderBottomColor: theme.colors.border }}><Text style={{ fontSize: 11, color: theme.colors.muted }}>{statusLabels[(item as ReportSummary).status]} · {relativeTime(item.createdAt)}</Text><Text style={{ fontFamily: theme.fonts.medium, fontSize: 16, color: theme.colors.primary }}>{(item as ReportSummary).title}</Text><Text style={{ color: theme.colors.muted, fontSize: 12 }}>{formatCount((item as ReportSummary)._count.votes, 'apoio', 'apoios')}</Text></Pressable>}

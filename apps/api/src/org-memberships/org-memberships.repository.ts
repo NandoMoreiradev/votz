@@ -16,8 +16,23 @@ const MEMBERSHIP_SELECT = {
   status: true,
   createdAt: true,
   user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-  role: { select: { id: true, name: true, permissions: true } },
+  role: { select: { id: true, name: true, permissions: true, isDefault: true } },
 }
+
+const INVITE_SELECT = {
+  id: true,
+  orgType: true,
+  orgId: true,
+  email: true,
+  roleId: true,
+  token: true,
+  expiresAt: true,
+  acceptedAt: true,
+  createdAt: true,
+}
+
+const OWNER_ROLE_NAMES = ['OWNER', 'Proprietário']
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 @Injectable()
 export class OrgMembershipsRepository {
@@ -36,12 +51,19 @@ export class OrgMembershipsRepository {
     return this.prisma.orgRole.findMany({
       where: { orgType, orgId },
       select: ROLE_SELECT,
-      orderBy: { name: 'asc' },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
     })
   }
 
   findRoleById(id: string) {
     return this.prisma.orgRole.findUnique({ where: { id } })
+  }
+
+  findRoleByName(orgType: OrgType, orgId: string, name: string) {
+    return this.prisma.orgRole.findFirst({
+      where: { orgType, orgId, name: { equals: name, mode: 'insensitive' } },
+      select: ROLE_SELECT,
+    })
   }
 
   updateRole(id: string, data: { name?: string; permissions?: OrgPermission[] }) {
@@ -50,6 +72,20 @@ export class OrgMembershipsRepository {
 
   deleteRole(id: string) {
     return this.prisma.orgRole.delete({ where: { id } })
+  }
+
+  countMembersByRole(roleId: string) {
+    return this.prisma.orgMembership.count({ where: { roleId } })
+  }
+
+  countPendingInvitesByRole(roleId: string) {
+    return this.prisma.memberInvite.count({
+      where: {
+        roleId,
+        acceptedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    })
   }
 
   // ── Memberships ────────────────────────────────────────────────────────────
@@ -84,19 +120,81 @@ export class OrgMembershipsRepository {
     })
   }
 
+  updateMemberStatus(userId: string, orgType: OrgType, orgId: string, status: MembershipStatus) {
+    return this.prisma.orgMembership.update({
+      where: { userId_orgType_orgId: { userId, orgType, orgId } },
+      data: { status },
+      select: MEMBERSHIP_SELECT,
+    })
+  }
+
   removeMember(userId: string, orgType: OrgType, orgId: string) {
     return this.prisma.orgMembership.delete({
       where: { userId_orgType_orgId: { userId, orgType, orgId } },
     })
   }
 
+  countActiveOwners(orgType: OrgType, orgId: string) {
+    return this.prisma.orgMembership.count({
+      where: {
+        orgType,
+        orgId,
+        status: MembershipStatus.ACTIVE,
+        role: { name: { in: OWNER_ROLE_NAMES } },
+      },
+    })
+  }
+
+  countActiveMembers(orgType: OrgType, orgId: string) {
+    return this.prisma.orgMembership.count({
+      where: { orgType, orgId, status: MembershipStatus.ACTIVE },
+    })
+  }
+
+  countSuspendedMembers(orgType: OrgType, orgId: string) {
+    return this.prisma.orgMembership.count({
+      where: { orgType, orgId, status: MembershipStatus.SUSPENDED },
+    })
+  }
+
   // ── Invites ────────────────────────────────────────────────────────────────
 
   createInvite(orgType: OrgType, orgId: string, email: string, roleId: string) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS)
     return this.prisma.memberInvite.create({
       data: { orgType, orgId, email, roleId, expiresAt },
+      select: INVITE_SELECT,
     })
+  }
+
+  findPendingInvites(orgType: OrgType, orgId: string) {
+    return this.prisma.memberInvite.findMany({
+      where: {
+        orgType,
+        orgId,
+        acceptedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: INVITE_SELECT,
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  findPendingInviteByEmail(orgType: OrgType, orgId: string, email: string) {
+    return this.prisma.memberInvite.findFirst({
+      where: {
+        orgType,
+        orgId,
+        email: { equals: email, mode: 'insensitive' },
+        acceptedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: INVITE_SELECT,
+    })
+  }
+
+  findInviteById(id: string) {
+    return this.prisma.memberInvite.findUnique({ where: { id }, select: INVITE_SELECT })
   }
 
   findInviteByToken(token: string) {
@@ -117,6 +215,19 @@ export class OrgMembershipsRepository {
     })
   }
 
+  refreshInviteExpiry(id: string) {
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS)
+    return this.prisma.memberInvite.update({
+      where: { id },
+      data: { expiresAt },
+      select: INVITE_SELECT,
+    })
+  }
+
+  deleteInvite(id: string) {
+    return this.prisma.memberInvite.delete({ where: { id } })
+  }
+
   acceptInvite(token: string) {
     return this.prisma.memberInvite.update({
       where: { token },
@@ -124,9 +235,22 @@ export class OrgMembershipsRepository {
     })
   }
 
-  countActiveMembers(orgType: OrgType, orgId: string) {
-    return this.prisma.orgMembership.count({
-      where: { orgType, orgId, status: MembershipStatus.ACTIVE },
+  acceptInviteAndAddMember(
+    token: string,
+    userId: string,
+    orgType: OrgType,
+    orgId: string,
+    roleId: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.memberInvite.update({
+        where: { token },
+        data: { acceptedAt: new Date() },
+      })
+      return tx.orgMembership.create({
+        data: { userId, orgType, orgId, roleId, status: MembershipStatus.ACTIVE },
+        select: MEMBERSHIP_SELECT,
+      })
     })
   }
 

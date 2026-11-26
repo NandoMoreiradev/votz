@@ -1,4 +1,7 @@
 import { UserType } from './enums';
+export declare const THEME_PREFERENCES: readonly ["SYSTEM", "LIGHT", "DARK"];
+export type ThemePreference = (typeof THEME_PREFERENCES)[number];
+export declare const THEME_PREFERENCE_LABELS: Record<ThemePreference, string>;
 export type OrgContextType = 'ENTITY' | 'POLITICIAN' | 'COMPANY';
 export interface ActiveContext {
     type: OrgContextType;
@@ -42,5 +45,30 @@ export interface AuthenticatedUser extends PublicUser {
     birthDate?: string | null;
     /** Só para a própria pessoa; nunca no perfil público. Valores de `USER_GENDERS`. */
     gender?: 'FEMALE' | 'MALE' | 'OTHER' | 'UNDISCLOSED' | null;
+    /** Preferência de aparência salva no perfil do usuário (SYSTEM | LIGHT | DARK). */
+    themePreference?: ThemePreference;
+}
+export interface UserAccountPreferencesView {
+    inAppEnabled: boolean;
+    emailEnabled: boolean;
+    pushEnabled: boolean;
+    reportUpdates: boolean;
+    reportComments: boolean;
+    officialResponses: boolean;
+    localSurges: boolean;
+    officialSurveys: boolean;
+    mentions: boolean;
+    weeklyDigest: boolean;
+    quietHoursStart: number | null;
+    quietHoursEnd: number | null;
+    defaultAnonymousReports: boolean;
+    publicActivityVisible: boolean;
+    acceptPressContact: boolean;
+}
+export interface ActiveSessionView {
+    familyId: string;
+    createdAt: string;
+    expiresAt: string;
+    current: boolean;
 }
 //# sourceMappingURL=user.d.ts.map

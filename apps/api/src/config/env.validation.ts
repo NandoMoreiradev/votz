@@ -47,6 +47,15 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     issues.push('CPF_ENCRYPTION_KEY must be a 64-character hexadecimal string (32 bytes)')
   }
 
+  if (readString(config, 'OFFICIAL_SURVEYS_ENABLED') === 'true') {
+    const surveyNullifierKey = readString(config, 'SURVEY_NULLIFIER_KEY')
+    if (!HEX_64_REGEX.test(surveyNullifierKey)) {
+      issues.push('SURVEY_NULLIFIER_KEY must be a 64-character hexadecimal string (32 bytes) when OFFICIAL_SURVEYS_ENABLED=true')
+    } else if ([cpfEncryptionKey, jwtSecret].includes(surveyNullifierKey)) {
+      issues.push('SURVEY_NULLIFIER_KEY must be independent of CPF_ENCRYPTION_KEY and JWT_SECRET')
+    }
+  }
+
   if (issues.length > 0) {
     const summary = `Environment security configuration issues: ${issues.join('; ')}`
     const nodeEnv = readString(config, 'NODE_ENV').toLowerCase()

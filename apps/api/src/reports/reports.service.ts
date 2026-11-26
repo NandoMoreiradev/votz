@@ -2,7 +2,8 @@ import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestEx
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import DOMPurify from 'isomorphic-dompurify'
-import { ReportsRepository, SimilarReportRow } from './reports.repository'
+import { ReportsRepository, SimilarReportFilters, SimilarReportRow } from './reports.repository'
+import { TtlCache } from '../imprensa/ttl-cache'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -13,12 +14,13 @@ import { StorageService } from '../storage/storage.service'
 import { ReportMediaService } from '../storage/report-media.service'
 import { WebhooksService } from '../webhooks/webhooks.service'
 import { TopicsService } from '../topics/topics.service'
+import { ContentSafetyService } from '../content-safety/content-safety.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
 import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
-import { Category, EventType, RecipientType, ReportStatus, UserType } from '@votz/shared-types'
+import { Category, EventType, RecipientType, ReportStatus, UserType, normalizeLocationKey } from '@votz/shared-types'
 import { FollowerActorType, OrgPermission, OrgType, PoliticianStatus, WebhookEventType } from '@prisma/client'
 import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
 import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
@@ -40,6 +42,7 @@ export class ReportsService {
     @Optional() private readonly webhooks?: WebhooksService,
     @Optional() private readonly topics?: TopicsService,
     @Optional() private readonly reportMedia?: ReportMediaService,
+    @Optional() private readonly contentSafety?: ContentSafetyService,
   ) {}
 
   /** Compara nomes sem olhar maiúsculas, acentos, hífen ou apóstrofo ("Santa Bárbara d'Oeste" = "SANTA BARBARA D OESTE"). */
@@ -49,6 +52,8 @@ export class ReportsService {
 
   private readonly cityKeysByState = new Map<string, { loadedAt: number; keys: Set<string> }>()
   private static readonly CITY_CACHE_MS = 60 * 60 * 1000
+  private readonly similarEmbeddingCache = new TtlCache(300)
+  private static readonly SIMILAR_EMBEDDING_CACHE_MS = 5 * 60 * 1000
 
   private async knownCityKeys(state: string): Promise<Set<string>> {
     const cached = this.cityKeysByState.get(state)
@@ -96,6 +101,9 @@ export class ReportsService {
 
     const sanitizedDescription = DOMPurify.sanitize(dto.description)
     const cleanTitle = DOMPurify.sanitize(dto.title).trim().replace(/\s+/g, ' ')
+
+    // Camada 1: bloqueia palavrões pesados, ódio, ameaça explícita e CPF exposto antes de gravar
+    this.contentSafety?.assertCleanOrThrow([cleanTitle, sanitizedDescription], 'relato')
 
     const report = await this.repository.create(
       { ...dto, title: cleanTitle, description: sanitizedDescription },
@@ -149,16 +157,39 @@ export class ReportsService {
 
     this.topics?.syncReportTopics(report.id, `${cleanTitle} ${sanitizedDescription}`).catch(() => null)
 
+    // Camada 2: triagem assíncrona por IA (pode abrir sinalização automática ou quarentena)
+    this.contentSafety
+      ?.enqueueReview({ targetType: 'REPORT', targetId: report.id, texts: [cleanTitle, sanitizedDescription] })
+      .catch(() => null)
+
     return report
   }
 
-  async findSimilar(title: string, description?: string, limit = 5) {
-    const text = [title, description].filter(Boolean).join(' ')
+  async findSimilar(
+    title: string,
+    description?: string,
+    limit = 5,
+    filters?: { category?: Category; state?: string; city?: string },
+  ) {
+    const cleanTitle = title.trim()
+    const cleanDesc = description?.trim() ?? ''
+    const text = [cleanTitle, cleanDesc].filter(Boolean).join(' ')
+    const city = filters?.city?.trim().slice(0, 100) || undefined
+    const state = filters?.state?.trim().toUpperCase() || undefined
+    const repoFilters: SimilarReportFilters = {
+      category: filters?.category,
+      state: state && /^[A-Z]{2}$/.test(state) ? state : undefined,
+      cityKey: city ? normalizeLocationKey(city) : undefined,
+      cityLower: city?.toLowerCase(),
+    }
 
+    const embedKey = `sim:${text.replace(/\s+/g, ' ').toLowerCase()}`
     const [trgmResult, ftsResult, semanticResult] = await Promise.allSettled([
-      this.repository.findByTrigram(title, description ?? '', limit),
-      this.repository.findByFullText(text, limit),
-      this.embedding.embed(text).then(vec => this.repository.findByEmbedding(vec, limit)),
+      this.repository.findByTrigram(cleanTitle, cleanDesc, limit, repoFilters),
+      this.repository.findByFullText(text, limit, repoFilters),
+      this.similarEmbeddingCache
+        .get(embedKey, ReportsService.SIMILAR_EMBEDDING_CACHE_MS, () => this.embedding.embed(text, 'query'))
+        .then(vec => this.repository.findByEmbedding(vec, limit, undefined, repoFilters)),
     ])
 
     const scores = new Map<string, { row: SimilarReportRow; combined: number; sources: string[] }>()

@@ -167,6 +167,10 @@ export class AdminService {
     return this.repo.setPoliticianPlan(id, plan)
   }
 
+  async verifyCompany(id: string, verified: boolean) {
+    return this.repo.setCompanyVerified(id, verified)
+  }
+
   async setCompanyPlan(id: string, plan: string) {
     return this.repo.setCompanyPlan(id, plan)
   }
@@ -213,8 +217,8 @@ export class AdminService {
     return this.repo.superadminOverview()
   }
 
-  listCompanies(search?: string, page = 1, limit = 20) {
-    return this.repo.listCompanies({ search, page, limit: Math.min(limit, 50) })
+  listCompanies(search?: string, verified?: boolean, page = 1, limit = 20) {
+    return this.repo.listCompanies({ search, verified, page, limit: Math.min(limit, 50) })
   }
 
   listApiKeys(search?: string, page = 1, limit = 20) {

@@ -3,7 +3,7 @@ import {
   IsOptional, IsString, IsUrl, MaxLength, MinLength,
   Matches, IsNumber, Min, Max, IsIn, ValidateIf,
 } from 'class-validator'
-import { USER_GENDERS, type UserGender } from '@votz/shared-types'
+import { THEME_PREFERENCES, USER_GENDERS, type ThemePreference, type UserGender } from '@votz/shared-types'
 import { IsAdultBirthDate } from '../../common/validators/birth-date.validator'
 import { Transform } from 'class-transformer'
 import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
@@ -129,4 +129,9 @@ export class UpdateProfileDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsIn(USER_GENDERS as unknown as string[], { message: 'Gênero inválido.' })
   gender?: UserGender | null
+
+  @ApiPropertyOptional({ enum: THEME_PREFERENCES, description: 'Preferência de tema salva no perfil (SYSTEM, LIGHT ou DARK).' })
+  @IsOptional()
+  @IsIn(THEME_PREFERENCES as unknown as string[], { message: 'Tema inválido. Use SYSTEM, LIGHT ou DARK.' })
+  themePreference?: ThemePreference
 }

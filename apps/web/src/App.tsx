@@ -1,10 +1,9 @@
 import { Suspense, useEffect, type ReactNode } from 'react'
-import { ThemeProvider } from 'styled-components'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { lazyPage } from './lib/lazy-page'
-import { theme } from './theme'
+import { AppThemeProvider } from './theme/ThemeContext'
 import { GlobalStyle } from './theme/GlobalStyle'
 import { queryClient } from './lib/query-client'
 import { api, refreshSession } from './lib/api'
@@ -52,6 +51,7 @@ const RequestRegistration = lazyPage(() => import('./pages/RequestRegistration')
 const PoliticianEdit = lazyPage(() => import('./pages/PoliticianEdit'), 'PoliticianEdit', ['/politico/:id/editar'])
 const ClaimProfile = lazyPage(() => import('./pages/ClaimProfile'), 'ClaimProfile', ['/reivindicar/:type/:id'])
 const EntityEdit = lazyPage(() => import('./pages/EntityEdit'), 'EntityEdit', ['/entidade/:id/editar'])
+const CompanyEdit = lazyPage(() => import('./pages/CompanyEdit'), 'CompanyEdit', ['/empresa/:id/editar'])
 const MyRequests = lazyPage(() => import('./pages/MyRequests'), 'MyRequests', ['/minhas-solicitacoes'])
 const AcceptInvite = lazyPage(() => import('./pages/AcceptInvite'), 'AcceptInvite', ['/convite/:token'])
 const Imprensa = lazyPage(() => import('./pages/Imprensa'), 'Imprensa', ['/imprensa'])
@@ -62,6 +62,7 @@ const Planos = lazyPage(() => import('./pages/Planos'), 'Planos', ['/planos', '/
 const PagamentoSucesso = lazyPage(() => import('./pages/PagamentoSucesso'), 'PagamentoSucesso', ['/pagamento/sucesso'])
 const PainelDados = lazyPage(() => import('./pages/PainelDados'), 'PainelDados', ['/painel-dados'])
 const EntidadePrazos = lazyPage(() => import('./pages/EntidadePrazos'), 'EntidadePrazos', ['/entidade/prazos'])
+const EntitySurveys = lazyPage(() => import('./pages/EntitySurveys'), 'EntitySurveys', ['/entidade/consultas'])
 const MandatoPortal = lazyPage(() => import('./pages/MandatoPortal'), 'MandatoPortal', ['/mandato', '/mandato/:aba'])
 const StudioTeam = lazyPage(() => import('./pages/studio/StudioTeam'), 'StudioTeam', ['/estudio/equipe'])
 const StudioOverview = lazyPage(() => import('./pages/studio/StudioOverview'), 'StudioOverview', ['/estudio'])
@@ -79,8 +80,12 @@ const Termos = lazyPage(() => import('./pages/Termos'), 'Termos', ['/termos'])
 const Privacidade = lazyPage(() => import('./pages/Privacidade'), 'Privacidade', ['/privacidade'])
 const Cookies = lazyPage(() => import('./pages/Cookies'), 'Cookies', ['/cookies'])
 const Diretrizes = lazyPage(() => import('./pages/Diretrizes'), 'Diretrizes', ['/diretrizes'])
+const Sobre = lazyPage(() => import('./pages/Sobre'), 'Sobre', ['/sobre'])
 const Sugestoes = lazyPage(() => import('./pages/Sugestoes'), 'Sugestoes', ['/sugestoes'])
 const ContextoDaComunidade = lazyPage(() => import('./pages/ContextoDaComunidade'), 'ContextoDaComunidade', ['/contexto'])
+const PesquisasList = lazyPage(() => import('./pages/PesquisasList'), 'PesquisasList', ['/pesquisas'])
+const PesquisaDetail = lazyPage(() => import('./pages/PesquisaDetail'), 'PesquisaDetail', ['/pesquisas/:slug'])
+const InstituteProfile = lazyPage(() => import('./pages/InstituteProfile'), 'InstituteProfile', ['/pesquisas/institutos/:slug'])
 const Conversations = lazyPage(() => import('./pages/Conversations'), 'Conversations', ['/conversas/*'])
 
 function ConversationsRoute() {
@@ -137,7 +142,7 @@ function AuthInit() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
+      <AppThemeProvider>
         <GlobalStyle />
         <MediaViewerProvider>
           <BrowserRouter future={{ v7_startTransition: true }}>
@@ -178,6 +183,7 @@ function App() {
                   <Route path="/minhas-solicitacoes" element={<MyRequests />} />
                   <Route path="/convite/:token" element={<AcceptInvite />} />
                   <Route path="/empresa/:id" element={<CompanyProfile />} />
+                  <Route path="/empresa/:id/editar" element={<StudioIfOrg><CompanyEdit /></StudioIfOrg>} />
                   <Route path="/surtos/:id" element={<SurtoDetail />} />
                   <Route path="/imprensa" element={<Imprensa />} />
                   <Route path="/imprensa/confirmar-email" element={<PressEmailConfirm />} />
@@ -200,6 +206,7 @@ function App() {
                     <Route path="/proposta/nova" element={<CreateProposta />} />
                     <Route path="/painel-dados" element={<PainelDados />} />
                     <Route path="/entidade/prazos" element={<EntidadePrazos />} />
+                    <Route path="/entidade/consultas" element={<EntitySurveys />} />
                     <Route path="/mandato" element={<MandatoPortal />} />
                     <Route path="/mandato/alertas" element={<MandatoPortal />} />
                     <Route path="/mandato/modelos" element={<MandatoPortal />} />
@@ -218,8 +225,12 @@ function App() {
                   <Route path="/privacidade" element={<Privacidade />} />
                   <Route path="/cookies" element={<Cookies />} />
                   <Route path="/diretrizes" element={<Diretrizes />} />
+                  <Route path="/sobre" element={<Sobre />} />
                   <Route path="/sugestoes" element={<Sugestoes />} />
                   <Route path="/contexto" element={<ContextoDaComunidade />} />
+                  <Route path="/pesquisas" element={<PesquisasList />} />
+                  <Route path="/pesquisas/institutos/:slug" element={<InstituteProfile />} />
+                  <Route path="/pesquisas/:slug" element={<PesquisaDetail />} />
                 </Routes>
               </Suspense>
             </RouteErrorBoundary>
@@ -227,7 +238,7 @@ function App() {
             <RouteFooter />
           </BrowserRouter>
         </MediaViewerProvider>
-      </ThemeProvider>
+      </AppThemeProvider>
       {import.meta.env.DEV && import.meta.env.VITE_QUERY_DEVTOOLS === 'true' && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   )

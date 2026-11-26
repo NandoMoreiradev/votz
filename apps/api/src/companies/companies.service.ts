@@ -3,6 +3,7 @@ import { CompaniesRepository } from './companies.repository'
 import { StorageService } from '../storage/storage.service'
 import { ListCompaniesDto } from './dto/list-companies.dto'
 import { UpdateCompanyDto } from './dto/update-company.dto'
+import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto'
 
 @Injectable()
 export class CompaniesService {
@@ -54,6 +55,33 @@ export class CompaniesService {
     }
 
     return this.repo.update(id, dto)
+  }
+
+  private async assertCanManageProfile(companyId: string, userId: string) {
+    const company = await this.repo.findById(companyId)
+    if (!company) throw new NotFoundException('Company not found')
+    const hasPerm = await this.repo.hasMemberWithPermission(userId, companyId, 'MANAGE_PROFILE')
+    if (!hasPerm) throw new ForbiddenException('Permissão insuficiente')
+  }
+
+  async createBranch(companyId: string, userId: string, dto: CreateBranchDto) {
+    await this.assertCanManageProfile(companyId, userId)
+    return this.repo.createBranch(companyId, dto)
+  }
+
+  async updateBranch(companyId: string, branchId: string, userId: string, dto: UpdateBranchDto) {
+    await this.assertCanManageProfile(companyId, userId)
+    const branch = await this.repo.findBranch(companyId, branchId)
+    if (!branch) throw new NotFoundException('Filial não encontrada')
+    return this.repo.updateBranch(branchId, dto)
+  }
+
+  async deleteBranch(companyId: string, branchId: string, userId: string) {
+    await this.assertCanManageProfile(companyId, userId)
+    const branch = await this.repo.findBranch(companyId, branchId)
+    if (!branch) throw new NotFoundException('Filial não encontrada')
+    await this.repo.deleteBranch(branchId)
+    return { deleted: true }
   }
 
   async followToggle(companyId: string, userId: string) {

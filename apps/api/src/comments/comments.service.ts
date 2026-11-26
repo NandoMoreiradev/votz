@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger, Optional } from '@nestjs/common'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { PrismaService } from '../prisma/prisma.service'
 import { CommentsRepository } from './comments.repository'
@@ -13,6 +13,7 @@ import { UpdateCommentDto } from './dto/update-comment.dto'
 import { UserType } from '@votz/shared-types'
 import { OrgPermission } from '@prisma/client'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
+import { ContentSafetyService } from '../content-safety/content-safety.service'
 
 @Injectable()
 export class CommentsService {
@@ -26,6 +27,7 @@ export class CommentsService {
     private readonly transcription: TranscriptionService,
     private readonly storage: StorageService,
     private readonly mail: MailService,
+    @Optional() private readonly contentSafety?: ContentSafetyService,
   ) {}
 
   async create(
@@ -86,6 +88,9 @@ export class CommentsService {
     }
 
     const content = DOMPurify.sanitize(rawContent)
+    if (content.trim().length > 0) {
+      this.contentSafety?.assertCleanOrThrow([content], 'comentário')
+    }
     const comment = await this.repo.create({
       reportId,
       authorId,
@@ -107,6 +112,12 @@ export class CommentsService {
     }
 
     this.pressure.enqueueReport(reportId).catch(() => null)
+
+    if (content.trim().length > 0) {
+      this.contentSafety
+        ?.enqueueReview({ targetType: 'COMMENT', targetId: comment.id, texts: [content] })
+        .catch(() => null)
+    }
 
     if (isVoice && dto.mediaKey) {
       this.transcription.enqueue({

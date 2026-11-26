@@ -1,4 +1,5 @@
-import { IsArray, IsEnum, IsString, IsUUID, MaxLength } from 'class-validator'
+import { IsArray, IsEnum, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator'
+import { Transform } from 'class-transformer'
 import { OrgPermission, OrgType } from '@prisma/client'
 import { ApiProperty } from '@nestjs/swagger'
 
@@ -12,7 +13,9 @@ export class CreateRoleDto {
   orgId: string
 
   @ApiProperty()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(60)
   name: string
 

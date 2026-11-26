@@ -23,6 +23,7 @@ import { AccessLogService } from '../access-log/access-log.service'
 import { CryptoService } from '../crypto/crypto.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
+import { ChangePasswordDto } from './dto/change-password.dto'
 import { ContextType } from './dto/switch-context.dto'
 import { ActiveContextPayload } from './strategies/jwt.strategy'
 
@@ -75,6 +76,7 @@ const USER_PUBLIC_SELECT = {
   termsVersion: true,
   privacyVersion: true,
   ageConfirmedAt: true,
+  themePreference: true,
   createdAt: true,
   password: true,
 } as const
@@ -94,6 +96,7 @@ function toPublicUser<T extends {
   termsVersion?: string | null
   privacyVersion?: string | null
   ageConfirmedAt?: Date | null
+  themePreference?: 'SYSTEM' | 'LIGHT' | 'DARK'
   createdAt: Date
   password?: string | null
 }>(user: T) {
@@ -113,6 +116,7 @@ function toPublicUser<T extends {
     termsVersion: user.termsVersion ?? null,
     privacyVersion: user.privacyVersion ?? null,
     ageConfirmedAt: user.ageConfirmedAt ?? null,
+    themePreference: user.themePreference ?? 'SYSTEM',
     createdAt: user.createdAt,
   }
 }
@@ -1070,5 +1074,95 @@ export class AuthService {
       this.issueRefreshToken(userId),
     ])
     return { accessToken, refreshToken }
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    })
+    if (!user) throw new UnauthorizedException('Usuário não encontrado.')
+
+    if (user.password) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Informe sua senha atual para alterá-la.')
+      }
+      const valid = await bcrypt.compare(dto.currentPassword, user.password)
+      if (!valid) {
+        throw new BadRequestException('Senha atual incorreta.')
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 12)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    })
+    return { changed: true }
+  }
+
+  async listActiveSessions(userId: string, currentRefreshToken?: string) {
+    const now = new Date()
+    const currentHash = currentRefreshToken ? hashRefreshToken(currentRefreshToken) : null
+
+    const tokens = await this.prisma.refreshToken.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { familyId: true, tokenHash: true, createdAt: true, expiresAt: true },
+    })
+
+    const byFamily = new Map<string, { familyId: string; createdAt: string; expiresAt: string; current: boolean }>()
+    for (const t of tokens) {
+      const isCurrent = currentHash !== null && t.tokenHash === currentHash
+      const existing = byFamily.get(t.familyId)
+      if (!existing) {
+        byFamily.set(t.familyId, {
+          familyId: t.familyId,
+          createdAt: t.createdAt.toISOString(),
+          expiresAt: t.expiresAt.toISOString(),
+          current: isCurrent,
+        })
+      } else if (isCurrent) {
+        existing.current = true
+      }
+    }
+
+    return Array.from(byFamily.values())
+  }
+
+  async revokeSessionFamily(userId: string, familyId: string) {
+    const res = await this.prisma.refreshToken.updateMany({
+      where: { userId, familyId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+    return { revoked: res.count > 0 }
+  }
+
+  async revokeAllOtherSessions(userId: string, currentRefreshToken?: string) {
+    let keepFamilyId: string | null = null
+    if (currentRefreshToken) {
+      const current = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash: hashRefreshToken(currentRefreshToken) },
+        select: { userId: true, familyId: true },
+      })
+      if (current && current.userId === userId) {
+        keepFamilyId = current.familyId
+      }
+    }
+
+    const res = await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(keepFamilyId ? { familyId: { not: keepFamilyId } } : {}),
+      },
+      data: { revokedAt: new Date() },
+    })
+    return { revokedCount: res.count }
   }
 }

@@ -98,6 +98,9 @@ describe('anúncios: o código de anúncios não lê tabelas proibidas', () => {
     'debate', 'debateQuestion', 'debateMessage', 'debatePoll', 'debatePollVote', 'debateReaction', 'debateParticipant',
     'userPoliticianFollower', 'userEntityFollower', 'userTopicFollower', 'postComment',
     'conversation', 'conversationMember', 'chatAttachment', 'pageConversation', 'pageMessage', 'registrationRequest',
+    'officialSurvey', 'officialSurveyQuestion', 'officialSurveyOption', 'officialSurveyParticipation',
+    'officialSurveyPendingBallot', 'officialSurveyBallot', 'officialSurveyAggregate',
+    'officialSurveyInvitation', 'researchInstitute',
   ]
   const roots = [join(__dirname), join(__dirname, '..', '..', '..', 'ads-server', 'src')]
   const files = (dir: string): string[] =>

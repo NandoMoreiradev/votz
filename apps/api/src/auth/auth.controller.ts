@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Ip,
+  Param,
   Post,
   Req,
   Res,
@@ -16,6 +18,7 @@ import { Request, Response } from 'express'
 import { AuthService } from './auth.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
+import { ChangePasswordDto } from './dto/change-password.dto'
 import { VerifyEmailDto } from './dto/verify-email.dto'
 import { MfaCodeDto, MfaVerifyLoginDto } from './dto/mfa.dto'
 import { SwitchContextDto } from './dto/switch-context.dto'
@@ -295,5 +298,45 @@ export class AuthController {
     const token = (req.cookies as Record<string, string | undefined> | undefined)?.[GOOGLE_MFA_COOKIE]
     res.clearCookie(GOOGLE_MFA_COOKIE, GOOGLE_MFA_COOKIE_BASE)
     return this.authService.readGooglePendingMfa(token)
+  }
+
+  // ── Segurança da conta: senha e sessões ativas ──────────────────────────
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ short: { limit: 2, ttl: 10_000 }, medium: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Alterar ou definir senha da conta autenticada' })
+  changePassword(@CurrentUser() user: { id: string }, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.id, dto)
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Listar sessões ativas (famílias de refresh token) da conta' })
+  listSessions(@CurrentUser() user: { id: string }, @Req() req: Request) {
+    const cookieToken = (req.cookies as Record<string, string | undefined> | undefined)?.[REFRESH_COOKIE]
+    return this.authService.listActiveSessions(user.id, cookieToken)
+  }
+
+  @Delete('sessions/:familyId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Encerrar uma sessão ativa específica' })
+  revokeSession(@CurrentUser() user: { id: string }, @Param('familyId') familyId: string) {
+    return this.authService.revokeSessionFamily(user.id, familyId)
+  }
+
+  @Delete('sessions')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Encerrar todas as outras sessões ativas da conta' })
+  revokeAllOtherSessions(@CurrentUser() user: { id: string }, @Req() req: Request) {
+    const cookieToken = (req.cookies as Record<string, string | undefined> | undefined)?.[REFRESH_COOKIE]
+    return this.authService.revokeAllOtherSessions(user.id, cookieToken)
   }
 }

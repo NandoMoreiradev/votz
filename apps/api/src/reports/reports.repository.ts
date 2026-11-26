@@ -13,6 +13,13 @@ import {
 } from '@votz/shared-types'
 import { FollowerActorType, SlaState } from '@prisma/client'
 
+export interface SimilarReportFilters {
+  state?: string
+  cityKey?: string
+  cityLower?: string
+  category?: string
+}
+
 export interface SimilarReportRow {
   id: string
   title: string
@@ -187,6 +194,7 @@ export class ReportsRepository {
   }) {
     const search = filters.search?.trim()
     const where = {
+      moderationStatus: { not: 'HIDDEN' as const },
       ...(filters.category && { category: filters.category }),
       ...(filters.status && { status: filters.status }),
       ...(filters.city && { city: { contains: filters.city, mode: 'insensitive' as const } }),
@@ -474,64 +482,103 @@ export class ReportsRepository {
 
   // ── Similarity search ────────────────────────────────────────────────────────
 
-  async findByTrigram(title: string, description: string, limit: number): Promise<SimilarReportRow[]> {
-    return this.prisma.$queryRaw<SimilarReportRow[]>`
-      SELECT
-        id, title, description, category::text, status::text, city, state,
-        "createdAt", "pressureScore",
-        GREATEST(
-          similarity(title, ${title}),
-          similarity(description, ${description})
-        ) AS score
-      FROM reports
-      WHERE
-        similarity(title, ${title}) > 0.2
-        OR similarity(description, ${description}) > 0.15
-      ORDER BY score DESC
-      LIMIT ${limit}
-    `
+  private buildSimilarityConditions(filters?: SimilarReportFilters): Prisma.Sql[] {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`status <> 'ARCHIVED'`,
+      Prisma.sql`moderation_status <> 'HIDDEN'`,
+    ]
+    if (filters?.state) conditions.push(Prisma.sql`state = ${filters.state}`)
+    if (filters?.cityKey) {
+      conditions.push(Prisma.sql`(city_key = ${filters.cityKey} OR lower(city) = ${filters.cityLower ?? filters.cityKey})`)
+    }
+    if (filters?.category) conditions.push(Prisma.sql`category = ${filters.category}::"Category"`)
+    return conditions
   }
 
-  async findByFullText(query: string, limit: number): Promise<SimilarReportRow[]> {
-    // Converte AND (plainto_tsquery default) para OR para aceitar matches parciais
-    return this.prisma.$queryRaw<SimilarReportRow[]>`
+  async findByTrigram(
+    title: string,
+    description: string,
+    limit: number,
+    filters?: SimilarReportFilters,
+  ): Promise<SimilarReportRow[]> {
+    const trimmedDesc = description.trim()
+    const conditions = this.buildSimilarityConditions(filters)
+    const matchExpr = trimmedDesc
+      ? Prisma.sql`(similarity(title, ${title}) > 0.2 OR similarity(description, ${trimmedDesc}) > 0.15)`
+      : Prisma.sql`similarity(title, ${title}) > 0.2`
+    const scoreExpr = trimmedDesc
+      ? Prisma.sql`GREATEST(similarity(title, ${title}), similarity(description, ${trimmedDesc}))`
+      : Prisma.sql`similarity(title, ${title})`
+    conditions.push(matchExpr)
+
+    return this.prisma.$queryRaw<SimilarReportRow[]>(Prisma.sql`
       SELECT
         id, title, description, category::text, status::text, city, state,
         "createdAt", "pressureScore",
-        ts_rank(search_vector,
-          to_tsquery('portuguese', regexp_replace(
-            plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'
-          ))
-        ) AS score
+        ${scoreExpr} AS score
       FROM reports
-      WHERE search_vector @@ to_tsquery('portuguese', regexp_replace(
-          plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'
-        ))
+      WHERE ${Prisma.join(conditions, ' AND ')}
       ORDER BY score DESC
       LIMIT ${limit}
-    `
+    `)
+  }
+
+  async findByFullText(
+    query: string,
+    limit: number,
+    filters?: SimilarReportFilters,
+  ): Promise<SimilarReportRow[]> {
+    // Converte AND (plainto_tsquery default) para OR para aceitar matches parciais;
+    // NULLIF evita erro/match vazio quando a consulta só tem stopwords.
+    const conditions = [
+      ...this.buildSimilarityConditions(filters),
+      Prisma.sql`q.tsq IS NOT NULL`,
+      Prisma.sql`search_vector @@ to_tsquery('portuguese', q.tsq)`,
+    ]
+
+    return this.prisma.$queryRaw<SimilarReportRow[]>(Prisma.sql`
+      WITH q AS (
+        SELECT NULLIF(regexp_replace(plainto_tsquery('portuguese', ${query})::text, ' & ', ' | ', 'g'), '') AS tsq
+      )
+      SELECT
+        id, title, description, category::text, status::text, city, state,
+        "createdAt", "pressureScore",
+        ts_rank(search_vector, to_tsquery('portuguese', q.tsq)) AS score
+      FROM reports, q
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `)
   }
 
   /**
    * `minScore` é a similaridade mínima (0 a 1). Com o modelo atual (`gemini-embedding-001`, 768 dimensões),
    * texto sem relação fica perto de 0,60 e o parecido de verdade passa de 0,75; o antigo corte de 0,60 deixaria tudo passar.
    */
-  async findByEmbedding(embedding: number[], limit: number, minScore = 0.72): Promise<SimilarReportRow[]> {
+  async findByEmbedding(
+    embedding: number[],
+    limit: number,
+    minScore = 0.72,
+    filters?: SimilarReportFilters,
+  ): Promise<SimilarReportRow[]> {
+    if (embedding.length === 0 || !embedding.every(Number.isFinite)) return []
     const vectorLiteral = `[${embedding.map(n => n.toFixed(8)).join(',')}]`
-    return this.prisma.$queryRaw<SimilarReportRow[]>(
-      Prisma.sql`
-        SELECT
-          id, title, description, category::text, status::text, city, state,
-          "createdAt", "pressureScore",
-          1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) AS score
-        FROM reports
-        WHERE
-          embedding IS NOT NULL
-          AND 1 - (embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}) > ${minScore}
-        ORDER BY embedding <=> ${Prisma.raw(`'${vectorLiteral}'::vector`)}
-        LIMIT ${limit}
-      `
-    )
+    const conditions = [
+      ...this.buildSimilarityConditions(filters),
+      Prisma.sql`embedding IS NOT NULL`,
+      Prisma.sql`1 - (embedding <=> ${vectorLiteral}::vector) > ${minScore}`,
+    ]
+
+    return this.prisma.$queryRaw<SimilarReportRow[]>(Prisma.sql`
+      SELECT
+        id, title, description, category::text, status::text, city, state,
+        "createdAt", "pressureScore",
+        1 - (embedding <=> ${vectorLiteral}::vector) AS score
+      FROM reports
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY embedding <=> ${vectorLiteral}::vector
+      LIMIT ${limit}
+    `)
   }
 
   /** Relatos ainda sem embedding (o job só roda para relato novo; o modelo antigo falhava), os mais novos primeiro. */

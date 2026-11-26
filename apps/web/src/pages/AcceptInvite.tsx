@@ -4,6 +4,7 @@ import styled from 'styled-components'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
+import { formatRoleName } from '../hooks/useOrgMemberships'
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ export function AcceptInvite() {
     mutationFn: () => api.post(`/org-memberships/invites/${token}/accept`).then((r) => r.data),
     onSuccess: () => {
       setAccepted(true)
-      setTimeout(() => navigate('/'), 2500)
+      setTimeout(() => navigate('/estudio'), 2200)
     },
     onError: (e: any) => {
       setAcceptError(e?.response?.data?.message ?? 'Erro ao aceitar convite.')
@@ -243,7 +244,7 @@ export function AcceptInvite() {
         <Subtitle>
           <strong>{preview.orgName}</strong> convidou você para fazer parte da equipe no Votz.
         </Subtitle>
-        <RolePill>{preview.roleName}</RolePill>
+        <RolePill>{formatRoleName(preview.roleName)}</RolePill>
 
         {!user ? (
           <>
@@ -259,6 +260,11 @@ export function AcceptInvite() {
           </>
         ) : (
           <>
+            {user.email && preview.email && user.email.toLowerCase() !== preview.email.toLowerCase() && (
+              <StateMsg $type="error" style={{ marginBottom: 14, marginTop: 0 }}>
+                Este convite foi enviado para <strong>{preview.email}</strong>, mas você está logado como <strong>{user.email}</strong>.
+              </StateMsg>
+            )}
             <AcceptBtn
               onClick={() => acceptMutation.mutate()}
               disabled={acceptMutation.isPending}

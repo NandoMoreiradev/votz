@@ -63,7 +63,12 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
   const publicPage: StudioNavItem = { to: publicProfilePath(type, id), label: 'Página pública', hint: 'Como os cidadãos veem você', icon: UserCircle, end: true }
   const messages: StudioNavItem = { to: '/conversas', label: 'Mensagens', icon: ChatCircle }
   const team: StudioNavItem = { to: '/estudio/equipe', label: 'Equipe e acesso', hint: 'Quem pode agir pela página', icon: UsersThree }
-  const editProfile: StudioNavItem = { to: `/${type === 'POLITICIAN' ? 'politico' : 'entidade'}/${id}/editar`, label: 'Editar perfil', hint: 'Foto, dados e contatos', icon: PencilSimple }
+  const editProfile: StudioNavItem = {
+    to: `/${type === 'POLITICIAN' ? 'politico' : type === 'ENTITY' ? 'entidade' : 'empresa'}/${id}/editar`,
+    label: 'Editar perfil',
+    hint: type === 'COMPANY' ? 'Logo, dados, SLA e filiais' : 'Foto, dados e contatos',
+    icon: PencilSimple,
+  }
   const plans: StudioNavItem = { to: '/estudio/planos', label: 'Planos e assinatura', icon: CreditCard }
 
   if (type === 'POLITICIAN') {
@@ -103,6 +108,7 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
         title: 'Atendimento',
         items: [
           { to: '/entidade/prazos', label: 'Prazos e fila', hint: 'O que está para vencer', icon: Clock },
+          { to: '/entidade/consultas', label: 'Consultas públicas', hint: 'Ouça os moradores com anonimato', icon: Scroll },
           messages,
         ],
       },
@@ -124,7 +130,7 @@ export function studioNav(type: OrgContextType, id: string): StudioNavGroup[] {
       ],
     },
     { title: 'Atendimento', items: [messages] },
-    { title: 'Sua página', items: [publicPage, team, plans] },
+    { title: 'Sua página', items: [publicPage, editProfile, team, plans] },
   ]
 }
 

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUrl, MaxLength } from 'class-validator'
+import { IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator'
 import { ApiPropertyOptional } from '@nestjs/swagger'
 
 export class UpdateCompanyDto {
@@ -13,6 +13,13 @@ export class UpdateCompanyDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(300)
   website?: string
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 720, description: 'Prazo comprometido de resposta em horas (SLA)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  slaHours?: number
 
   @ApiPropertyOptional()
   @IsOptional()

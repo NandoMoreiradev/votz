@@ -57,15 +57,11 @@ foreach ($app in $order) {
   $image = "$registry/$($t.Image):$tag"
   Write-Host "`n== $app ==" -ForegroundColor Cyan
 
-  Write-Host "1/3 construindo $image"
-  docker build -f $t.Dockerfile @($t.BuildArgs) -t $image .
-  if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o build de $app" -ForegroundColor Red; exit 1 }
+  Write-Host "1/2 construindo e enviando $image ao Artifact Registry"
+  docker build --push -f $t.Dockerfile @($t.BuildArgs) -t $image .
+  if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o build/envio de $app (se for erro de auth, rode: gcloud auth configure-docker southamerica-east1-docker.pkg.dev)" -ForegroundColor Red; exit 1 }
 
-  Write-Host '2/3 enviando ao Artifact Registry'
-  docker push $image
-  if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o envio de $app (rode: gcloud auth configure-docker southamerica-east1-docker.pkg.dev)" -ForegroundColor Red; exit 1 }
-
-  Write-Host "3/3 publicando no Cloud Run ($($t.Service))"
+  Write-Host "2/2 publicando no Cloud Run ($($t.Service))"
   & $gcloud run deploy $t.Service --image $image --region $region --project $project --quiet
   if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o deploy de $app" -ForegroundColor Red; exit 1 }
   Write-Host "$app publicado com a imagem $tag" -ForegroundColor Green

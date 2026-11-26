@@ -3,7 +3,7 @@ import {
   UseGuards, ParseIntPipe, DefaultValuePipe,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
-import { IsEnum } from 'class-validator'
+import { IsBoolean, IsEnum } from 'class-validator'
 import { EntityPlan, PoliticianPlan, CompanyPlan, ModerationActionType } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -18,6 +18,7 @@ import { DeleteReportDto } from './dto/delete-report.dto'
 import { SetTypeDto } from './dto/set-type.dto'
 
 class SetVerifiedDto {
+  @IsBoolean()
   verified: boolean
 }
 
@@ -177,14 +178,21 @@ export class AdminController {
   // ── Companies ─────────────────────────────────────────────────────────────
 
   @Get('companies')
-  @Roles(UserType.ADMIN)
-  @ApiOperation({ summary: 'List companies (admin only)' })
+  @ApiOperation({ summary: 'List companies' })
   listCompanies(
     @Query('search') search?: string,
+    @Query('verified') verifiedRaw?: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit = 20,
   ) {
-    return this.service.listCompanies(search, page, limit)
+    const verified = verifiedRaw === 'true' ? true : verifiedRaw === 'false' ? false : undefined
+    return this.service.listCompanies(search, verified, page, limit)
+  }
+
+  @Patch('companies/:id/verify')
+  @ApiOperation({ summary: 'Verify or unverify a company' })
+  verifyCompany(@Param('id') id: string, @Body() dto: SetVerifiedDto) {
+    return this.service.verifyCompany(id, dto.verified)
   }
 
   @Patch('companies/:id/plan')

@@ -15,15 +15,33 @@ export function useDebounced<T>(value: T, delay = 600) {
 
 const MIN_TITLE = 10
 
+export interface SimilarReportsFilters {
+  category?: string
+  city?: string
+  state?: string
+}
+
 /** Mesma busca do web: só consulta com título de 10+ caracteres e espera o usuário parar de digitar. */
-export function useSimilarReports(title: string, description: string, enabled: boolean) {
+export function useSimilarReports(
+  title: string,
+  description: string,
+  enabled: boolean,
+  filters?: SimilarReportsFilters,
+) {
   const debouncedTitle = useDebounced(title.trim())
   const debouncedDescription = useDebounced(description.trim())
+  const category = filters?.category?.trim() || undefined
+  const rawState = filters?.state?.trim().toUpperCase()
+  const state = rawState && /^[A-Z]{2}$/.test(rawState) ? rawState : undefined
+  const city = filters?.city?.trim().slice(0, 100) || undefined
   return useQuery({
-    queryKey: ['similar-reports', debouncedTitle, debouncedDescription],
+    queryKey: ['similar-reports', debouncedTitle, debouncedDescription, category ?? '', state ?? '', city ?? ''],
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ title: debouncedTitle.slice(0, 300), limit: '5' })
       if (debouncedDescription) params.set('description', debouncedDescription.slice(0, 2000))
+      if (category) params.set('category', category)
+      if (state) params.set('state', state)
+      if (city) params.set('city', city)
       return api<SimilarReport[]>(`/reports/similar?${params}`, { signal })
     },
     enabled: enabled && debouncedTitle.length >= MIN_TITLE,

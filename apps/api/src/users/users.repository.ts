@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { VoteType, type UserGender } from '@votz/shared-types'
 
@@ -39,6 +40,7 @@ const ME_USER_SELECT = {
   // Só para a própria pessoa (perfil e configurações); nunca no perfil público.
   birthDate: true,
   gender: true,
+  themePreference: true,
   _count: {
     select: { reports: true, votes: true, comments: true },
   },
@@ -153,6 +155,7 @@ export class UsersRepository {
     longitude?: number
     birthDate?: Date | null
     gender?: UserGender | null
+    themePreference?: 'SYSTEM' | 'LIGHT' | 'DARK'
   }) {
     return this.prisma.user.update({
       where: { id },
@@ -174,7 +177,20 @@ export class UsersRepository {
         longitude: true,
         birthDate: true,
         gender: true,
+        themePreference: true,
       },
+    })
+  }
+
+  findPreferences(userId: string) {
+    return this.prisma.userNotificationPreference.findUnique({ where: { userId } })
+  }
+
+  upsertPreferences(userId: string, data: Prisma.UserNotificationPreferenceUncheckedUpdateInput) {
+    return this.prisma.userNotificationPreference.upsert({
+      where: { userId },
+      create: { userId, ...(data as Omit<Prisma.UserNotificationPreferenceUncheckedCreateInput, 'userId'>) },
+      update: data,
     })
   }
 }

@@ -285,6 +285,7 @@ export interface PoliticiansResponse {
 export interface CompanyBranch {
   id: string
   name: string
+  address?: string
   city: string
   state: string
 }

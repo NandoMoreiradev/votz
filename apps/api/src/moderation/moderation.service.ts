@@ -115,7 +115,11 @@ export class ModerationService {
     }
 
     if (dto.action === 'DISMISS') {
-      return this.repo.resolveDismiss(id, actor.id, note)
+      const dismissed = await this.repo.resolveDismiss(id, actor.id, note)
+      if (flag.targetType === FlagTargetType.REPORT) {
+        await this.repo.restoreReportModerationStatus?.(flag.targetId)
+      }
+      return dismissed
     }
 
     if (flag.targetType === FlagTargetType.REPORT) {

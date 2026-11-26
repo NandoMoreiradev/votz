@@ -29,6 +29,8 @@ describe('AdminService', () => {
       setEntityVerified: jest.fn(),
       listPoliticians: jest.fn(),
       setPoliticianVerified: jest.fn(),
+      listCompanies: jest.fn(),
+      setCompanyVerified: jest.fn(),
       setEntityPlan: jest.fn(),
       setPoliticianPlan: jest.fn(),
       setCompanyPlan: jest.fn(),
@@ -103,6 +105,12 @@ describe('AdminService', () => {
 
     await service.verifyPolitician('p1', true)
     expect(repo.setPoliticianVerified).toHaveBeenCalledWith('p1', true)
+
+    await service.verifyCompany('c1', true)
+    expect(repo.setCompanyVerified).toHaveBeenCalledWith('c1', true)
+
+    await service.listCompanies('colegio', false, 1, 100)
+    expect(repo.listCompanies).toHaveBeenCalledWith({ search: 'colegio', verified: false, page: 1, limit: 50 })
 
     await service.setEntityPlan('e1', EntityPlan.GESTAO)
     expect(repo.setEntityPlan).toHaveBeenCalledWith('e1', EntityPlan.GESTAO)
