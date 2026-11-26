@@ -3,7 +3,28 @@ import logoDarkSrc from '../../assets/brand/votz-logo-dark.svg'
 import logoLightSrc from '../../assets/brand/votz-logo.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass, Check, Buildings } from '@phosphor-icons/react'
+import {
+  ArrowsLeftRight,
+  Bell,
+  Buildings,
+  CaretDown,
+  ChartBar,
+  ChatCircle,
+  Check,
+  ClipboardText,
+  Lightbulb,
+  List,
+  MagnifyingGlass,
+  Monitor,
+  Moon,
+  PencilSimple,
+  PlusCircle,
+  ShieldCheck,
+  SignOut,
+  Sun,
+  UserPlus,
+  X,
+} from '@phosphor-icons/react'
 import { useConversationCapabilities, useConversationsUnread } from '../../hooks/useConversations'
 import { useMyPageUnread, useStaffUnread } from '../../hooks/usePageInbox'
 import type { OrgType } from '../../hooks/useOrgMemberships'
@@ -249,37 +270,102 @@ const Dropdown = styled.div`
   right: 0;
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  box-shadow: ${({ theme }) => theme.shadows.md};
-  min-width: 168px;
-  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  width: 248px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  padding: 6px;
   z-index: 200;
 `
 
-const DropdownItem = styled(Link)`
-  display: block;
-  padding: 10px 16px;
-  font-size: 0.9375rem;
-  color: ${({ theme }) => theme.colors.text};
-  transition: background 0.1s;
+const DropdownHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+`
 
-  &:hover {
-    background: ${({ theme }) => theme.colors.surfaceHover};
+const DropdownProfileLink = styled(Link)`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  strong {
+    font-family: ${({ theme }) => theme.fonts.heading};
+    font-size: 13.5px;
+    font-weight: 700;
+    color: ${({ theme }) => theme.colors.text};
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  span {
+    font-size: 11.5px;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+
+  &:hover strong {
+    text-decoration: underline;
   }
 `
 
-const DropdownButton = styled.button`
-  display: block;
+const DropdownEditBtn = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: ${({ theme }) => theme.colors.muted};
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+    color: ${({ theme }) => theme.colors.text};
+  }
+`
+
+const DropdownDivider = styled.div`
+  height: 1px;
+  background: ${({ theme }) => theme.colors.border};
+  margin: 4px 6px;
+`
+
+const dropdownRowStyles = `
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   text-align: left;
-  padding: 10px 16px;
-  font-size: 0.9375rem;
-  color: ${({ theme }) => theme.colors.action};
-  background: none;
-  border: none;
-  cursor: pointer;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background 0.1s;
+
+  svg {
+    flex-shrink: 0;
+    opacity: 0.78;
+  }
+`
+
+const DropdownItem = styled(Link)`
+  ${dropdownRowStyles}
+  color: ${({ theme }) => theme.colors.text};
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   &:hover {
     background: ${({ theme }) => theme.colors.surfaceHover};
@@ -287,20 +373,70 @@ const DropdownButton = styled.button`
 `
 
 const DropdownAction = styled.button`
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 10px 16px;
-  font-size: 0.9375rem;
+  ${dropdownRowStyles}
   color: ${({ theme }) => theme.colors.text};
   background: none;
   border: none;
   cursor: pointer;
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
-  transition: background 0.1s;
 
   &:hover {
     background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const DropdownButton = styled.button`
+  ${dropdownRowStyles}
+  color: ${({ theme }) => theme.colors.action};
+  background: none;
+  border: none;
+  cursor: pointer;
+
+  svg {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: ${({ theme }) => `${theme.colors.action}12`};
+  }
+`
+
+const ThemeRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: ${({ theme }) => theme.colors.muted};
+`
+
+const ThemeSeg = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: ${({ theme }) => theme.colors.neutral};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const ThemeSegBtn = styled.button<{ $active: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: ${({ $active, theme }) => ($active ? theme.colors.white : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
+  box-shadow: ${({ $active, theme }) => ($active ? theme.shadows.sm : 'none')};
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
   }
 `
 
@@ -929,53 +1065,115 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
                   </Avatar>
                   {open && (
                     <Dropdown>
-                      <DropdownItem to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
-                        Meu perfil
-                      </DropdownItem>
-                      {profiles?.orgs.filter(o => o.type === 'ENTITY').map(org => (
-                        <DropdownItem key={org.id} to={`/entidade/${org.id}`} onClick={() => setOpen(false)}>
-                          {org.name}
-                        </DropdownItem>
-                      ))}
-                      {profiles?.orgs.filter(o => o.type === 'POLITICIAN').map(org => (
-                        <DropdownItem key={org.id} to={`/politico/${org.id}`} onClick={() => setOpen(false)}>
-                          {org.name}
-                        </DropdownItem>
-                      ))}
-                      <DropdownItem to="/meu-perfil" onClick={() => setOpen(false)}>
-                        Editar perfil
-                      </DropdownItem>
-                      <DropdownItem to="/minhas-solicitacoes" onClick={() => setOpen(false)}>
-                        Minhas solicitações
-                      </DropdownItem>
-                      <DropdownItem to="/solicitar-cadastro" onClick={() => setOpen(false)}>
-                        Registrar organização
-                      </DropdownItem>
-                      <DropdownItem to="/sugestoes" onClick={() => setOpen(false)}>
-                        Sugestões e melhorias
-                      </DropdownItem>
-                      {contextNotesEnabled && (
-                        <DropdownItem to="/contexto" onClick={() => setOpen(false)}>
-                          Contexto da Comunidade
-                        </DropdownItem>
+                      <DropdownHeader>
+                        <DropdownProfileLink to={`/perfil/${user.id}`} onClick={() => setOpen(false)}>
+                          <strong>{user.name}</strong>
+                          <span>Ver meu perfil</span>
+                        </DropdownProfileLink>
+                        <DropdownEditBtn
+                          to="/meu-perfil"
+                          onClick={() => setOpen(false)}
+                          title="Editar perfil"
+                          aria-label="Editar perfil"
+                        >
+                          <PencilSimple size={15} />
+                        </DropdownEditBtn>
+                      </DropdownHeader>
+
+                      {hasMultipleProfiles && (
+                        <>
+                          <DropdownDivider />
+                          {profiles?.orgs.filter(o => o.type === 'ENTITY').map(org => (
+                            <DropdownItem key={org.id} to={`/entidade/${org.id}`} onClick={() => setOpen(false)}>
+                              <Buildings size={15} />
+                              <span>{org.name}</span>
+                            </DropdownItem>
+                          ))}
+                          {profiles?.orgs.filter(o => o.type === 'POLITICIAN').map(org => (
+                            <DropdownItem key={org.id} to={`/politico/${org.id}`} onClick={() => setOpen(false)}>
+                              <Buildings size={15} />
+                              <span>{org.name}</span>
+                            </DropdownItem>
+                          ))}
+                          <DropdownAction onClick={() => { setShowProfileModal(true); setOpen(false) }}>
+                            <ArrowsLeftRight size={15} />
+                            <span>Trocar perfil</span>
+                          </DropdownAction>
+                        </>
                       )}
+
+                      <DropdownDivider />
+
                       {surveysEnabled && (
                         <DropdownItem to="/pesquisas" onClick={() => setOpen(false)}>
-                          Pesquisa Votz
+                          <ChartBar size={15} />
+                          <span>Pesquisa Votz</span>
                         </DropdownItem>
                       )}
-                      <DropdownAction onClick={() => setThemePref(nextThemePref)}>
-                        Tema: {themeLabel}
-                      </DropdownAction>
-                      <DropdownAction onClick={() => { setShowInviteModal(true); setOpen(false) }}>
-                        Convidar pessoas
-                      </DropdownAction>
-                      {hasMultipleProfiles && (
-                        <DropdownAction onClick={() => { setShowProfileModal(true); setOpen(false) }}>
-                          Trocar perfil
-                        </DropdownAction>
+                      {contextNotesEnabled && (
+                        <DropdownItem to="/contexto" onClick={() => setOpen(false)}>
+                          <ShieldCheck size={15} />
+                          <span>Contexto da Comunidade</span>
+                        </DropdownItem>
                       )}
-                      <DropdownButton onClick={handleLogout}>Sair</DropdownButton>
+                      <DropdownItem to="/minhas-solicitacoes" onClick={() => setOpen(false)}>
+                        <ClipboardText size={15} />
+                        <span>Minhas solicitações</span>
+                      </DropdownItem>
+                      <DropdownItem to="/solicitar-cadastro" onClick={() => setOpen(false)}>
+                        <PlusCircle size={15} />
+                        <span>Registrar organização</span>
+                      </DropdownItem>
+                      <DropdownItem to="/sugestoes" onClick={() => setOpen(false)}>
+                        <Lightbulb size={15} />
+                        <span>Sugestões e melhorias</span>
+                      </DropdownItem>
+                      <DropdownAction onClick={() => { setShowInviteModal(true); setOpen(false) }}>
+                        <UserPlus size={15} />
+                        <span>Convidar pessoas</span>
+                      </DropdownAction>
+
+                      <DropdownDivider />
+
+                      <ThemeRow>
+                        <span>Tema</span>
+                        <ThemeSeg role="group" aria-label="Escolher tema">
+                          <ThemeSegBtn
+                            type="button"
+                            $active={themePref === 'LIGHT'}
+                            onClick={() => setThemePref('LIGHT')}
+                            title="Tema claro"
+                            aria-label="Tema claro"
+                          >
+                            <Sun size={14} />
+                          </ThemeSegBtn>
+                          <ThemeSegBtn
+                            type="button"
+                            $active={themePref === 'DARK'}
+                            onClick={() => setThemePref('DARK')}
+                            title="Tema escuro"
+                            aria-label="Tema escuro"
+                          >
+                            <Moon size={14} />
+                          </ThemeSegBtn>
+                          <ThemeSegBtn
+                            type="button"
+                            $active={themePref === 'SYSTEM'}
+                            onClick={() => setThemePref('SYSTEM')}
+                            title="Tema automático do sistema"
+                            aria-label="Tema automático"
+                          >
+                            <Monitor size={14} />
+                          </ThemeSegBtn>
+                        </ThemeSeg>
+                      </ThemeRow>
+
+                      <DropdownDivider />
+
+                      <DropdownButton onClick={handleLogout}>
+                        <SignOut size={15} />
+                        <span>Sair</span>
+                      </DropdownButton>
                     </Dropdown>
                   )}
                 </AvatarWrapper>
