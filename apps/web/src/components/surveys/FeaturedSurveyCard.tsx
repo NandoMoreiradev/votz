@@ -18,10 +18,10 @@ function readDismissed(): string[] {
 
 const Card = styled.section`
   background: ${({ theme }) => theme.colors.white};
-  border: 1.5px solid ${({ theme }) => theme.colors.primary}26;
-  border-radius: ${({ theme }) => theme.radii.lg};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 14px;
   padding: 16px 18px;
-  margin-bottom: 14px;
+  margin: 12px 16px;
   position: relative;
 `
 
@@ -47,7 +47,7 @@ const OfficialBadge = styled.span`
   padding: 3px 9px;
   border-radius: ${({ theme }) => theme.radii.full};
   background: ${({ theme }) => theme.colors.primary};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -106,12 +106,12 @@ const CtaLink = styled(Link)`
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  background: ${({ theme }) => theme.colors.primary};
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.text};
   color: ${({ theme }) => theme.colors.white};
   font-size: 0.875rem;
   font-weight: 600;
-  &:hover { opacity: 0.92; }
+  &:hover { opacity: 0.88; }
 `
 
 export function FeaturedSurveyCard() {

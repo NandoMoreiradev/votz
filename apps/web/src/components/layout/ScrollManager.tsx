@@ -126,9 +126,15 @@ export function ScrollManager() {
         })
       } else if (pathChanged) {
         window.scrollTo(0, 0)
+        frame = window.requestAnimationFrame(() => {
+          if (!stopped && window.scrollY > 0) window.scrollTo(0, 0)
+        })
       }
     } else if (pathChanged) {
       window.scrollTo(0, 0)
+      frame = window.requestAnimationFrame(() => {
+        if (!stopped && window.scrollY > 0) window.scrollTo(0, 0)
+      })
     }
 
     return stop

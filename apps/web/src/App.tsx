@@ -101,8 +101,8 @@ function RouteErrorBoundary({ children }: { children: ReactNode }) {
   return <PageErrorBoundary resetKey={useLocation().pathname}>{children}</PageErrorBoundary>
 }
 
-/** Telas de trabalho (Conversas e o painel do Estúdio) ocupam a tela inteira, sem o rodapé do site. */
-const NO_FOOTER_PREFIXES = ['/conversas', '/estudio', '/mandato', '/painel-dados', '/entidade/prazos', '/proposta/nova']
+/** Telas de trabalho (Conversas, Estúdio) e detalhe de publicação ocupam a tela inteira, sem o rodapé institucional. */
+const NO_FOOTER_PREFIXES = ['/conversas', '/estudio', '/mandato', '/painel-dados', '/entidade/prazos', '/proposta/nova', '/publicacoes/']
 
 function RouteFooter() {
   const path = useLocation().pathname

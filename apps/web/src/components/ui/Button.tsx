@@ -27,30 +27,30 @@ const sizeStyles = {
 const variantStyles = {
   primary: css`
     background: ${({ theme }) => theme.colors.primary};
-    color: ${({ theme }) => theme.colors.white};
-    border: 2px solid transparent;
-    &:hover { background: #2a2a4a; }
+    color: ${({ theme }) => theme.colors.onAccent};
+    border: 1px solid ${({ theme }) => (theme.mode === 'dark' ? theme.colors.borderStrong : 'transparent')};
+    &:hover { background: ${({ theme }) => theme.colors.primaryHover}; }
   `,
   action: css`
     background: ${({ theme }) => theme.colors.action};
-    color: ${({ theme }) => theme.colors.white};
-    border: 2px solid transparent;
-    &:hover { background: #c8313d; }
+    color: ${({ theme }) => theme.colors.onAccent};
+    border: 1px solid transparent;
+    &:hover { background: ${({ theme }) => theme.colors.actionHover}; }
   `,
   outline: css`
     background: transparent;
-    color: ${({ theme }) => theme.colors.primary};
-    border: 2px solid ${({ theme }) => theme.colors.primary};
+    color: ${({ theme }) => theme.colors.primaryText};
+    border: 1.5px solid ${({ theme }) => theme.colors.borderStrong};
     &:hover {
-      background: ${({ theme }) => theme.colors.primary};
-      color: ${({ theme }) => theme.colors.white};
+      background: ${({ theme }) => theme.colors.surfaceHover};
+      border-color: ${({ theme }) => theme.colors.primaryText};
     }
   `,
   ghost: css`
     background: transparent;
     color: ${({ theme }) => theme.colors.text};
-    border: 2px solid transparent;
-    &:hover { background: ${({ theme }) => theme.colors.neutral}; }
+    border: 1px solid transparent;
+    &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
   `,
 }
 

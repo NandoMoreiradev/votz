@@ -63,13 +63,15 @@ const Avatar = styled.div<{ $src: string | null }>`
   height: 88px;
   border-radius: ${({ theme }) => theme.radii.full};
   background: ${({ $src, theme }) =>
-    $src ? `url(${$src}) center/cover` : theme.colors.border};
+    $src ? `url(${$src}) center/cover` : theme.colors.primary};
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-weight: 700;
   font-size: 2rem;
-  color: ${({ theme }) => theme.colors.muted};
+  color: ${({ theme }) => theme.colors.onAccent};
 `
 
 const ProfileInfo = styled.div`
@@ -90,7 +92,7 @@ const FollowBtn = styled.button<{ $following?: boolean }>`
   padding: 7px 16px;
   border-radius: ${({ theme }) => theme.radii.full};
   border: 1px solid ${({ $following, theme }) => ($following ? theme.colors.border : theme.colors.primary)};
-  background: ${({ $following, theme }) => ($following ? theme.colors.white : theme.colors.primary)};
+  background: ${({ $following, theme }) => ($following ? theme.colors.white : theme.colors.text)};
   color: ${({ $following, theme }) => ($following ? theme.colors.text : theme.colors.white)};
   font-size: 0.8125rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
@@ -151,7 +153,7 @@ const TypeBadge = styled.span`
   padding: 2px 8px;
   border-radius: ${({ theme }) => theme.radii.full};
   background: ${({ theme }) => theme.colors.primary};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.onAccent};
   text-transform: uppercase;
   letter-spacing: 0.05em;
 `
@@ -303,7 +305,7 @@ const PageButton = styled.button<{ $active?: boolean }>`
   border-radius: ${({ theme }) => theme.radii.md};
   border: 1px solid ${({ theme, $active }) => ($active ? theme.colors.primary : theme.colors.border)};
   background: ${({ theme, $active }) => ($active ? theme.colors.primary : theme.colors.white)};
-  color: ${({ theme, $active }) => ($active ? theme.colors.white : theme.colors.text)};
+  color: ${({ theme, $active }) => ($active ? theme.colors.onAccent : theme.colors.text)};
   font-size: 0.875rem;
   font-weight: ${({ theme }) => theme.fontWeights.medium};
   cursor: pointer;

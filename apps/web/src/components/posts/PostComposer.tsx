@@ -46,13 +46,13 @@ const Row = styled.div`
   align-items: flex-start;
 `
 
-const Avatar = styled.div<{ $src?: string | null }>`
+const Avatar = styled.div<{ $src?: string | null; $org?: boolean }>`
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: ${({ $org }) => ($org ? '10px' : '50%')};
   flex-shrink: 0;
   background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.primary)};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
   display: inline-flex;
@@ -67,22 +67,22 @@ const MainCol = styled.div`
 `
 
 const IdentityTag = styled.div`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
+  font-size: 12px;
   color: ${({ theme }) => theme.colors.muted};
-  margin-bottom: 6px;
-  b { color: ${({ theme }) => theme.colors.primary}; }
+  margin-bottom: 4px;
+  b { color: ${({ theme }) => theme.colors.primaryText}; }
 `
 
 const Textarea = styled.textarea`
   width: 100%;
-  min-height: 76px;
+  min-height: 56px;
   border: none;
   background: transparent;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 18px;
-  line-height: 1.5;
+  line-height: 1.45;
   color: ${({ theme }) => theme.colors.text};
   outline: none;
   box-sizing: border-box;
@@ -223,8 +223,9 @@ const Chip = styled.div`
   gap: 8px;
   padding: 6px 10px;
   border-radius: ${({ theme }) => theme.radii.md};
-  background: ${({ theme }) => `${theme.colors.primary}10`};
-  color: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.primaryText};
   font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: 600;
   margin-bottom: 8px;
@@ -272,8 +273,8 @@ const Spacer = styled.div`
 `
 
 const CharCt = styled.span<{ $warn?: boolean }>`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: ${({ $warn, theme }) => ($warn ? theme.colors.action : theme.colors.muted)};
 `
 
@@ -285,12 +286,12 @@ const PublishBtn = styled.button`
   border-radius: ${({ theme }) => theme.radii.full};
   border: none;
   background: ${({ theme }) => theme.colors.action};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-size: ${({ theme }) => theme.fontSizes.sm};
   font-weight: 700;
   cursor: pointer;
 
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
 `
 
 /** Arquivo escolhido para a publicação: prévia local enquanto envia; o recorte é aplicado pelo servidor ao publicar. */
@@ -330,10 +331,18 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const uploadMedia = useUploadMediaAsset()
   const createPost = useCreatePost()
   const mediaRef = useRef(media)
   mediaRef.current = media
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [content])
   // Ao sair da tela: libera as prévias locais e apaga no servidor o que foi enviado e não publicado.
   useEffect(() => () => {
     for (const item of mediaRef.current) {
@@ -489,17 +498,21 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
   return (
     <Box>
       <Row>
-        <Avatar $src={displayAvatar}>
+        <Avatar $src={displayAvatar} $org={activeContext?.type === 'ENTITY'}>
           {!displayAvatar && displayName.charAt(0).toUpperCase()}
         </Avatar>
 
         <MainCol>
-          <IdentityTag>
-            Publicando como <b>{displayName}</b>
-            {activeContext ? ` (${activeContext.type === 'POLITICIAN' ? 'Mandato' : 'Entidade'})` : ''}
-          </IdentityTag>
+          {activeContext && (
+            <IdentityTag>
+              Publicando como <b>{displayName}</b>
+              {` (${activeContext.type === 'POLITICIAN' ? 'Mandato' : 'Entidade'})`}
+            </IdentityTag>
+          )}
 
           <Textarea
+            ref={textareaRef}
+            rows={2}
             aria-label="Texto da publicação"
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -661,7 +674,7 @@ export function PostComposer({ initialTopic, quotePost, onClearQuote, onCreated 
 
             <Spacer />
 
-            <CharCt $warn={content.length > 1800}>{content.length}/2000</CharCt>
+            {content.length > 0 && <CharCt $warn={content.length > 1800}>{content.length}/2000</CharCt>}
 
             <PublishBtn type="button" disabled={!canSubmit} onClick={handleSubmit}>
               <PaperPlaneTilt size={15} weight="fill" />

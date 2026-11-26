@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import logoSrc from '../../assets/brand/votz-logo-dark.svg'
 
 const Foot = styled.footer`
-  background: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.footerBg};
+  border-top: 1px solid ${({ theme }) => (theme.mode === 'dark' ? theme.colors.border : 'transparent')};
   color: rgba(255, 255, 255, 0.75);
   padding: 56px 32px 32px;
   margin-top: auto;

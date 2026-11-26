@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import logoSrc from '../../assets/brand/votz-logo-dark.svg'
+import logoDarkSrc from '../../assets/brand/votz-logo-dark.svg'
+import logoLightSrc from '../../assets/brand/votz-logo.svg'
 import styled from 'styled-components'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Bell, List, X, CaretDown, ChatCircle, MagnifyingGlass, Check, Buildings } from '@phosphor-icons/react'
@@ -25,11 +26,13 @@ const Nav = styled.nav`
   width: 100%;
   max-width: 100%;
   overflow-x: clip;
-  background: ${({ theme }) => theme.colors.primary};
+  background: ${({ theme }) => theme.colors.chromeBg};
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   height: 56px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid ${({ theme }) => theme.colors.chromeBorder};
 `
 
 const Inner = styled.div`
@@ -58,7 +61,7 @@ const Logo = styled(Link)`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 1.25rem;
   font-weight: ${({ theme }) => theme.fontWeights.bold};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.text};
   letter-spacing: -0.01em;
   display: flex;
   align-items: center;
@@ -84,11 +87,12 @@ const LogoMenuBtn = styled.button`
   padding: 4px 6px;
   margin: 0 -6px;
   border-radius: ${({ theme }) => theme.radii.md};
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.text};
   cursor: pointer;
+  transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
@@ -156,8 +160,13 @@ const NavLinks = styled.div`
   }
 `
 
-const NavLink = styled(Link)`
-  color: rgba(255, 255, 255, 0.78);
+const NavLink = styled(Link)<{ $tone?: 'warning' | 'danger' }>`
+  color: ${({ $tone, theme }) =>
+    $tone === 'warning'
+      ? theme.colors.warning
+      : $tone === 'danger'
+        ? theme.colors.action
+        : theme.colors.muted};
   font-size: ${({ theme }) => theme.fontSizes.sm};
   font-weight: ${({ theme }) => theme.fontWeights.medium};
   padding: ${({ theme }) => theme.spacing[1]} ${({ theme }) => theme.spacing[3]};
@@ -166,8 +175,13 @@ const NavLink = styled(Link)`
   transition: all 0.15s;
 
   &:hover {
-    color: ${({ theme }) => theme.colors.white};
-    background: rgba(255, 255, 255, 0.08);
+    color: ${({ $tone, theme }) =>
+      $tone === 'warning'
+        ? theme.colors.warning
+        : $tone === 'danger'
+          ? theme.colors.action
+          : theme.colors.text};
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
@@ -177,20 +191,21 @@ const OrgMenuButton = styled.button`
   align-items: center;
   gap: ${({ theme }) => theme.spacing[1]};
   text-decoration: none;
-  color: ${({ theme }) => theme.colors.white};
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: ${({ theme }) => theme.fontSizes.sm};
-  font-weight: ${({ theme }) => theme.fontWeights.medium};
-  padding: ${({ theme }) => theme.spacing[1]} ${({ theme }) => theme.spacing[3]};
-  border-radius: ${({ theme }) => theme.radii.md};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  padding: 5px 12px;
+  border-radius: ${({ theme }) => theme.radii.full};
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: ${({ theme }) => theme.colors.neutral};
+    border-color: ${({ theme }) => theme.colors.borderStrong};
   }
 `
 
@@ -215,12 +230,12 @@ const Avatar = styled.button<{ $src?: string | null }>`
   height: 34px;
   border-radius: 50%;
   background: ${({ $src, theme }) =>
-    $src ? `url(${$src}) center/cover` : theme.colors.action};
-  color: #fff;
+    $src ? `url(${$src}) center/cover` : theme.colors.primary};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: ${({ theme }) => theme.fontWeights.bold};
   font-size: 0.875rem;
-  border: none;
+  border: 1px solid ${({ theme }) => theme.colors.border};
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -299,19 +314,25 @@ const BellBtn = styled.button`
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.8);
+  background: transparent;
+  color: ${({ theme }) => theme.colors.muted};
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
 
-  &:hover { background: rgba(255,255,255,0.18); color: #fff; }
-  &:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+    color: ${({ theme }) => theme.colors.text};
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.action};
+    outline-offset: 2px;
+  }
 `
 
 const UnreadBadge = styled.span`
@@ -499,25 +520,25 @@ function NotificationsPanel() {
   )
 }
 
-/** "Entrar" na barra escura: texto claro e, no hover, fundo translúcido (nunca branco). */
 const LoginButton = styled(Button)`
-  color: rgba(255, 255, 255, 0.8);
+  color: ${({ theme }) => theme.colors.text};
   &:hover,
   &:focus-visible {
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
+    background: ${({ theme }) => theme.colors.surfaceHover};
+    color: ${({ theme }) => theme.colors.text};
   }
 `
 
 const ReportButton = styled(Button)`
   background: ${({ theme }) => theme.colors.action};
-  color: #fff;
+  color: ${({ theme }) => theme.colors.onAccent};
   border-color: transparent;
+  border-radius: ${({ theme }) => theme.radii.full};
   font-size: 0.875rem;
-  padding: 7px 16px;
+  padding: 6px 16px;
 
   &:hover {
-    background: #c8313d;
+    background: ${({ theme }) => theme.colors.actionHover};
   }
 `
 
@@ -525,15 +546,16 @@ const ContextBadge = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: ${({ theme }) => theme.radii.full};
   padding: 3px 10px 3px 4px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: ${({ theme }) => theme.colors.neutral};
+    border-color: ${({ theme }) => theme.colors.borderStrong};
   }
 
   @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
@@ -546,11 +568,11 @@ const ContextAvatar = styled.div<{ $src?: string | null }>`
   height: 24px;
   border-radius: 50%;
   background: ${({ $src, theme }) =>
-    $src ? `url(${$src}) center/cover` : theme.colors.action};
+    $src ? `url(${$src}) center/cover` : theme.colors.primary};
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.onAccent};
   font-size: 0.6875rem;
   font-weight: 700;
   font-family: ${({ theme }) => theme.fonts.heading};
@@ -559,8 +581,8 @@ const ContextAvatar = styled.div<{ $src?: string | null }>`
 
 const ContextName = styled.span`
   font-size: ${({ theme }) => theme.fontSizes.xs};
-  font-weight: ${({ theme }) => theme.fontWeights.medium};
-  color: rgba(255, 255, 255, 0.9);
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
   max-width: 112px;
   white-space: nowrap;
   overflow: hidden;
@@ -572,9 +594,9 @@ const MobileMenuBtn = styled.button`
   width: 36px;
   height: 36px;
   border-radius: ${({ theme }) => theme.radii.md};
-  background: rgba(255, 255, 255, 0.1);
-  color: ${({ theme }) => theme.colors.white};
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  color: ${({ theme }) => theme.colors.text};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -582,7 +604,7 @@ const MobileMenuBtn = styled.button`
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: ${({ theme }) => theme.colors.neutral};
   }
 
   @media (max-width: calc(${({ theme }) => theme.breakpoints.xl} - 1px)) {
@@ -598,8 +620,8 @@ const MobileDrawer = styled.div`
   right: 0;
   max-height: calc(100vh - 64px);
   overflow-y: auto;
-  background: ${({ theme }) => theme.colors.primary};
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: ${({ theme }) => theme.colors.chromeSolid};
+  border-top: 1px solid ${({ theme }) => theme.colors.chromeBorder};
   box-shadow: ${({ theme }) => theme.shadows.lg};
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]} ${({ theme }) => theme.spacing[5]};
   z-index: 190;
@@ -616,9 +638,9 @@ const MobileSectionLabel = styled.span`
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  color: ${({ theme }) => theme.colors.muted};
   padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[1]};
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
   margin-top: ${({ theme }) => theme.spacing[2]};
 `
 
@@ -627,12 +649,12 @@ const MobileNavLink = styled(Link)<{ $highlight?: boolean }>`
   padding: ${({ theme }) => theme.spacing[3]};
   font-size: ${({ theme }) => theme.fontSizes.md};
   font-weight: ${({ theme }) => theme.fontWeights.medium};
-  color: ${({ $highlight, theme }) => ($highlight ? theme.colors.action : theme.colors.white)};
+  color: ${({ $highlight, theme }) => ($highlight ? theme.colors.action : theme.colors.text)};
   border-radius: ${({ theme }) => theme.radii.md};
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
@@ -643,7 +665,7 @@ const MobileDrawerAction = styled.button<{ $danger?: boolean }>`
   padding: ${({ theme }) => theme.spacing[3]};
   font-size: ${({ theme }) => theme.fontSizes.md};
   font-weight: ${({ theme }) => theme.fontWeights.medium};
-  color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.white)};
+  color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.text)};
   background: none;
   border: none;
   border-radius: ${({ theme }) => theme.radii.md};
@@ -651,7 +673,7 @@ const MobileDrawerAction = styled.button<{ $danger?: boolean }>`
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
@@ -688,7 +710,8 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
   const { data: profiles } = useMyProfiles(!!user && sessionReady)
   const contextNotesEnabled = useContextNotesEnabled()
   const surveysEnabled = useSurveysEnabled()
-  const { preference: themePref, setPreference: setThemePref } = useAppTheme()
+  const { preference: themePref, resolvedMode, setPreference: setThemePref } = useAppTheme()
+  const logoSrc = resolvedMode === 'dark' ? logoDarkSrc : logoLightSrc
   const nextThemePref = themePref === 'SYSTEM' ? 'DARK' : themePref === 'DARK' ? 'LIGHT' : 'SYSTEM'
   const themeLabel = themePref === 'DARK' ? 'Escuro' : themePref === 'LIGHT' ? 'Claro' : 'Automático'
   const { mutate: switchContext, isPending: switchPending, isError: switchError } = useSwitchContext()
@@ -848,8 +871,8 @@ export function Navbar({ feedMenu }: { feedMenu?: { value: FeedMenuKind; onChang
               </OrgMenuButton>
             )}
             {!user && <NavLink to="/planos">Para organizações</NavLink>}
-            {isStaff && <NavLink to="/admin" style={{ color: '#F59E0B' }}>Moderação</NavLink>}
-            {isSuperAdmin && <NavLink to="/superadmin" style={{ color: '#E63946' }}>Superadmin</NavLink>}
+            {isStaff && <NavLink to="/admin" $tone="warning">Moderação</NavLink>}
+            {isSuperAdmin && <NavLink to="/superadmin" $tone="danger">Superadmin</NavLink>}
           </NavLinks>
 
           <Actions>

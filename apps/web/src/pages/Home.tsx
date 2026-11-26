@@ -1,7 +1,7 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Fire, Flag, HandsClapping, LinkSimple, UsersThree } from '@phosphor-icons/react'
 import { AD_DELIVERY_LIMITS, adNeighborIds, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
@@ -122,13 +122,13 @@ const skelPulse = keyframes`
 // ─── Styled: Page shell ───────────────────────────────────────────────────────
 const Page = styled.div`
   min-height: 100vh;
-  background: #FAFAF7;
+  background: ${({ theme }) => theme.colors.neutral};
 `
 
 // ─── Styled: Subheader ────────────────────────────────────────────────────────
 const Subheader = styled.div`
-  background: #fff;
-  border-bottom: 1px solid #E5E5E0;
+  background: ${({ theme }) => theme.colors.white};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   position: sticky;
   top: 56px;
   z-index: 40;
@@ -170,8 +170,8 @@ const ToolBtn = styled.button`
   gap: 8px;
   height: 34px;
   padding: 0 12px;
-  background: #fff;
-  border: 1px solid #E5E5E0;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: 7px;
   font-size: 13px;
   font-weight: 500;
@@ -183,25 +183,26 @@ const ToolBtn = styled.button`
 const SegControl = styled.div`
   display: inline-flex;
   height: 34px;
-  background: ${({ theme }) => theme.colors.neutral};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: 7px;
   padding: 3px;
 `
 const SegBtn = styled.button<{ $active?: boolean }>`
   border: none;
-  background: ${({ $active }) => $active ? '#fff' : 'transparent'};
+  background: ${({ $active, theme }) => ($active ? theme.colors.white : 'transparent')};
   height: 100%;
   padding: 0 12px;
   border-radius: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: ${({ $active, theme }) => $active ? theme.colors.text : theme.colors.muted};
+  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   transition: background 0.15s, color 0.15s;
-  box-shadow: ${({ $active }) => $active ? '0 1px 2px rgba(0,0,0,.06)' : 'none'};
+  box-shadow: ${({ $active, theme }) => ($active ? theme.shadows.sm : 'none')};
 `
 
 // ─── Styled: 3-column layout ──────────────────────────────────────────────────
@@ -245,7 +246,7 @@ const ClearBtn = styled.button`
   cursor: pointer;
   background: none;
   border: none;
-  border-bottom: 1px dashed #9494A0;
+  border-bottom: 1px dashed ${({ theme }) => theme.colors.muted};
   padding-bottom: 1px;
 `
 const ChipsWrap = styled.div`display: flex; flex-wrap: wrap;`
@@ -254,17 +255,17 @@ const Chip = styled.button<{ $active?: boolean }>`
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: ${({ $active }) => $active ? '#0D0D0D' : '#fff'};
-  border: 1px solid ${({ $active }) => $active ? '#0D0D0D' : '#E5E5E0'};
+  background: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.white)};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.border)};
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
-  color: ${({ $active }) => $active ? '#fff' : '#0D0D0D'};
+  color: ${({ $active, theme }) => ($active ? theme.colors.white : theme.colors.text)};
   cursor: pointer;
   margin: 0 4px 6px 0;
   transition: all 0.15s;
   user-select: none;
-  &:hover { border-color: #0D0D0D; }
+  &:hover { border-color: ${({ theme }) => theme.colors.text}; }
 `
 const StatusList = styled.div`display: flex; flex-direction: column; gap: 4px;`
 const StatusOpt = styled.label`
@@ -275,9 +276,10 @@ const StatusOpt = styled.label`
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+  color: ${({ theme }) => theme.colors.text};
   transition: background 0.15s;
-  &:hover { background: ${({ theme }) => theme.colors.neutral}; }
-  input { margin: 0; accent-color: #0D0D0D; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+  input { margin: 0; accent-color: ${({ theme }) => theme.colors.action}; }
   .lbl { flex: 1; }
 `
 const SDot = styled.span<{ $color: string }>`
@@ -291,21 +293,22 @@ const PeriodSeg = styled.div`
   display: grid;
   grid-template-columns: repeat(4,1fr);
   height: 32px;
-  background: ${({ theme }) => theme.colors.neutral};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: 7px;
   padding: 3px;
   width: 100%;
 `
 const PeriodBtn = styled.button<{ $active?: boolean }>`
   border: none;
-  background: ${({ $active }) => $active ? '#fff' : 'transparent'};
+  background: ${({ $active, theme }) => ($active ? theme.colors.white : 'transparent')};
   border-radius: 5px;
   font-size: 11px;
   font-weight: 600;
-  color: ${({ $active, theme }) => $active ? theme.colors.text : theme.colors.muted};
+  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
   cursor: pointer;
   transition: all 0.15s;
-  box-shadow: ${({ $active }) => $active ? '0 1px 2px rgba(0,0,0,.06)' : 'none'};
+  box-shadow: ${({ $active, theme }) => ($active ? theme.shadows.sm : 'none')};
 `
 const RadioList = styled.div`display: flex; flex-direction: column; gap: 2px;`
 const RadioOpt = styled.label`
@@ -316,9 +319,10 @@ const RadioOpt = styled.label`
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+  color: ${({ theme }) => theme.colors.text};
   transition: background 0.15s;
-  &:hover { background: ${({ theme }) => theme.colors.neutral}; }
-  input { accent-color: #0D0D0D; margin: 0; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
+  input { accent-color: ${({ theme }) => theme.colors.action}; margin: 0; }
   .lbl { flex: 1; }
 `
 
@@ -594,14 +598,14 @@ const SBadgeDot = styled.span<{ $status: ReportStatus }>`
 const Pill = styled.span<{ $high?: boolean }>`
   font-family: ${({ theme }) => theme.fonts.mono};
   font-size: 10.5px;
-  color: #6B6B7A;
+  color: ${({ theme }) => theme.colors.muted};
   padding: 4px 8px;
-  border: 1px solid #E5E5E0;
+  border: 1px solid ${({ theme }) => theme.colors.border};
   border-radius: 4px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  b { color: ${({ $high }) => $high ? '#E63946' : '#0D0D0D'}; }
+  b { color: ${({ $high, theme }) => ($high ? theme.colors.action : theme.colors.text)}; }
 `
 const Actions = styled.div`
   display: flex;
@@ -609,7 +613,7 @@ const Actions = styled.div`
   gap: 4px;
   margin-top: auto;
   padding-top: 10px;
-  border-top: 1px dashed #E5E5E0;
+  border-top: 1px dashed ${({ theme }) => theme.colors.border};
 `
 const ActBtn = styled.button<{ $active?: boolean }>`
   display: inline-flex;
@@ -618,13 +622,13 @@ const ActBtn = styled.button<{ $active?: boolean }>`
   padding: 6px 10px;
   border-radius: 6px;
   border: none;
-  background: ${({ $active, theme }) => $active ? `${theme.colors.primary}12` : 'transparent'};
-  color: ${({ $active, theme }) => $active ? theme.colors.primary : '#6B6B7A'};
+  background: ${({ $active, theme }) => ($active ? theme.colors.surfaceHover : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.colors.primaryText : theme.colors.muted)};
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-  &:hover { background: #F4F4F4; color: #0D0D0D; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; color: ${({ theme }) => theme.colors.text}; }
   .ct { font-family: ${({ theme }) => theme.fonts.mono}; font-size: 11.5px; font-weight: 600; }
 `
 const ActSpacer = styled.div`flex: 1;`
@@ -636,14 +640,14 @@ const AvocBtn = styled.button`
   gap: 6px;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #BFDBFE;
-  background: #EFF6FF;
-  color: #1E40AF;
+  border: 1px solid ${({ theme }) => `${theme.colors.info}40`};
+  background: ${({ theme }) => `${theme.colors.info}14`};
+  color: ${({ theme }) => theme.colors.info};
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
-  &:hover { background: #DBEAFE; }
+  &:hover { background: ${({ theme }) => `${theme.colors.info}24`}; }
   &:disabled { opacity: 0.6; cursor: default; }
 `
 const LocationRow = styled.div`
@@ -651,25 +655,24 @@ const LocationRow = styled.div`
   flex-direction: column;
   gap: 6px;
 `
-const filterSelectCss = `
+const filterSelectCss = css`
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #E5E5E0;
-  border-radius: 6px;
+  padding: 7px 10px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 8px;
   font-size: 12.5px;
-  color: #0D0D0D;
-  background: #fff;
+  color: ${({ theme }) => theme.colors.text};
+  background: ${({ theme }) => theme.colors.white};
   cursor: pointer;
-  &:focus { outline: none; border-color: #1A1A2E; }
+  &:focus { outline: none; border-color: ${({ theme }) => theme.colors.borderStrong}; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
 const FilterStateSelect = styled(StateSelect)`${filterSelectCss}`
 const FilterCitySelect  = styled(CitySelect)`${filterSelectCss}`
 
 const SkeletonCard = styled.div`
-  background: #fff;
-  border: 1px solid #E5E5E0;
-  border-radius: 12px;
+  background: ${({ theme }) => theme.colors.white};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   height: 160px;
   animation: ${skelPulse} 1.5s ease-in-out infinite;
 `
@@ -696,22 +699,23 @@ const Rail = styled.aside`
   @media (max-width: 1180px) { display: none; }
 `
 const RailCard = styled.div`
-  background: #fff;
-  border: 1px solid #E5E5E0;
-  border-radius: 12px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 16px;
   overflow: hidden;
 `
 const RailHead = styled.div`
   padding: 14px 16px;
-  border-bottom: 1px solid #EDEDE8;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
   display: flex;
   align-items: center;
   justify-content: space-between;
   h3 {
     font-family: ${({ theme }) => theme.fonts.heading};
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: -0.01em;
+    color: ${({ theme }) => theme.colors.text};
     margin: 0;
   }
 `
@@ -756,13 +760,12 @@ const MiniMapFoot = styled.div`
   padding: 10px 16px;
   display: flex;
   justify-content: space-between;
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
+  font-size: 12px;
   color: ${({ theme }) => theme.colors.muted};
   a {
     color: ${({ theme }) => theme.colors.text};
     font-weight: 600;
-    border-bottom: 1px solid #0D0D0D;
+    border-bottom: 1px solid ${({ theme }) => theme.colors.text};
     padding-bottom: 1px;
   }
 `
@@ -773,13 +776,13 @@ const AltaItem = styled(Link)`
   align-items: flex-start;
   padding: 10px 16px;
   transition: background 0.15s;
-  &:hover { background: #F4F4F4; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
 `
 const AltaRank = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
   font-size: 22px;
-  color: #9494A0;
+  color: ${({ theme }) => theme.colors.muted};
   letter-spacing: -0.02em;
   width: 24px;
   flex-shrink: 0;
@@ -791,7 +794,7 @@ const AltaTitle = styled.div`
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
-  color: #0D0D0D;
+  color: ${({ theme }) => theme.colors.text};
   margin-bottom: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -799,12 +802,12 @@ const AltaTitle = styled.div`
   overflow: hidden;
 `
 const AltaMeta = styled.div`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: ${({ theme }) => theme.colors.muted};
+  font-variant-numeric: tabular-nums;
   display: flex;
   gap: 8px;
-  .pr b { color: #E63946; }
+  .pr b { color: ${({ theme }) => theme.colors.action}; }
 `
 const MandList = styled.div`padding: 6px 0;`
 const MandItem = styled(Link)`
@@ -813,7 +816,7 @@ const MandItem = styled(Link)`
   align-items: center;
   padding: 10px 16px;
   transition: background 0.15s;
-  &:hover { background: #F4F4F4; }
+  &:hover { background: ${({ theme }) => theme.colors.surfaceHover}; }
 `
 const MandAvatar = styled.div<{ $bg: string }>`
   width: 36px;
@@ -826,20 +829,19 @@ const MandAvatar = styled.div<{ $bg: string }>`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
   font-size: 12px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.onAccent};
   background: ${({ $bg }) => $bg};
 `
 const MandContent = styled.div`flex: 1; min-width: 0;`
 const MandName = styled.div`
   font-size: 13px;
   font-weight: 600;
-  color: #0D0D0D;
+  color: ${({ theme }) => theme.colors.text};
   margin-bottom: 2px;
 `
 const MandRole = styled.div`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 10px;
-  color: #6B6B7A;
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.muted};
   text-transform: uppercase;
   letter-spacing: 0.04em;
 `
@@ -850,12 +852,11 @@ const MandPct = styled.div<{ $score: number }>`
   letter-spacing: -0.02em;
   line-height: 1;
   text-align: right;
-  color: ${({ $score }) => $score >= 70 ? '#2DC653' : $score >= 40 ? '#D97706' : '#E63946'};
+  color: ${({ $score, theme }) => ($score >= 70 ? theme.colors.positive : $score >= 40 ? theme.colors.warning : theme.colors.action)};
 `
 const MandPctLabel = styled.div`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 9px;
-  color: #9494A0;
+  font-size: 10px;
+  color: ${({ theme }) => theme.colors.muted};
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-top: 2px;
@@ -863,14 +864,15 @@ const MandPctLabel = styled.div`
 `
 const ImprensaCTA = styled.div`
   background: ${({ theme }) => theme.colors.primary};
-  color: #fff;
+  border: 1px solid ${({ theme }) => (theme.mode === 'dark' ? theme.colors.borderStrong : 'transparent')};
+  color: ${({ theme }) => theme.colors.onAccent};
   padding: 18px;
-  border-radius: 12px;
+  border-radius: 16px;
 `
 const ImprensaKicker = styled.div`
   font-family: ${({ theme }) => theme.fonts.mono};
   font-size: 10px;
-  color: rgba(255,255,255,.5);
+  color: rgba(255,255,255,.55);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 8px;
@@ -878,12 +880,12 @@ const ImprensaKicker = styled.div`
 const ImprensaH3 = styled.h3`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 17px;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.onAccent};
   margin: 0 0 8px;
 `
 const ImprensaP = styled.p`
   font-size: 12.5px;
-  color: rgba(255,255,255,.7);
+  color: rgba(255,255,255,.75);
   line-height: 1.5;
   margin: 0 0 14px;
 `
@@ -891,12 +893,12 @@ const ImprensaBtn = styled(Link)`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
-  color: ${({ theme }) => theme.colors.primary};
-  padding: 8px 12px;
-  border-radius: 6px;
+  background: ${({ theme }) => theme.colors.onAccent};
+  color: #0F1419;
+  padding: 8px 14px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
 `
 
 // ─── FeedCard ─────────────────────────────────────────────────────────────────
@@ -1151,8 +1153,15 @@ function resolveInitialTab(params: URLSearchParams): 'publicacoes' | 'relatos' {
 }
 
 const AlgoTabs = styled.div`
+  position: sticky;
+  top: 56px;
+  z-index: 30;
   display: flex;
   align-items: center;
+  background: ${({ theme }) =>
+    theme.mode === 'dark' ? 'rgba(23, 26, 38, 0.85)' : 'rgba(255, 255, 255, 0.85)'};
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `
 
@@ -1186,6 +1195,7 @@ const TopicMeta = styled.div`
 
 export function Home() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, activeContext } = useAuthStore()
 
@@ -1195,7 +1205,19 @@ export function Home() {
   const [postSort, setPostSort] = useState<FeedSortMode>('for_you')
   const [postAuthorType, setPostAuthorType] = useState<'CITIZEN' | 'POLITICIAN' | 'ENTITY' | undefined>()
   const [postFilterKind, setPostFilterKind] = useState<'all' | 'advocacy' | 'polls'>('all')
-  const [quoteTarget, setQuoteTarget] = useState<PostDto | null>(null)
+  const [quoteTarget, setQuoteTarget] = useState<PostDto | null>(() => {
+    const state = location.state as { quotePost?: PostDto } | null
+    return state?.quotePost ?? null
+  })
+
+  useEffect(() => {
+    const state = location.state as { quotePost?: PostDto } | null
+    if (state?.quotePost) {
+      setQuoteTarget(state.quotePost)
+      setFeedTab('publicacoes')
+      navigate(location.pathname + location.search, { replace: true, state: null })
+    }
+  }, [location.state, location.pathname, location.search, navigate])
   const [recentPostId, setRecentPostId] = useState<string | null>(null)
   const [advocateTarget, setAdvocateTarget] = useState<{
     report: Report
@@ -1291,55 +1313,51 @@ export function Home() {
     <Page>
       <Navbar feedMenu={{ value: feedTab, onChange: switchFeedTab }} />
 
-      {/* ── Subheader ── */}
+      {/* ── Subheader (apenas na aba de Relatos, onde ficam ordenação e mapa) ── */}
+      {feedTab === 'relatos' && (
       <Subheader>
         <SubInner>
 
           <SubTitleRow>
             <SubTitle>
-              {feedTab === 'publicacoes' ? 'Publicações da comunidade' : 'Todos os relatos'}
+              Todos os relatos
             </SubTitle>
             <SubMeta>
-              {feedTab === 'publicacoes'
-                ? postsData
-                  ? `${postsData.meta.total.toLocaleString('pt-BR')} ${postsData.meta.total === 1 ? 'publicação' : 'publicações'}`
-                  : 'Carregando…'
-                : data
-                  ? `${data.meta.total.toLocaleString('pt-BR')} ${data.meta.total === 1 ? 'relato' : 'relatos'} · últimos ${period === 'all' ? 'todos os tempos' : period}`
-                  : 'Carregando…'}
+              {data
+                ? `${data.meta.total.toLocaleString('pt-BR')} ${data.meta.total === 1 ? 'relato' : 'relatos'} · ${period === 'all' ? 'todos os tempos' : `últimos ${period}`}`
+                : 'Carregando…'}
             </SubMeta>
           </SubTitleRow>
           <SubSpacer />
-          {feedTab === 'relatos' && (
-            <SubTools>
-              <ToolBtn onClick={() => setSort(nextSort)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M6 12h12M10 18h4" />
+          <SubTools>
+            <ToolBtn onClick={() => setSort(nextSort)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 6h18M6 12h12M10 18h4" />
+              </svg>
+              Ordenar:{' '}
+              <span style={{ color: '#9494A0' }}>{sortLabel}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </ToolBtn>
+            <SegControl>
+              <SegBtn $active={view === 'list'} onClick={() => setView('list')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M3 12h18M3 18h18" />
                 </svg>
-                Ordenar:{' '}
-                <span style={{ color: '#9494A0' }}>{sortLabel}</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6 9l6 6 6-6" />
+                Lista
+              </SegBtn>
+              <SegBtn $active={view === 'map'} onClick={() => { setView('map'); navigate('/mapa') }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 4l-6 3v13l6-3M9 4v13M9 4l6 3m0 0l6-3v13l-6 3m0-13v13m-6-3l6 3" />
                 </svg>
-              </ToolBtn>
-              <SegControl>
-                <SegBtn $active={view === 'list'} onClick={() => setView('list')}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 6h18M3 12h18M3 18h18" />
-                  </svg>
-                  Lista
-                </SegBtn>
-                <SegBtn $active={view === 'map'} onClick={() => { setView('map'); navigate('/mapa') }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 4l-6 3v13l6-3M9 4v13M9 4l6 3m0 0l6-3v13l-6 3m0-13v13m-6-3l6 3" />
-                  </svg>
-                  Mapa
-                </SegBtn>
-              </SegControl>
-            </SubTools>
-          )}
+                Mapa
+              </SegBtn>
+            </SegControl>
+          </SubTools>
         </SubInner>
       </Subheader>
+      )}
 
       <Main>
         {/* ── Sidebar ── */}
@@ -1645,7 +1663,7 @@ export function Home() {
               <div>
                 <TopicRow to="/?tab=relatos" onClick={(e) => { e.preventDefault(); switchFeedTab('relatos') }}>
                   <div>
-                    <TopicTag style={{ color: '#1A1A2E' }}>Relatos da comunidade</TopicTag>
+                    <TopicTag>Relatos da comunidade</TopicTag>
                     <TopicMeta>
                       {data ? `${data.meta.total.toLocaleString('pt-BR')} relatos ativos` : 'Problemas e cobranças'}
                     </TopicMeta>
@@ -1654,14 +1672,14 @@ export function Home() {
                 </TopicRow>
                 <TopicRow to="/mapa">
                   <div>
-                    <TopicTag style={{ color: '#1A1A2E' }}>Mapa de relatos</TopicTag>
+                    <TopicTag>Mapa de relatos</TopicTag>
                     <TopicMeta>Visualizar ocorrências por região</TopicMeta>
                   </div>
                   <TopicMeta>→</TopicMeta>
                 </TopicRow>
                 <TopicRow to="/politicos">
                   <div>
-                    <TopicTag style={{ color: '#1A1A2E' }}>Mandatômetro</TopicTag>
+                    <TopicTag>Mandatômetro</TopicTag>
                     <TopicMeta>Desempenho de políticos</TopicMeta>
                   </div>
                   <TopicMeta>→</TopicMeta>

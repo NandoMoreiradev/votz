@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { Link, useLocation } from 'react-router-dom'
 import {
   ChatCircle,
+  CheckCircle,
   FilmStrip,
   Flag,
   Image as ImageIcon,
@@ -31,35 +32,30 @@ const Wrap = styled.section`
   gap: 0;
 `
 
-const ConversationHeader = styled.div`
+const ComposerLayout = styled.div<{ $reply?: boolean; $collapsed?: boolean }>`
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 18px 20px 0;
-  h2 { margin: 0; font-family: ${({ theme }) => theme.fonts.heading}; font-size: 17px; }
-  span { color: ${({ theme }) => theme.colors.muted}; font-size: 13px; }
-  @media (max-width: 480px) { padding-inline: 16px; }
-`
-
-const ComposerLayout = styled.div<{ $reply?: boolean }>`
-  display: flex;
-  align-items: flex-start;
+  align-items: ${({ $collapsed }) => ($collapsed ? 'center' : 'flex-start')};
   gap: 12px;
-  padding: ${({ $reply }) => $reply ? '0' : '20px'};
-  border-bottom: ${({ $reply, theme }) => $reply ? 'none' : `1px solid ${theme.colors.border}`};
-  @media (max-width: 480px) { padding: ${({ $reply }) => $reply ? '0' : '16px'}; gap: 10px; }
+  padding: ${({ $reply }) => ($reply ? '0' : '14px 16px')};
+  border-bottom: ${({ $reply, theme }) => ($reply ? 'none' : `1px solid ${theme.colors.border}`)};
+  @media (max-width: 480px) {
+    padding: ${({ $reply }) => ($reply ? '0' : '12px 14px')};
+    gap: 10px;
+  }
 `
 
-const ComposerAvatar = styled.div<{ $src?: string | null }>`
-  width: 38px;
-  height: 38px;
+const ComposerAvatar = styled.div<{ $src?: string | null; $org?: boolean }>`
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: ${({ $org }) => ($org ? '10px' : '50%')};
   display: grid;
   place-items: center;
-  font-weight: 600;
-  color: ${({ theme }) => theme.colors.action};
-  background: ${({ $src, theme }) => $src ? `url(${$src}) center/cover` : `${theme.colors.action}10`};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: ${({ theme }) => theme.colors.onAccent};
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.primary)};
 `
 
 const ComposerMain = styled.div`
@@ -68,40 +64,49 @@ const ComposerMain = styled.div`
 `
 
 const CommentList = styled.div`
-  padding: 0 20px;
-  @media (max-width: 480px) { padding-inline: 16px; }
+  display: flex;
+  flex-direction: column;
 `
 
 const ConversationState = styled.div`
-  padding: 24px 20px;
+  padding: 28px 16px;
   color: ${({ theme }) => theme.colors.muted};
   font-size: 14px;
   line-height: 1.6;
-  a { color: ${({ theme }) => theme.colors.action}; font-weight: 600; }
+  text-align: center;
+  a {
+    color: ${({ theme }) => theme.colors.action};
+    font-weight: 600;
+  }
 `
 
-const FormBox = styled.form`
+const FormBox = styled.form<{ $collapsed?: boolean }>`
   display: flex;
-  flex-direction: column;
+  flex-direction: ${({ $collapsed }) => ($collapsed ? 'row' : 'column')};
+  align-items: ${({ $collapsed }) => ($collapsed ? 'center' : 'stretch')};
   gap: 8px;
   background: ${({ theme }) => theme.colors.white};
   padding: 0;
 `
 
-const Textarea = styled.textarea`
+const Textarea = styled.textarea<{ $collapsed?: boolean }>`
   width: 100%;
-  min-height: 64px;
+  min-height: ${({ $collapsed }) => ($collapsed ? '36px' : '56px')};
   border: none;
   background: transparent;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.45;
   color: ${({ theme }) => theme.colors.text};
   border-radius: 6px;
   padding: 6px 0;
-  &:focus-visible { outline: 2px solid ${({ theme }) => `${theme.colors.action}55`}; outline-offset: 3px; }
   box-sizing: border-box;
+
+  &:focus {
+    outline: none;
+  }
 
   &::placeholder {
     color: ${({ theme }) => theme.colors.muted};
@@ -134,7 +139,7 @@ const RemoveMediaBtn = styled.button`
   border-radius: 50%;
   border: none;
   background: rgba(13, 13, 13, 0.72);
-  color: ${({ theme }) => theme.colors.white};
+  color: ${({ theme }) => theme.colors.onAccent};
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -146,6 +151,8 @@ const ToolBar = styled.div`
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
 `
 
 const ToolIconBtn = styled.button<{ $active?: boolean }>`
@@ -154,22 +161,30 @@ const ToolIconBtn = styled.button<{ $active?: boolean }>`
   gap: 5px;
   padding: 6px 10px;
   border-radius: ${({ theme }) => theme.radii.full};
-  min-height: 36px;
+  min-height: 34px;
   border: none;
-  background: ${({ $active, theme }) => ($active ? `${theme.colors.primary}12` : theme.colors.white)};
+  background: ${({ $active, theme }) => ($active ? `${theme.colors.primary}12` : 'transparent')};
   color: ${({ theme }) => theme.colors.action};
   font-size: ${({ theme }) => theme.fontSizes.xs};
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   cursor: pointer;
+  transition: background 0.15s;
 
   &:hover {
-    border-color: ${({ theme }) => theme.colors.primary};
+    background: ${({ theme }) => `${theme.colors.action}12`};
   }
   &:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }
-  @media (max-width: 480px) { padding: 8px; font-size: 0; gap: 0; &[data-cancel] { font-size: 12px; } }
+  @media (max-width: 480px) {
+    padding: 8px;
+    font-size: 0;
+    gap: 0;
+    &[data-cancel] {
+      font-size: 12px;
+    }
+  }
 `
 
 const Spacer = styled.div`
@@ -177,37 +192,69 @@ const Spacer = styled.div`
 `
 
 const SubmitBtn = styled.button`
-  padding: 9px 18px;
+  padding: 8px 18px;
   border-radius: ${({ theme }) => theme.radii.full};
   border: none;
   background: ${({ theme }) => theme.colors.action};
-  color: ${({ theme }) => theme.colors.white};
-  font-size: ${({ theme }) => theme.fontSizes.xs};
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.onAccent};
+  font-size: 13.5px;
+  font-weight: 700;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
 
+  &:hover:not(:disabled) {
+    opacity: 0.9;
+  }
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 `
 
-const CommentRowWrap = styled.div<{ $reply?: boolean }>`
-  display: flex;
-  gap: 10px;
-  padding: ${({ $reply }) => ($reply ? '10px 0 6px' : '12px 0')};
-  border-top: 1px solid ${({ theme }) => theme.colors.border};
+const CommentThreadBlock = styled.div`
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
 `
 
-const Avatar = styled(Link)<{ $src: string | null; $small?: boolean }>`
-  width: ${({ $small }) => ($small ? '28px' : '34px')};
-  height: ${({ $small }) => ($small ? '28px' : '34px')};
-  border-radius: 50%;
+const CommentRowWrap = styled.div<{ $reply?: boolean; $hasReplies?: boolean }>`
+  display: flex;
+  gap: 12px;
+  padding: ${({ $reply, $hasReplies }) =>
+    $reply ? '4px 16px 12px' : $hasReplies ? '14px 16px 4px' : '14px 16px'};
+  transition: background 0.15s;
+
+  @media (max-width: 480px) {
+    padding-inline: 14px;
+    gap: 10px;
+  }
+`
+
+const AvatarRail = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   flex-shrink: 0;
-  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : `${theme.colors.action}10`)};
-  color: ${({ theme }) => theme.colors.action};
+  width: 38px;
+`
+
+const ThreadLine = styled.div`
+  width: 2px;
+  flex: 1;
+  min-height: 16px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: ${({ theme }) => theme.colors.border};
+`
+
+const Avatar = styled(Link)<{ $src: string | null; $small?: boolean; $org?: boolean }>`
+  width: ${({ $small }) => ($small ? '32px' : '38px')};
+  height: ${({ $small }) => ($small ? '32px' : '38px')};
+  border-radius: ${({ $org }) => ($org ? '9px' : '50%')};
+  flex-shrink: 0;
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.primary)};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: ${({ $small }) => ($small ? '0.7rem' : '0.8rem')};
+  font-size: ${({ $small }) => ($small ? '0.75rem' : '0.85rem')};
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -222,81 +269,85 @@ const Body = styled.div`
 const Meta = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  line-height: 1.3;
 `
 
 const AuthorLink = styled(Link)`
-  font-size: ${({ theme }) => theme.fontSizes.sm};
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 14.5px;
+  font-weight: 700;
   color: ${({ theme }) => theme.colors.text};
-  &:hover { text-decoration: underline; }
+  &:hover {
+    text-decoration: underline;
+  }
+`
+
+const HandleText = styled.span`
+  font-size: 13.5px;
+  color: ${({ theme }) => theme.colors.muted};
 `
 
 const AuthorBadge = styled.span`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: ${({ theme }) => theme.radii.sm};
-  background: ${({ theme }) => `${theme.colors.primary}12`};
-  color: ${({ theme }) => theme.colors.primary};
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: ${({ theme }) => theme.radii.full};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  color: ${({ theme }) => theme.colors.primaryText};
   font-weight: 600;
 `
 
 const Time = styled.span`
-  font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
+  font-size: 13.5px;
   color: ${({ theme }) => theme.colors.muted};
+  font-variant-numeric: tabular-nums;
 `
 
 const CommentText = styled.p`
   margin: 0 0 6px;
-  font-size: ${({ theme }) => theme.fontSizes.sm};
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.45;
   color: ${({ theme }) => theme.colors.text};
   white-space: pre-wrap;
   word-break: break-word;
 `
 
 const CommentMediaImg = styled.img`
-  max-width: min(300px, 100%);
+  max-width: min(320px, 100%);
   max-height: 240px;
-  border-radius: ${({ theme }) => theme.radii.md};
+  border-radius: 14px;
   border: 1px solid ${({ theme }) => theme.colors.border};
   display: block;
-  margin: 4px 0 6px;
+  margin: 6px 0;
   cursor: pointer;
 `
 
 const RowActions = styled.div`
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: 4px;
+  gap: 16px;
+  margin-top: 2px;
 `
 
 const MiniActBtn = styled.button<{ $danger?: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 0;
+  padding: 4px 0;
   min-height: 28px;
   border: none;
   background: transparent;
-  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-size: 12.5px;
+  font-weight: 500;
   color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.muted)};
   cursor: pointer;
 
   &:hover {
     color: ${({ $danger, theme }) => ($danger ? theme.colors.action : theme.colors.text)};
   }
-`
-
-const RepliesWrap = styled.div`
-  margin-top: 8px;
-  padding-left: 14px;
-  border-left: 2px solid ${({ theme }) => theme.colors.border};
 `
 
 const ErrorMsg = styled.p`
@@ -308,13 +359,18 @@ const ErrorMsg = styled.p`
 function authorDisplay(a: PostAuthorInfo) {
   const name = a.orgName ?? a.name
   const avatar = a.orgAvatarUrl ?? a.avatarUrl
+  const verified = a.orgType ? a.orgVerified : a.verified
+  const isOrg = a.orgType === 'ENTITY' || a.orgType === 'COMPANY'
+  const handle = !a.orgName && a.username ? `@${a.username}` : null
   const href =
     a.orgType === 'POLITICIAN' && a.orgId
       ? `/politico/${a.orgId}`
       : a.orgType === 'ENTITY' && a.orgId
         ? `/entidade/${a.orgId}`
-        : `/perfil/${a.userId}`
-  return { name, avatar, href }
+        : a.orgType === 'COMPANY' && a.orgId
+          ? `/empresa/${a.orgId}`
+          : `/perfil/${a.userId}`
+  return { name, avatar, verified, isOrg, handle, href }
 }
 
 function timeAgo(iso: string): string {
@@ -324,7 +380,9 @@ function timeAgo(iso: string): string {
   if (m < 60) return `${m}min`
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h`
-  return `${Math.floor(h / 24)}d`
+  const d = Math.floor(h / 24)
+  if (d < 7) return `${d}d`
+  return new Date(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })
 }
 
 interface CommentComposerProps {
@@ -346,12 +404,8 @@ function CommentComposer({
   const context = useAuthStore((s) => s.activeContext)
   const location = useLocation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    if (!parentId && location.hash === '#responder') {
-      textareaRef.current?.focus({ preventScroll: true })
-      textareaRef.current?.scrollIntoView({ block: 'center' })
-    }
-  }, [location.hash, location.key, parentId])
+
+  const [expanded, setExpanded] = useState(!!parentId || location.hash === '#responder')
   const [content, setContent] = useState('')
   const [attachedMedia, setAttachedMedia] = useState<{
     type: PostCommentMediaType
@@ -362,9 +416,26 @@ function CommentComposer({
   const [voiceMode, setVoiceMode] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!parentId && location.hash === '#responder') {
+      setExpanded(true)
+      textareaRef.current?.focus({ preventScroll: true })
+      textareaRef.current?.scrollIntoView({ block: 'center' })
+    }
+  }, [location.hash, location.key, parentId])
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [content, expanded])
+
   const fileRef = useRef<HTMLInputElement>(null)
   const uploadMedia = useUploadPostCommentMedia()
   const createComment = useCreatePostComment(postId)
+
+  const isCollapsed = !parentId && !expanded && !content && !attachedMedia && !showGifPicker
 
   async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -413,7 +484,6 @@ function CommentComposer({
     const trimmed = content.trim()
     if (!attachedMedia && !trimmed) return
 
-    // Como o comentário já aparece na conversa, o campo limpa na hora e o texto volta se o envio falhar.
     const sentMedia = attachedMedia
     createComment.mutate(
       {
@@ -434,12 +504,13 @@ function CommentComposer({
     setContent('')
     setAttachedMedia(null)
     setShowGifPicker(false)
+    if (!parentId) setExpanded(false)
     onDone?.()
   }
 
   if (voiceMode) {
     return (
-      <div>
+      <div style={{ padding: parentId ? '8px 0' : '14px 16px' }}>
         <VoiceRecorder
           onRecorded={handleVoiceRecorded}
           onCancel={() => setVoiceMode(false)}
@@ -449,99 +520,118 @@ function CommentComposer({
     )
   }
 
+  const avatarSrc = context?.logoUrl ?? user?.avatarUrl
+  const avatarInitial = (context?.name ?? user?.name ?? 'V').charAt(0).toUpperCase()
+  const isOrgContext = context?.type === 'ENTITY'
+
   return (
-    <ComposerLayout $reply={!!parentId}>
-      {!parentId && <ComposerAvatar $src={context?.logoUrl ?? user?.avatarUrl} aria-hidden="true">{!(context?.logoUrl ?? user?.avatarUrl) && (context?.name ?? user?.name ?? 'V').charAt(0).toUpperCase()}</ComposerAvatar>}
+    <ComposerLayout $reply={!!parentId} $collapsed={isCollapsed}>
+      {!parentId && (
+        <ComposerAvatar $src={avatarSrc} $org={isOrgContext} aria-hidden="true">
+          {!avatarSrc && avatarInitial}
+        </ComposerAvatar>
+      )}
       <ComposerMain>
-      <FormBox onSubmit={handleSubmit}>
-        <Textarea
-          ref={textareaRef}
-          aria-label={parentId ? 'Sua resposta ao comentário' : 'Sua resposta à publicação'}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          maxLength={1000}
-          placeholder={placeholder ?? 'Publique sua resposta…'}
-        />
-
-        {attachedMedia && (
-          <PreviewBox>
-            <img src={attachedMedia.url} alt="Mídia anexada" />
-            <RemoveMediaBtn type="button" onClick={() => setAttachedMedia(null)} aria-label="Remover mídia">
-              <X size={12} />
-            </RemoveMediaBtn>
-          </PreviewBox>
-        )}
-
-        <ToolBar>
-          <ToolIconBtn
-            type="button"
-            aria-label="Anexar imagem à resposta"
-            title="Anexar imagem"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploadMedia.isPending}
-          >
-            <ImageIcon size={15} /> Imagem
-          </ToolIconBtn>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            style={{ display: 'none' }}
-            onChange={handleImagePick}
+        <FormBox onSubmit={handleSubmit} $collapsed={isCollapsed}>
+          <Textarea
+            ref={textareaRef}
+            rows={1}
+            $collapsed={isCollapsed}
+            aria-label={parentId ? 'Sua resposta ao comentário' : 'Sua resposta à publicação'}
+            value={content}
+            onFocus={() => setExpanded(true)}
+            onChange={(e) => setContent(e.target.value)}
+            maxLength={1000}
+            placeholder={placeholder ?? 'Poste sua resposta'}
           />
 
-          <ToolIconBtn
-            type="button"
-            aria-label="Escolher GIF"
-            title="Escolher GIF"
-            $active={showGifPicker}
-            onClick={() => setShowGifPicker((v) => !v)}
-          >
-            <FilmStrip size={15} /> GIF
-          </ToolIconBtn>
-
-          {canCommentWithAudio && (
-            <ToolIconBtn
-              type="button"
-              aria-label="Gravar resposta em áudio"
-              onClick={() => setVoiceMode(true)}
-              title="Exclusivo do autor da publicação"
-            >
-              <Microphone size={15} /> Áudio (autor)
-            </ToolIconBtn>
+          {isCollapsed && (
+            <SubmitBtn type="submit" disabled>
+              Responder
+            </SubmitBtn>
           )}
 
-          <Spacer />
-
-          {onDone && (
-            <ToolIconBtn type="button" data-cancel onClick={onDone}>
-              Cancelar
-            </ToolIconBtn>
+          {!isCollapsed && attachedMedia && (
+            <PreviewBox>
+              <img src={attachedMedia.url} alt="Mídia anexada" />
+              <RemoveMediaBtn type="button" onClick={() => setAttachedMedia(null)} aria-label="Remover mídia">
+                <X size={12} />
+              </RemoveMediaBtn>
+            </PreviewBox>
           )}
 
-          <SubmitBtn
-            type="submit"
-            disabled={
-              uploadMedia.isPending ||
-              (!attachedMedia && content.trim().length === 0)
-            }
-          >
-            {parentId ? 'Responder' : 'Comentar'}
-          </SubmitBtn>
-        </ToolBar>
-      </FormBox>
+          {!isCollapsed && (
+            <ToolBar>
+              <ToolIconBtn
+                type="button"
+                aria-label="Anexar imagem à resposta"
+                title="Anexar imagem"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploadMedia.isPending}
+              >
+                <ImageIcon size={16} /> Imagem
+              </ToolIconBtn>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                style={{ display: 'none' }}
+                onChange={handleImagePick}
+              />
 
-      {showGifPicker && (
-        <GifPickerPopover
-          onSelectGif={({ url, key }) => {
-            setAttachedMedia({ type: PostCommentMediaType.GIF, url, key })
-            setShowGifPicker(false)
-          }}
-          onClose={() => setShowGifPicker(false)}
-        />
-      )}
+              <ToolIconBtn
+                type="button"
+                aria-label="Escolher GIF"
+                title="Escolher GIF"
+                $active={showGifPicker}
+                onClick={() => setShowGifPicker((v) => !v)}
+              >
+                <FilmStrip size={16} /> GIF
+              </ToolIconBtn>
 
-      {errorMsg && <ErrorMsg style={{ marginTop: 6 }}>{errorMsg}</ErrorMsg>}
+              {canCommentWithAudio && (
+                <ToolIconBtn
+                  type="button"
+                  aria-label="Gravar resposta em áudio"
+                  onClick={() => setVoiceMode(true)}
+                  title="Exclusivo do autor da publicação"
+                >
+                  <Microphone size={16} /> Áudio (autor)
+                </ToolIconBtn>
+              )}
+
+              <Spacer />
+
+              {onDone && (
+                <ToolIconBtn type="button" data-cancel onClick={onDone}>
+                  Cancelar
+                </ToolIconBtn>
+              )}
+
+              <SubmitBtn
+                type="submit"
+                disabled={
+                  uploadMedia.isPending ||
+                  (!attachedMedia && content.trim().length === 0)
+                }
+              >
+                Responder
+              </SubmitBtn>
+            </ToolBar>
+          )}
+        </FormBox>
+
+        {!isCollapsed && showGifPicker && (
+          <GifPickerPopover
+            onSelectGif={({ url, key }) => {
+              setAttachedMedia({ type: PostCommentMediaType.GIF, url, key })
+              setShowGifPicker(false)
+            }}
+            onClose={() => setShowGifPicker(false)}
+          />
+        )}
+
+        {errorMsg && <ErrorMsg style={{ marginTop: 6 }}>{errorMsg}</ErrorMsg>}
       </ComposerMain>
     </ComposerLayout>
   )
@@ -552,11 +642,13 @@ function CommentRow({
   postId,
   canCommentWithAudio,
   reply,
+  hasNextSibling,
 }: {
   comment: PostCommentDto
   postId: string
   canCommentWithAudio: boolean
   reply?: boolean
+  hasNextSibling?: boolean
 }) {
   const user = useAuthStore((s) => s.user)
   const { open: openMedia } = useMediaViewer()
@@ -567,19 +659,28 @@ function CommentRow({
   const author = authorDisplay(comment.author)
   const isOwner = user?.id === comment.author.userId
   const canModerate = user?.type === UserType.ADMIN || user?.type === UserType.MODERATOR
+  const replies = comment.replies ?? []
+  const hasReplies = !reply && replies.length > 0
+  const showConnector = hasReplies || (!!reply && !!hasNextSibling)
 
-  return (
-    <CommentRowWrap $reply={reply}>
-      <Avatar to={author.href} $src={author.avatar} $small={reply}>
-        {!author.avatar && author.name.charAt(0).toUpperCase()}
-      </Avatar>
+  const row = (
+    <CommentRowWrap $reply={reply} $hasReplies={hasReplies}>
+      <AvatarRail>
+        <Avatar to={author.href} $src={author.avatar} $small={reply} $org={author.isOrg}>
+          {!author.avatar && author.name.charAt(0).toUpperCase()}
+        </Avatar>
+        {showConnector && <ThreadLine aria-hidden="true" />}
+      </AvatarRail>
 
       <Body>
         <Meta>
           <AuthorLink to={author.href}>{author.name}</AuthorLink>
+          {author.verified && <CheckCircle size={14} weight="fill" color="#2DC653" />}
+          {author.handle && <HandleText>{author.handle}</HandleText>}
           {comment.mediaType === PostCommentMediaType.AUDIO && (
             <AuthorBadge>🎙 Áudio do autor</AuthorBadge>
           )}
+          <HandleText>·</HandleText>
           <Time>{timeAgo(comment.createdAt)}</Time>
         </Meta>
 
@@ -647,22 +748,26 @@ function CommentRow({
             />
           </div>
         )}
-
-        {comment.replies && comment.replies.length > 0 && (
-          <RepliesWrap>
-            {comment.replies.map((r) => (
-              <CommentRow
-                key={r.id}
-                comment={r}
-                postId={postId}
-                canCommentWithAudio={canCommentWithAudio}
-                reply
-              />
-            ))}
-          </RepliesWrap>
-        )}
       </Body>
     </CommentRowWrap>
+  )
+
+  if (reply) return row
+
+  return (
+    <CommentThreadBlock>
+      {row}
+      {replies.map((r, idx) => (
+        <CommentRow
+          key={r.id}
+          comment={r}
+          postId={postId}
+          canCommentWithAudio={canCommentWithAudio}
+          reply
+          hasNextSibling={idx < replies.length - 1}
+        />
+      ))}
+    </CommentThreadBlock>
   )
 }
 
@@ -672,25 +777,27 @@ interface PostCommentsSectionProps {
   commentsCount: number
 }
 
-export function PostCommentsSection({ postId, canCommentWithAudio, commentsCount }: PostCommentsSectionProps) {
+export function PostCommentsSection({ postId, canCommentWithAudio }: PostCommentsSectionProps) {
   const user = useAuthStore((s) => s.user)
   const { data: comments, isLoading, isError, refetch } = usePostComments(postId)
 
   return (
-    <Wrap id="responder" aria-label="Respostas à publicação" style={{ scrollMarginTop: 124 }}>
-      <ConversationHeader><h2>Respostas</h2><span>{commentsCount}</span></ConversationHeader>
+    <Wrap id="responder" aria-label="Respostas à publicação" style={{ scrollMarginTop: 112 }}>
       {user ? (
         <CommentComposer postId={postId} canCommentWithAudio={canCommentWithAudio} />
       ) : (
-        <ConversationState>
-          <Link to="/entrar" style={{ fontWeight: 600 }}>Entre</Link> para comentar com texto, imagem ou GIF.
+        <ConversationState style={{ borderBottom: '1px solid var(--border, #E5E5E5)' }}>
+          <Link to="/entrar">Entre na sua conta</Link> para responder com texto, imagem ou GIF.
         </ConversationState>
       )}
 
       {isLoading ? (
         <ConversationState>Carregando respostas…</ConversationState>
       ) : isError ? (
-        <ConversationState>Não foi possível carregar as respostas. <MiniActBtn onClick={() => refetch()}>Tentar novamente</MiniActBtn></ConversationState>
+        <ConversationState>
+          Não foi possível carregar as respostas.{' '}
+          <MiniActBtn onClick={() => refetch()}>Tentar novamente</MiniActBtn>
+        </ConversationState>
       ) : comments && comments.length > 0 ? (
         <CommentList>
           {comments.map((c) => (

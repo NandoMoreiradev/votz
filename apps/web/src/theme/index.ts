@@ -51,32 +51,39 @@ const baseTokens = {
 export const lightTheme = {
   mode: 'light' as 'light' | 'dark',
   colors: {
-    primary: '#1A1A2E',    // Azul noite — seriedade, Estado, confiança
-    action: '#E63946',     // Vermelho vibrante — urgência, força cidadã, Brasil
-    positive: '#2DC653',   // Verde — problema resolvido, progresso
-    neutral: '#F4F4F4',    // Off-white — leitura, espaço, clareza
-    text: '#0D0D0D',       // Quase preto — legibilidade máxima
-    white: '#FFFFFF',      // Superfície de cards/modais/inputs
-    onAccent: '#FFFFFF',   // Branco puro sobre fundos coloridos (botões action/primary)
-    border: '#E5E5E5',
-    muted: '#6B7280',
+    primary: '#1A1A2E',                   // Azul noite — seriedade, Estado, confiança
+    primaryHover: '#262642',
+    primaryText: '#1A1A2E',               // Texto/contorno da cor primária com contraste garantido
+    action: '#E63946',                    // Vermelho vibrante — urgência, força cidadã, Brasil
+    actionHover: '#CC2F3B',
+    positive: '#2DC653',                  // Verde — problema resolvido, progresso
+    neutral: '#F6F7F9',                   // Fundo neutro limpo — leitura, espaço, clareza
+    text: '#0F1419',                      // Quase preto — legibilidade máxima
+    white: '#FFFFFF',                     // Superfície de cards/modais/inputs
+    onAccent: '#FFFFFF',                  // Branco puro sobre fundos coloridos (botões action/primary)
+    border: '#E5E8EE',
+    muted: '#5B6472',
     surface: '#FFFFFF',
-    surfaceHover: '#F9FAFB',
+    surfaceHover: '#F1F3F6',
+    chromeBg: 'rgba(255, 255, 255, 0.88)', // Navbar translúcida no tema claro
+    chromeSolid: '#FFFFFF',
+    chromeBorder: '#E5E8EE',
+    footerBg: '#11141C',                  // Rodapé institucional sóbrio
     // Estúdio: informação (azul) e atenção (âmbar), sempre com ícone e texto junto, nunca só a cor.
     info: '#2563EB',
     warning: '#B45309',
     // Verde mais escuro para texto sobre fundo verde claro (o verde da marca não tem contraste para letra pequena).
     positiveText: '#15803D',
-    borderStrong: '#D1D5DB',
+    borderStrong: '#CFD5E0',
     // Conversas: fundo cinza-azulado suave, balão próprio em tom claro do vermelho do Votz.
     chatBackground: '#EDEFF4',
     bubbleOwn: '#FFDDE0',
     bubblePeer: '#FFFFFF',
   },
   shadows: {
-    sm: '0 1px 3px rgba(0,0,0,0.08)',
-    md: '0 4px 12px rgba(0,0,0,0.10)',
-    lg: '0 8px 24px rgba(0,0,0,0.12)',
+    sm: '0 1px 3px rgba(15, 20, 25, 0.06)',
+    md: '0 4px 14px rgba(15, 20, 25, 0.09)',
+    lg: '0 10px 28px rgba(15, 20, 25, 0.12)',
   },
   ...baseTokens,
 }
@@ -84,29 +91,36 @@ export const lightTheme = {
 export const darkTheme: typeof lightTheme = {
   mode: 'dark',
   colors: {
-    primary: '#4B5799',    // Azul-noite elevado: alto contraste em superfícies escuras e legível com texto branco
-    action: '#F04D5A',     // Vermelho Votz com contraste calibrado para fundo escuro
+    primary: '#23293A',                   // Grafite azulado sóbrio (substitui o roxo lavado)
+    primaryHover: '#2E364D',
+    primaryText: '#DCE3F0',               // Texto/contorno claro de alto contraste sobre superfícies escuras
+    action: '#F04D5A',                    // Vermelho Votz calibrado para fundo escuro
+    actionHover: '#DC3B48',
     positive: '#2DC653',
-    neutral: '#0F111A',    // Fundo principal azul-noite profundo
-    text: '#F3F4F6',       // Texto principal de alta legibilidade
-    white: '#171A26',      // Superfície de cards/modais/inputs no modo escuro
-    onAccent: '#FFFFFF',   // Branco literal sobre botões coloridos
-    border: '#272C40',
-    muted: '#9CA3AF',
-    surface: '#171A26',
-    surfaceHover: '#1F2436',
+    neutral: '#0A0C10',                   // Obsidiana profunda — limpo e confortável
+    text: '#F3F4F6',                      // Texto principal de alta legibilidade
+    white: '#11141C',                     // Superfície elevada de cards/modais/inputs no modo escuro
+    onAccent: '#FFFFFF',                  // Branco literal sobre botões coloridos
+    border: '#222736',
+    muted: '#8E96A8',
+    surface: '#11141C',
+    surfaceHover: '#191E2A',
+    chromeBg: 'rgba(13, 16, 23, 0.88)',   // Navbar obsidiana translúcida
+    chromeSolid: '#0D1017',
+    chromeBorder: '#222736',
+    footerBg: '#0D1017',
     info: '#60A5FA',
     warning: '#FBBF24',
     positiveText: '#4ADE80',
-    borderStrong: '#38405C',
-    chatBackground: '#0C0E16',
+    borderStrong: '#323A4F',
+    chatBackground: '#0A0C10',
     bubbleOwn: '#4A1F26',
-    bubblePeer: '#1E2233',
+    bubblePeer: '#181C27',
   },
   shadows: {
-    sm: '0 1px 3px rgba(0,0,0,0.35)',
-    md: '0 4px 14px rgba(0,0,0,0.45)',
-    lg: '0 8px 28px rgba(0,0,0,0.55)',
+    sm: '0 1px 3px rgba(0, 0, 0, 0.40)',
+    md: '0 4px 16px rgba(0, 0, 0, 0.50)',
+    lg: '0 12px 32px rgba(0, 0, 0, 0.60)',
   },
   ...baseTokens,
 }
