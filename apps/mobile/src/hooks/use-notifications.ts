@@ -55,9 +55,30 @@ export function notificationSummary(n: MobileNotification): {
     case 'REPORT_REASSIGNED':
       return { label: `O relato ${reportTitle} foi reatribuído à sua equipe.`, route: reportRoute }
     case 'REPORT_DISPUTED':
-      return { label: `O autor contestou a resolução de ${reportTitle}.`, route: reportRoute }
-    case 'REPORT_UPDATE':
-      return { label: `Nova atualização oficial em ${reportTitle}.`, route: reportRoute }
+      return { label: `Contestaram a resolução de ${reportTitle}. Responda com provas no relato.`, route: reportRoute }
+    case 'REPORT_ADVOCATED': {
+      const org = typeof metadata?.orgName === 'string' && metadata.orgName.trim() ? metadata.orgName.trim() : 'Um político ou entidade'
+      return { label: `${org} avocou ${reportTitle} e assumiu o compromisso de acompanhar.`, route: reportRoute }
+    }
+    case 'REPORT_RESOLVED':
+      return metadata?.newStatus === 'ARCHIVED'
+        ? { label: `${reportTitle} foi arquivado. Não concorda? Você pode contestar em até 30 dias.`, route: reportRoute }
+        : { label: `${reportTitle} foi marcado como resolvido. Foi mesmo? Confirme ou conteste em até 30 dias.`, route: reportRoute }
+    case 'DISPUTE_PENDING_REVIEW':
+      return { label: `Nova contestação para decidir em ${reportTitle}.`, route: reportRoute }
+    case 'DISPUTE_DECIDED':
+      return metadata?.decision === 'REOPEN'
+        ? { label: `A moderação aceitou a contestação de ${reportTitle}. O relato voltou a andar.`, route: reportRoute }
+        : { label: `A moderação manteve a resolução de ${reportTitle}.`, route: reportRoute }
+    case 'ADVOCACY_DEADLINE_PASSED':
+      return { label: `O prazo prometido para ${reportTitle} venceu sem solução.`, route: reportRoute }
+    case 'REPORT_UPDATE': {
+      if (metadata?.confirmed === true) {
+        return { label: `Quem fez o relato confirmou que ${reportTitle} foi resolvido.`, route: reportRoute }
+      }
+      const org = typeof metadata?.orgName === 'string' && metadata.orgName.trim() ? `de ${metadata.orgName.trim()} ` : ''
+      return { label: `Nova atualização ${org}em ${reportTitle}.`, route: reportRoute }
+    }
     case 'STATUS_CHANGED': {
       const status =
         typeof metadata?.newStatus === 'string'
