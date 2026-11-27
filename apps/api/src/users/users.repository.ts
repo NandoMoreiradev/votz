@@ -68,6 +68,49 @@ const REPORT_LIST_SELECT = {
 export class UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  async searchPublic(query: string, handleQuery: string, page: number, limit: number) {
+    const where: Prisma.UserWhereInput = {
+      banned: false,
+      emailVerified: true,
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { username: { contains: handleQuery, mode: 'insensitive' } },
+      ],
+      AND: [
+        {
+          OR: [
+            { notificationPreference: { is: null } },
+            { notificationPreference: { is: { publicActivityVisible: true } } },
+          ],
+        },
+      ],
+    }
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          type: true,
+          verified: true,
+          avatarUrl: true,
+          bio: true,
+          _count: { select: { followerUsers: true } },
+        },
+        orderBy: [{ verified: 'desc' }, { name: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ])
+    const data = rows.map(({ _count, ...user }) => ({
+      ...user,
+      followersCount: _count.followerUsers,
+    }))
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
+  }
+
   findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },

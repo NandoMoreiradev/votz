@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { HandsClapping, UsersThree, Flag, LinkSimple, FileText } from '@phosphor-icons/react'
+import { ArrowUp, UsersThree, Flag, LinkSimple, FileText } from '@phosphor-icons/react'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType, legacyMediaItems } from '@votz/shared-types'
 import { MediaCarousel } from '../components/media/MediaCarousel'
@@ -1000,7 +1000,7 @@ export function ReportDetail() {
 
               <StatsStrip>
                 <Stat>
-                  <StatValue>{report.pressureScore.toFixed(0)}</StatValue>
+                  <StatValue>{Math.round(report.pressureScore)}</StatValue>
                   <StatLabel>Pressão</StatLabel>
                 </Stat>
                 <Stat>
@@ -1101,8 +1101,8 @@ export function ReportDetail() {
                   onClick={() => handleVote(VoteType.SUPPORT)}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <HandsClapping size={18} weight="duotone" />
-                    Apoiar
+                    <ArrowUp size={18} weight="bold" />
+                    {myVotes?.SUPPORT ? 'Apoiado' : 'Apoiar'}
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem' }}>
                     {report._count.votes}

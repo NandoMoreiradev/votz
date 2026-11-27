@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import styled, { keyframes, css } from 'styled-components'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Fire, Flag, HandsClapping, LinkSimple, UsersThree } from '@phosphor-icons/react'
+import { ArrowUp, Fire, Flag, LinkSimple, UsersThree } from '@phosphor-icons/react'
 import { AD_DELIVERY_LIMITS, adNeighborIds, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
@@ -13,6 +13,8 @@ import { PostComposer } from '../components/posts/PostComposer'
 import { PostCard } from '../components/posts/PostCard'
 import { SponsoredSlot } from '../components/ads/SponsoredSlot'
 import { SuggestedProfilesCard } from '../components/posts/SuggestedProfilesCard'
+import { FeedLeftSidebar } from '../components/posts/FeedLeftSidebar'
+import { FeedRightSidebar } from '../components/posts/FeedRightSidebar'
 import { FeaturedSurveyCard } from '../components/surveys/FeaturedSurveyCard'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
 import { FlagContentModal } from '../components/moderation/FlagContentModal'
@@ -206,22 +208,34 @@ const SegBtn = styled.button<{ $active?: boolean }>`
 `
 
 // ─── Styled: 3-column layout ──────────────────────────────────────────────────
-const Main = styled.main`
+const Main = styled.main<{ $social?: boolean }>`
   max-width: 1480px;
   margin: 0 auto;
-  padding: 24px 32px 64px;
+  padding: ${({ $social }) => ($social ? '20px 24px 64px' : '24px 32px 64px')};
   display: grid;
-  grid-template-columns: 240px 1fr 320px;
-  gap: 32px;
+  grid-template-columns: ${({ $social }) =>
+    $social ? '260px minmax(0, 620px) 340px' : '240px 1fr 320px'};
+  justify-content: ${({ $social }) => ($social ? 'center' : 'stretch')};
+  gap: ${({ $social }) => ($social ? '28px' : '32px')};
   align-items: start;
-  @media (max-width: 1180px) { grid-template-columns: 220px 1fr; }
-  @media (max-width: 820px)  { grid-template-columns: 1fr; padding: 16px; gap: 16px; }
+  @media (max-width: 1220px) {
+    grid-template-columns: ${({ $social }) => ($social ? '240px minmax(0, 640px)' : '220px 1fr')};
+  }
+  @media (max-width: 820px) {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 16px;
+  }
 `
 
 // ─── Styled: Sidebar ──────────────────────────────────────────────────────────
-const Sidebar = styled.aside`
+const Sidebar = styled.aside<{ $social?: boolean }>`
   position: sticky;
-  top: 120px;
+  top: ${({ $social }) => ($social ? '76px' : '120px')};
+  max-height: ${({ $social }) => ($social ? 'calc(100vh - 92px)' : 'none')};
+  overflow-y: ${({ $social }) => ($social ? 'auto' : 'visible')};
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
   @media (max-width: 820px) { display: none; }
 `
 const FilterBlock = styled.div`margin-bottom: 28px;`
@@ -690,13 +704,17 @@ const EmptyState = styled.div`
 `
 
 // ─── Styled: Right rail ───────────────────────────────────────────────────────
-const Rail = styled.aside`
+const Rail = styled.aside<{ $social?: boolean }>`
   position: sticky;
-  top: 134px;
+  top: ${({ $social }) => ($social ? '76px' : '120px')};
+  max-height: ${({ $social }) => ($social ? 'calc(100vh - 92px)' : 'none')};
+  overflow-y: ${({ $social }) => ($social ? 'auto' : 'visible')};
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
   display: flex;
   flex-direction: column;
   gap: 16px;
-  @media (max-width: 1180px) { display: none; }
+  @media (max-width: 1220px) { display: none; }
 `
 const RailCard = styled.div`
   background: ${({ theme }) => theme.colors.white};
@@ -1065,8 +1083,9 @@ function FeedCard({
             <SBadgeDot $status={report.status} />
             {STATUS_CFG[report.status].label}
           </SBadge>
-          <Pill $high={report.pressureScore >= 7}>
-            Pressão <b>{report.pressureScore.toFixed(1)}</b>
+          <Pill $high={report.pressureScore >= 7} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Fire size={13} weight="fill" aria-hidden="true" />
+            Pressão <b>{Math.round(report.pressureScore)}</b>
           </Pill>
           {report.advocacy && (
             <Pill style={{ background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E40AF', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -1086,8 +1105,8 @@ function FeedCard({
 
         <Actions>
           <ActBtn $active={isSupport} onClick={e => handleVote(e, VoteType.SUPPORT)}>
-            <HandsClapping size={16} weight="duotone" />
-            Apoiar <span className="ct">{fmtCount(report._count.votes)}</span>
+            <ArrowUp size={16} weight="bold" />
+            {isSupport ? 'Apoiado' : 'Apoiar'} <span className="ct">{fmtCount(report._count.votes)}</span>
           </ActBtn>
 
           <ActBtn $active={isMeToo} onClick={e => handleVote(e, VoteType.ME_TOO)}>
@@ -1198,6 +1217,7 @@ export function Home() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, activeContext } = useAuthStore()
+  const composerWrapRef = useRef<HTMLDivElement>(null)
 
   const [feedTab, setFeedTab] = useState<'publicacoes' | 'relatos'>(() =>
     resolveInitialTab(searchParams),
@@ -1359,59 +1379,28 @@ export function Home() {
       </Subheader>
       )}
 
-      <Main>
+      <Main $social={feedTab === 'publicacoes'}>
         {/* ── Sidebar ── */}
-        <Sidebar>
+        <Sidebar $social={feedTab === 'publicacoes'}>
           {feedTab === 'publicacoes' ? (
-            <>
-              <FilterBlock>
-                <FilterLabel><span>Autor</span></FilterLabel>
-                <ChipsWrap>
-                  <Chip $active={!postAuthorType} onClick={() => setPostAuthorType(undefined)}>Todos</Chip>
-                  <Chip $active={postAuthorType === 'CITIZEN'} onClick={() => setPostAuthorType('CITIZEN')}>Cidadãos</Chip>
-                  <Chip $active={postAuthorType === 'POLITICIAN'} onClick={() => setPostAuthorType('POLITICIAN')}>Políticos</Chip>
-                  <Chip $active={postAuthorType === 'ENTITY'} onClick={() => setPostAuthorType('ENTITY')}>Entidades</Chip>
-                </ChipsWrap>
-              </FilterBlock>
-
-              <FilterBlock>
-                <FilterLabel><span>Conteúdo</span></FilterLabel>
-                <RadioList>
-                  <RadioOpt>
-                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'all'} onChange={() => setPostFilterKind('all')} />
-                    <span className="lbl">Tudo</span>
-                  </RadioOpt>
-                  <RadioOpt>
-                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'advocacy'} onChange={() => setPostFilterKind('advocacy')} />
-                    <span className="lbl">Avocações oficiais</span>
-                  </RadioOpt>
-                  <RadioOpt>
-                    <input type="radio" name="postFilterKind" checked={postFilterKind === 'polls'} onChange={() => setPostFilterKind('polls')} />
-                    <span className="lbl">Com enquetes</span>
-                  </RadioOpt>
-                </RadioList>
-              </FilterBlock>
-
-              <FilterBlock>
-                <FilterLabel>
-                  <span>Localização</span>
-                  {(city || uf) && <ClearBtn onClick={() => { setCity(''); setUf('') }}>Limpar</ClearBtn>}
-                </FilterLabel>
-                <LocationRow>
-                  <FilterStateSelect
-                    value={uf}
-                    onChange={(v) => { setUf(v); setCity('') }}
-                    placeholder="Todos os estados"
-                  />
-                  <FilterCitySelect
-                    uf={uf}
-                    value={city}
-                    onChange={setCity}
-                    placeholder="Todas as cidades"
-                  />
-                </LocationRow>
-              </FilterBlock>
-            </>
+            <FeedLeftSidebar
+              reportsTotal={data?.meta.total}
+              postAuthorType={postAuthorType}
+              onChangeAuthorType={setPostAuthorType}
+              postFilterKind={postFilterKind}
+              onChangeFilterKind={setPostFilterKind}
+              uf={uf}
+              city={city}
+              onChangeUf={setUf}
+              onChangeCity={setCity}
+              onSwitchToRelatos={() => switchFeedTab('relatos')}
+              onCompose={() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+                setTimeout(() => {
+                  composerWrapRef.current?.querySelector('textarea')?.focus()
+                }, 150)
+              }}
+            />
           ) : (
             <>
               <FilterBlock>
@@ -1514,16 +1503,18 @@ export function Home() {
               </AlgoTabBtn>
             </AlgoTabs>
 
-            <PostComposer
-              quotePost={quoteTarget}
-              onClearQuote={() => setQuoteTarget(null)}
-              onCreated={(created) => {
-                setRecentPostId(created.id)
-                setTimeout(() => {
-                  setRecentPostId((curr) => (curr === created.id ? null : curr))
-                }, 3000)
-              }}
-            />
+            <div ref={composerWrapRef}>
+              <PostComposer
+                quotePost={quoteTarget}
+                onClearQuote={() => setQuoteTarget(null)}
+                onCreated={(created) => {
+                  setRecentPostId(created.id)
+                  setTimeout(() => {
+                    setRecentPostId((curr) => (curr === created.id ? null : curr))
+                  }, 3000)
+                }}
+              />
+            </div>
 
             <FeaturedSurveyCard />
 
@@ -1631,63 +1622,41 @@ export function Home() {
         )}
 
         {/* ── Rail ── */}
-        <Rail>
-          {trendingTopics && trendingTopics.length > 0 && (
-            <RailCard>
-              <RailHead>
-                <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Fire size={15} weight="fill" color="#E63946" /> Pautas em Alta
-                </h3>
-              </RailHead>
-              <div>
-                {trendingTopics.map((t) => (
-                  <TopicRow key={t.id} to={`/pautas/${t.slug}`}>
-                    <div>
-                      <TopicTag>{t.displayTag}</TopicTag>
-                      <TopicMeta>
-                        {t.postsCount} posts · {t.reportsCount} relatos · {t.debatesCount} debates
-                      </TopicMeta>
-                    </div>
-                    <TopicMeta>→</TopicMeta>
-                  </TopicRow>
-                ))}
-              </div>
-            </RailCard>
-          )}
-
+        <Rail $social={feedTab === 'publicacoes'}>
           {feedTab === 'publicacoes' ? (
-            <RailCard>
-              <RailHead>
-                <h3>Acompanhe também</h3>
-              </RailHead>
-              <div>
-                <TopicRow to="/?tab=relatos" onClick={(e) => { e.preventDefault(); switchFeedTab('relatos') }}>
-                  <div>
-                    <TopicTag>Relatos da comunidade</TopicTag>
-                    <TopicMeta>
-                      {data ? `${data.meta.total.toLocaleString('pt-BR')} relatos ativos` : 'Problemas e cobranças'}
-                    </TopicMeta>
-                  </div>
-                  <TopicMeta>→</TopicMeta>
-                </TopicRow>
-                <TopicRow to="/mapa">
-                  <div>
-                    <TopicTag>Mapa de relatos</TopicTag>
-                    <TopicMeta>Visualizar ocorrências por região</TopicMeta>
-                  </div>
-                  <TopicMeta>→</TopicMeta>
-                </TopicRow>
-                <TopicRow to="/politicos">
-                  <div>
-                    <TopicTag>Mandatômetro</TopicTag>
-                    <TopicMeta>Desempenho de políticos</TopicMeta>
-                  </div>
-                  <TopicMeta>→</TopicMeta>
-                </TopicRow>
-              </div>
-            </RailCard>
+            <FeedRightSidebar
+              trendingTopics={trendingTopics}
+              topReports={topByPressure}
+              politicians={politicians}
+              suggestions={postsData?.suggestions}
+              city={city || undefined}
+              uf={uf || undefined}
+              onSwitchToRelatos={() => switchFeedTab('relatos')}
+            />
           ) : (
             <>
+              {trendingTopics && trendingTopics.length > 0 && (
+                <RailCard>
+                  <RailHead>
+                    <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Fire size={15} weight="fill" color="#E63946" /> Pautas em Alta
+                    </h3>
+                  </RailHead>
+                  <div>
+                    {trendingTopics.map((t) => (
+                      <TopicRow key={t.id} to={`/pautas/${t.slug}`}>
+                        <div>
+                          <TopicTag>{t.displayTag}</TopicTag>
+                          <TopicMeta>
+                            {t.postsCount} posts · {t.reportsCount} relatos · {t.debatesCount} debates
+                          </TopicMeta>
+                        </div>
+                        <TopicMeta>→</TopicMeta>
+                      </TopicRow>
+                    ))}
+                  </div>
+                </RailCard>
+              )}
               <RailCard>
                 <MiniMapBox to="/mapa">
                   <MiniMapGrid />
@@ -1717,7 +1686,7 @@ export function Home() {
                           <AltaTitle>{r.title}</AltaTitle>
                           <AltaMeta>
                             <span>{CAT_CFG[r.category].label}</span>
-                            <span className="pr">Pressão <b>{r.pressureScore.toFixed(1)}</b></span>
+                            <span className="pr">Pressão <b>{Math.round(r.pressureScore)}</b></span>
                           </AltaMeta>
                         </AltaContent>
                       </AltaItem>

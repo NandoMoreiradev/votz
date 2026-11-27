@@ -28,6 +28,17 @@ export class UsersService {
     @Optional() private readonly adsViewerCache?: AdsViewerCacheService,
   ) {}
 
+  async search(rawQuery: string, page = 1, limit = 15) {
+    const query = rawQuery.trim().slice(0, 100)
+    const handleQuery = query.replace(/^@+/, '')
+    const safePage = Math.max(1, Math.floor(page) || 1)
+    const safeLimit = Math.min(Math.max(1, Math.floor(limit) || 15), 25)
+    if (handleQuery.length < 2) {
+      return { data: [], meta: { page: safePage, limit: safeLimit, total: 0, totalPages: 0 } }
+    }
+    return this.repo.searchPublic(query, handleQuery, safePage, safeLimit)
+  }
+
   async findById(id: string) {
     const user = await this.repo.findByIdWithStats(id)
     if (!user) throw new NotFoundException('User not found')

@@ -1,4 +1,5 @@
 import styled from 'styled-components'
+import { Fire } from '@phosphor-icons/react'
 
 const MAX_SCORE = 200
 
@@ -43,6 +44,9 @@ const ScoreText = styled.span`
 `
 
 const PressureLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.6875rem;
   font-weight: ${({ theme }) => theme.fontWeights.semibold};
   letter-spacing: 0.05em;
@@ -63,8 +67,11 @@ export function PressureBar({ score, showLabel = true }: PressureBarProps) {
     <Wrapper>
       {showLabel && (
         <Label>
-          <PressureLabel>Pressão</PressureLabel>
-          <ScoreText>{score.toFixed(0)} pts</ScoreText>
+          <PressureLabel>
+            <Fire size={13} weight="fill" color={color} aria-hidden="true" />
+            Pressão
+          </PressureLabel>
+          <ScoreText>{Math.round(score)} pts</ScoreText>
         </Label>
       )}
       <Track>

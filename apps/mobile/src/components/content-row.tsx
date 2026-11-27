@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Pressable, Share, Text, View } from 'react-native'
 import { router } from 'expo-router'
+import { useQuery } from '@tanstack/react-query'
 import Heart from 'lucide-react-native/icons/heart'
 import MessageCircle from 'lucide-react-native/icons/message-circle'
 import ArrowUp from 'lucide-react-native/icons/arrow-up'
@@ -9,7 +10,7 @@ import Share2 from 'lucide-react-native/icons/share-2'
 import BadgeCheck from 'lucide-react-native/icons/badge-check'
 import Flame from 'lucide-react-native/icons/flame'
 import type { PostDto, Report, ProfileKind } from '../lib/types'
-import { useTogglePostLike, useTogglePostRepost } from '../hooks/use-content'
+import { useSupportReport, useTogglePostLike, useTogglePostRepost } from '../hooks/use-content'
 import { errorMessage } from '../lib/api'
 import { formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
@@ -59,7 +60,14 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
     <MediaCarousel urls={post.media} items={post.mediaItems} limit={4} maxHeight={FEED_MEDIA_MAX_HEIGHT} />
     <ContextNoteCard type="POST" id={post.id} />
     {post.mentionedReport && <Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato mencionado: ${post.mentionedReport.title}`} onPress={(event) => { event.stopPropagation(); router.push({ pathname: '/report/[id]', params: { id: post.mentionedReport!.id } }) }} style={{ borderWidth: 0.5, borderColor: colors.border, borderRadius: 12, padding: 12, marginTop: 10, gap: 4 }}>
-      <Text style={{ fontSize: 11, color: colors.action, fontFamily: theme.fonts.medium }}>RELATO · {statusLabels[post.mentionedReport.status]}</Text><Text style={[styles.text, { color: colors.text, fontFamily: theme.fonts.medium }]}>{post.mentionedReport.title}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+        <Text style={{ fontSize: 11, color: colors.action, fontFamily: theme.fonts.medium }}>RELATO · {statusLabels[post.mentionedReport.status]}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Flame size={12} color={post.mentionedReport.pressureScore >= 7 ? '#E63946' : colors.muted} />
+          <Text style={{ fontSize: 11, color: post.mentionedReport.pressureScore >= 7 ? '#E63946' : colors.muted, fontFamily: theme.fonts.medium }}>Pressão {Math.round(post.mentionedReport.pressureScore)}</Text>
+        </View>
+      </View>
+      <Text style={[styles.text, { color: colors.text, fontFamily: theme.fonts.medium }]}>{post.mentionedReport.title}</Text>
     </Pressable>}
     {post.quotePost && <Pressable accessibilityRole="button" accessibilityLabel="Abrir publicação citada" onPress={(event) => { event.stopPropagation(); router.push({ pathname: '/post/[id]', params: { id: post.quotePost!.id } }) }} style={{ borderWidth: 0.5, borderColor: colors.border, borderRadius: 12, padding: 12, marginTop: 10 }}><Text style={{ fontFamily: theme.fonts.medium, color: colors.primary, marginBottom: 4 }}>{post.quotePost.author.orgName || post.quotePost.author.name}</Text><Text numberOfLines={3} style={[styles.text, { color: colors.text }]}>{post.quotePost.content}</Text></Pressable>}
     {post.poll && !detail && <View style={{ borderWidth: 0.5, borderColor: colors.border, borderRadius: 12, padding: 12, marginTop: 10, gap: 5 }}><Text style={[styles.text, { color: colors.text, fontFamily: theme.fonts.medium }]}>{post.poll.question || 'Enquete da comunidade'}</Text><Text style={{ fontSize: 12, color: colors.muted }}>{formatCount(post.poll.totalVotes, 'voto', 'votos')} · Ver enquete</Text></View>}
@@ -86,12 +94,41 @@ export function PostCard({ post, detail = false }: { post: PostDto; detail?: boo
 }
 export function ReportCard({ report, detail = false }: { report: Report; detail?: boolean }) {
   const { colors, theme } = useAppTheme()
+  const user = useSession((s) => s.user)
+  const support = useSupportReport(report.id, user?.id)
+  const { data: myVotes } = useQuery<{ SUPPORT: boolean; ME_TOO: boolean }>({
+    queryKey: ['report-votes', report.id, user?.id],
+    queryFn: () => Promise.resolve({ SUPPORT: false, ME_TOO: false }),
+    enabled: false,
+  })
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null)
+  const supported = !!myVotes?.SUPPORT
+  const highPressure = report.pressureScore >= 7
   const name = report.anonymous ? 'Relato anônimo' : report.author?.name || 'Cidadão'
   const open = () => router.push({ pathname: '/report/[id]', params: { id: report.id } })
   const openProfile = report.author && !report.anonymous ? () => router.push({ pathname: '/profile/[kind]/[id]', params: { kind: 'users', id: report.author!.id } }) : undefined
+  const handleSupport = () => {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+    if (!support.isPending) {
+      support.mutate(undefined, {
+        onError: (error) => setNotice({ title: 'Não foi possível apoiar', message: errorMessage(error) }),
+      })
+    }
+  }
   const cardShell = { backgroundColor: colors.surface, borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: colors.border } as const
   const body = <>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 4 }}><Text style={{ fontSize: 10, fontFamily: theme.fonts.medium, color: colors.action }}>RELATO</Text><Text style={{ fontSize: 11, color: report.status === 'RESOLVED' ? colors.positive : colors.muted }}>{statusLabels[report.status]}</Text>{!!report.city && <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted, flexShrink: 1 }}>· {report.city}</Text>}</View>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 4, flexWrap: 'wrap' }}>
+      <Text style={{ fontSize: 10, fontFamily: theme.fonts.medium, color: colors.action }}>RELATO</Text>
+      <Text style={{ fontSize: 11, color: report.status === 'RESOLVED' ? colors.positive : colors.muted }}>{statusLabels[report.status]}</Text>
+      {!!report.city && <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted, flexShrink: 1 }}>· {report.city}</Text>}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: highPressure ? '#FEE2E2' : colors.soft }}>
+        <Flame size={11} color={highPressure ? '#E63946' : colors.muted} />
+        <Text style={{ fontSize: 11, fontFamily: theme.fonts.medium, color: highPressure ? '#991B1B' : colors.muted }}>Pressão {Math.round(report.pressureScore)}</Text>
+      </View>
+    </View>
     <Text style={{ fontFamily: theme.fonts.heading, fontSize: detail ? 23 : 17, lineHeight: detail ? 29 : 23, color: colors.primary }}>{report.title}</Text>
     <Text numberOfLines={detail ? undefined : 3} style={[styles.text, { color: colors.text, marginTop: 5 }]}>{report.description}</Text>
     <MediaCarousel urls={report.media} items={report.mediaItems} limit={5} />
@@ -101,11 +138,12 @@ export function ReportCard({ report, detail = false }: { report: Report; detail?
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Pressable disabled={!openProfile} onPress={openProfile} accessibilityRole={openProfile ? 'button' : undefined} accessibilityLabel={`Ver perfil de ${name}`}><Avatar name={name} uri={report.anonymous ? null : report.author?.avatarUrl} size={40} /></Pressable>
       <View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><Author name={name} time={report.createdAt} onPress={openProfile} /></View><View style={{ marginRight: -8, marginVertical: -8 }}><ContentMenu kind="report" id={report.id} ownerId={report.anonymous ? null : report.author?.id} text={`${report.title}\n\n${report.description}`} /></View></View>{!detail && <><Pressable accessibilityRole="button" accessibilityLabel={`Abrir relato: ${report.title}`} onPress={open}>{body}</Pressable><View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-        <Action label={formatCount(report._count.votes, 'apoio', 'apoios')} icon={<ArrowUp size={19} color={colors.muted} />} count={report._count.votes} onPress={open} />
+        <Action label={`${supported ? 'Retirar apoio' : 'Apoiar relato'} · ${formatCount(report._count.votes, 'apoio', 'apoios')}`} icon={<ArrowUp size={19} color={supported ? colors.action : colors.muted} />} count={report._count.votes} active={supported} disabled={support.isPending} onPress={handleSupport} />
         <Action label={formatCount(report._count.comments, 'comentário', 'comentários')} icon={<MessageCircle size={18} color={colors.muted} />} count={report._count.comments} onPress={() => router.push({ pathname: '/report/[id]', params: { id: report.id, reply: '1' } })} />
         <Action label="Compartilhar relato" icon={<Share2 size={18} color={colors.muted} />} onPress={() => { void Share.share({ message: `${report.title}\n\n${report.description}\n\nVotz` }).catch(() => {}) }} />
       </View></> }</View>
     </View>
     {detail && <View style={{ marginTop: 10 }}>{body}</View>}
+    <ConfirmModal visible={!!notice} title={notice?.title ?? ''} message={notice?.message} onClose={() => setNotice(null)} />
   </View>
 }

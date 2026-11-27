@@ -1,5 +1,6 @@
 import styled from 'styled-components'
 import { Link } from 'react-router-dom'
+import { ArrowUp, ChatCircle } from '@phosphor-icons/react'
 import { Report } from '../../types/api'
 import { CategoryBadge, StatusBadge } from '../ui/Badge'
 import { PressureBar } from '../ui/PressureBar'
@@ -111,9 +112,9 @@ export function ReportCard({ report }: ReportCardProps) {
       <PressureBar score={report.pressureScore} />
 
       <Footer>
-        <Stat>▲ {report._count.votes}</Stat>
+        <Stat><ArrowUp size={14} weight="bold" aria-hidden="true" /> {report._count.votes}</Stat>
         <Dot>·</Dot>
-        <Stat>💬 {report._count.comments}</Stat>
+        <Stat><ChatCircle size={14} aria-hidden="true" /> {report._count.comments}</Stat>
         <Ago>{timeAgo(report.createdAt)}</Ago>
       </Footer>
     </Card>

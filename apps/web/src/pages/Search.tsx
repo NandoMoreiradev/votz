@@ -7,14 +7,16 @@ import { useReports } from '../hooks/useReports'
 import { usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
 import { useCompanies } from '../hooks/useCompanies'
+import { useSearchUsers } from '../hooks/useUser'
 
-type Kind = 'relatos' | 'politicos' | 'entidades' | 'empresas'
+type Kind = 'relatos' | 'politicos' | 'entidades' | 'empresas' | 'pessoas'
 
 const TABS: readonly { value: Kind; label: string; placeholder: string; empty: string }[] = [
   { value: 'relatos', label: 'Relatos', placeholder: 'Buscar relatos por título ou descrição', empty: 'Nenhum relato encontrado.' },
   { value: 'politicos', label: 'Políticos', placeholder: 'Buscar políticos pelo nome', empty: 'Nenhum político encontrado.' },
   { value: 'entidades', label: 'Entidades', placeholder: 'Buscar entidades pelo nome', empty: 'Nenhuma entidade encontrada.' },
   { value: 'empresas', label: 'Empresas', placeholder: 'Buscar empresas pelo nome', empty: 'Nenhuma empresa encontrada.' },
+  { value: 'pessoas', label: 'Pessoas', placeholder: 'Buscar cidadãos por nome ou @usuário', empty: 'Nenhuma pessoa encontrada.' },
 ]
 const STATUS: Record<string, string> = {
   OPEN: 'Aberto', UNDER_REVIEW: 'Em análise', IN_PROGRESS: 'Em andamento', RESOLVED: 'Resolvido', DISPUTED: 'Contestado', ARCHIVED: 'Arquivado',
@@ -260,11 +262,13 @@ export function Search() {
   }
 
   const search = debounced || undefined
+  const peopleQueryReady = debounced.replace(/^@+/, '').length >= 2
   const reports = useReports({ search, page, limit: 15, enabled: kind === 'relatos' })
   const politicians = usePoliticians({ search, page, enabled: kind === 'politicos' })
   const entities = useEntities({ search, page, enabled: kind === 'entidades' })
   const companies = useCompanies({ search, page, enabled: kind === 'empresas' })
-  const active = { relatos: reports, politicos: politicians, entidades: entities, empresas: companies }[kind]
+  const people = useSearchUsers({ search, page, limit: 15, enabled: kind === 'pessoas' })
+  const active = { relatos: reports, politicos: politicians, entidades: entities, empresas: companies, pessoas: people }[kind]
   const meta = active.data?.meta
   const tab = TABS.find((item) => item.value === kind)!
 
@@ -274,7 +278,7 @@ export function Search() {
       <Column>
         <Header>
           <Title>Buscar</Title>
-          <Subtitle>Encontre relatos, políticos, entidades e empresas.</Subtitle>
+          <Subtitle>Encontre relatos, políticos, entidades, empresas e pessoas.</Subtitle>
         </Header>
 
         <SearchBar role="search" onSubmit={(event) => event.preventDefault()}>
@@ -305,15 +309,18 @@ export function Search() {
           ))}
         </Tabs>
 
-        {!active.isLoading && !active.isError && !!meta && meta.total > 0 && (
+        {kind === 'pessoas' && !peopleQueryReady && (
+          <Notice>Digite pelo menos 2 caracteres do nome ou @usuário para buscar pessoas.</Notice>
+        )}
+        {!(kind === 'pessoas' && !peopleQueryReady) && !active.isLoading && !active.isError && !!meta && meta.total > 0 && (
           <Summary>
             {meta.total.toLocaleString('pt-BR')} {meta.total === 1 ? 'resultado' : 'resultados'}
             {debounced ? ` para “${debounced}”` : ''}
           </Summary>
         )}
-        {active.isLoading && <Notice>Buscando…</Notice>}
-        {active.isError && <Notice>Não foi possível buscar agora. Tente de novo em instantes.</Notice>}
-        {!active.isLoading && !active.isError && meta?.total === 0 && <Notice>{tab.empty}</Notice>}
+        {!(kind === 'pessoas' && !peopleQueryReady) && active.isLoading && <Notice>Buscando…</Notice>}
+        {!(kind === 'pessoas' && !peopleQueryReady) && active.isError && <Notice>Não foi possível buscar agora. Tente de novo em instantes.</Notice>}
+        {!(kind === 'pessoas' && !peopleQueryReady) && !active.isLoading && !active.isError && meta?.total === 0 && <Notice>{tab.empty}</Notice>}
 
         <Results>
         {kind === 'relatos' && reports.data?.data.map((report) => (
@@ -367,6 +374,20 @@ export function Search() {
                 <span>{SECTOR[company.sector] ?? company.sector}</span>
                 {company.tradeName && company.legalName !== company.tradeName && <span>{company.legalName}</span>}
               </Meta>
+            </Body>
+          </Row>
+        ))}
+
+        {kind === 'pessoas' && peopleQueryReady && people.data?.data.map((person) => (
+          <Row key={person.id} to={`/perfil/${person.id}`}>
+            <Avatar $src={person.avatarUrl}>{!person.avatarUrl && person.name.charAt(0).toUpperCase()}</Avatar>
+            <Body>
+              <Name>{person.name}{person.verified && <SealCheck size={15} weight="fill" aria-label="Perfil verificado" />}</Name>
+              <Meta>
+                {person.username && <span>@{person.username}</span>}
+                <span>{person.followersCount.toLocaleString('pt-BR')} {person.followersCount === 1 ? 'seguidor' : 'seguidores'}</span>
+              </Meta>
+              {person.bio && <Snippet>{person.bio}</Snippet>}
             </Body>
           </Row>
         ))}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
+import { ThumbsUp, ThumbsDown } from '@phosphor-icons/react'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, PropostaStatusBadge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -460,7 +461,8 @@ export function PropostaDetail() {
                   onClick={() => handleVote(true)}
                   disabled={!canVote || votando || removendo}
                 >
-                  ▲ Apoiar
+                  <ThumbsUp size={16} weight="bold" aria-hidden="true" />
+                  Apoiar
                 </VoteBtn>
                 <VoteBtn
                   $variant="rejeicao"
@@ -468,7 +470,8 @@ export function PropostaDetail() {
                   onClick={() => handleVote(false)}
                   disabled={!canVote || votando || removendo}
                 >
-                  ▼ Rejeitar
+                  <ThumbsDown size={16} weight="bold" aria-hidden="true" />
+                  Rejeitar
                 </VoteBtn>
                 {!user && (
                   <span style={{ fontSize: '0.8125rem', color: '#9CA3AF' }}>
@@ -477,8 +480,8 @@ export function PropostaDetail() {
                 )}
               </VoteRow>
               <VoteStats>
-                <VoteStat $color="#2DC653">▲ {proposta.totalApoios} apoios</VoteStat>
-                <VoteStat $color="#E63946">▼ {proposta.totalRejeicoes} rejeições</VoteStat>
+                <VoteStat $color="#2DC653" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ThumbsUp size={14} weight="bold" aria-hidden="true" /> {proposta.totalApoios} apoios</VoteStat>
+                <VoteStat $color="#E63946" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ThumbsDown size={14} weight="bold" aria-hidden="true" /> {proposta.totalRejeicoes} rejeições</VoteStat>
               </VoteStats>
               {total > 0 && (
                 <VoteBarTrack>

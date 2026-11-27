@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import ArrowUp from 'lucide-react-native/icons/arrow-up'
+import Flame from 'lucide-react-native/icons/flame'
 import Users from 'lucide-react-native/icons/users'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import AlertTriangle from 'lucide-react-native/icons/alert-triangle'
@@ -545,11 +546,28 @@ export function ReportDetailPanel({ report }: { report: Report }) {
           </Pressable>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>
-            Pressão: <Text style={{ fontFamily: theme.fonts.medium, color: colors.primary }}>{Math.round(report.pressureScore)}</Text> · {formatCount(report._count.comments, 'comentário', 'comentários')}
-          </Text>
-        </View>
+        {(() => {
+          const pressurePct = Math.min((report.pressureScore / 200) * 100, 100)
+          const pressureColor = report.pressureScore >= 120 ? '#E63946' : report.pressureScore >= 60 ? '#F59E0B' : '#9CA3AF'
+          return (
+            <View style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Flame size={14} color={pressureColor} />
+                  <Text style={{ color: colors.muted, fontSize: 11, fontFamily: theme.fonts.medium, letterSpacing: 0.6 }}>
+                    PRESSÃO
+                  </Text>
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  <Text style={{ fontFamily: theme.fonts.medium, color: colors.primary }}>{Math.round(report.pressureScore)} pts</Text> · {formatCount(report._count.comments, 'comentário', 'comentários')}
+                </Text>
+              </View>
+              <View style={{ height: 4, borderRadius: 999, backgroundColor: colors.border, overflow: 'hidden' }}>
+                <View style={{ height: '100%', width: `${pressurePct}%`, borderRadius: 999, backgroundColor: pressureColor }} />
+              </View>
+            </View>
+          )
+        })()}
 
         <ErrorText message={voteMut.isError ? errorMessage(voteMut.error) : undefined} />
 

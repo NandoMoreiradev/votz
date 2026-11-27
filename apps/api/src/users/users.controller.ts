@@ -78,6 +78,21 @@ export class UsersController {
   }
 
   @Public()
+  @Get('search')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Search public citizen accounts by name or @username (min 2 chars)' })
+  @ApiQuery({ name: 'q', required: true, example: 'maria' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
+  search(
+    @Query('q') q = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '15',
+  ) {
+    return this.usersService.search(q, Number(page) || 1, Math.min(Math.max(Number(limit) || 15, 1), 25))
+  }
+
+  @Public()
   @Get(':id')
   @ApiOperation({ summary: 'Get public user profile' })
   findById(@Param('id') id: string) {

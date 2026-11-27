@@ -21,12 +21,17 @@ export function useAction(path: string, invalidate: string[], body?: unknown) {
     await Promise.all(invalidate.map((key) => client.invalidateQueries({ queryKey: [key] })))
   } })
 }
-export type SearchKind = 'reports' | 'politicians' | 'entities' | 'companies'
-/** Busca da tela Explorar: relatos, políticos, entidades e empresas usam o mesmo parâmetro `search` da API. */
+export type SearchKind = 'reports' | 'politicians' | 'entities' | 'companies' | 'users'
+/** Busca da tela Explorar: relatos, políticos, entidades, empresas e pessoas (cidadãos com mínimo de 2 caracteres). */
 export function useDirectory<T = PublicProfile>(kind: SearchKind, search: string) {
+  const ready = kind !== 'users' || search.trim().replace(/^@+/, '').length >= 2
   return useInfiniteQuery({
     queryKey: [kind, 'directory', search], initialPageParam: 1,
-    queryFn: ({ pageParam, signal }) => api<Page<T>>(`/${kind}?page=${pageParam}&limit=20&search=${encodeURIComponent(search)}`, { signal }),
+    enabled: ready,
+    queryFn: ({ pageParam, signal }) =>
+      kind === 'users'
+        ? api<Page<T>>(`/users/search?page=${pageParam}&limit=20&q=${encodeURIComponent(search)}`, { signal })
+        : api<Page<T>>(`/${kind}?page=${pageParam}&limit=20&search=${encodeURIComponent(search)}`, { signal }),
     getNextPageParam: (last) => last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined,
   })
 }

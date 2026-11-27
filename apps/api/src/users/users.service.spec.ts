@@ -18,6 +18,7 @@ describe('UsersService', () => {
 
   beforeEach(() => {
     repo = {
+      searchPublic: jest.fn(),
       findByIdWithStats: jest.fn(),
       findMe: jest.fn(),
       findById: jest.fn(),
@@ -49,6 +50,30 @@ describe('UsersService', () => {
   })
 
   afterEach(() => jest.restoreAllMocks())
+
+  describe('search', () => {
+    it('returns empty without hitting repository when query has fewer than 2 chars', async () => {
+      await expect(service.search('a', 1, 15)).resolves.toEqual({
+        data: [],
+        meta: { page: 1, limit: 15, total: 0, totalPages: 0 },
+      })
+      await expect(service.search('@a', 1, 15)).resolves.toEqual({
+        data: [],
+        meta: { page: 1, limit: 15, total: 0, totalPages: 0 },
+      })
+      expect(repo.searchPublic).not.toHaveBeenCalled()
+    })
+
+    it('strips leading @ for handle query and clamps pagination', async () => {
+      repo.searchPublic.mockResolvedValue({
+        data: [{ id: 'u1', name: 'Ana Silva', username: 'anasilva', followersCount: 3 }],
+        meta: { page: 1, limit: 25, total: 1, totalPages: 1 },
+      })
+      const res = await service.search('  @ana  ', 0, 99)
+      expect(repo.searchPublic).toHaveBeenCalledWith('@ana', 'ana', 1, 25)
+      expect(res.data).toHaveLength(1)
+    })
+  })
 
   describe('findById & findMe', () => {
     it('returns user or throws NotFoundException', async () => {

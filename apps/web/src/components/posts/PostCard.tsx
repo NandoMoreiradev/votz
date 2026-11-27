@@ -872,7 +872,7 @@ export function PostCard({ post, detail = false, isNew = false, onQuote }: PostC
       {post.mentionedReport && (
         <EmbedCard to={`/relatos/${post.mentionedReport.id}`}>
           <EmbedKicker>
-            <Megaphone size={13} /> Relato Mencionado · Pressão {post.mentionedReport.pressureScore.toFixed(1)}
+            <Megaphone size={13} /> Relato Mencionado · Pressão {Math.round(post.mentionedReport.pressureScore)}
           </EmbedKicker>
           <EmbedTitle>{post.mentionedReport.title}</EmbedTitle>
           <EmbedSub>

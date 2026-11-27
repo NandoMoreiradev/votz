@@ -21,12 +21,13 @@ const TABS: readonly { value: SearchKind; label: string }[] = [
   { value: 'politicians', label: 'Políticos' },
   { value: 'entities', label: 'Entidades' },
   { value: 'companies', label: 'Empresas' },
+  { value: 'users', label: 'Pessoas' },
 ]
 const PLACEHOLDER: Record<SearchKind, string> = {
-  reports: 'Buscar relatos', politicians: 'Buscar políticos', entities: 'Buscar entidades', companies: 'Buscar empresas',
+  reports: 'Buscar relatos', politicians: 'Buscar políticos', entities: 'Buscar entidades', companies: 'Buscar empresas', users: 'Buscar por nome ou @usuário',
 }
 const EMPTY: Record<SearchKind, string> = {
-  reports: 'Nenhum relato encontrado', politicians: 'Nenhum político encontrado', entities: 'Nenhuma entidade encontrada', companies: 'Nenhuma empresa encontrada',
+  reports: 'Nenhum relato encontrado', politicians: 'Nenhum político encontrado', entities: 'Nenhuma entidade encontrada', companies: 'Nenhuma empresa encontrada', users: 'Nenhuma pessoa encontrada',
 }
 
 function ReportRow({ item }: { item: ReportSummary }) {
@@ -42,7 +43,9 @@ function ProfileRow({ item, kind }: { item: PublicProfile; kind: Exclude<SearchK
   const name = item.name || item.tradeName || item.legalName || 'Perfil'
   const detail = kind === 'companies'
     ? [item.sector && (SECTOR_LABELS[item.sector] ?? item.sector), item.legalName !== name ? item.legalName : null].filter(Boolean).join(' · ')
-    : [item.office, item.city, item.state].filter(Boolean).join(' · ')
+    : kind === 'users'
+      ? [item.username ? `@${item.username}` : null, typeof item.followersCount === 'number' ? formatCount(item.followersCount, 'seguidor', 'seguidores') : null].filter(Boolean).join(' · ')
+      : [item.office, item.city, item.state].filter(Boolean).join(' · ')
   return <Pressable accessibilityRole="button" accessibilityLabel={`Ver perfil de ${name}`} onPress={() => router.push({ pathname: '/profile/[kind]/[id]', params: { kind, id: item.id } })} style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', gap: 12 }}>
     <Avatar name={name} uri={item.avatarUrl || item.logoUrl} size={42} />
     <View style={{ flex: 1, gap: 4 }}>
@@ -58,15 +61,18 @@ export default function ExploreScreen() {
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
   useEffect(() => { const timer = setTimeout(() => setDebounced(search.trim()), 300); return () => clearTimeout(timer) }, [search])
+  const needsQuery = kind === 'users' && debounced.replace(/^@+/, '').length < 2
   const list = useDirectory<Item>(kind, debounced)
   return <Screen tabs><Toolbar title="Explorar" right={<IconButton label="Debates ao vivo" onPress={() => router.push('/debates')}><Radio size={22} color={colors.action} /></IconButton>} />
     <View style={{ marginHorizontal: 16, marginVertical: 10, borderRadius: 22, paddingLeft: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.soft, borderWidth: 0.5, borderColor: colors.border }}><Search size={18} color={colors.muted} /><TextInput accessibilityLabel={PLACEHOLDER[kind]} placeholder={PLACEHOLDER[kind]} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} returnKeyType="search" style={{ flex: 1, minHeight: 42, paddingHorizontal: 10, fontFamily: theme.fonts.body, color: colors.text, fontSize: 14 }} />{!!search && <IconButton label="Limpar busca" onPress={() => setSearch('')}><X size={17} color={colors.muted} /></IconButton>}</View>
     <TabStrip tabs={TABS} value={kind} onChange={setKind} />
-    <FlatList style={{ backgroundColor: colors.background }} data={list.data?.pages.flatMap((page) => page.data) ?? []} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 20 }}
+    <FlatList style={{ backgroundColor: colors.background }} data={needsQuery ? [] : (list.data?.pages.flatMap((page) => page.data) ?? [])} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 20 }}
       renderItem={({ item }) => kind === 'reports' ? <ReportRow item={item} /> : <ProfileRow item={item} kind={kind} />}
-      refreshing={list.isRefetching && !list.isFetchingNextPage} onRefresh={() => { void list.refetch() }}
-      onEndReached={() => { if (list.hasNextPage && !list.isFetching && !list.isFetchNextPageError) void list.fetchNextPage() }}
-      ListEmptyComponent={<State loading={list.isPending} title={list.isPending ? 'Buscando…' : list.isError ? 'Não foi possível buscar' : EMPTY[kind]} description={list.isError ? errorMessage(list.error) : 'Tente buscar outro nome.'} retry={list.isError ? () => { void list.refetch() } : undefined} />}
+      refreshing={list.isRefetching && !list.isFetchingNextPage} onRefresh={() => { if (!needsQuery) void list.refetch() }}
+      onEndReached={() => { if (!needsQuery && list.hasNextPage && !list.isFetching && !list.isFetchNextPageError) void list.fetchNextPage() }}
+      ListEmptyComponent={needsQuery
+        ? <State title="Buscar pessoas" description="Digite pelo menos 2 letras do nome ou @usuário." />
+        : <State loading={list.isPending} title={list.isPending ? 'Buscando…' : list.isError ? 'Não foi possível buscar' : EMPTY[kind]} description={list.isError ? errorMessage(list.error) : 'Tente buscar outro nome.'} retry={list.isError ? () => { void list.refetch() } : undefined} />}
       ListFooterComponent={list.isFetchingNextPage ? <ActivityIndicator color={colors.action} style={{ padding: 16 }} /> : list.isError && list.data ? <State title="Não foi possível atualizar" retry={() => { void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch()) }} /> : undefined}
     />
   </Screen>
