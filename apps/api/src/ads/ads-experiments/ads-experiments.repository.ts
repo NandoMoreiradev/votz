@@ -17,23 +17,26 @@ export class AdsExperimentsRepository {
   /** Contagem de um braço: exibições, vistas, cliques, "esconder", denúncias e o gasto cobrado. */
   async armTotals(label: string, since: Date): Promise<ArmTotals> {
     const where: Prisma.AdImpressionWhereInput = { experiment: label, servedAt: { gte: since } }
-    // O gasto só existe nas exibições que geraram cobrança: vista (cobrança por exibição vista) ou clicada (por clique).
-    const charged: Prisma.AdImpressionWhereInput = {
+    // Dados antigos registravam o preço e a ação, sem separar o valor efetivamente faturado.
+    const legacyCharged: Prisma.AdImpressionWhereInput = {
       ...where,
+      billedMillicents: null,
+      spendAccountId: null,
       OR: [
         { chargeOn: 'VIEWABLE_IMPRESSION', viewableAt: { not: null } },
         { chargeOn: 'CLICK', clickedAt: { not: null } },
       ],
     }
-    const [impressions, viewable, clicks, hides, reports, spend] = await Promise.all([
+    const [impressions, viewable, clicks, hides, reports, legacySpend, spend] = await Promise.all([
       this.prisma.adImpression.count({ where }),
       this.prisma.adImpression.count({ where: { ...where, viewableAt: { not: null } } }),
       this.prisma.adImpression.count({ where: { ...where, clickedAt: { not: null } } }),
       this.prisma.adImpression.count({ where: { ...where, hiddenAt: { not: null } } }),
       this.prisma.adImpression.count({ where: { ...where, reportedAt: { not: null } } }),
-      this.prisma.adImpression.aggregate({ where: charged, _sum: { chargeMillicents: true } }),
+      this.prisma.adImpression.aggregate({ where: legacyCharged, _sum: { chargeMillicents: true } }),
+      this.prisma.adImpression.aggregate({ where, _sum: { billedMillicents: true } }),
     ])
-    return { impressions, viewable, clicks, hides, reports, spendMillicents: spend._sum.chargeMillicents ?? 0 }
+    return { impressions, viewable, clicks, hides, reports, spendMillicents: (legacySpend._sum.chargeMillicents ?? 0) + (spend._sum.billedMillicents ?? 0) }
   }
 
   /** O que o modo sombra decidiu, por braço de teste. */

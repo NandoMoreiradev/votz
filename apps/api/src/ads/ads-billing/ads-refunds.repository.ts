@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common'
-import type { AdRefundStatus } from '@prisma/client'
+import { Prisma, type AdRefundStatus } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AdsBillingRepository, InsufficientBalanceError } from './ads-billing.repository'
 import { refundPaidLines, refundRequestLines, refundReturnedLines } from './ledger'
 import { refundProblem, refundableCents } from './billing-rules'
+import { lockAdBalance, reservedAdBalance } from './spend-reservation'
 
 export type CreateRefundResult = { ok: true; refundId: string } | { ok: false; problem: string }
 
@@ -17,13 +18,14 @@ export class AdsRefundsRepository {
 
   /** Quanto dá para devolver agora, e o que sustenta a conta. */
   async refundable(accountId: string): Promise<number> {
-    const [account, paid, refunded] = await Promise.all([
+    const [account, paid, refunded, reserved] = await Promise.all([
       this.prisma.adAccount.findUnique({ where: { id: accountId }, select: { balanceCents: true, pendingSpendMillicents: true } }),
       this.prisma.adTopUp.aggregate({ where: { adAccountId: accountId, status: 'PAID' }, _sum: { amountCents: true } }),
       this.prisma.adRefund.aggregate({ where: { adAccountId: accountId, status: { in: ['REQUESTED', 'PAID'] } }, _sum: { amountCents: true } }),
+      reservedAdBalance(this.prisma, accountId, new Date()),
     ])
     if (!account) return 0
-    return refundableCents({ ...account, paidTopUpsCents: paid._sum.amountCents ?? 0, refundedCents: refunded._sum.amountCents ?? 0 })
+    return refundableCents({ ...account, pendingSpendMillicents: account.pendingSpendMillicents + reserved, paidTopUpsCents: paid._sum.amountCents ?? 0, refundedCents: refunded._sum.amountCents ?? 0 })
   }
 
   /**
@@ -33,13 +35,15 @@ export class AdsRefundsRepository {
   createRefund(accountId: string, amountCents: number, reason: string | null, userId: string): Promise<CreateRefundResult> {
     return this.prisma
       .$transaction(async (tx) => {
-        // Trava a linha da conta até o fim da transação: pedidos de devolução e recargas da mesma conta se enfileiram.
-        const account = await tx.adAccount.update({ where: { id: accountId }, data: { updatedAt: new Date() }, select: { balanceCents: true, pendingSpendMillicents: true } })
-        const [paid, refunded] = await Promise.all([
+        const account = await lockAdBalance(tx, accountId)
+        if (!account) return { ok: false, problem: 'Conta de anúncios não encontrada.' } satisfies CreateRefundResult
+        const [paid, refunded, reserved] = await Promise.all([
           tx.adTopUp.aggregate({ where: { adAccountId: accountId, status: 'PAID' }, _sum: { amountCents: true } }),
           tx.adRefund.aggregate({ where: { adAccountId: accountId, status: { in: ['REQUESTED', 'PAID'] } }, _sum: { amountCents: true } }),
+          reservedAdBalance(tx, accountId, new Date()),
         ])
-        const refundable = refundableCents({ ...account, paidTopUpsCents: paid._sum.amountCents ?? 0, refundedCents: refunded._sum.amountCents ?? 0 })
+        const pendingSpendMillicents = account.pendingSpendMillicents + reserved
+        const refundable = refundableCents({ ...account, pendingSpendMillicents, paidTopUpsCents: paid._sum.amountCents ?? 0, refundedCents: refunded._sum.amountCents ?? 0 })
         const problem = refundProblem(amountCents, refundable)
         if (problem) return { ok: false, problem } satisfies CreateRefundResult
 
@@ -51,11 +55,10 @@ export class AdsRefundsRepository {
           lines: refundRequestLines(amountCents),
           refundId: refund.id,
           createdById: userId,
-          // O gasto ainda não lançado continua reservado: não dá para devolver o que as campanhas já gastaram.
-          minBalanceBeforeCents: amountCents + Math.ceil(account.pendingSpendMillicents / 1000),
+          minBalanceBeforeCents: amountCents + Math.ceil(pendingSpendMillicents / 1000),
         })
         return { ok: true, refundId: refund.id } satisfies CreateRefundResult
-      })
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
       .catch((error) => {
         if (error instanceof InsufficientBalanceError) return { ok: false, problem: 'O saldo mudou agora há pouco. Atualize a tela e peça de novo.' } satisfies CreateRefundResult
         throw error

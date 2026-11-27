@@ -1,16 +1,37 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
-import type { AdChargeOn, AdEventStatus, Prisma } from '@prisma/client'
+import { Prisma, type AdChargeOn, type AdEventStatus } from '@prisma/client'
 import { PrismaService } from '../../prisma/prisma.service'
 import { AdsBillingRepository } from '../ads-billing/ads-billing.repository'
 import { spendLines } from '../ads-billing/ledger'
+import { lockAdBalance, reservedAdBalance } from '../ads-billing/spend-reservation'
 import { CREATIVE_WITH_MEDIA } from '../ad-creative-media'
-import { dayAsDate, splitSpend } from './delivery-rules'
+import { dayAsDate, saoPauloDay, splitSpend } from './delivery-rules'
 
 /** A cada quanto gasto (em millicents) o fechamento lança no livro-caixa: R$ 1,00. O resto fecha de hora em hora. */
 export const SETTLE_THRESHOLD_MILLICENTS = 100_000
 
 /** De quanto em quanto tempo as exibições entregues são somadas ao contador do dia (ver `createImpression`). */
 export const IMPRESSION_FLUSH_MS = 1_000
+
+const RESERVATION_MS: Record<AdChargeOn, number> = { VIEWABLE_IMPRESSION: 30_000, CLICK: 120_000 }
+
+interface ImpressionOffer {
+  adId: string
+  adSetId: string
+  accountId: string
+  userId: string
+  surface: string
+  position: number
+  chargeOn: AdChargeOn
+  chargeMillicents: number
+  clickToken: string
+  experiment?: string | null
+  day: string
+  now: Date
+  deadlineAt?: number
+  adSetUpdatedAt?: Date
+  creativeUpdatedAt?: Date
+}
 
 const CANDIDATE_INCLUDE = {
   creative: CREATIVE_WITH_MEDIA,
@@ -189,20 +210,72 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
     return { viewable: total._sum.viewableImpressions ?? 0, clicks: total._sum.clicks ?? 0 }
   }
 
-  /**
-   * Grava a entrega (um INSERT só, sem transação) e soma a exibição ao contador do dia **em lote**.
-   *
-   * Antes o contador subia dentro da transação de cada entrega: todos os pedidos do mesmo anúncio travavam a mesma linha
-   * de `ad_daily_stats` e o servidor parava em ~100 pedidos/s (46 a 57 de 60 conexões em `Lock/transactionid`, medido em 23/11).
-   * Agora cada processo junta as contagens e grava uma vez por segundo por anúncio e dia. Custo aceito: o contador de
-   * "exibições entregues" atrasa até 1 s e, se o processo cair de repente, perde o que estava no buffer. Ele só alimenta
-   * relatório e taxas (qualidade, visibilidade); o **dinheiro** vem dos eventos (visível e clique), que continuam exatos.
-   */
-  async createImpression(data: { adId: string; adSetId: string; userId: string; surface: string; position: number; chargeOn: AdChargeOn; chargeMillicents: number; clickToken: string; day: string; experiment?: string | null }) {
-    const { adSetId, day, ...impression } = data
-    const created = await this.prisma.adImpression.create({ data: impression })
-    this.countImpression(data.adId, adSetId, day)
+  /** Registra a entrega e reserva seu preço final na mesma transação. */
+  async createImpression(data: ImpressionOffer) {
+    const { adSetId, accountId, day, now, deadlineAt = Number.POSITIVE_INFINITY, adSetUpdatedAt, creativeUpdatedAt, ...impression } = data
+    const remainingMs = Math.floor(deadlineAt - performance.now())
+    if (remainingMs <= 0) return null
+    const timeout = Number.isFinite(remainingMs) ? { maxWait: remainingMs, timeout: remainingMs } : {}
+    const created = await this.prisma.$transaction(async (tx) => {
+      const account = await lockAdBalance(tx, accountId)
+      if (!account) return null
+
+      // Uma seleção em cache pode estar desatualizada enquanto aguarda o bloqueio.
+      const checkedAt = new Date(Math.max(now.getTime(), Date.now()))
+      if (day !== saoPauloDay(checkedAt)) return null
+      const adSet = await tx.adSet.findFirst({
+        where: {
+          id: adSetId,
+          updatedAt: adSetUpdatedAt,
+          status: { notIn: ['PAUSED', 'ARCHIVED'] },
+          startAt: { lte: checkedAt },
+          OR: [{ endAt: null }, { endAt: { gt: checkedAt } }],
+          campaign: { accountId, status: 'ACTIVE' },
+          ads: { some: {
+            id: data.adId,
+            reviewStatus: 'APPROVED',
+            status: { notIn: ['PAUSED', 'ARCHIVED'] },
+            creative: { updatedAt: creativeUpdatedAt, media: { every: { status: 'READY' } } },
+          } },
+        },
+        select: { dailyBudgetCents: true },
+      })
+      if (!adSet) return null
+
+      const spendDay = dayAsDate(day)
+      const [reserved, remaining] = await Promise.all([
+        reservedAdBalance(tx, accountId, checkedAt),
+        this.remainingDailyBudget(tx, adSetId, spendDay, adSet.dailyBudgetCents, checkedAt),
+      ])
+      const available = account.balanceCents * 1000 - account.pendingSpendMillicents - reserved
+      if (data.chargeMillicents > Math.min(available, remaining) || performance.now() >= deadlineAt) return null
+
+      return tx.adImpression.create({
+        data: {
+          ...impression,
+          spendAccountId: accountId,
+          spendAdSetId: adSetId,
+          spendDay,
+          spendReservedUntil: new Date(checkedAt.getTime() + RESERVATION_MS[data.chargeOn]),
+        },
+      })
+    }, { ...timeout, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }).catch((error: unknown) => {
+      if (Number.isFinite(remainingMs) && error instanceof Prisma.PrismaClientKnownRequestError && ['P2024', 'P2028'].includes(error.code)) return null
+      throw error
+    })
+    if (created) this.countImpression(data.adId, adSetId, day)
     return created
+  }
+
+  private async remainingDailyBudget(tx: Prisma.TransactionClient, adSetId: string, day: Date, dailyBudgetCents: number, now: Date, excludeImpressionId?: string): Promise<number> {
+    const [spend, reservations] = await Promise.all([
+      tx.adDailyStat.aggregate({ where: { adSetId, day }, _sum: { spendMillicents: true } }),
+      tx.adImpression.aggregate({
+        where: { spendAdSetId: adSetId, spendDay: day, spendReservedUntil: { gt: now }, id: excludeImpressionId ? { not: excludeImpressionId } : undefined },
+        _sum: { chargeMillicents: true },
+      }),
+    ])
+    return dailyBudgetCents * 1000 - (spend._sum.spendMillicents ?? 0) - (reservations._sum.chargeMillicents ?? 0)
   }
 
   private countImpression(adId: string, adSetId: string, day: string): void {
@@ -304,11 +377,11 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
       if (effect.type === 'VIEWABLE_IMPRESSION' && (await stamp('viewableAt'))) {
         await stat('viewableImpressions')
         const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
-        if (impression.chargeOn === 'VIEWABLE_IMPRESSION') await this.charge(tx, effect, impression.chargeMillicents, stat)
+        if (impression.chargeOn === 'VIEWABLE_IMPRESSION') await this.charge(tx, effect, impression.chargeMillicents, day, stat)
       } else if (effect.type === 'CLICK' && (await stamp('clickedAt'))) {
         await stat('clicks')
         const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
-        if (impression.chargeOn === 'CLICK') await this.charge(tx, effect, impression.chargeMillicents, stat)
+        if (impression.chargeOn === 'CLICK') await this.charge(tx, effect, impression.chargeMillicents, day, stat)
       } else if (effect.type === 'REPORT') {
         // Denúncia conta uma vez por pessoa e anúncio no dia, e só de quem viu o anúncio: um concorrente não derruba o outro
         // denunciando em massa o que nunca viu, nem repetindo a mesma denúncia.
@@ -332,11 +405,37 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
         }
       }
       return true
-    })
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
   }
 
-  /** Soma o gasto na conta e fecha no livro-caixa quando juntar R$ 1,00. Sem saldo, as campanhas da conta pausam. */
-  private async charge(tx: Prisma.TransactionClient, effect: EventEffect, millicents: number, stat: IncrementDailyCounter) {
+  private async charge(
+    tx: Prisma.TransactionClient,
+    effect: EventEffect,
+    millicents: number,
+    day: Date,
+    stat: IncrementDailyCounter,
+  ) {
+    const accountBalance = await lockAdBalance(tx, effect.accountId)
+    if (!accountBalance) return
+
+    const now = new Date()
+    const reserved = await reservedAdBalance(tx, effect.accountId, now, effect.impressionId)
+    const available = accountBalance.balanceCents * 1000 - accountBalance.pendingSpendMillicents - reserved
+    let authorized = millicents <= available
+
+    if (authorized) {
+      // Na virada do dia ou após a expiração, o evento só cobra se houver
+      // margem no orçamento do dia de recebimento. As demais reservas têm prioridade.
+      const adSet = await tx.adSet.findUniqueOrThrow({ where: { id: effect.adSetId }, select: { dailyBudgetCents: true } })
+      const remaining = await this.remainingDailyBudget(tx, effect.adSetId, day, adSet.dailyBudgetCents, now, effect.impressionId)
+      authorized = millicents <= remaining
+    }
+
+    await tx.adImpression.update({
+      where: { id: effect.impressionId },
+      data: { spendReservedUntil: null, billedMillicents: authorized ? millicents : 0 },
+    })
+    if (!authorized) return
     await stat('spendMillicents', millicents)
     const account = await tx.adAccount.update({
       where: { id: effect.accountId },
@@ -375,10 +474,7 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
 
   closeSpend(accountId: string) {
     return this.prisma.$transaction(async (tx) => {
-      // A cobrança já bloqueia a conta ao incrementar o pendente. O cron
-      // precisa adquirir o mesmo bloqueio antes de ler saldo e pendente.
-      const accounts = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM ad_accounts WHERE id = ${accountId} FOR UPDATE`
-      if (accounts.length > 0) await this.settleSpend(tx, accountId)
+      if (await lockAdBalance(tx, accountId)) await this.settleSpend(tx, accountId)
     })
   }
 

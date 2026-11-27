@@ -11,17 +11,20 @@ const event: EventEffect = {
 function setup() {
   const account = { id: 'account', balanceCents: 500, pendingSpendMillicents: 20_600 }
   const transaction = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: account.id }]),
+    $queryRaw: jest.fn().mockResolvedValue([account]),
     adAccount: {
       findUniqueOrThrow: jest.fn().mockResolvedValue(account),
       update: jest.fn().mockResolvedValue(account),
     },
     adCampaign: { updateMany: jest.fn() },
-    adDailyStat: { upsert: jest.fn() },
+    adDailyStat: { upsert: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { spendMillicents: 0 } }) },
+    adSet: { findUniqueOrThrow: jest.fn().mockResolvedValue({ dailyBudgetCents: 600 }) },
     adEvent: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
     adImpression: {
+      update: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      findUniqueOrThrow: jest.fn().mockResolvedValue({ chargeOn: 'VIEWABLE_IMPRESSION', chargeMillicents: 600 }),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { chargeMillicents: 0 } }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ chargeOn: 'VIEWABLE_IMPRESSION', chargeMillicents: 600, spendDay: null, spendReservedUntil: null }),
     },
   }
   const prisma = { $transaction: (run: (tx: typeof transaction) => unknown) => run(transaction) }
@@ -43,12 +46,23 @@ it('increments visibility and spend on insert as well as update', async () => {
   }))
 })
 
+it('mantém a métrica de um evento atrasado quando o orçamento já foi gasto', async () => {
+  const { repo, transaction } = setup()
+  transaction.adDailyStat.aggregate.mockResolvedValue({ _sum: { spendMillicents: 599_700 } })
+  await expect(repo.applyEvent(event)).resolves.toBe(true)
+  expect(transaction.adDailyStat.upsert).toHaveBeenCalledTimes(1)
+  expect(transaction.adImpression.update).toHaveBeenCalledWith({
+    where: { id: event.impressionId }, data: { spendReservedUntil: null, billedMillicents: 0 },
+  })
+  expect(transaction.adAccount.update).not.toHaveBeenCalled()
+})
+
 it('locks the account before reading the pending balance and preserves fractional spend', async () => {
   const { repo, transaction, billing } = setup()
   await repo.closeSpend('account')
 
   const [sql, accountId] = transaction.$queryRaw.mock.calls[0]
-  expect(sql.join('')).toMatch(/FOR UPDATE$/)
+  expect(sql.join('')).toMatch(/FOR NO KEY UPDATE$/)
   expect(accountId).toBe('account')
   expect(transaction.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
     transaction.adAccount.findUniqueOrThrow.mock.invocationCallOrder[0],

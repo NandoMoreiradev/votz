@@ -140,6 +140,15 @@ describe('entrega: limite do lance e ritmo compartilhado', () => {
     expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeMillicents: 800 }))
   })
 
+  it('refaz o leilão se o vencedor não consegue reservar o preço final', async () => {
+    const repo = makeRepo([ad('primeiro', 2000, 'AWARENESS'), ad('segundo', 900, 'AWARENESS')])
+    repo.createImpression.mockResolvedValueOnce(null)
+
+    expect((await service(repo).next(USER, query, NOW, middle))?.adId).toBe('segundo')
+    expect(repo.createImpression).toHaveBeenNthCalledWith(1, expect.objectContaining({ adId: 'primeiro', chargeMillicents: 900 }))
+    expect(repo.createImpression).toHaveBeenNthCalledWith(2, expect.objectContaining({ adId: 'segundo', chargeMillicents: 600 }))
+  })
+
   it('sortear o ritmo de um criativo decide o ritmo do conjunto inteiro', async () => {
     const first = ad('a', null, 'AWARENESS')
     const second = { ...ad('b', null, 'AWARENESS'), adSetId: first.adSetId }

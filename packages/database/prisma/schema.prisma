@@ -2901,6 +2901,13 @@ model AdImpression {
   chargeOn         AdChargeOn @map("charge_on")
   // Quanto custa UMA unidade cobrada (uma exibição visível ou um clique), em milésimos de centavo.
   chargeMillicents Int        @map("charge_millicents")
+  // Nulos nas entregas anteriores à reserva. A cobrança zera a validade e registra
+  // o valor efetivo, inclusive zero quando o limite já foi atingido.
+  spendAccountId   String?   @map("spend_account_id")
+  spendAdSetId     String?   @map("spend_ad_set_id")
+  spendDay         DateTime? @db.Date @map("spend_day")
+  spendReservedUntil DateTime? @map("spend_reserved_until")
+  billedMillicents Int?      @map("billed_millicents")
   servedAt         DateTime   @default(now()) @map("served_at")
   viewableAt       DateTime?  @map("viewable_at")
   clickedAt        DateTime?  @map("clicked_at")
@@ -2921,6 +2928,8 @@ model AdImpression {
   @@index([userId, adId, servedAt])
   @@index([adId, servedAt])
   @@index([experiment, servedAt])
+  @@index([spendAccountId, spendReservedUntil], map: "ad_impressions_spend_account_reservation_idx")
+  @@index([spendAdSetId, spendDay, spendReservedUntil], map: "ad_impressions_spend_ad_set_reservation_idx")
   @@map("ad_impressions")
 }
 

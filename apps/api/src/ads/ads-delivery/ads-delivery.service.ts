@@ -48,6 +48,7 @@ import {
 } from './delivery-rules'
 
 const CANDIDATE_POOL = 200
+const MAX_RESERVATION_ATTEMPTS = 3
 
 /** Quem disputa o leilão, com o que a disputa precisa saber depois (ritmo e exploração). */
 type PoolCandidate = AuctionCandidate & {
@@ -347,8 +348,8 @@ export class AdsDeliveryService {
     const counters = mixed && this.pacing ? await this.within(this.pacing.explorationCounters(day, hour), deadlineAt) : null
 
     /** A disputa com os parâmetros de um braço. `coin` é o sorteio de explorar, o mesmo para todos os braços (comparação pareada). */
-    const decide = (overrides: DeliveryOverrides, tieBreak: () => number, coin: number) => {
-      const candidates: PoolCandidate[] = base.map((item) => ({
+    const decide = (overrides: DeliveryOverrides, tieBreak: () => number, coin: number, declined: ReadonlySet<string> = new Set()) => {
+      const candidates: PoolCandidate[] = base.filter((item) => !declined.has(item.record.id)).map((item) => ({
         adId: item.record.id,
         objective: item.record.adSet.campaign.objective,
         bidCapCents: affordableBids.get(item.record.id) ?? item.record.adSet.bidCapCents,
@@ -372,14 +373,45 @@ export class AdsDeliveryService {
       return { result: outcome, contested }
     }
 
-    // O controle usa o sorteio de sempre (mesma ordem de chamadas de `random` de antes dos experimentos).
     const coin = mixed ? random() : 0.5
-    const { result, contested } = decide(serving, random, coin)
+    const declined = new Set<string>()
+    let { result, contested } = decide(serving, random, coin)
+    let impression: Awaited<ReturnType<AdsDeliveryRepository['createImpression']>> = null
+    let clickToken = ''
+    for (let attempt = 0; result && attempt < MAX_RESERVATION_ATTEMPTS; attempt++) {
+      if (performance.now() >= deadlineAt) throw new DeliveryTimeout()
+      const { record } = result.winner as PoolCandidate
+      const { objective, account } = record.adSet.campaign
+      clickToken = newClickToken()
+      impression = await this.repo.createImpression({
+        adId: record.id,
+        adSetId: record.adSetId,
+        accountId: account.id,
+        adSetUpdatedAt: record.adSet.updatedAt,
+        creativeUpdatedAt: record.creative.updatedAt,
+        now,
+        deadlineAt,
+        userId,
+        surface: query.surface,
+        position: query.position ?? 0,
+        chargeOn: adChargeUnit(objective),
+        chargeMillicents: adChargeMillicents(objective, result.priceCents),
+        clickToken,
+        day,
+        experiment: label,
+      })
+      if (impression) break
+      declined.add(record.id)
+      const next = decide(serving, random, coin, declined)
+      result = next.result
+      contested = next.contested
+    }
 
-    // Modo sombra: o que cada braço de teste teria escolhido com o mesmo sorteio. Só calcula; ninguém vê.
+    // A sombra usa o mesmo sorteio e exclui os criativos que perderam a reserva.
     const shadowRows: ShadowDecisionRow[] = shadowArms.map((testArm) => {
-      const shadow = decide(testArm.overrides, () => 0.5, coin).result
-      const servedAdId = result?.winner.adId ?? null
+      const shadow = decide(testArm.overrides, () => 0.5, coin, declined).result
+      const served = impression ? result : null
+      const servedAdId = served?.winner.adId ?? null
       const shadowAdId = shadow?.winner.adId ?? null
       return {
         experiment: experiment!.key,
@@ -387,34 +419,18 @@ export class AdsDeliveryService {
         servedAdId,
         shadowAdId,
         agreed: servedAdId === shadowAdId,
-        servedEcpmCents: result ? ecpmOfPrice(result.winner.objective, result.priceCents, (result.winner as PoolCandidate).meanClickRate) : null,
+        servedEcpmCents: served ? ecpmOfPrice(served.winner.objective, served.priceCents, (served.winner as PoolCandidate).meanClickRate) : null,
         shadowEcpmCents: shadow ? ecpmOfPrice(shadow.winner.objective, shadow.priceCents, (shadow.winner as PoolCandidate).meanClickRate) : null,
       }
     })
-    if (!result) {
-      this.logShadow(shadowRows)
+    this.logShadow(shadowRows)
+    if (!result || !impression) {
+      if (declined.size > 0) return none(() => 'os vencedores deixaram de ser elegíveis ou já não tinham saldo e orçamento para o preço final')
       return none(() => `${paced.length} anúncio(s) disputaram o leilão e nenhum valeu o piso de preço (o lance máximo fica abaixo do mínimo do objetivo)`)
     }
-
-    // Última chance de desistir: depois de criada, a exibição conta no limite diário e no ritmo. Sem resposta, não se cria.
-    if (performance.now() > deadlineAt) throw new DeliveryTimeout()
     const winner = result.winner as PoolCandidate
     const { record } = winner
     const objective = record.adSet.campaign.objective
-    const clickToken = newClickToken()
-    const impression = await this.repo.createImpression({
-      adId: record.id,
-      adSetId: record.adSetId,
-      userId,
-      surface: query.surface,
-      position: query.position ?? 0,
-      chargeOn: adChargeUnit(objective),
-      chargeMillicents: adChargeMillicents(objective, result.priceCents),
-      clickToken,
-      day,
-      experiment: label,
-    })
-    this.logShadow(shadowRows)
     // A exibição entra na contagem do limite diário da pessoa (a cópia dela no Redis).
     await this.userState?.recordImpression(userId, record.id)
 
