@@ -2,9 +2,9 @@ import { Module } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
-import { ScheduleModule } from '@nestjs/schedule'
 import { BullModule } from '@nestjs/bullmq'
 import { LoggerModule } from 'nestjs-pino'
+import { scheduleModuleImports } from './common/jobs/jobs-mode'
 import { createPinoHttpConfig } from './common/logger/pino-config'
 import { PrismaModule } from './prisma/prisma.module'
 import { MailModule } from './mail/mail.module'
@@ -105,7 +105,8 @@ import { SecurityModule } from './common/security/security.module'
       }),
     }),
 
-    ScheduleModule.forRoot(),
+    // Tarefas agendadas só rodam se RUN_JOBS não estiver desligado (ver common/jobs/jobs-mode.ts)
+    ...scheduleModuleImports(),
 
     BullModule.forRootAsync({
       inject: [ConfigService],
