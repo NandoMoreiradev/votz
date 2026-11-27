@@ -50,6 +50,8 @@ export interface MandateInboxItem {
   supportCount: number
   commentsCount: number
   advocatedByMe: boolean
+  /** O relato foi enviado para este gabinete/entidade (só quem recebeu muda o status). */
+  isRecipient: boolean
   internalTags: OrgTagItem[]
   internalNotes: OrgNoteItem[]
   recentTimeline: Array<{
@@ -238,17 +240,24 @@ export function useQuickRespond() {
       templateId?: string
       newStatus?: ReportStatus
       advocate?: boolean
+      noEvidence?: boolean
+      archiveReason?: string
+      media?: string[]
     }) => {
       const { data } = await api.post(`/mandate/inbox/${vars.reportId}/respond`, {
         message: vars.message,
         templateId: vars.templateId,
         newStatus: vars.newStatus,
         advocate: vars.advocate,
+        noEvidence: vars.noEvidence,
+        archiveReason: vars.archiveReason,
+        media: vars.media,
       })
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['mandate'] })
+      qc.invalidateQueries({ queryKey: ['report', vars.reportId] })
     },
   })
 }
