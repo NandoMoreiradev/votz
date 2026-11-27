@@ -16,12 +16,16 @@ export function withAdSlots<T extends { id: string }>(
   every: number,
   enabled: boolean,
   neighborsOf?: (items: readonly T[], position: number) => string[],
+  pendingNeighbors = 0,
 ): (T | AdSlotItem)[] {
   if (!enabled || every < 1) return [...items]
   const result: (T | AdSlotItem)[] = []
   items.forEach((item, index) => {
     result.push(item)
-    if ((index + 1) % every === 0) result.push({ id: `__ad__${index + 1}`, adSlot: index + 1, near: neighborsOf ? neighborsOf(items, index + 1) : [] })
+    const position = index + 1
+    if (position % every === 0 && items.length - position >= pendingNeighbors) {
+      result.push({ id: `__ad__${position}`, adSlot: position, near: neighborsOf ? neighborsOf(items, position) : [] })
+    }
   })
   return result
 }

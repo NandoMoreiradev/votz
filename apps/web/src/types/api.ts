@@ -520,6 +520,7 @@ export interface PostsResponse {
     limit: number
     total: number
     totalPages: number
+    nextCursor?: string | null
   }
 }
 

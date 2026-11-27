@@ -36,6 +36,13 @@ test('cada espaço leva os itens em volta (3 antes e 3 depois) para o pedido do 
   assert.deepEqual(withAdSlots(posts(20), 8, true).find(isAdSlot).near, [])
 })
 
+test('espera os vizinhos da próxima página antes de inserir o espaço patrocinado', () => {
+  const neighbors = (items, position) => items.slice(position - 3, position + 3).map((item) => item.id)
+  assert.equal(withAdSlots(posts(9), 8, true, neighbors, 3).filter(isAdSlot).length, 0)
+  assert.deepEqual(withAdSlots(posts(11), 8, true, neighbors, 3).find(isAdSlot)?.near, ['p6', 'p7', 'p8', 'p9', 'p10', 'p11'])
+  assert.equal(withAdSlots(posts(8), 8, true, neighbors).filter(isAdSlot).length, 1)
+})
+
 test('isAdSlot só aceita o espaço', () => {
   assert.equal(isAdSlot({ id: 'p1' }), false)
   assert.equal(isAdSlot(null), false)

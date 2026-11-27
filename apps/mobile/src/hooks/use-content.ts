@@ -1,16 +1,32 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { FeedSortMode, PostCommentDto } from '@votz/shared-types'
-import { api, json } from '../lib/api'
+import { ApiError, api, json } from '../lib/api'
 import { patchItem, prependItem, removeItem, type Rollback } from '../lib/optimistic'
 import { useSession } from '../lib/session'
 import type { Page, PostDto, ProfileKind, PublicProfile, Report, ReportSummary, ReportComment } from '../lib/types'
 
 export function useFeed<T>(kind: 'posts' | 'reports', sort: FeedSortMode = 'recent') {
-  return useInfiniteQuery({
-    queryKey: [kind, 'feed', sort], initialPageParam: 1,
-    queryFn: ({ pageParam, signal }) => api<Page<T>>(`/${kind}?page=${pageParam}&limit=15${kind === 'posts' ? `&sort=${sort}` : ''}`, { signal }),
-    getNextPageParam: (last) => last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined,
+  const client = useQueryClient()
+  const queryKey = [kind, 'feed', sort] as const
+  const feed = useInfiniteQuery({
+    queryKey,
+    initialPageParam: (kind === 'posts' ? 'start' : 1) as string | number,
+    queryFn: ({ pageParam, signal }) => api<Page<T>>(
+      kind === 'posts'
+        ? `/posts?cursor=${encodeURIComponent(pageParam)}&limit=15&sort=${sort}`
+        : `/reports?page=${pageParam}&limit=15`,
+      { signal },
+    ),
+    getNextPageParam: (last) => kind === 'posts'
+      ? last.meta.nextCursor ?? undefined
+      : last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined,
+    ...(kind === 'posts' ? { retry: (count: number, error: Error) => !(error instanceof ApiError && error.status === 410) && count < 1 } : {}),
   })
+  return {
+    ...feed,
+    expired: feed.error instanceof ApiError && feed.error.status === 410,
+    restart: () => kind === 'posts' ? client.resetQueries({ queryKey, exact: true }) : feed.refetch(),
+  }
 }
 export function useDetail<T>(kind: string, id: string) {
   return useQuery({ queryKey: [kind, id], queryFn: ({ signal }) => api<T>(`/${kind}/${id}`, { signal }), enabled: !!id })

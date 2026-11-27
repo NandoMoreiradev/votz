@@ -6,6 +6,7 @@ jest.mock('isomorphic-dompurify', () => ({
 }))
 
 import { PostsService } from './posts.service'
+import type { FeedEntry } from './feed-cursor.service'
 
 describe('PostsService', () => {
   function makeService(overrides: Record<string, unknown> = {}) {
@@ -79,6 +80,8 @@ describe('PostsService', () => {
       notifications as never,
       mail as never,
       overrides.media as never,
+      undefined,
+      overrides.feedCursors as never,
     )
 
     return { service, repo, prisma, storage, gifs }
@@ -239,6 +242,52 @@ describe('PostsService', () => {
     const page = await service.listFeed({ sort: 'for_you', limit: 1 })
     expect(page.data.map((post) => post.id)).toEqual(['a'])
     expect(page.meta).toMatchObject({ total: 1, totalPages: 1 })
+  })
+
+  it('mantém a sequência do Para você quando o ranking muda entre páginas', async () => {
+    const first = { id: 'a', authorUserId: 'other', authorUser: { emailVerified: true }, topics: [], hotScore: 2, createdAt: new Date() }
+    const second = { ...first, id: 'b', authorUserId: 'second', hotScore: 1 }
+    const third = { ...first, id: 'c', authorUserId: 'third', hotScore: 0.5 }
+    const candidates = jest.fn().mockResolvedValue({ posts: [first, second, third], total: 3 })
+    let snapshot: FeedEntry[] = []
+    const saveSnapshot = jest.fn(async (_scope: string, entries: FeedEntry[]) => {
+      snapshot = entries
+      return 'continuation'
+    })
+    const findFeedEntries = jest.fn(async (entries: FeedEntry[]) => ({
+      // O segundo post foi removido depois de iniciar o feed.
+      posts: entries.filter(({ id }) => id === third.id).map(() => third),
+      reposts: {},
+    }))
+    const { service } = makeService({
+      repo: {
+        findFeedCandidates: candidates,
+        getViewerContext: jest.fn().mockResolvedValue({
+          userId: 'reader', followedUserIds: new Set(), followedPoliticianIds: new Set(),
+          followedEntityIds: new Set(), followedTopicIds: new Set(),
+        }),
+        findFeedEntries,
+        findPostIdsWithOpenFlags: jest.fn().mockResolvedValue(new Set()),
+        findSuggestedProfiles: jest.fn().mockResolvedValue([]),
+        hydratePosts: jest.fn().mockImplementation(async (posts) => posts),
+      },
+      feedCursors: {
+        saveSnapshot,
+        read: jest.fn().mockResolvedValue({ id: 'snapshot', offset: 1, page: 2, state: { kind: 'snapshot', total: 3 } }),
+        entries: jest.fn(async (_id: string, offset: number, count: number) => snapshot.slice(offset, offset + count)),
+      },
+    })
+
+    const page = await service.listFeed({ sort: 'for_you', limit: 1, cursor: 'start' })
+    expect(page.data[0]?.id).toBe('a')
+    expect(page.meta.nextCursor).toBe('continuation')
+    candidates.mockResolvedValue({ posts: [third, first], total: 2 })
+
+    const next = await service.listFeed({ sort: 'for_you', limit: 1, cursor: page.meta.nextCursor! })
+    expect(next.data.map(({ id }) => id)).toEqual(['c'])
+    expect(next.meta).toMatchObject({ page: 2, nextCursor: null })
+    expect(candidates).toHaveBeenCalledTimes(1)
+    expect(findFeedEntries).toHaveBeenCalledTimes(2)
   })
 
   it('does not fabricate a reposter for ordinary authored posts', async () => {

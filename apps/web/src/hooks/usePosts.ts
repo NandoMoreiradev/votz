@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PostCommentMediaType, PostKind, UserType, type MediaCrop, type MediaFormat } from '@votz/shared-types'
-import type { QueryClient } from '@tanstack/react-query'
+import type { InfiniteData, QueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { api } from '../lib/api'
 import { uploadPostMedia } from '../lib/post-media-upload'
 import { useAuthStore, useViewerCacheScope } from '../store/auth.store'
@@ -30,15 +31,23 @@ export interface UsePostsParams {
   enabled?: boolean
 }
 
+type CachedPosts = PostsResponse | InfiniteData<PostsResponse>
+
+function updatePostPages(old: CachedPosts | undefined, update: (page: PostsResponse) => PostsResponse): CachedPosts | undefined {
+  if (!old) return old
+  if ('pages' in old) return { ...old, pages: old.pages.map(update) }
+  return Array.isArray(old.data) ? update(old) : old
+}
+
 /**
  * Atualização otimista dos posts: muda o item em todas as listas e na tela do post antes de o servidor
  * responder e devolve a função que desfaz, caso o servidor recuse.
  */
 function patchPost(qc: QueryClient, scope: ReturnType<typeof useViewerCacheScope>, postId: string, change: (post: PostDto) => PostDto): () => void {
-  const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts', scope] })
+  const lists = qc.getQueriesData<CachedPosts>({ queryKey: ['posts', scope] })
   const single = qc.getQueryData<PostDto>(['post', postId, scope])
-  qc.setQueriesData<PostsResponse>({ queryKey: ['posts', scope] }, (old) =>
-    old && Array.isArray(old.data) ? { ...old, data: old.data.map((p) => (p.id === postId ? change(p) : p)) } : old,
+  qc.setQueriesData<CachedPosts>({ queryKey: ['posts', scope] }, (old) =>
+    updatePostPages(old, (page) => ({ ...page, data: page.data.map((p) => p.id === postId ? change(p) : p) })),
   )
   qc.setQueryData<PostDto>(['post', postId, scope], (old) => (old ? change(old) : old))
   return () => {
@@ -73,6 +82,33 @@ export function usePostsFeed(params: UsePostsParams = {}) {
     enabled: enabled && sessionReady,
     staleTime: 20_000,
   })
+}
+
+/** A página inicial usa a sequência do servidor. Perfis e clientes antigos ainda podem usar page. */
+export function useInfinitePostsFeed(params: Omit<UsePostsParams, 'page'>) {
+  const sessionReady = useAuthStore((s) => s.sessionReady)
+  const scope = useViewerCacheScope()
+  const qc = useQueryClient()
+  const { enabled = true, ...query } = params
+  const queryKey = ['posts', scope, 'scroll', query] as const
+  const feed = useInfiniteQuery({
+    queryKey,
+    initialPageParam: 'start',
+    queryFn: ({ pageParam, signal }) =>
+      api.get<PostsResponse>('/posts', { params: { ...query, limit: query.limit ?? 20, cursor: pageParam }, signal }).then((r) => r.data),
+    getNextPageParam: (last) => last.meta.nextCursor ?? undefined,
+    enabled: enabled && sessionReady,
+    staleTime: 20_000,
+    retry: (count, error) => !(isAxiosError(error) && error.response?.status === 410) && count < 1,
+  })
+  const pages = feed.data?.pages
+  const first = pages?.[0]
+  return {
+    ...feed,
+    data: first && pages ? { ...first, data: pages.flatMap((page) => page.data) } : undefined,
+    expired: isAxiosError(feed.error) && feed.error.response?.status === 410,
+    restart: () => qc.resetQueries({ queryKey, exact: true }),
+  }
 }
 
 export function usePost(id: string) {
@@ -134,9 +170,14 @@ export function useDeletePost() {
     // Some da lista na hora; volta se o servidor recusar.
     onMutate: async (postId) => {
       await qc.cancelQueries({ queryKey: ['posts'] })
-      const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })
-      qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) =>
-        old && Array.isArray(old.data) ? { ...old, data: old.data.filter((p) => p.id !== postId), meta: { ...old.meta, total: Math.max(0, old.meta.total - 1) } } : old,
+      const lists = qc.getQueriesData<CachedPosts>({ queryKey: ['posts'] })
+      qc.setQueriesData<CachedPosts>({ queryKey: ['posts'] }, (old) =>
+        updatePostPages(old, (page) => {
+          const data = page.data.filter((p) => p.id !== postId)
+          return data.length < page.data.length
+            ? { ...page, data, meta: { ...page.meta, total: Math.max(0, page.meta.total - 1) } }
+            : page
+        }),
       )
       return { lists }
     },

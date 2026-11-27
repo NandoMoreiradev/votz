@@ -4,7 +4,7 @@ import styled, { keyframes, css } from 'styled-components'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Fire, Flag, LinkSimple, UsersThree } from '@phosphor-icons/react'
-import { AD_DELIVERY_LIMITS, adNeighborIds, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
+import { AD_ADJACENCY, AD_DELIVERY_LIMITS, adNeighborIds, Category, FlagTargetType, PostKind, RecipientType, ReportStatus, UserType, VoteType } from '@votz/shared-types'
 import { Navbar } from '../components/layout/Navbar'
 import { useMediaViewer } from '../components/ui/MediaViewer'
 import { StateSelect, CitySelect } from '../components/ui/LocationSelect'
@@ -21,7 +21,7 @@ import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { socialRow, socialTab } from '../components/ui/social'
 import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useReports } from '../hooks/useReports'
-import { usePostsFeed } from '../hooks/usePosts'
+import { useInfinitePostsFeed } from '../hooks/usePosts'
 import { useTrendingTopics } from '../hooks/useTopics'
 import { useAlerts } from '../hooks/useAlerts'
 import { usePoliticians } from '../hooks/usePoliticians'
@@ -443,6 +443,15 @@ const SurtoAnchor = styled.button`
 `
 
 const Feed = styled.div`display: flex; flex-direction: column;`
+const FeedContinuation = styled.button`
+  ${socialRow};
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: center;
+  cursor: pointer;
+  &:disabled { cursor: wait; opacity: .7; }
+`
 
 // ─── Styled: Horizontal card ──────────────────────────────────────────────────
 const CardWrap = styled.article<{ $highPressure?: boolean }>`
@@ -1278,11 +1287,7 @@ export function Home() {
     state: uf    || undefined,
     limit: 50,
   })
-  const {
-    data: postsData,
-    isLoading: loadingPosts,
-    isError: errorPosts,
-  } = usePostsFeed({
+  const postsFeed = useInfinitePostsFeed({
     sort: postSort,
     city: city || undefined,
     state: uf || undefined,
@@ -1292,6 +1297,8 @@ export function Home() {
     limit: 25,
     enabled: feedTab === 'publicacoes',
   })
+  const { data: postsData, isLoading: loadingPosts, isLoadingError: errorPosts } = postsFeed
+  const feedPosts = postsData?.data ?? []
   const { data: trendingTopics } = useTrendingTopics({
     state: uf || undefined,
     city: city || undefined,
@@ -1528,7 +1535,7 @@ export function Home() {
                 </EmptyState>
               )}
 
-              {!loadingPosts && !errorPosts && (postsData?.data ?? []).length === 0 && (
+              {!loadingPosts && !errorPosts && feedPosts.length === 0 && (
                 <EmptyState>
                   <h3>Nenhuma publicação encontrada</h3>
                   <p>
@@ -1539,7 +1546,7 @@ export function Home() {
                 </EmptyState>
               )}
 
-              {(postsData?.data ?? []).map((post, index) => (
+              {feedPosts.map((post, index) => (
                 <Fragment key={post.id}>
                   <PostCard
                     post={post}
@@ -1553,17 +1560,30 @@ export function Home() {
                     <SuggestedProfilesCard suggestions={postsData.suggestions} />
                   )}
                   {/* 1 anúncio a cada 8 publicações, só para quem entrou (decisão 4 do plano de anúncios) */}
-                  {user && (index + 1) % AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD === 0 && (
+                  {user && (index + 1) % AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD === 0 &&
+                    (!postsFeed.hasNextPage || feedPosts.length >= index + 1 + AD_ADJACENCY.AFTER) && (
                     <SponsoredSlot
                       surface={city ? 'FEED_CITY' : postSort === 'recent' ? 'FEED_RECENT' : 'FEED_FOR_YOU'}
                       position={index + 1}
                       state={uf || undefined}
                       city={city || undefined}
-                      nearPostIds={adNeighborIds(postsData?.data ?? [], index + 1)}
+                      nearPostIds={adNeighborIds(feedPosts, index + 1)}
                     />
                   )}
                 </Fragment>
               ))}
+              {postsFeed.hasNextPage && (
+                <FeedContinuation type="button" disabled={postsFeed.isFetching} onClick={() => {
+                  if (postsFeed.expired) {
+                    window.scrollTo({ top: 0 })
+                    void postsFeed.restart()
+                  } else {
+                    void postsFeed.fetchNextPage()
+                  }
+                }}>
+                  {postsFeed.isFetchingNextPage ? 'Carregando…' : postsFeed.expired ? 'Atualizar feed' : postsFeed.isFetchNextPageError ? 'Tentar novamente' : 'Carregar mais publicações'}
+                </FeedContinuation>
+              )}
             </Feed>
           </FeedSection>
         ) : (

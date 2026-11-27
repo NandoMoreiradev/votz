@@ -6,9 +6,10 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common'
 import { OrgType, PostCommentMediaType, PostKind } from '@prisma/client'
-import { FeedSuggestedProfile, UserType } from '@votz/shared-types'
+import { FeedSuggestedProfile, type PostRepostInfo, UserType } from '@votz/shared-types'
 import * as DOMPurify from 'isomorphic-dompurify'
 import { ActingUser, resolveOptionalActingOrg } from '../auth/acting-org'
 import { cleanupR2Keys, deliverModerationNotice } from '../common/moderation.helper'
@@ -27,7 +28,8 @@ import {
   computePostScores,
   rerankCandidatesForViewer,
 } from './feed-ranking.service'
-import { PostsRepository, ViewerIdentity } from './posts.repository'
+import { PostsRepository, type FeedCandidateParams, type RawPost, ViewerIdentity } from './posts.repository'
+import { FeedCursorService, feedCursorScope, type FeedEntry, type RecentCursor } from './feed-cursor.service'
 import { FOR_YOU_MIX, hasFewFollows, mixForYouFeed } from './feed-mix'
 import { ContentSafetyService } from '../content-safety/content-safety.service'
 
@@ -55,6 +57,7 @@ export class PostsService {
     private readonly mail: MailService,
     @Optional() private readonly mediaAssets?: MediaAssetsService,
     @Optional() private readonly contentSafety?: ContentSafetyService,
+    @Optional() private readonly feedCursors?: FeedCursorService,
   ) {}
 
   async create(dto: CreatePostDto, user: ActingUser & { emailVerified?: boolean }) {
@@ -274,12 +277,8 @@ export class PostsService {
     const topicSlug = query.topic ? normalizeTopicSlug(query.topic) : undefined
     const cityKey = toCityKey(query.city) ?? undefined
 
-    const viewerContext =
-      sort === 'for_you' || sort === 'following'
-        ? await this.repo.getViewerContext(user?.id)
-        : undefined
-
-    const { posts, total, reposts } = await this.repo.findFeedCandidates({
+    const viewer = this.buildViewerIdentity(user)
+    const params: FeedCandidateParams = {
       sort,
       topicSlug,
       cityKey,
@@ -290,11 +289,30 @@ export class PostsService {
       profileUserId: query.profileUserId,
       authorOrgId: query.authorOrgId,
       hasPoll: query.hasPoll,
-      viewerContext,
       page,
       limit,
-    })
+    }
 
+    const scope = query.cursor ? feedCursorScope([viewer, params]) : undefined
+    if (query.cursor && page !== 1) throw new BadRequestException('Use cursor ou número de página.')
+    if (scope && query.cursor !== 'start') return this.continueFeed(query.cursor!, scope, params, viewer)
+    if (scope && sort === 'recent' && !params.profileUserId) {
+      return this.recentFeedResponse(params, viewer, scope, new Date())
+    }
+
+    const viewerContext = sort === 'for_you' || sort === 'following'
+      ? await this.repo.getViewerContext(user?.id)
+      : undefined
+    params.viewerContext = viewerContext
+
+    if (scope && (sort !== 'for_you' || params.profileUserId)) {
+      const entries = (await this.repo.findFeedSnapshot(params)).map(({ id, repostId }) => ({ id, repostId }))
+      const loaded = await this.snapshotPage(limit, entries.length, 0, (offset, count) => Promise.resolve(entries.slice(offset, offset + count)))
+      const nextCursor = loaded.offset < entries.length ? await this.cursorStore().saveSnapshot(scope, entries, loaded.offset) : null
+      return this.feedResponse(loaded.posts, viewer, { page, limit, total: entries.length, nextCursor }, loaded.reposts, loaded.reasons)
+    }
+
+    const { posts, total, reposts } = await this.repo.findFeedCandidates(params)
     let ordered = posts
     let eligibleTotal = total
     const reasons = new Map<string, string>()
@@ -313,7 +331,7 @@ export class PostsService {
           viewerContext,
         )
         eligibleTotal = mixed.length
-        ordered = mixed.slice(skip, skip + limit).map((item) => {
+        ordered = (scope ? mixed : mixed.slice(skip, skip + limit)).map((item) => {
           if (item.reason) reasons.set(item.post.id, item.reason)
           return item.post
         })
@@ -322,22 +340,92 @@ export class PostsService {
           if (profiles.length > 0) suggestions = { title: viewerContext.city ? 'Quem seguir na sua cidade' : 'Quem seguir no seu estado', profiles }
         }
       } else {
-        ordered = rerankCandidatesForViewer(rankable, viewerContext).slice(skip, skip + limit)
+        const ranked = rerankCandidatesForViewer(rankable, viewerContext)
+        ordered = scope ? ranked : ranked.slice(skip, skip + limit)
       }
     }
 
-    const hydrated = await this.repo.hydratePosts(ordered, this.buildViewerIdentity(user))
+    const nextCursor = scope
+      ? ordered.length > limit
+        ? await this.cursorStore().saveSnapshot(scope, ordered.map(({ id }) => ({ id, reason: reasons.get(id) })), limit)
+        : null
+      : undefined
+    return this.feedResponse(
+      scope ? ordered.slice(0, limit) : ordered, viewer,
+      { page, limit, total: eligibleTotal, nextCursor }, reposts, reasons, suggestions,
+    )
+  }
 
+  private cursorStore(): FeedCursorService {
+    if (!this.feedCursors) throw new ServiceUnavailableException('A paginação do feed está indisponível.')
+    return this.feedCursors
+  }
+
+  private async continueFeed(cursor: string, scope: string, params: FeedCandidateParams, viewer: ViewerIdentity) {
+    const store = this.cursorStore()
+    const { id, state, offset, page } = await store.read(cursor, scope)
+    if (state.kind === 'recent') {
+      return this.recentFeedResponse({ ...params, page }, viewer, scope, new Date(state.asOf), state)
+    }
+    const loaded = await this.snapshotPage(params.limit, state.total, offset, (start, count) => store.entries(id, start, count))
+    const nextCursor = loaded.offset < state.total ? store.position(id, loaded.offset, page + 1) : null
+    return this.feedResponse(loaded.posts, viewer, { page, limit: params.limit, total: state.total, nextCursor }, loaded.reposts, loaded.reasons)
+  }
+
+  private async recentFeedResponse(params: FeedCandidateParams, viewer: ViewerIdentity, scope: string, asOf: Date, cursor?: RecentCursor) {
+    const before = cursor ? { id: cursor.before.id, createdAt: new Date(cursor.before.createdAt) } : undefined
+    const result = await this.repo.findRecentFeedPage(params, asOf, before)
+    const total = result.total ?? cursor?.total ?? result.posts.length
+    const last = result.posts.at(-1)
+    const nextCursor = last && result.hasMore ? await this.cursorStore().saveRecent(scope, {
+      kind: 'recent', asOf: asOf.toISOString(), before: { id: last.id, createdAt: last.createdAt.toISOString() }, total,
+    }, params.page + 1) : null
+    return this.feedResponse(result.posts, viewer, { page: params.page, limit: params.limit, total, nextCursor })
+  }
+
+  /** Avança pela sequência mesmo quando posts ou reposts foram removidos entre requisições. */
+  private async snapshotPage(limit: number, total: number, offset: number, load: (offset: number, count: number) => Promise<FeedEntry[]>) {
+    const posts: RawPost[] = []
+    const reposts: Record<string, PostRepostInfo> = {}
+    const reasons = new Map<string, string>()
+    while (posts.length < limit && offset < total) {
+      const count = Math.min(limit, total - offset)
+      const entries = await load(offset, count)
+      const discovered = entries.filter(({ reason }) => !!reason).map(({ id }) => id)
+      const [result, flagged] = await Promise.all([
+        this.repo.findFeedEntries(entries, true),
+        discovered.length ? this.repo.findPostIdsWithOpenFlags(discovered) : new Set<string>(),
+      ])
+      const byId = new Map(result.posts.map((post) => [post.id, post]))
+      for (const { id, reason } of entries) {
+        offset += 1
+        const post = byId.get(id)
+        if (!post || (reason && (flagged.has(id) || !(post.authorUser.verified || post.authorUser.emailVerified)))) continue
+        if (reason) reasons.set(id, reason)
+        if (result.reposts[id]) reposts[id] = result.reposts[id]
+        posts.push(post)
+        if (posts.length === limit) break
+      }
+    }
+    return { posts, reposts, reasons, offset }
+  }
+
+  private async feedResponse(
+    posts: RawPost[],
+    viewer: ViewerIdentity,
+    pagination: { page: number; limit: number; total: number; nextCursor?: string | null },
+    reposts: Record<string, PostRepostInfo> = {},
+    reasons = new Map<string, string>(),
+    suggestions: { title: string; profiles: FeedSuggestedProfile[] } | null = null,
+  ) {
+    const hydrated = await this.repo.hydratePosts(posts, viewer)
     return {
       suggestions,
-      /** Posição (a partir de 0) em que o cartão de sugestões entra na lista. */
       suggestionsAfter: FOR_YOU_MIX.SUGGESTIONS_AFTER,
-      data: hydrated.map((post) => ({ ...post, repost: reposts?.[post.id] ?? null, ...(reasons.has(post.id) ? { feedReason: reasons.get(post.id) } : {}) })),
+      data: hydrated.map((post) => ({ ...post, repost: reposts[post.id] ?? null, ...(reasons.has(post.id) ? { feedReason: reasons.get(post.id) } : {}) })),
       meta: {
-        page,
-        limit,
-        total: eligibleTotal,
-        totalPages: Math.max(1, Math.ceil(eligibleTotal / limit)),
+        ...pagination,
+        totalPages: Math.max(1, Math.ceil(pagination.total / pagination.limit)),
       },
     }
   }

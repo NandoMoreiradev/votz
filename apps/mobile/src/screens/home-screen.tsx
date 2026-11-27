@@ -5,7 +5,7 @@ import { router } from 'expo-router'
 import ImagePlus from 'lucide-react-native/icons/image-plus'
 import Check from 'lucide-react-native/icons/check'
 import Bell from 'lucide-react-native/icons/bell'
-import { AD_DELIVERY_LIMITS, adNeighborIds, type AdSurface, type FeedSortMode, type SponsoredAdView } from '@votz/shared-types'
+import { AD_ADJACENCY, AD_DELIVERY_LIMITS, adNeighborIds, type AdSurface, type FeedSuggestions, type FeedSortMode, type SponsoredAdView } from '@votz/shared-types'
 import { PostCard, ReportCard } from '../components/content-row'
 import { Avatar, State, TabStrip } from '../components/ui'
 import { Screen, Toolbar } from '../components/screen'
@@ -20,7 +20,6 @@ import { useUnreadNotificationsCount } from '../hooks/use-notifications'
 import { errorMessage } from '../lib/api'
 import { useSession } from '../lib/session'
 import { useAppTheme } from '../theme-context'
-import type { FeedSuggestions } from '@votz/shared-types'
 import type { PostDto, Report } from '../lib/types'
 
 type FeedKind = 'posts' | 'reports'
@@ -38,33 +37,33 @@ function Feed({ kind, sort }: { kind: FeedKind; sort: FeedSortMode }) {
   // Cartão de perfis sugeridos (só vem do servidor para quem segue poucas contas, na primeira página).
   const first = feed.data?.pages[0]
   // 1 anúncio a cada 8 publicações, só para quem entrou (o pedido de anúncio exige login).
-  const withAds = withAdSlots<PostDto | Report>(items, AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD, kind === 'posts' && !!user, adNeighborIds)
+  const withAds = withAdSlots<PostDto | Report>(
+    items, AD_DELIVERY_LIMITS.FEED_ITEMS_PER_AD, kind === 'posts' && !!user, adNeighborIds,
+    feed.hasNextPage ? AD_ADJACENCY.AFTER : 0,
+  )
   const data: (PostDto | Report | SuggestionsItem | AdSlotItem)[] = [...withAds]
   if (kind === 'posts' && first?.suggestions && items.length > 0) data.splice(Math.min(first.suggestionsAfter ?? 3, items.length), 0, { id: '__suggestions__', suggestions: first.suggestions })
   const surface: AdSurface = sort === 'recent' ? 'FEED_RECENT' : 'FEED_FOR_YOU'
   // Anúncios já entregues, por espaço: a lista mede a visibilidade e só então manda o evento "visto".
   const loadedAds = useRef(new Map<string, SponsoredAdView>())
   const onAdLoaded = useCallback((slotId: string, ad: SponsoredAdView | null) => { if (ad) loadedAds.current.set(slotId, ad); else loadedAds.current.delete(slotId) }, [])
-  const loadedSurface = useRef<AdSurface>(surface)
-  loadedSurface.current = surface
-  const onViewable = useRef(({ viewableItems }: { viewableItems: { item: unknown }[] }) => {
+  const onViewable = useCallback(({ viewableItems }: { viewableItems: { item: unknown }[] }) => {
     for (const { item } of viewableItems) {
       if (!isAdSlot(item)) continue
       const ad = loadedAds.current.get(item.id)
-      if (ad) trackAdEventOnce({ type: 'VIEWABLE_IMPRESSION', impressionId: ad.impressionId, adId: ad.adId, surface: loadedSurface.current, position: item.adSlot, visibleMs: AD_VIEWABILITY_CONFIG.minimumViewTime })
+      if (ad) trackAdEventOnce({ type: 'VIEWABLE_IMPRESSION', impressionId: ad.impressionId, adId: ad.adId, surface, position: item.adSlot, visibleMs: AD_VIEWABILITY_CONFIG.minimumViewTime })
     }
-  })
-  const viewabilityConfig = useRef(AD_VIEWABILITY_CONFIG)
+  }, [surface])
   return <FlatList style={{ backgroundColor: colors.soft }} data={data} keyExtractor={(item) => item.id} contentContainerStyle={{ paddingBottom: 88, flexGrow: 1 }}
     initialNumToRender={5} maxToRenderPerBatch={5} windowSize={7}
-    viewabilityConfig={viewabilityConfig.current} onViewableItemsChanged={onViewable.current}
+    viewabilityConfig={AD_VIEWABILITY_CONFIG} onViewableItemsChanged={onViewable}
     ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
     renderItem={({ item }) => isAdSlot(item) ? <SponsoredSlot slotId={item.id} surface={surface} position={item.adSlot} near={item.near} onLoaded={onAdLoaded} /> : item.id === '__suggestions__' ? <SuggestedProfilesCard suggestions={(item as SuggestionsItem).suggestions} /> : kind === 'posts' ? <PostCard post={item as PostDto} /> : <ReportCard report={item as Report} />}
     ListHeaderComponent={<><Pressable accessibilityRole="button" accessibilityLabel={kind === 'posts' ? 'Escrever publicação' : 'Registrar relato'} onPress={() => router.push(user ? { pathname: '/compose', params: { kind } } : '/login')} style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 8 }}><Avatar name={user?.name || 'Votz'} uri={user?.avatarUrl} size={34} /><Text style={{ color: colors.muted, fontFamily: theme.fonts.body, fontSize: 14, flex: 1 }}>{kind === 'posts' ? 'O que está acontecendo?' : 'O que precisa mudar na sua cidade?'}</Text><ImagePlus size={20} color={colors.action} /></Pressable>{kind === 'posts' && <FeaturedSurveyCard />}</>}
-    refreshing={feed.isRefetching && !feed.isFetchingNextPage} onRefresh={() => { void feed.refetch() }}
+    refreshing={feed.isRefetching && !feed.isFetchingNextPage} onRefresh={() => { void feed.restart() }}
     onEndReached={() => { if (feed.hasNextPage && !feed.isFetching && !feed.isFetchNextPageError) void feed.fetchNextPage() }} onEndReachedThreshold={0.4}
     ListEmptyComponent={<State loading={feed.isPending} title={feed.isPending ? 'Carregando…' : feed.isError ? 'Não foi possível carregar' : sort === 'following' ? 'Você ainda não segue ninguém' : 'A conversa começa aqui'} description={feed.isError ? errorMessage(feed.error) : sort === 'following' ? 'Siga pessoas, políticos e entidades para ver o que eles publicam.' : 'Compartilhe uma ideia ou acompanhe sua comunidade.'} retry={feed.isError ? () => { void feed.refetch() } : undefined} />}
-    ListFooterComponent={feed.isFetchingNextPage ? <ActivityIndicator color={colors.action} style={{ padding: 20 }} /> : feed.isError && data.length > 0 ? <State title="Não foi possível atualizar" retry={() => { void (feed.isFetchNextPageError ? feed.fetchNextPage() : feed.refetch()) }} /> : undefined}
+    ListFooterComponent={feed.isFetchingNextPage ? <ActivityIndicator color={colors.action} style={{ padding: 20 }} /> : feed.isError && data.length > 0 ? <State title={feed.expired ? "Atualize o feed para continuar" : "Não foi possível atualizar"} retry={() => { void (feed.isFetchNextPageError && !feed.expired ? feed.fetchNextPage() : feed.restart()) }} /> : undefined}
   />
 }
 

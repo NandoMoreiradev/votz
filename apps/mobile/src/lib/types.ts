@@ -47,7 +47,7 @@ export interface Page<T> {
   /** "Para você" de quem segue poucas contas: cartão de perfis da cidade (só na página 1). */
   suggestions?: FeedSuggestions | null
   suggestionsAfter?: number
-  meta: { page: number; limit: number; total: number; totalPages: number }
+  meta: { page: number; limit: number; total: number; totalPages: number; nextCursor?: string | null }
 }
 export interface Report {
   id: string; title: string; description: string; category: Category; status: ReportStatus

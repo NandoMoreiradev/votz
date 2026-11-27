@@ -2036,6 +2036,7 @@ model Post {
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
   @@index([hotScore(sort: Desc), createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "posts_feed_recent_idx")
   @@index([state, cityKey, hotScore(sort: Desc)])
   @@index([authorUserId, createdAt(sort: Desc)])
   @@index([authorOrgType, authorOrgId, createdAt(sort: Desc)])

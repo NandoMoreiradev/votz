@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform, Type } from 'class-transformer'
-import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator'
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator'
 import { PostKind } from '@prisma/client'
 
 export class ListPostsQueryDto {
@@ -58,6 +58,13 @@ export class ListPostsQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   hasPoll?: boolean
+
+  @ApiPropertyOptional({ description: 'Use start para iniciar ou repita o nextCursor retornado com os mesmos filtros.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  @Matches(/^(?:start|[0-9a-f-]{36}\.\d{1,10}\.[1-9]\d{0,9})$/)
+  cursor?: string
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

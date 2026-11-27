@@ -14,6 +14,7 @@ import { MediaAssetsService } from '../media/media-assets.service'
 import { legacyItemsFromUrls } from '../media/media-items'
 import { FEED_TRENDING_WINDOW_DAYS, type ViewerRankingContext } from './feed-ranking.service'
 import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
+import type { FeedEntry } from './feed-cursor.service'
 
 const FOR_YOU_EXTRA_CANDIDATES = 60
 /** Quantas pessoas do círculo entram na conta de "seguido por" (teto para a consulta não crescer sem limite). */
@@ -94,8 +95,12 @@ const POST_INCLUDE = {
   },
 } satisfies Prisma.PostInclude
 
-type RawPost = Prisma.PostGetPayload<{ include: typeof POST_INCLUDE }>
+export type RawPost = Prisma.PostGetPayload<{ include: typeof POST_INCLUDE }>
 interface FeedCandidates { posts: RawPost[]; total: number; reposts?: Record<string, PostRepostInfo> }
+
+export interface FeedCandidateParams extends FeedTimelineParams {
+  sort: 'for_you' | 'trending' | 'following' | 'recent'
+}
 
 const COMMENT_AUTHOR_SELECT = {
   id: true,
@@ -192,41 +197,9 @@ export class PostsRepository {
     })
   }
 
-  async findFeedCandidates(params: {
-    sort: 'for_you' | 'trending' | 'following' | 'recent'
-    topicSlug?: string
-    cityKey?: string
-    state?: string
-    kind?: PostKind
-    authorType?: 'CITIZEN' | 'POLITICIAN' | 'ENTITY'
-    authorUserId?: string
-    profileUserId?: string
-    authorOrgId?: string
-    hasPoll?: boolean
-    viewerContext?: ViewerRankingContext
-    page: number
-    limit: number
-  }): Promise<FeedCandidates> {
+  async findFeedCandidates(params: FeedCandidateParams): Promise<FeedCandidates> {
     if (params.profileUserId || params.sort === 'following') return this.findDistributedFeed(params)
-    const where: Prisma.PostWhereInput = {}
-
-    if (params.topicSlug) {
-      where.topics = { some: { topic: { slug: params.topicSlug } } }
-    }
-    if (params.cityKey) where.cityKey = params.cityKey
-    if (params.state) where.state = params.state
-    if (params.kind) where.kind = params.kind
-    if (params.authorUserId) where.authorUserId = params.authorUserId
-    if (params.authorOrgId) where.authorOrgId = params.authorOrgId
-    if (params.hasPoll) where.poll = { isNot: null }
-
-    if (params.authorType === 'CITIZEN') {
-      where.authorOrgType = null
-    } else if (params.authorType === 'POLITICIAN') {
-      where.authorOrgType = OrgType.POLITICIAN
-    } else if (params.authorType === 'ENTITY') {
-      where.authorOrgType = OrgType.ENTITY
-    }
+    const where = this.feedFilters(params)
 
     if (params.sort === 'for_you') {
       const viewer = params.viewerContext
@@ -268,9 +241,6 @@ export class PostsRepository {
       return { posts: [...byId.values()], total: byId.size }
     }
 
-    if (params.sort === 'trending') {
-      where.createdAt = { gte: new Date(Date.now() - FEED_TRENDING_WINDOW_DAYS * 86_400_000) }
-    }
     const skip = (params.page - 1) * params.limit
     const orderBy: Prisma.PostOrderByWithRelationInput[] =
       params.sort === 'trending'
@@ -291,23 +261,88 @@ export class PostsRepository {
     return { posts, total }
   }
 
+  private feedFilters(params: FeedCandidateParams): Prisma.PostWhereInput {
+    const where: Prisma.PostWhereInput = {}
+    if (params.topicSlug) {
+      where.topics = { some: { topic: { slug: params.topicSlug } } }
+    }
+    if (params.cityKey) where.cityKey = params.cityKey
+    if (params.state) where.state = params.state
+    if (params.kind) where.kind = params.kind
+    if (params.authorUserId) where.authorUserId = params.authorUserId
+    if (params.authorOrgId) where.authorOrgId = params.authorOrgId
+    if (params.hasPoll) where.poll = { isNot: null }
+
+    if (params.authorType === 'CITIZEN') {
+      where.authorOrgType = null
+    } else if (params.authorType === 'POLITICIAN') {
+      where.authorOrgType = OrgType.POLITICIAN
+    } else if (params.authorType === 'ENTITY') {
+      where.authorOrgType = OrgType.ENTITY
+    }
+
+    if (params.sort === 'trending') {
+      where.createdAt = { gte: new Date(Date.now() - FEED_TRENDING_WINDOW_DAYS * 86_400_000) }
+    }
+    return where
+  }
+
+  /** A lista ordenada da sessão guarda só as referências. Os cards são lidos uma página por vez. */
+  findFeedSnapshot(params: FeedCandidateParams): Promise<FeedEntry[]> {
+    if (params.profileUserId || params.sort === 'following') {
+      return this.prisma.$queryRaw<FeedEntry[]>(buildFeedTimeline(params).snapshot)
+    }
+    return this.prisma.post.findMany({
+      where: this.feedFilters(params),
+      select: { id: true },
+      orderBy: [{ hotScore: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    })
+  }
+
+  /** Usa a chave de ordenação, inclusive quando o post âncora já foi excluído. */
+  async findRecentFeedPage(params: FeedCandidateParams, asOf: Date, before?: { createdAt: Date; id: string }) {
+    const where = { ...this.feedFilters(params), createdAt: { lte: asOf } }
+    const [rows, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where: before ? {
+          ...where,
+          OR: [{ createdAt: { lt: before.createdAt } }, { createdAt: before.createdAt, id: { lt: before.id } }],
+        } : where,
+        include: POST_INCLUDE,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: params.limit + 1,
+      }),
+      before ? undefined : this.prisma.post.count({ where }),
+    ])
+    return { posts: rows.slice(0, params.limit), hasMore: rows.length > params.limit, total }
+  }
+
   private async findDistributedFeed(params: FeedTimelineParams): Promise<FeedCandidates> {
     const sql = buildFeedTimeline(params)
     const [rows, counts] = await this.prisma.$transaction([
       this.prisma.$queryRaw<{ id: string; repostId: string | null }[]>(sql.page),
       this.prisma.$queryRaw<{ total: number }[]>(sql.count),
     ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead })
+    return { ...await this.findFeedEntries(rows), total: counts[0]?.total ?? 0 }
+  }
+
+  async findFeedEntries(entries: FeedEntry[], skipRemovedReposts = false) {
+    const repostIds = entries.flatMap((row) => row.repostId ? [row.repostId] : [])
     const [posts, reposts] = await Promise.all([
-      this.prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, include: POST_INCLUDE }),
-      this.prisma.postRepost.findMany({
-        where: { id: { in: rows.flatMap((row) => row.repostId ? [row.repostId] : []) } },
+      this.prisma.post.findMany({ where: { id: { in: entries.map((row) => row.id) } }, include: POST_INCLUDE }),
+      repostIds.length ? this.prisma.postRepost.findMany({
+        where: { id: { in: repostIds } },
         select: { id: true, postId: true, createdAt: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } },
-      }),
+      }) : [],
     ])
     const byId = new Map(posts.map((post) => [post.id, post]))
+    const knownReposts = new Set(reposts.map((repost) => repost.id))
     return {
-      posts: rows.flatMap((row) => byId.has(row.id) ? [byId.get(row.id)!] : []),
-      total: counts[0]?.total ?? 0,
+      posts: entries.flatMap((entry) => {
+        const post = byId.get(entry.id)
+        if (skipRemovedReposts && entry.repostId && !knownReposts.has(entry.repostId)) return []
+        return post ? [post] : []
+      }),
       reposts: Object.fromEntries(reposts.map(({ postId, createdAt, ...repost }) => [postId, { ...repost, createdAt: createdAt.toISOString() }])),
     }
   }

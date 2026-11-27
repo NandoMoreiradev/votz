@@ -6,6 +6,7 @@ import { MediaModule } from '../media/media.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { StorageModule } from '../storage/storage.module'
 import { TopicsModule } from '../topics/topics.module'
+import { FeedCursorService } from './feed-cursor.service'
 import { FeedRankingCron } from './feed-ranking.cron'
 import { FeedRankingProcessor } from './feed-ranking.processor'
 import { FEED_RANKING_QUEUE, FeedRankingService } from './feed-ranking.service'
@@ -28,6 +29,7 @@ import { PostsService } from './posts.service'
     PostsService,
     PostsRepository,
     FeedRankingService,
+    FeedCursorService,
     FeedRankingProcessor,
     FeedRankingCron,
   ],

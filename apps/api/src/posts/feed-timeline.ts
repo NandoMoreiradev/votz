@@ -53,8 +53,10 @@ export function buildFeedTimeline(params: FeedTimelineParams) {
     ) repost ON TRUE
     WHERE ${Prisma.join(filters, ' AND ')}
   `
+  const snapshot = Prisma.sql`SELECT id, "repostId" FROM (${timeline}) timeline ORDER BY "activityAt" DESC, id DESC`
   return {
-    page: Prisma.sql`SELECT * FROM (${timeline}) timeline ORDER BY "activityAt" DESC, id DESC LIMIT ${params.limit} OFFSET ${(params.page - 1) * params.limit}`,
+    snapshot,
+    page: Prisma.sql`${snapshot} LIMIT ${params.limit} OFFSET ${(params.page - 1) * params.limit}`,
     count: Prisma.sql`SELECT COUNT(*)::int AS total FROM (${timeline}) timeline`,
   }
 }
