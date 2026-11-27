@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { getToken } from '../lib/token'
+import { reconnectWithFreshToken, socketAuth } from '../lib/socket-auth'
 import { useDebateStore } from '../store/debate.store'
 import { Debate, DebateMessage, DebatePoll, DebateQuestion, ReactionType } from '../types/api'
 
@@ -21,12 +22,13 @@ export function useDebateSocket(debateId: string) {
     if (!token) return
 
     const socket = io(`${getWsBase()}/ws/debates`, {
-      auth: { token: `Bearer ${token}` },
+      auth: socketAuth,
       transports: ['websocket'],
       reconnectionDelay: 2000,
       reconnectionAttempts: 5,
     })
     socketRef.current = socket
+    reconnectWithFreshToken(socket)
 
     socket.on('connect', () => {
       socket.emit('debate:join', { debateId })

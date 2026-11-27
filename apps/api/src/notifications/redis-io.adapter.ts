@@ -32,6 +32,11 @@ export class RedisIoAdapter extends IoAdapter {
     }
   }
 
+  /** true quando o adapter Redis ligou: só com ele o tempo real funciona entre várias instâncias. */
+  get hasRedisAdapter(): boolean {
+    return this.adapterConstructor !== null
+  }
+
   createIOServer(port: number, options?: ServerOptions) {
     const server = super.createIOServer(port, options)
     if (this.adapterConstructor) {
@@ -39,4 +44,14 @@ export class RedisIoAdapter extends IoAdapter {
     }
     return server
   }
+}
+
+/**
+ * Com `WS_REQUIRE_REDIS_ADAPTER=true` a API se recusa a subir sem o adapter Redis. Use em produção
+ * com mais de uma instância: sem ele, notificação e chat só chegam a quem está na mesma instância
+ * do emissor, e o erro não aparece em lugar nenhum. Desligado por padrão (desenvolvimento, 1 instância).
+ */
+export function requiresRedisAdapter(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.WS_REQUIRE_REDIS_ADAPTER?.trim().toLowerCase()
+  return raw === 'true' || raw === '1' || raw === 'yes'
 }

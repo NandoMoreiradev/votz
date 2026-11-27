@@ -1,0 +1,13 @@
+# Tempo real em várias instâncias (WebSocket)
+
+## Como retomar
+- **Estado (27/11/2026):** código pronto e testado; **nada foi alterado no Google Cloud**. Parte 4 da auditoria de várias instâncias ([infra-worker-separado-2026-11-27.md](infra-worker-separado-2026-11-27.md) é a parte 3).
+- **O que foi feito:**
+  1. **Site (web):** o socket lia o token uma vez só (`useSocket.ts`, `useDebateSocket.ts`). Como o token de acesso dura 15 min, qualquer queda de rede depois disso reconectava com token vencido e era recusada. Agora a credencial é lida a cada conexão (`apps/web/src/lib/socket-auth.ts`) e, quando o servidor encerra a conexão, o site renova a sessão e conecta de novo (até 3 vezes seguidas; se a renovação falha, para). **O celular já fazia certo** (`auth` em função com `conversationSocketToken()`), não foi mexido.
+  2. **Banimento entre instâncias:** `SocketSessionRegistry.disconnectUser` só alcançava os sockets da própria instância. Agora todo socket entra na sala `user:<id>` e o registro também chama `namespace.in('user:<id>').disconnectSockets(true)`, que com o Redis adapter chega às outras instâncias. A revalidação a cada 5 min no banco continua como rede de segurança.
+  3. **Não subir sem o adapter:** com `WS_REQUIRE_REDIS_ADAPTER=true` a API recusa subir se o adapter Redis do WebSocket não conectar (sem ele, notificação e chat só chegam a quem está na mesma instância). Padrão desligado.
+  4. **`deploy.ps1`:** `--timeout 3600` no `votz-api` (padrão do Cloud Run é 300 s, que derrubava o WebSocket a cada 5 min).
+- **Provado (27/11):** testes unitários (registro de sockets: 4; exigência do adapter: 13 casos) e uma prova descartável com **Redis real e duas instâncias do Socket.IO**: banir na instância B derrubou o socket conectado na instância A (`io server disconnect`). `tsc` da API e do site sem erro.
+- **NÃO verificado:** o site reconectando de fato após queda de rede e token vencido (o site não tem testes e eu não abri no navegador); `deploy.ps1` (sem PowerShell aqui); o `votz-api` real com várias instâncias.
+- **Próximo passo (decisão do dono):** depois de confirmar que o Redis responde no Cloud Run, ligar `WS_REQUIRE_REDIS_ADAPTER=true` no `votz-api` (`gcloud run services update votz-api --update-env-vars WS_REQUIRE_REDIS_ADAPTER=true`). Se o Redis cair no boot a revisão não sobe e o Cloud Run mantém a anterior.
+- **Arquivos principais:** `apps/api/src/common/security/socket-session.registry.ts`, `apps/api/src/notifications/redis-io.adapter.ts`, `apps/api/src/main.ts`, gateways de notificações e debates (`afterInit`), `apps/web/src/lib/socket-auth.ts`, `infra/gcp/deploy.ps1`.

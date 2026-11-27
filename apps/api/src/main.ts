@@ -6,7 +6,7 @@ import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import { AppModule } from './app.module'
 import { PublicApiModule } from './public-api/public-api.module'
-import { RedisIoAdapter } from './notifications/redis-io.adapter'
+import { RedisIoAdapter, requiresRedisAdapter } from './notifications/redis-io.adapter'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true })
@@ -40,6 +40,11 @@ async function bootstrap() {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.warn(`[Bootstrap] Redis indisponível, continuando sem adapter: ${msg}`)
+  }
+  if (!redisIoAdapter.hasRedisAdapter && requiresRedisAdapter()) {
+    throw new Error(
+      'WS_REQUIRE_REDIS_ADAPTER=true, mas o adapter Redis do WebSocket não conectou. Confira REDIS_URL e a rede.',
+    )
   }
   app.useWebSocketAdapter(redisIoAdapter)
   app.use(cookieParser())
