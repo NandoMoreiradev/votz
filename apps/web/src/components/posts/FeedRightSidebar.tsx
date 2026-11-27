@@ -4,7 +4,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { CheckCircle, ChatCircle, Fire, Heart, MagnifyingGlass, TrendUp, X } from '@phosphor-icons/react'
 import type { Category, CivicTopicSummaryDto, FeedSuggestedProfile, FeedSuggestions, PostDto } from '@votz/shared-types'
 import { useIsFollowingTarget, useToggleFollowTarget, type FollowTargetType } from '../../hooks/useFollow'
-import { usePostsFeed } from '../../hooks/usePosts'
+import { usePostsFeed, useWhoToFollow } from '../../hooks/usePosts'
+import { SponsoredSlot } from '../ads/SponsoredSlot'
+import { FeedPollCard } from './FeedPollCard'
 import { useAuthStore } from '../../store/auth.store'
 import type { Politician, Report } from '../../types/api'
 
@@ -308,6 +310,14 @@ const FollowBtn = styled.button<{ $following: boolean }>`
   }
 `
 
+/** O anúncio traz o próprio cartão; aqui só o enquadramos como os outros cards da lateral. */
+const AdBox = styled.div`
+  article {
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    border-radius: 16px;
+  }
+`
+
 const HotPostRow = styled(Link)`
   display: flex;
   flex-direction: column;
@@ -356,7 +366,7 @@ const HotPostText = styled.span`
   line-height: 1.4;
   color: ${({ theme }) => theme.colors.text};
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -411,6 +421,8 @@ interface FollowableItem {
   subtitle: string
   avatarUrl: string | null
   verified: boolean
+  /** "Seguido por Maria e mais 4": quem do círculo da pessoa já segue. */
+  circleNote?: string
 }
 
 function WhoToFollowRow({ item }: { item: FollowableItem }) {
@@ -436,7 +448,7 @@ function WhoToFollowRow({ item }: { item: FollowableItem }) {
           <span>{item.name}</span>
           {item.verified && <CheckCircle size={14} weight="fill" color="#2DC653" />}
         </strong>
-        <small>{item.subtitle}</small>
+        <small>{item.circleNote ?? item.subtitle}</small>
       </FollowInfo>
 
       <FollowBtn
@@ -465,12 +477,21 @@ function formatTopicMeta(t: CivicTopicSummaryDto): string {
   return parts.length > 0 ? parts.join(' · ') : 'Pauta em destaque'
 }
 
+function circleNote(p: FeedSuggestedProfile): string | undefined {
+  const by = p.followedBy
+  if (!by || by.total === 0 || by.names.length === 0) return undefined
+  const first = by.names[0].split(' ')[0]
+  if (by.total === 1) return `Seguido por ${first}`
+  if (by.names.length >= 2 && by.total === 2) return `Seguido por ${first} e ${by.names[1].split(' ')[0]}`
+  return `Seguido por ${first} e mais ${by.total - 1}`
+}
+
 function buildFollowItems(
   suggestions: FeedSuggestions | null | undefined,
   politicians: Politician[],
 ): FollowableItem[] {
   if (suggestions && suggestions.profiles.length > 0) {
-    return suggestions.profiles.slice(0, 3).map((p: FeedSuggestedProfile) => ({
+    return suggestions.profiles.slice(0, 4).map((p: FeedSuggestedProfile) => ({
       id: p.id,
       targetType: p.kind === 'politicians' ? 'POLITICIAN' : 'ENTITY',
       href: p.kind === 'politicians' ? `/politico/${p.id}` : `/entidade/${p.id}`,
@@ -478,6 +499,7 @@ function buildFollowItems(
       subtitle: [p.username ? `@${p.username}` : null, p.subtitle].filter(Boolean).join(' · '),
       avatarUrl: p.avatarUrl,
       verified: p.verified,
+      circleNote: circleNote(p),
     }))
   }
 
@@ -502,6 +524,7 @@ export function FeedRightSidebar({
   onSwitchToRelatos,
 }: FeedRightSidebarProps) {
   const navigate = useNavigate()
+  const viewer = useAuthStore((s) => s.user)
   const [query, setQuery] = useState('')
 
   const hasTopics = !!trendingTopics && trendingTopics.length > 0
@@ -523,7 +546,11 @@ export function FeedRightSidebar({
   const hotPosts = ((hasRegion && !regionalEmpty ? regionalHot : nationalHot)?.data ?? []).slice(0, 3)
   const hotLabel = hasRegion && !regionalEmpty ? city || uf : 'Brasil'
   const regionLabel = city || uf || 'Brasil'
-  const followItems = buildFollowItems(suggestions, politicians)
+  const { data: whoToFollow } = useWhoToFollow()
+  const followItems = buildFollowItems(
+    whoToFollow && whoToFollow.length > 0 ? { title: '', profiles: whoToFollow } : suggestions,
+    politicians,
+  )
 
   function handleSearch(e: FormEvent) {
     e.preventDefault()
@@ -594,6 +621,17 @@ export function FeedRightSidebar({
         )}
       </Card>
 
+      {/* Quem acompanhar (Who to follow) */}
+      {followItems.length > 0 && (
+        <Card aria-label="Quem acompanhar">
+          <CardTitle>Quem acompanhar</CardTitle>
+          {followItems.map((item) => (
+            <WhoToFollowRow key={`${item.targetType}-${item.id}`} item={item} />
+          ))}
+          <ShowMoreLink to="/politicos">Mostrar mais</ShowMoreLink>
+        </Card>
+      )}
+
       {/* Publicações em alta: as mais curtidas e comentadas do momento */}
       {hotPosts.length > 0 && (
         <Card aria-label="Publicações em alta">
@@ -630,15 +668,14 @@ export function FeedRightSidebar({
         </Card>
       )}
 
-      {/* Quem acompanhar (Who to follow) */}
-      {followItems.length > 0 && (
-        <Card aria-label="Quem acompanhar">
-          <CardTitle>Quem acompanhar</CardTitle>
-          {followItems.map((item) => (
-            <WhoToFollowRow key={`${item.targetType}-${item.id}`} item={item} />
-          ))}
-          <ShowMoreLink to="/politicos">Mostrar mais</ShowMoreLink>
-        </Card>
+      {/* Enquete em alta: vota direto na lateral */}
+      <FeedPollCard city={city} uf={uf} />
+
+      {/* Anúncio patrocinado (só para quem entrou, como no feed) */}
+      {viewer && (
+        <AdBox>
+          <SponsoredSlot surface="FEED_SIDEBAR" position={0} state={uf} city={city} />
+        </AdBox>
       )}
 
       {/* Rodapé compacto estilo X */}

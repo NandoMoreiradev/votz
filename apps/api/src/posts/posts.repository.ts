@@ -16,6 +16,8 @@ import { ViewerRankingContext } from './feed-ranking.service'
 import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
 
 const FOR_YOU_EXTRA_CANDIDATES = 60
+/** Quantas pessoas do círculo entram na conta de "seguido por" (teto para a consulta não crescer sem limite). */
+const CIRCLE_LOOKUP_LIMIT = 500
 
 const POST_INCLUDE = {
   authorUser: {
@@ -334,6 +336,54 @@ export class PostsRepository {
       ...found.politicians.map((p): FeedSuggestedProfile => ({ kind: 'politicians', id: p.id, name: p.name, username: p.username, avatarUrl: p.avatarUrl, verified: p.verified, subtitle: [p.office, p.party?.abbreviation].filter(Boolean).join(' · ') || null })),
       ...found.entities.map((e): FeedSuggestedProfile => ({ kind: 'entities', id: e.id, name: e.legalName, username: e.username, avatarUrl: e.logoUrl, verified: e.verified, subtitle: null })),
     ]
+  }
+
+  /**
+   * Quem a pessoa segue que também segue cada perfil sugerido ("seguido por Maria e mais 4").
+   * Só entra quem deixa a atividade pública visível: seguir político ou entidade diz muito sobre opinião,
+   * então quem escondeu a atividade não aparece para os outros.
+   */
+  async findCircleFollowers(
+    profiles: FeedSuggestedProfile[],
+    viewer: ViewerRankingContext,
+  ): Promise<Map<string, { names: string[]; total: number }>> {
+    const result = new Map<string, { names: string[]; total: number }>()
+    if (profiles.length === 0 || viewer.followedUserIds.size === 0) return result
+    const circle = [...viewer.followedUserIds].slice(0, CIRCLE_LOOKUP_LIMIT)
+    const visibleUser = {
+      banned: false,
+      OR: [
+        { notificationPreference: { is: null } },
+        { notificationPreference: { is: { publicActivityVisible: true } } },
+      ],
+    } satisfies Prisma.UserWhereInput
+    const politicianIds = profiles.filter((p) => p.kind === 'politicians').map((p) => p.id)
+    const entityIds = profiles.filter((p) => p.kind === 'entities').map((p) => p.id)
+    const [politicianRows, entityRows] = await Promise.all([
+      politicianIds.length
+        ? this.prisma.userPoliticianFollower.findMany({
+            where: { politicianId: { in: politicianIds }, userId: { in: circle }, user: visibleUser },
+            select: { politicianId: true, user: { select: { name: true } } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve([]),
+      entityIds.length
+        ? this.prisma.userEntityFollower.findMany({
+            where: { entityId: { in: entityIds }, userId: { in: circle }, user: visibleUser },
+            select: { entityId: true, user: { select: { name: true } } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve([]),
+    ])
+    const add = (key: string, name: string) => {
+      const entry = result.get(key) ?? { names: [], total: 0 }
+      entry.total += 1
+      if (entry.names.length < 2) entry.names.push(name)
+      result.set(key, entry)
+    }
+    for (const row of politicianRows) add(`politicians:${row.politicianId}`, row.user.name)
+    for (const row of entityRows) add(`entities:${row.entityId}`, row.user.name)
+    return result
   }
 
   async getViewerContext(userId?: string): Promise<ViewerRankingContext> {

@@ -187,6 +187,11 @@ export interface FeedSuggestedProfile {
     verified: boolean;
     /** Cargo/partido do político ou tipo da entidade, em texto simples. */
     subtitle: string | null;
+    /** Quem a pessoa segue que também segue este perfil (só contas com atividade pública visível). */
+    followedBy?: {
+        names: string[];
+        total: number;
+    };
 }
 export interface FeedSuggestions {
     title: string;
