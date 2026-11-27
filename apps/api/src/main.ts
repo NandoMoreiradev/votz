@@ -7,8 +7,11 @@ import cookieParser from 'cookie-parser'
 import { AppModule } from './app.module'
 import { PublicApiModule } from './public-api/public-api.module'
 import { RedisIoAdapter } from './notifications/redis-io.adapter'
+import { configureJobsMode } from './common/jobs/jobs-mode'
 
 async function bootstrap() {
+  // RUN_JOBS=false: este processo atende pedidos mas não processa filas nem roda tarefas agendadas
+  const jobsEnabled = configureJobsMode()
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true })
 
   // Confiar no primeiro proxy reverso (Render, Nginx) para obter IP real do cliente
@@ -93,6 +96,7 @@ async function bootstrap() {
   const port = process.env.API_PORT ?? 3000
   await app.listen(port)
 
+  app.get(Logger).log(`Trabalho de fundo (filas e tarefas agendadas) neste processo: ${jobsEnabled ? 'ligado' : 'desligado (RUN_JOBS=false)'}`)
   app.get(Logger).log(`Votz API rodando em http://localhost:${port}/api/v1`)
   app.get(Logger).log(`Swagger interno em http://localhost:${port}/api/docs`)
   if (process.env.NODE_ENV !== 'production') {
