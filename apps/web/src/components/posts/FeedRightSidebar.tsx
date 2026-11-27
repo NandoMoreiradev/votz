@@ -1,9 +1,19 @@
 import { useState, type FormEvent } from 'react'
-import styled from 'styled-components'
+import styled, { keyframes } from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle, Fire, MagnifyingGlass, X } from '@phosphor-icons/react'
+import {
+  Broadcast,
+  CheckCircle,
+  Fire,
+  Lightning,
+  MagnifyingGlass,
+  Scales,
+  X,
+} from '@phosphor-icons/react'
 import type { Category, CivicTopicSummaryDto, FeedSuggestedProfile, FeedSuggestions } from '@votz/shared-types'
 import { useIsFollowingTarget, useToggleFollowTarget, type FollowTargetType } from '../../hooks/useFollow'
+import { useDebates } from '../../hooks/useDebates'
+import { usePropostas } from '../../hooks/usePropostas'
 import { useAuthStore } from '../../store/auth.store'
 import type { Politician, Report } from '../../types/api'
 
@@ -41,15 +51,40 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
+function formatDebateDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+export interface ActiveSurtoSummary {
+  id: string
+  city: string
+  state?: string | null
+  category: string
+  count: number
+}
+
 interface FeedRightSidebarProps {
   trendingTopics?: CivicTopicSummaryDto[]
   topReports: Report[]
   politicians: Politician[]
   suggestions?: FeedSuggestions | null
+  activeSurto?: ActiveSurtoSummary | null
   city?: string
   uf?: string
   onSwitchToRelatos: () => void
 }
+
+const pulse = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+`
 
 const Wrap = styled.div`
   display: flex;
@@ -112,6 +147,64 @@ const SearchClear = styled.button`
   }
 `
 
+const SurtoCard = styled(Link)`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #12131d;
+  border: 1px solid rgba(230, 57, 70, 0.35);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.12s;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 0% 0%, rgba(230, 57, 70, 0.28), transparent 60%);
+    pointer-events: none;
+  }
+
+  > * {
+    position: relative;
+  }
+
+  &:hover {
+    border-color: #e63946;
+  }
+`
+
+const SurtoBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: #e63946;
+  color: #ffffff;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+`
+
+const SurtoTitle = styled.div`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+`
+
+const SurtoMeta = styled.div`
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+`
+
 const Card = styled.section`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
@@ -152,6 +245,26 @@ const TrendEyebrow = styled.span`
   gap: 5px;
 `
 
+const LivePill = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 10px;
+  font-weight: 700;
+  color: #e63946;
+  text-transform: uppercase;
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e63946;
+    animation: ${pulse} 1.6s infinite;
+  }
+`
+
 const TrendTitle = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 14.5px;
@@ -168,6 +281,21 @@ const TrendMeta = styled.span`
   font-size: 12px;
   color: ${({ theme }) => theme.colors.muted};
   font-variant-numeric: tabular-nums;
+`
+
+const VoteBar = styled.div`
+  height: 4px;
+  border-radius: 9999px;
+  background: ${({ theme }) => theme.colors.border};
+  overflow: hidden;
+  margin-top: 4px;
+`
+
+const VoteFill = styled.div<{ $pct: number }>`
+  height: 100%;
+  width: ${({ $pct }) => `${$pct}%`};
+  background: ${({ theme }) => theme.colors.positive};
+  border-radius: 9999px;
 `
 
 const EmptyHint = styled.div`
@@ -419,16 +547,21 @@ export function FeedRightSidebar({
   topReports,
   politicians,
   suggestions,
+  activeSurto,
   city,
   uf,
   onSwitchToRelatos,
 }: FeedRightSidebarProps) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const { data: debatesData } = useDebates({ upcoming: true })
+  const { data: propostasData } = usePropostas({ limit: 2 })
 
   const hasTopics = !!trendingTopics && trendingTopics.length > 0
   const regionLabel = city || uf || 'Brasil'
   const followItems = buildFollowItems(suggestions, politicians)
+  const featuredDebates = (debatesData?.data ?? []).slice(0, 2)
+  const featuredPropostas = (propostasData?.data ?? []).slice(0, 2)
 
   function handleSearch(e: FormEvent) {
     e.preventDefault()
@@ -454,6 +587,25 @@ export function FeedRightSidebar({
           </SearchClear>
         )}
       </SearchForm>
+
+      {/* Alerta de surto ativo (quando existir) */}
+      {activeSurto && (
+        <SurtoCard
+          to={`/?tab=relatos&categoria=${activeSurto.category}&cidade=${encodeURIComponent(activeSurto.city)}`}
+        >
+          <SurtoBadge>
+            <Lightning size={11} weight="fill" /> Surto ativo
+          </SurtoBadge>
+          <SurtoTitle>
+            {activeSurto.count} relatos de{' '}
+            {CATEGORY_LABELS[activeSurto.category as Category] ?? activeSurto.category}
+          </SurtoTitle>
+          <SurtoMeta>
+            {activeSurto.city}
+            {activeSurto.state ? ` · ${activeSurto.state}` : ''} · últimas 24h
+          </SurtoMeta>
+        </SurtoCard>
+      )}
 
       {/* O que está acontecendo (Pautas em alta ou Relatos sob pressão) */}
       <Card aria-label="O que está acontecendo">
@@ -498,6 +650,66 @@ export function FeedRightSidebar({
           </EmptyHint>
         )}
       </Card>
+
+      {/* Debates ao vivo / próximos (conteúdo vivo, não link estático) */}
+      {featuredDebates.length > 0 && (
+        <Card aria-label="Debates em destaque">
+          <CardTitle>
+            <Broadcast size={18} weight="fill" color="#E63946" />
+            Debates
+          </CardTitle>
+          {featuredDebates.map((debate) => {
+            const isLive = debate.status === 'LIVE'
+            return (
+              <TrendRow key={debate.id} to={`/debates/${debate.id}`}>
+                <TrendEyebrow>
+                  {isLive ? <LivePill>Ao vivo</LivePill> : formatDebateDate(debate.scheduledFor)}
+                </TrendEyebrow>
+                <TrendTitle>{debate.title}</TrendTitle>
+                <TrendMeta>
+                  {isLive && debate.viewerCount > 0
+                    ? `${debate.viewerCount} assistindo`
+                    : debate.creator?.name ?? 'Debate público'}
+                </TrendMeta>
+              </TrendRow>
+            )
+          })}
+          <ShowMoreLink to="/debates">Ver agenda de debates</ShowMoreLink>
+        </Card>
+      )}
+
+      {/* Propostas em votação (mostra quando não há debates ativos para manter a coluna equilibrada) */}
+      {featuredDebates.length === 0 && featuredPropostas.length > 0 && (
+        <Card aria-label="Propostas em votação">
+          <CardTitle>
+            <Scales size={18} weight="fill" color="#2563EB" />
+            Propostas em pauta
+          </CardTitle>
+          {featuredPropostas.map((prop) => {
+            const total = prop.totalApoios + prop.totalRejeicoes
+            const pct = total > 0 ? Math.round((prop.totalApoios / total) * 100) : 0
+            return (
+              <TrendRow key={prop.id} to={`/propostas/${prop.id}`}>
+                <TrendEyebrow>
+                  {prop.politico
+                    ? `${prop.politico.name} (${prop.politico.party.abbreviation})`
+                    : 'Proposta legislativa'}
+                </TrendEyebrow>
+                <TrendTitle>{prop.titulo}</TrendTitle>
+                <TrendMeta>
+                  {total > 0 ? `${pct}% de apoio · ${total} votos` : 'Seja o primeiro a opinar'}
+                </TrendMeta>
+                {total > 0 && (
+                  <VoteBar>
+                    <VoteFill $pct={pct} />
+                  </VoteBar>
+                )}
+              </TrendRow>
+            )
+          })}
+          <ShowMoreLink to="/propostas">Ver propostas</ShowMoreLink>
+        </Card>
+      )}
 
       {/* Quem acompanhar (Who to follow) */}
       {followItems.length > 0 && (

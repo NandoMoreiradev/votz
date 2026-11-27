@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import styled, { css } from 'styled-components'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
-  Bell,
   CaretDown,
   CaretUp,
+  CheckCircle,
   FunnelSimple,
-  House,
   Megaphone,
+  Newspaper,
   PencilSimpleLine,
-  User,
 } from '@phosphor-icons/react'
 import { useAuthStore } from '../../store/auth.store'
+import { useUser } from '../../hooks/useUser'
 import { StateSelect, CitySelect } from '../ui/LocationSelect'
 
 export type PostAuthorFilter = 'CITIZEN' | 'POLITICIAN' | 'ENTITY' | undefined
@@ -37,26 +37,42 @@ const Wrap = styled.div`
   gap: 14px;
 `
 
-const AccountCard = styled(Link)`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 16px;
+const ProfileCard = styled.section`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
-  transition: background 0.15s, border-color 0.15s;
+  border-radius: 16px;
+  overflow: hidden;
+`
 
-  &:hover {
-    background: ${({ theme }) => theme.colors.surfaceHover};
-    border-color: ${({ theme }) => theme.colors.borderStrong};
+const ProfileBanner = styled.div<{ $cover?: string | null }>`
+  height: 44px;
+  background: ${({ $cover, theme }) =>
+    $cover
+      ? `url("${encodeURI($cover)}") center / cover no-repeat`
+      : `linear-gradient(135deg, ${theme.colors.primary} 0%, ${theme.colors.action}55 100%)`};
+`
+
+const ProfileBody = styled.div`
+  padding: 0 14px 14px;
+`
+
+const ProfileTop = styled(Link)`
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: -20px;
+  margin-bottom: 10px;
+
+  &:hover strong {
+    text-decoration: underline;
   }
 `
 
-const AccountAvatar = styled.div<{ $src?: string | null; $org?: boolean }>`
-  width: 38px;
-  height: 38px;
-  border-radius: ${({ $org }) => ($org ? '10px' : '50%')};
+const ProfileAvatar = styled.div<{ $src?: string | null; $org?: boolean }>`
+  width: 46px;
+  height: 46px;
+  border-radius: ${({ $org }) => ($org ? '12px' : '50%')};
+  border: 3px solid ${({ theme }) => theme.colors.white};
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -65,26 +81,37 @@ const AccountAvatar = styled.div<{ $src?: string | null; $org?: boolean }>`
   color: ${({ theme }) => theme.colors.onAccent};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
 `
 
-const AccountInfo = styled.div`
+const ProfileNameWrap = styled.div`
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  padding-top: 22px;
 
   strong {
-    font-size: 13.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: ${({ theme }) => theme.fonts.heading};
+    font-size: 14px;
     font-weight: 700;
     color: ${({ theme }) => theme.colors.text};
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    max-width: 100%;
+
+    span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    svg {
+      flex-shrink: 0;
+    }
   }
 
-  span {
+  small {
+    display: block;
     font-size: 12px;
     color: ${({ theme }) => theme.colors.muted};
     white-space: nowrap;
@@ -93,57 +120,145 @@ const AccountInfo = styled.div`
   }
 `
 
-const NavStack = styled.nav`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+const StatsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
 `
 
-const navItemCss = css<{ $active?: boolean }>`
+const StatItem = styled(Link)`
   display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 9999px;
-  border: none;
-  background: ${({ $active, theme }) => ($active ? theme.colors.surfaceHover : 'transparent')};
-  color: ${({ theme }) => theme.colors.text};
-  font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 15.5px;
-  font-weight: ${({ $active }) => ($active ? 700 : 500)};
-  text-align: left;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  border-radius: 8px;
   transition: background 0.15s;
 
-  svg {
-    flex-shrink: 0;
-    color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
   }
+
+  strong {
+    font-family: ${({ theme }) => theme.fonts.heading};
+    font-size: 14px;
+    font-weight: 700;
+    color: ${({ theme }) => theme.colors.text};
+    font-variant-numeric: tabular-nums;
+  }
+
+  span {
+    font-size: 11px;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+`
+
+const GuestCard = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  h3 {
+    font-family: ${({ theme }) => theme.fonts.heading};
+    font-size: 16px;
+    font-weight: 700;
+    color: ${({ theme }) => theme.colors.text};
+    margin: 0;
+  }
+
+  p {
+    font-size: 13px;
+    line-height: 1.45;
+    color: ${({ theme }) => theme.colors.muted};
+    margin: 0;
+  }
+`
+
+const GuestActions = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+`
+
+const GuestPrimary = styled(Link)`
+  flex: 1;
+  height: 36px;
+  border-radius: 9999px;
+  background: ${({ theme }) => theme.colors.action};
+  color: ${({ theme }) => theme.colors.onAccent};
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.actionHover};
+  }
+`
+
+const GuestSecondary = styled(Link)`
+  flex: 1;
+  height: 36px;
+  border-radius: 9999px;
+  border: 1px solid ${({ theme }) => theme.colors.borderStrong};
+  color: ${({ theme }) => theme.colors.text};
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
 
   &:hover {
     background: ${({ theme }) => theme.colors.surfaceHover};
   }
 `
 
-const NavBtn = styled.button<{ $active?: boolean }>`
-  ${navItemCss}
+const FeedSwitcher = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
 `
 
-const NavLinkItem = styled(Link)<{ $active?: boolean }>`
-  ${navItemCss}
+const SwitchBtn = styled.button<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: none;
+  background: ${({ $active, theme }) => ($active ? theme.colors.surfaceHover : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? theme.colors.text : theme.colors.muted)};
+  font-family: ${({ theme }) => theme.fonts.body};
+  font-size: 13px;
+  font-weight: ${({ $active }) => ($active ? 700 : 500)};
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text};
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
 `
 
-const NavCount = styled.span`
-  margin-left: auto;
+const SwitchCount = styled.span`
   font-family: ${({ theme }) => theme.fonts.mono};
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: ${({ theme }) => theme.colors.muted};
-  background: ${({ theme }) => theme.colors.neutral};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  padding: 2px 7px;
-  border-radius: 9999px;
 `
 
 const ComposeBtn = styled.button`
@@ -385,8 +500,8 @@ export function FeedLeftSidebar({
   onSwitchToRelatos,
   onCompose,
 }: FeedLeftSidebarProps) {
-  const navigate = useNavigate()
   const { user, activeContext } = useAuthStore()
+  const { data: profile } = useUser(user?.id ?? '')
   const [filtersOpen, setFiltersOpen] = useState(true)
 
   const activeFiltersCount =
@@ -396,9 +511,11 @@ export function FeedLeftSidebar({
 
   const displayName = activeContext?.name ?? user?.name ?? ''
   const displayAvatar = activeContext ? null : user?.avatarUrl ?? null
-  const displaySubtitle = activeContext
+  const displayHandle = activeContext
     ? 'Perfil organizacional ativo'
-    : 'Meu perfil cidadão'
+    : profile?.username
+      ? `@${profile.username}`
+      : 'Perfil cidadão'
 
   function clearAllFilters() {
     onChangeAuthorType(undefined)
@@ -409,65 +526,90 @@ export function FeedLeftSidebar({
 
   return (
     <Wrap>
-      {user && (
-        <AccountCard to="/meu-perfil">
-          <AccountAvatar $src={displayAvatar} $org={!!activeContext}>
-            {!displayAvatar && getInitials(displayName || 'V')}
-          </AccountAvatar>
-          <AccountInfo>
-            <strong>{displayName}</strong>
-            <span>{displaySubtitle}</span>
-          </AccountInfo>
-        </AccountCard>
+      {user ? (
+        <ProfileCard aria-label="Resumo do seu perfil">
+          <ProfileBanner $cover={activeContext ? null : profile?.coverUrl} />
+          <ProfileBody>
+            <ProfileTop to="/meu-perfil">
+              <ProfileAvatar $src={displayAvatar} $org={!!activeContext}>
+                {!displayAvatar && getInitials(displayName || 'V')}
+              </ProfileAvatar>
+              <ProfileNameWrap>
+                <strong>
+                  <span>{displayName}</span>
+                  {!activeContext && user.verified && (
+                    <CheckCircle size={14} weight="fill" color="#2DC653" />
+                  )}
+                </strong>
+                <small>{displayHandle}</small>
+              </ProfileNameWrap>
+            </ProfileTop>
+
+            {!activeContext && profile && (
+              <StatsGrid>
+                <StatItem to="/meu-perfil">
+                  <strong>{profile.followersCount ?? 0}</strong>
+                  <span>Seguidores</span>
+                </StatItem>
+                <StatItem to="/meu-perfil">
+                  <strong>{profile._count.reports}</strong>
+                  <span>Relatos</span>
+                </StatItem>
+                <StatItem to="/meu-perfil">
+                  <strong>{profile._count.votes}</strong>
+                  <span>Apoios</span>
+                </StatItem>
+              </StatsGrid>
+            )}
+          </ProfileBody>
+        </ProfileCard>
+      ) : (
+        <GuestCard aria-label="Participe do Votz">
+          <h3>Participe do debate público</h3>
+          <p>
+            Publique cobranças, acompanhe políticos da sua cidade e apoie relatos que fazem diferença.
+          </p>
+          <GuestActions>
+            <GuestPrimary to="/cadastro">Criar conta</GuestPrimary>
+            <GuestSecondary to="/entrar">Entrar</GuestSecondary>
+          </GuestActions>
+        </GuestCard>
       )}
 
-      <NavStack aria-label="Navegação rápida do feed">
-        <NavBtn
+      {user && (
+        <ComposeBtn type="button" onClick={onCompose}>
+          <PencilSimpleLine size={18} weight="bold" />
+          Publicar
+        </ComposeBtn>
+      )}
+
+      {/* Alternador rápido entre as duas visões da Home (sem repetir itens da Navbar) */}
+      <FeedSwitcher role="tablist" aria-label="Alternar feed">
+        <SwitchBtn
           type="button"
+          role="tab"
+          aria-selected
           $active
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         >
-          <House size={22} weight="fill" />
-          <span>Publicações</span>
-        </NavBtn>
-
-        <NavBtn type="button" onClick={onSwitchToRelatos}>
-          <Megaphone size={22} weight="regular" />
-          <span>Relatos</span>
+          <Newspaper size={15} weight="fill" />
+          Publicações
+        </SwitchBtn>
+        <SwitchBtn
+          type="button"
+          role="tab"
+          aria-selected={false}
+          onClick={onSwitchToRelatos}
+        >
+          <Megaphone size={15} weight="regular" />
+          Relatos
           {typeof reportsTotal === 'number' && reportsTotal > 0 && (
-            <NavCount>{reportsTotal.toLocaleString('pt-BR')}</NavCount>
+            <SwitchCount>{reportsTotal}</SwitchCount>
           )}
-        </NavBtn>
+        </SwitchBtn>
+      </FeedSwitcher>
 
-        {user && (
-          <>
-            <NavLinkItem to="/notificacoes">
-              <Bell size={22} weight="regular" />
-              <span>Notificações</span>
-            </NavLinkItem>
-            <NavLinkItem to="/meu-perfil">
-              <User size={22} weight="regular" />
-              <span>Perfil</span>
-            </NavLinkItem>
-          </>
-        )}
-      </NavStack>
-
-      <ComposeBtn
-        type="button"
-        onClick={() => {
-          if (!user) {
-            navigate('/entrar')
-            return
-          }
-          onCompose()
-        }}
-      >
-        <PencilSimpleLine size={18} weight="bold" />
-        Publicar
-      </ComposeBtn>
-
-      <FilterCard aria-label="Filtros de publicações">
+      <FilterCard aria-label="Filtros do feed">
         <FilterToggle
           type="button"
           aria-expanded={filtersOpen}
@@ -475,7 +617,7 @@ export function FeedLeftSidebar({
         >
           <FilterTitleGroup>
             <FunnelSimple size={16} weight="bold" />
-            <span>Filtros</span>
+            <span>Filtros do feed</span>
             {activeFiltersCount > 0 && (
               <ActiveBadge>{activeFiltersCount}</ActiveBadge>
             )}

@@ -1629,6 +1629,7 @@ export function Home() {
               topReports={topByPressure}
               politicians={politicians}
               suggestions={postsData?.suggestions}
+              activeSurto={activeSurto}
               city={city || undefined}
               uf={uf || undefined}
               onSwitchToRelatos={() => switchFeedTab('relatos')}
