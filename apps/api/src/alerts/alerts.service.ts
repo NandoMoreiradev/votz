@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { OrgType, WebhookEventType } from '@prisma/client'
 import { Queue } from 'bullmq'
+import { HOUR_MS, windowedJobId } from '../common/queue/job-window'
 import { AlertsRepository } from './alerts.repository'
 import { NotificationsService } from '../notifications/notifications.service'
 import { MailService } from '../mail/mail.service'
@@ -42,7 +43,7 @@ export class AlertsService {
       'check-surto',
       { category, city, state } satisfies AlertsJob,
       {
-        jobId: `surto-${category}-${city.toLowerCase()}`,
+        deduplication: { id: `surto-${category}-${city.toLowerCase()}`, keepLastIfActive: true },
         removeOnComplete: 50,
         removeOnFail: 20,
         attempts: 3,
@@ -56,7 +57,7 @@ export class AlertsService {
       'check-all-surtos',
       {},
       {
-        jobId: 'batch-surtos',
+        jobId: windowedJobId('batch-surtos', HOUR_MS),
         removeOnComplete: 5,
         removeOnFail: 5,
         attempts: 2,

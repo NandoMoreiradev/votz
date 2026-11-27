@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { HOUR_MS, windowedJobId } from '../common/queue/job-window'
 import { EntityType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
@@ -48,7 +49,7 @@ export class IbgeSyncService {
       'full-sync',
       {},
       {
-        jobId: 'ibge-full-sync',
+        jobId: windowedJobId('ibge-full-sync', HOUR_MS),
         attempts: 3,
         backoff: { type: 'exponential', delay: 10_000 },
         removeOnComplete: 5,

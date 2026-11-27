@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { DAY_MS, windowedJobId } from '../common/queue/job-window'
 import { ConfigService } from '@nestjs/config'
 import Stripe from 'stripe'
 import { PrismaService } from '../prisma/prisma.service'
@@ -34,7 +35,7 @@ export class MandateExpiryService {
     await this.queue.add(
       'process-expired',
       {},
-      { jobId: 'mandate-expiry-daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: windowedJobId('mandate-expiry', DAY_MS), removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

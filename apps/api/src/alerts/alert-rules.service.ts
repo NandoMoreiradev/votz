@@ -25,6 +25,7 @@ import {
   normalizeLocationKey,
 } from '@votz/shared-types'
 import { Queue } from 'bullmq'
+import { MINUTE_MS, windowedJobId } from '../common/queue/job-window'
 import DOMPurify from 'isomorphic-dompurify'
 import { resolvePoliticianTerritory } from '../analytics/analytics.scope'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
@@ -281,7 +282,7 @@ export class AlertRulesService {
       'evaluate-report-rules',
       { reportId },
       {
-        jobId: `rules-report-${reportId}`,
+        deduplication: { id: `rules-report-${reportId}`, keepLastIfActive: true },
         removeOnComplete: 50,
         removeOnFail: 20,
         attempts: 3,
@@ -295,7 +296,7 @@ export class AlertRulesService {
       'evaluate-rules-sweep',
       {},
       {
-        jobId: 'rules-periodic-sweep',
+        jobId: windowedJobId('rules-periodic-sweep', 15 * MINUTE_MS),
         removeOnComplete: 10,
         removeOnFail: 10,
         attempts: 2,

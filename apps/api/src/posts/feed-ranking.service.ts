@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { MINUTE_MS, windowedJobId } from '../common/queue/job-window'
 import { FlagStatus, FlagTargetType, PostKind } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 
@@ -185,7 +186,7 @@ export class FeedRankingService {
         'recalculate-batch',
         {},
         {
-          jobId: 'feed-batch',
+          jobId: windowedJobId('feed-batch', 10 * MINUTE_MS),
           removeOnComplete: 10,
           removeOnFail: 10,
           attempts: 2,

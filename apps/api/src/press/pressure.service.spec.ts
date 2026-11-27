@@ -27,13 +27,13 @@ describe('PressureService', () => {
     jest.clearAllMocks()
   })
 
-  it('enqueues single report recalculation with deduplicated jobId', async () => {
+  it('enqueues single report recalculation with deduplication (not a fixed jobId)', async () => {
     mockQueue.add.mockResolvedValue({})
     await service.enqueueReport('r1')
     expect(mockQueue.add).toHaveBeenCalledWith(
       'recalculate-single',
       { reportId: 'r1' },
-      expect.objectContaining({ jobId: 'single-r1' }),
+      expect.objectContaining({ deduplication: { id: 'single-r1', keepLastIfActive: true } }),
     )
   })
 
