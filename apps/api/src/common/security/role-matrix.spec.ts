@@ -57,6 +57,7 @@ interface MatrixEntry {
 const ROUTE_MATRIX: MatrixEntry[] = [
   // AdminController
   { method: 'GET', pattern: '/admin/stats', requestPath: '/admin/stats', allowedRoles: MOD_AND_ADMIN },
+  { method: 'GET', pattern: '/admin/superadmin/overview', requestPath: '/admin/superadmin/overview', allowedRoles: ADMIN_ONLY },
   { method: 'GET', pattern: '/admin/users', requestPath: '/admin/users', allowedRoles: MOD_AND_ADMIN },
   {
     method: 'PATCH',
@@ -71,6 +72,13 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     requestPath: `/admin/users/${SAMPLE_UUID}/type`,
     allowedRoles: ADMIN_ONLY,
     body: { type: UserType.CITIZEN, reason: 'Motivo administrativo com mais de dez caracteres.' },
+  },
+  {
+    method: 'PATCH',
+    pattern: '/admin/users/:id/chat-storage',
+    requestPath: `/admin/users/${SAMPLE_UUID}/chat-storage`,
+    allowedRoles: ADMIN_ONLY,
+    body: { quotaMb: 1024, reason: 'Liberação de espaço aprovada pelo suporte.' },
   },
   { method: 'GET', pattern: '/admin/reports', requestPath: '/admin/reports', allowedRoles: MOD_AND_ADMIN },
   {
@@ -110,6 +118,14 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     allowedRoles: ADMIN_ONLY,
     body: { plan: 'BASICO' },
   },
+  { method: 'GET', pattern: '/admin/companies', requestPath: '/admin/companies', allowedRoles: MOD_AND_ADMIN },
+  {
+    method: 'PATCH',
+    pattern: '/admin/companies/:id/verify',
+    requestPath: `/admin/companies/${SAMPLE_UUID}/verify`,
+    allowedRoles: MOD_AND_ADMIN,
+    body: { verified: true },
+  },
   {
     method: 'PATCH',
     pattern: '/admin/companies/:id/plan',
@@ -117,6 +133,7 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     allowedRoles: ADMIN_ONLY,
     body: { plan: 'STARTER' },
   },
+  { method: 'GET', pattern: '/admin/api-keys', requestPath: '/admin/api-keys', allowedRoles: ADMIN_ONLY },
   {
     method: 'PATCH',
     pattern: '/admin/api-keys/:id/tier',
@@ -124,6 +141,15 @@ const ROUTE_MATRIX: MatrixEntry[] = [
     allowedRoles: ADMIN_ONLY,
     body: { tier: 'PAID', reason: 'Concessão comercial aprovada para portal parceiro.' },
   },
+  { method: 'GET', pattern: '/admin/posts', requestPath: '/admin/posts', allowedRoles: MOD_AND_ADMIN },
+  {
+    method: 'DELETE',
+    pattern: '/admin/posts/:id',
+    requestPath: `/admin/posts/${SAMPLE_UUID}`,
+    allowedRoles: MOD_AND_ADMIN,
+    body: { reason: 'Conteúdo removido em conformidade com moderação.' },
+  },
+  { method: 'GET', pattern: '/admin/audit-logs', requestPath: '/admin/audit-logs', allowedRoles: ADMIN_ONLY },
 
   // AdminFlagsController
   { method: 'GET', pattern: '/admin/flags', requestPath: '/admin/flags', allowedRoles: MOD_AND_ADMIN },
