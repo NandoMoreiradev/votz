@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle, Fire, MagnifyingGlass, X } from '@phosphor-icons/react'
-import type { Category, CivicTopicSummaryDto, FeedSuggestedProfile, FeedSuggestions } from '@votz/shared-types'
+import { CheckCircle, ChatCircle, Fire, Heart, MagnifyingGlass, TrendUp, X } from '@phosphor-icons/react'
+import type { Category, CivicTopicSummaryDto, FeedSuggestedProfile, FeedSuggestions, PostDto } from '@votz/shared-types'
 import { useIsFollowingTarget, useToggleFollowTarget, type FollowTargetType } from '../../hooks/useFollow'
+import { usePostsFeed } from '../../hooks/usePosts'
 import { useAuthStore } from '../../store/auth.store'
 import type { Politician, Report } from '../../types/api'
 
@@ -307,6 +308,83 @@ const FollowBtn = styled.button<{ $following: boolean }>`
   }
 `
 
+const HotPostRow = styled(Link)`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const HotPostAuthor = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.colors.text};
+
+  span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+`
+
+const HotPostAvatar = styled.span<{ $src?: string | null }>`
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: ${({ $src, theme }) => ($src ? `url(${$src}) center / cover` : theme.colors.primary)};
+  color: ${({ theme }) => theme.colors.onAccent};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 10px;
+  font-weight: 700;
+`
+
+const HotPostText = styled.span`
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: ${({ theme }) => theme.colors.text};
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+`
+
+const HotPostMeta = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.muted};
+  font-variant-numeric: tabular-nums;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+`
+
+function hotPostExcerpt(post: PostDto): string {
+  const text = post.content.replace(/\s+/g, ' ').trim()
+  if (text) return text.length > 140 ? `${text.slice(0, 137)}...` : text
+  if (post.poll) return post.poll.question?.trim() || 'Enquete aberta para votação'
+  if (post.mediaItems.length > 0 || post.media.length > 0) return 'Publicação com foto ou vídeo'
+  return 'Ver publicação'
+}
+
 const RailFooter = styled.footer`
   padding: 2px 12px 12px;
   display: flex;
@@ -427,6 +505,23 @@ export function FeedRightSidebar({
   const [query, setQuery] = useState('')
 
   const hasTopics = !!trendingTopics && trendingTopics.length > 0
+  const hasRegion = !!(city || uf)
+  // Publicações em alta: primeiro da região escolhida; se a região não tiver nenhuma, as do Brasil.
+  const { data: regionalHot, isFetched: regionalFetched } = usePostsFeed({
+    sort: 'trending',
+    city,
+    state: uf,
+    limit: 3,
+    enabled: hasRegion,
+  })
+  const regionalEmpty = hasRegion && regionalFetched && (regionalHot?.data.length ?? 0) === 0
+  const { data: nationalHot } = usePostsFeed({
+    sort: 'trending',
+    limit: 3,
+    enabled: !hasRegion || regionalEmpty,
+  })
+  const hotPosts = ((hasRegion && !regionalEmpty ? regionalHot : nationalHot)?.data ?? []).slice(0, 3)
+  const hotLabel = hasRegion && !regionalEmpty ? city || uf : 'Brasil'
   const regionLabel = city || uf || 'Brasil'
   const followItems = buildFollowItems(suggestions, politicians)
 
@@ -464,9 +559,9 @@ export function FeedRightSidebar({
 
         {hasTopics ? (
           <>
-            {trendingTopics!.slice(0, 5).map((t) => (
+            {trendingTopics!.slice(0, 5).map((t, index) => (
               <TrendRow key={t.id} to={`/pautas/${t.slug}`}>
-                <TrendEyebrow>Pauta em alta · {regionLabel}</TrendEyebrow>
+                <TrendEyebrow>{index + 1} · Pauta em alta · {regionLabel}</TrendEyebrow>
                 <TrendTitle>{t.displayTag}</TrendTitle>
                 <TrendMeta>{formatTopicMeta(t)}</TrendMeta>
               </TrendRow>
@@ -498,6 +593,42 @@ export function FeedRightSidebar({
           </EmptyHint>
         )}
       </Card>
+
+      {/* Publicações em alta: as mais curtidas e comentadas do momento */}
+      {hotPosts.length > 0 && (
+        <Card aria-label="Publicações em alta">
+          <CardTitle>
+            <TrendUp size={18} weight="bold" />
+            Publicações em alta
+          </CardTitle>
+          {hotPosts.map((post) => {
+            const authorName = post.author.orgName ?? post.author.name
+            const authorAvatar = post.author.orgType ? post.author.orgAvatarUrl : post.author.avatarUrl
+            return (
+              <HotPostRow key={post.id} to={`/publicacoes/${post.id}`}>
+                <HotPostAuthor>
+                  <HotPostAvatar $src={authorAvatar} aria-hidden="true">
+                    {!authorAvatar && authorName.trim().charAt(0).toUpperCase()}
+                  </HotPostAvatar>
+                  <span>{authorName}</span>
+                </HotPostAuthor>
+                <HotPostText>{hotPostExcerpt(post)}</HotPostText>
+                <HotPostMeta>
+                  <span>
+                    <Heart size={13} weight="fill" aria-hidden="true" />
+                    {post.likesCount.toLocaleString('pt-BR')}
+                  </span>
+                  <span>
+                    <ChatCircle size={13} weight="fill" aria-hidden="true" />
+                    {post.commentsCount.toLocaleString('pt-BR')}
+                  </span>
+                  <span>{hotLabel}</span>
+                </HotPostMeta>
+              </HotPostRow>
+            )
+          })}
+        </Card>
+      )}
 
       {/* Quem acompanhar (Who to follow) */}
       {followItems.length > 0 && (

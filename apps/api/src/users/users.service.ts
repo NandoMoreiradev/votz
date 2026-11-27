@@ -376,6 +376,10 @@ export class UsersService {
     return { following: true }
   }
 
+  getSocialSummary(userId: string) {
+    return this.repo.getSocialSummary(userId)
+  }
+
   async isFollowing(targetUserId: string, followerId: string) {
     const existing = await this.prisma.userFollow.findUnique({
       where: { followerId_followingId: { followerId, followingId: targetUserId } },
