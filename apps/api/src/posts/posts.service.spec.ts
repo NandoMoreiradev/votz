@@ -286,3 +286,44 @@ describe('PostsService.create com fotos e vídeos no padrão de formatos', () =>
     ).rejects.toBeInstanceOf(BadRequestException)
   })
 })
+
+describe('PostsService.getWhoToFollow', () => {
+  const viewer = { userId: 'u1', followedUserIds: new Set(['f1']), city: 'Campinas', state: 'SP' }
+  const profile = (id: string, kind: 'politicians' | 'entities' = 'politicians') => ({
+    kind, id, name: `Perfil ${id}`, username: null, avatarUrl: null, verified: false, subtitle: null,
+  })
+
+  function build(found: ReturnType<typeof profile>[], circle: Map<string, { names: string[]; total: number }>) {
+    const repo = {
+      getViewerContext: jest.fn().mockResolvedValue(viewer),
+      findSuggestedProfiles: jest.fn().mockResolvedValue(found),
+      findCircleFollowers: jest.fn().mockResolvedValue(circle),
+    }
+    const service = new PostsService(repo as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never)
+    return { service, repo }
+  }
+
+  it('põe primeiro quem tem gente do círculo seguindo e mantém a ordem original no empate', async () => {
+    const { service } = build(
+      [profile('a'), profile('b'), profile('c', 'entities')],
+      new Map([['entities:c', { names: ['Maria'], total: 3 }]]),
+    )
+    const { profiles } = await service.getWhoToFollow({ id: 'u1' } as never, 5)
+    expect(profiles.map((p) => p.id)).toEqual(['c', 'a', 'b'])
+    expect(profiles[0].followedBy).toEqual({ names: ['Maria'], total: 3 })
+    expect(profiles[1].followedBy).toBeUndefined()
+  })
+
+  it('limita a quantidade devolvida entre 1 e 10', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => profile(String(i)))
+    const { service } = build(many, new Map())
+    expect((await service.getWhoToFollow(null, 3)).profiles).toHaveLength(3)
+    expect((await service.getWhoToFollow(null, 99)).profiles).toHaveLength(10)
+    expect((await service.getWhoToFollow(null, 0)).profiles).toHaveLength(1)
+  })
+
+  it('devolve lista vazia quando não há sugestão para a região', async () => {
+    const { service } = build([], new Map())
+    await expect(service.getWhoToFollow(null)).resolves.toEqual({ profiles: [] })
+  })
+})

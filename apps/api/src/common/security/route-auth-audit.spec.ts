@@ -111,6 +111,8 @@ const EXPECTED_PUBLIC_ROUTES = new Set<string>([
   'GET /topics/trending',
   'GET /topics/search',
   'GET /topics/:slug',
+  // Busca de pessoas na tela de busca (aberta a quem não entrou). Só contas cidadãs públicas, por nome ou @, mín. 2 letras.
+  'GET /users/search',
   'GET /users/:id',
   'GET /users/:id/reports',
 ])

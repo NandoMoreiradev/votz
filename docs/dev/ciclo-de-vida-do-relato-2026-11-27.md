@@ -5,7 +5,7 @@
 **Estado em 27/11/2026:** implementado na branch `claude/project-thread-ghu9pi` (API, site e app), com pull request aberto para o dono revisar. Nada foi para produção.
 
 **O que foi verificado**
-- API: `tsc` limpo; Jest completo passando, menos 2 testes que já falhavam antes desta mudança (`role-matrix` e `route-auth-audit`, rotas de outros módulos) e 3 de vídeo que dependem do ffmpeg da máquina. 57 testes novos do ciclo (`report-lifecycle/*.spec.ts`): transições, permissões, prova ao resolver, motivo ao arquivar, 409 em tela velha, avocação de terceiro sem mexer em status, território, desistência, contestação (autor, "Eu também", 30 dias, uma por resolução, anônimo sem nome), decisão da moderação, confirmação do autor, fila de contestações, Mandatômetro e aviso de prazo vencido.
+- API: `tsc` limpo; Jest completo passando depois de juntar com o `master` de 27/11 (2028 testes), menos 3 de vídeo que dependem do ffmpeg da máquina. 57 testes novos do ciclo (`report-lifecycle/*.spec.ts`): transições, permissões, prova ao resolver, motivo ao arquivar, 409 em tela velha, avocação de terceiro sem mexer em status, território, desistência, contestação (autor, "Eu também", 30 dias, uma por resolução, anônimo sem nome), decisão da moderação, confirmação do autor, fila de contestações, Mandatômetro e aviso de prazo vencido.
 - Migração aplicada num Postgres 16 local com dados de teste: o backfill das avocações a partir da linha do tempo deu o resultado esperado.
 - Site: `tsc` limpo e `vite build` ok.
 - App: `tsc --noEmit` e `expo lint` limpos nos arquivos mexidos.

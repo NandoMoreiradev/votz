@@ -846,7 +846,8 @@ export type AdEventType = (typeof AD_EVENT_TYPES)[number]
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
 export const AD_VIEWABILITY = { MIN_VISIBLE_RATIO: 0.5, MIN_VISIBLE_MS: 1000 } as const
 
-export const AD_SURFACES = ['FEED_FOR_YOU', 'FEED_RECENT', 'FEED_CITY'] as const
+/** Onde o anúncio aparece. `FEED_SIDEBAR` é o espaço na barra lateral do feed de publicações (site). */
+export const AD_SURFACES = ['FEED_FOR_YOU', 'FEED_RECENT', 'FEED_CITY', 'FEED_SIDEBAR'] as const
 export type AdSurface = (typeof AD_SURFACES)[number]
 
 /**

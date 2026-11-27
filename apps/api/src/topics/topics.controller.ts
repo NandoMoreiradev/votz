@@ -33,6 +33,15 @@ export class TopicsController {
     return this.topicsService.search(q, Number(limit) || 8)
   }
 
+  @Get('me/following')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Pautas que o usuário segue, com a mais ativa primeiro' })
+  @ApiQuery({ name: 'limit', required: false, example: 6 })
+  following(@CurrentUser() user: { id: string }, @Query('limit') limit = '6') {
+    return this.topicsService.getFollowed(user.id, Number(limit) || 6)
+  }
+
   @Public()
   @Get(':slug')
   @ApiOperation({ summary: 'Obter detalhes da pauta cívica (relatos, debates e cidades impactadas)' })
