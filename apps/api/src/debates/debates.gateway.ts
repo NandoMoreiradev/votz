@@ -4,6 +4,7 @@ import {
   WebSocketServer,
   SubscribeMessage,
   OnGatewayConnection,
+  OnGatewayInit,
   OnGatewayDisconnect,
   MessageBody,
   ConnectedSocket,
@@ -32,7 +33,7 @@ interface ReactionBurst {
   },
 })
 export class DebatesGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
   @WebSocketServer() server: Server
 
@@ -57,6 +58,11 @@ export class DebatesGateway
     private readonly prisma: PrismaService,
     @Optional() private readonly socketRegistry?: SocketSessionRegistry,
   ) {}
+
+  afterInit(server: Server) {
+    // Banimento derruba os sockets desta conta também nas outras instâncias (via Redis adapter)
+    this.socketRegistry?.bindServer(server)
+  }
 
   async handleConnection(client: Socket) {
     try {

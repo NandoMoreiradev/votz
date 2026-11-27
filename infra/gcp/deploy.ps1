@@ -29,9 +29,9 @@ $apiUrl = 'https://votz-api-742542852298.us-central1.run.app/api/v1'
 $tag = Get-Date -Format 'yyyy-MM-dd-HHmm'
 
 $targets = @{
-  api = @{ Dockerfile = 'apps/api/Dockerfile';        Image = 'api';        Service = 'votz-api'; BuildArgs = @() }
-  web = @{ Dockerfile = 'apps/web/Dockerfile';        Image = 'web';        Service = 'votz-web'; BuildArgs = @('--build-arg', "VITE_API_URL=$apiUrl") }
-  ads = @{ Dockerfile = 'apps/ads-server/Dockerfile'; Image = 'ads-server'; Service = 'votz-ads'; BuildArgs = @() }
+  api = @{ Dockerfile = 'apps/api/Dockerfile';        Image = 'api';        Service = 'votz-api'; BuildArgs = @(); RunArgs = @('--timeout', '3600') }
+  web = @{ Dockerfile = 'apps/web/Dockerfile';        Image = 'web';        Service = 'votz-web'; BuildArgs = @('--build-arg', "VITE_API_URL=$apiUrl"); RunArgs = @() }
+  ads = @{ Dockerfile = 'apps/ads-server/Dockerfile'; Image = 'ads-server'; Service = 'votz-ads'; BuildArgs = @(); RunArgs = @() }
 }
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -62,7 +62,8 @@ foreach ($app in $order) {
   if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o build/envio de $app (se for erro de auth, rode: gcloud auth configure-docker southamerica-east1-docker.pkg.dev)" -ForegroundColor Red; exit 1 }
 
   Write-Host "2/2 publicando no Cloud Run ($($t.Service))"
-  & $gcloud run deploy $t.Service --image $image --region $region --project $project --quiet
+  # RunArgs (só a API): --timeout 3600 deixa o WebSocket aberto até 1 hora (o padrão do Cloud Run é 5 minutos)
+  & $gcloud run deploy $t.Service --image $image --region $region --project $project --quiet @($t.RunArgs)
   if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o deploy de $app" -ForegroundColor Red; exit 1 }
   Write-Host "$app publicado com a imagem $tag" -ForegroundColor Green
 }

@@ -4,7 +4,15 @@ import type { PrismaService } from '../../prisma/prisma.service'
 
 export const SOCKET_REVALIDATION_INTERVAL_MS = 5 * 60_000
 
-type RegisteredSocket = Pick<Socket, 'id' | 'disconnect' | 'data'>
+type RegisteredSocket = Pick<Socket, 'id' | 'disconnect' | 'data'> & Partial<Pick<Socket, 'join'>>
+
+/** Sala de cada usuário autenticado: com o Redis adapter, alcança os sockets de TODAS as instâncias. */
+export const userRoom = (userId: string): string => `user:${userId}`
+
+/** O mínimo que o registro precisa de um namespace do Socket.IO (`server.in(sala).disconnectSockets()`). */
+export interface RoomServer {
+  in(room: string): { disconnectSockets(close?: boolean): unknown }
+}
 
 /**
  * Global in-memory registry mapping authenticated userId -> active sockets across gateways.
@@ -14,6 +22,12 @@ type RegisteredSocket = Pick<Socket, 'id' | 'disconnect' | 'data'>
 @Injectable()
 export class SocketSessionRegistry {
   private readonly socketsByUser = new Map<string, Map<string, RegisteredSocket>>()
+  private readonly servers = new Set<RoomServer>()
+
+  /** Cada gateway entrega o seu namespace ao subir, para o banimento alcançar outras instâncias. */
+  bindServer(server: RoomServer): void {
+    this.servers.add(server)
+  }
 
   register(userId: string, client: RegisteredSocket): void {
     let userSockets = this.socketsByUser.get(userId)
@@ -34,7 +48,21 @@ export class SocketSessionRegistry {
     }
   }
 
+  /**
+   * Derruba todas as conexões do usuário. Os sockets desta instância caem na hora; os das outras
+   * instâncias caem pela sala `user:<id>` (precisa do Redis adapter). Sem o adapter, as outras
+   * instâncias só derrubam na revalidação periódica (SOCKET_REVALIDATION_INTERVAL_MS).
+   * Devolve quantos sockets desta instância foram derrubados.
+   */
   disconnectUser(userId: string): number {
+    for (const server of this.servers) {
+      try {
+        server.in(userRoom(userId)).disconnectSockets(true)
+      } catch {
+        // a revalidação periódica garante a queda mesmo se o aviso entre instâncias falhar
+      }
+    }
+
     const userSockets = this.socketsByUser.get(userId)
     if (!userSockets || userSockets.size === 0) return 0
 
@@ -59,6 +87,7 @@ export function startSocketSessionTracking(options: {
 }): void {
   const { client, userId, prisma, intervals, registry, logger } = options
   registry?.register(userId, client)
+  void Promise.resolve(client.join?.(userRoom(userId))).catch(() => undefined)
 
   const existing = intervals.get(client.id)
   if (existing) clearInterval(existing)

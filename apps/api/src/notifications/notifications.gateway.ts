@@ -3,6 +3,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
   OnGatewayConnection,
+  OnGatewayInit,
   OnGatewayDisconnect,
 } from '@nestjs/websockets'
 import { JwtService } from '@nestjs/jwt'
@@ -22,7 +23,7 @@ import {
   },
 })
 export class NotificationsGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
   @WebSocketServer() server: Server
 
@@ -34,6 +35,11 @@ export class NotificationsGateway
     private readonly prisma: PrismaService,
     @Optional() private readonly socketRegistry?: SocketSessionRegistry,
   ) {}
+
+  afterInit(server: Server) {
+    // Banimento derruba os sockets desta conta também nas outras instâncias (via Redis adapter)
+    this.socketRegistry?.bindServer(server)
+  }
 
   async handleConnection(client: Socket) {
     try {

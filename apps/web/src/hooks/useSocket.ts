@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { useAuthStore } from '../store/auth.store'
 import { getToken } from '../lib/token'
+import { reconnectWithFreshToken, socketAuth } from '../lib/socket-auth'
 import { queryClient } from '../lib/query-client'
 import { clearTyping, recordTyping } from '../lib/chat-typing'
 import type { ConversationTypingEvent } from '@votz/shared-types'
@@ -29,11 +30,13 @@ export function useSocket() {
     if (!token) return
 
     socket = io(`${getWsBase()}/ws`, {
-      auth: { token: `Bearer ${token}` },
+      auth: socketAuth,
       transports: ['websocket'],
       reconnectionDelay: 2000,
       reconnectionDelayMax: 15_000,
     })
+
+    reconnectWithFreshToken(socket)
 
     socket.on('notification', () => {
       // Invalida contagem e lista — o bell, o painel e /notificacoes atualizam em tempo real
