@@ -250,4 +250,28 @@ export class TopicsRepository {
     await this.prisma.userTopicFollower.create({ data: { userId, topicId } })
     return { following: true }
   }
+
+  /** Pautas que a pessoa segue, as com atividade mais recente primeiro. */
+  async findFollowedTopics(userId: string, limit: number) {
+    const rows = await this.prisma.userTopicFollower.findMany({
+      where: { userId },
+      select: {
+        topic: {
+          select: {
+            id: true,
+            slug: true,
+            displayTag: true,
+            postsCount: true,
+            reportsCount: true,
+            debatesCount: true,
+            tractionScore: true,
+            lastActivityAt: true,
+          },
+        },
+      },
+      orderBy: { topic: { lastActivityAt: 'desc' } },
+      take: limit,
+    })
+    return rows.map((row) => row.topic)
+  }
 }

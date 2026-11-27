@@ -473,7 +473,7 @@ exports.AD_INVOICE_STATUS_LABELS = { PENDING: 'Sendo emitida', ISSUED: 'Emitida'
 exports.AD_EVENT_TYPES = ['REQUEST', 'IMPRESSION', 'VIEWABLE_IMPRESSION', 'CLICK', 'HIDE', 'HIDE_ADVERTISER', 'REPORT', 'CONVERSION'];
 /** Exibição só conta como vista com metade do card na tela por 1 segundo (padrão de mercado). */
 exports.AD_VIEWABILITY = { MIN_VISIBLE_RATIO: 0.5, MIN_VISIBLE_MS: 1000 };
-exports.AD_SURFACES = ['FEED_FOR_YOU', 'FEED_RECENT', 'FEED_CITY'];
+exports.AD_SURFACES = ['FEED_FOR_YOU', 'FEED_RECENT', 'FEED_CITY', 'FEED_SIDEBAR'];
 exports.AD_CONVERSION_EVENT_NAMES = ['PURCHASE', 'LEAD', 'SIGNUP', 'CONTACT', 'OTHER'];
 /** Janela de atribuição: conversão até 7 dias depois do clique. */
 exports.AD_ATTRIBUTION_WINDOW_DAYS = 7;

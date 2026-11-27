@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useAuthStore } from '../store/auth.store'
 import { UserProfile, UserReportsResponse } from '../types/api'
 
 export interface PublicUserSearchItem {
@@ -57,5 +58,23 @@ export function useUserReports(userId: string, page = 1) {
         .then((r) => r.data),
     enabled: !!userId,
     staleTime: 30_000,
+  })
+}
+
+export interface SocialSummary {
+  postsCount: number
+  followersCount: number
+  followingCount: number
+}
+
+/** Números do cartão de perfil no feed: publicações, seguidores e seguindo. */
+export function useMySocialSummary() {
+  const userId = useAuthStore((s) => s.user?.id)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
+  return useQuery({
+    queryKey: ['users', 'me', 'social-summary', userId],
+    queryFn: () => api.get<SocialSummary>('/users/me/social-summary').then((r) => r.data),
+    enabled: sessionReady && !!userId,
+    staleTime: 60_000,
   })
 }

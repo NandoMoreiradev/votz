@@ -23,6 +23,14 @@ export class UsersController {
     return this.usersService.findMe(user.id)
   }
 
+  @Get('me/social-summary')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Números do perfil no feed: publicações, seguidores e seguindo' })
+  getSocialSummary(@CurrentUser() user: { id: string }) {
+    return this.usersService.getSocialSummary(user.id)
+  }
+
   @Get('me/preferences')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

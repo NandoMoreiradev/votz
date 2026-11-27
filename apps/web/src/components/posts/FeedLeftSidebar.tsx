@@ -6,12 +6,16 @@ import {
   CaretDown,
   CaretUp,
   FunnelSimple,
+  Hash,
   House,
   Megaphone,
   PencilSimpleLine,
   User,
 } from '@phosphor-icons/react'
 import { useAuthStore } from '../../store/auth.store'
+import { useUnreadCount } from '../../hooks/useNotifications'
+import { useFollowedTopics } from '../../hooks/useTopics'
+import { useMySocialSummary } from '../../hooks/useUser'
 import { StateSelect, CitySelect } from '../ui/LocationSelect'
 
 export type PostAuthorFilter = 'CITIZEN' | 'POLITICIAN' | 'ENTITY' | undefined
@@ -35,22 +39,6 @@ const Wrap = styled.div`
   display: flex;
   flex-direction: column;
   gap: 14px;
-`
-
-const AccountCard = styled(Link)`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: ${({ theme }) => theme.colors.white};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  transition: background 0.15s, border-color 0.15s;
-
-  &:hover {
-    background: ${({ theme }) => theme.colors.surfaceHover};
-    border-color: ${({ theme }) => theme.colors.borderStrong};
-  }
 `
 
 const AccountAvatar = styled.div<{ $src?: string | null; $org?: boolean }>`
@@ -91,6 +79,131 @@ const AccountInfo = styled.div`
     overflow: hidden;
     text-overflow: ellipsis;
   }
+`
+
+const ProfileCard = styled.section`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const ProfileHead = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+`
+
+const StatsRow = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid ${({ theme }) => theme.colors.border};
+`
+
+const StatItem = styled(Link)`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px;
+  border-radius: 10px;
+  transition: background 0.15s;
+
+  strong {
+    font-family: ${({ theme }) => theme.fonts.mono};
+    font-size: 15px;
+    font-weight: 700;
+    color: ${({ theme }) => theme.colors.text};
+  }
+
+  span {
+    font-size: 11.5px;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const UnreadBadge = styled.span`
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: ${({ theme }) => theme.colors.action};
+  color: ${({ theme }) => theme.colors.onAccent};
+  font-family: ${({ theme }) => theme.fonts.mono};
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+`
+
+const TopicsCard = styled.section`
+  background: ${({ theme }) => theme.colors.white};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 16px;
+  overflow: hidden;
+`
+
+const TopicsTitle = styled.h3`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px 6px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 14px;
+  font-weight: 700;
+  color: ${({ theme }) => theme.colors.text};
+`
+
+const TopicLink = styled(Link)`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.surfaceHover};
+  }
+`
+
+const TopicInfo = styled.div`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  strong {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: ${({ theme }) => theme.colors.text};
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  span {
+    font-size: 12px;
+    color: ${({ theme }) => theme.colors.muted};
+  }
+`
+
+const NewDot = styled.span`
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.colors.action};
 `
 
 const NavStack = styled.nav`
@@ -372,6 +485,9 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
+const compactNumber = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export function FeedLeftSidebar({
   reportsTotal,
   postAuthorType,
@@ -387,7 +503,10 @@ export function FeedLeftSidebar({
 }: FeedLeftSidebarProps) {
   const navigate = useNavigate()
   const { user, activeContext } = useAuthStore()
-  const [filtersOpen, setFiltersOpen] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const { data: summary } = useMySocialSummary()
+  const { data: unread } = useUnreadCount()
+  const { data: myTopics } = useFollowedTopics(5)
 
   const activeFiltersCount =
     (postAuthorType ? 1 : 0) +
@@ -410,15 +529,33 @@ export function FeedLeftSidebar({
   return (
     <Wrap>
       {user && (
-        <AccountCard to="/meu-perfil">
-          <AccountAvatar $src={displayAvatar} $org={!!activeContext}>
-            {!displayAvatar && getInitials(displayName || 'V')}
-          </AccountAvatar>
-          <AccountInfo>
-            <strong>{displayName}</strong>
-            <span>{displaySubtitle}</span>
-          </AccountInfo>
-        </AccountCard>
+        <ProfileCard aria-label="Seu perfil">
+          <ProfileHead to="/meu-perfil">
+            <AccountAvatar $src={displayAvatar} $org={!!activeContext}>
+              {!displayAvatar && getInitials(displayName || 'V')}
+            </AccountAvatar>
+            <AccountInfo>
+              <strong>{displayName}</strong>
+              <span>{displaySubtitle}</span>
+            </AccountInfo>
+          </ProfileHead>
+          {!activeContext && summary && (
+            <StatsRow>
+              <StatItem to="/meu-perfil" aria-label={`${summary.postsCount} publicações`}>
+                <strong>{compactNumber.format(summary.postsCount)}</strong>
+                <span>Publicações</span>
+              </StatItem>
+              <StatItem to="/meu-perfil" aria-label={`${summary.followersCount} seguidores`}>
+                <strong>{compactNumber.format(summary.followersCount)}</strong>
+                <span>Seguidores</span>
+              </StatItem>
+              <StatItem to="/meu-perfil" aria-label={`${summary.followingCount} seguindo`}>
+                <strong>{compactNumber.format(summary.followingCount)}</strong>
+                <span>Seguindo</span>
+              </StatItem>
+            </StatsRow>
+          )}
+        </ProfileCard>
       )}
 
       <NavStack aria-label="Navegação rápida do feed">
@@ -444,6 +581,9 @@ export function FeedLeftSidebar({
             <NavLinkItem to="/notificacoes">
               <Bell size={22} weight="regular" />
               <span>Notificações</span>
+              {!!unread && unread > 0 && (
+                <UnreadBadge aria-label={`${unread} não lidas`}>{unread > 99 ? '99+' : unread}</UnreadBadge>
+              )}
             </NavLinkItem>
             <NavLinkItem to="/meu-perfil">
               <User size={22} weight="regular" />
@@ -466,6 +606,29 @@ export function FeedLeftSidebar({
         <PencilSimpleLine size={18} weight="bold" />
         Publicar
       </ComposeBtn>
+
+      {user && myTopics && myTopics.length > 0 && (
+        <TopicsCard aria-label="Meus assuntos">
+          <TopicsTitle>
+            <Hash size={16} weight="bold" />
+            Meus assuntos
+          </TopicsTitle>
+          {myTopics.map((t) => {
+            const hasNews = Date.now() - new Date(t.lastActivityAt).getTime() < DAY_MS
+            return (
+              <TopicLink key={t.id} to={`/pautas/${t.slug}`}>
+                <TopicInfo>
+                  <strong>{t.displayTag}</strong>
+                  <span>
+                    {t.postsCount.toLocaleString('pt-BR')} {t.postsCount === 1 ? 'publicação' : 'publicações'}
+                  </span>
+                </TopicInfo>
+                {hasNews && <NewDot role="img" aria-label="Novidade nas últimas 24 horas" />}
+              </TopicLink>
+            )
+          })}
+        </TopicsCard>
+      )}
 
       <FilterCard aria-label="Filtros de publicações">
         <FilterToggle

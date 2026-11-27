@@ -88,6 +88,18 @@ describe('UsersService', () => {
     })
   })
 
+  describe('getSocialSummary', () => {
+    it('returns the profile numbers shown in the feed sidebar', async () => {
+      repo.getSocialSummary = jest.fn().mockResolvedValue({ postsCount: 4, followersCount: 12, followingCount: 7 })
+      await expect(service.getSocialSummary('u1')).resolves.toEqual({
+        postsCount: 4,
+        followersCount: 12,
+        followingCount: 7,
+      })
+      expect(repo.getSocialSummary).toHaveBeenCalledWith('u1')
+    })
+  })
+
   describe('findUserReports', () => {
     it('throws NotFoundException when user does not exist', async () => {
       repo.findById.mockResolvedValue(null)

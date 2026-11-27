@@ -40,6 +40,14 @@ export class PostsController {
 
   @OptionalAuth()
   @UseGuards(JwtAuthGuard)
+  @Get('who-to-follow')
+  @ApiOperation({ summary: 'Políticos e entidades para acompanhar na lateral do feed, com quem do seu círculo já segue' })
+  whoToFollow(@Query('limit') limit = '5', @CurrentUser() user?: ActingUser | null) {
+    return this.postsService.getWhoToFollow(user, Number(limit) || 5)
+  }
+
+  @OptionalAuth()
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   @ApiOperation({ summary: 'Detalhe de uma publicação' })
   getById(
