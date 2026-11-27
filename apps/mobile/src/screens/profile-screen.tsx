@@ -13,6 +13,12 @@ import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import ClipboardCheck from 'lucide-react-native/icons/clipboard-check'
 import ArrowLeftRight from 'lucide-react-native/icons/arrow-left-right'
+import Newspaper from 'lucide-react-native/icons/newspaper'
+import ScrollText from 'lucide-react-native/icons/scroll-text'
+import Inbox from 'lucide-react-native/icons/inbox'
+import Clock from 'lucide-react-native/icons/clock'
+import Megaphone from 'lucide-react-native/icons/megaphone'
+import Store from 'lucide-react-native/icons/store'
 import LogOut from 'lucide-react-native/icons/log-out'
 import { THEME_PREFERENCE_LABELS, type ThemePreference } from '@votz/shared-types'
 import { Avatar, Button, ErrorText, IconButton, State, TabStrip, styles } from '../components/ui'
@@ -85,7 +91,28 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
           },
         ]
       : []),
+    ...(activeContext?.type === 'POLITICIAN'
+      ? [
+          { key: 'mandato', label: 'Caixa do Mandato', icon: <Inbox size={20} color={colors.primary} />, onPress: () => router.push('/mandato' as Href) },
+          { key: 'nova-proposta', label: 'Nova proposta', icon: <ScrollText size={20} color={colors.primary} />, onPress: () => router.push('/proposta-nova' as Href) },
+        ]
+      : []),
+    ...(activeContext?.type === 'ENTITY'
+      ? [
+          { key: 'prazos', label: 'Prazos e fila (SLA)', icon: <Clock size={20} color={colors.primary} />, onPress: () => router.push('/entidade-prazos' as Href) },
+          { key: 'consultas', label: 'Consultas públicas', icon: <ClipboardCheck size={20} color={colors.primary} />, onPress: () => router.push('/entidade-consultas' as Href) },
+        ]
+      : []),
+    ...(activeContext?.type === 'COMPANY'
+      ? [
+          { key: 'anuncios', label: 'Anúncios e relatórios', icon: <Megaphone size={20} color={colors.primary} />, onPress: () => router.push('/empresa-anuncios' as Href) },
+          { key: 'empresa-editar', label: 'Empresa, SLA e filiais', icon: <Store size={20} color={colors.primary} />, onPress: () => router.push('/empresa-editar' as Href) },
+        ]
+      : []),
     { key: 'edit', label: 'Editar perfil', icon: <UserPen size={20} color={colors.primary} />, onPress: () => router.push('/edit-profile') },
+    { key: 'propostas', label: 'Propostas', icon: <ScrollText size={20} color={colors.primary} />, onPress: () => router.push('/propostas' as Href) },
+    { key: 'imprensa', label: 'Portal de Imprensa', icon: <Newspaper size={20} color={colors.primary} />, onPress: () => router.push('/imprensa' as Href) },
+    { key: 'pedidos-imprensa', label: 'Pedidos da imprensa', icon: <Inbox size={20} color={colors.primary} />, onPress: () => router.push('/pedidos-da-imprensa' as Href) },
     {
       key: 'theme',
       label: 'Aparência',

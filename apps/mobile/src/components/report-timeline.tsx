@@ -29,6 +29,7 @@ import X from 'lucide-react-native/icons/x'
 import { EventType } from '@votz/shared-types'
 import { Avatar, Button, ErrorText, IconButton, styles } from './ui'
 import { OrgContextSheet } from './org-context-sheet'
+import { PressContactCard } from './press-contact-card'
 import {
   useAdvocateReport,
   useDisputeReport,
@@ -554,6 +555,9 @@ export function ReportDetailPanel({ report }: { report: Report }) {
 
         {advocates.length > 0 && <AdvocacyBanner advocates={advocates} />}
       </View>
+
+      {/* Contato da Imprensa (autor opt-in ou jornalista credenciado) */}
+      <PressContactCard reportId={report.id} anonymous={report.anonymous} />
 
       {/* Prompt para entrar no perfil institucional */}
       {promptOrg && (
