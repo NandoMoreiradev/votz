@@ -1,7 +1,47 @@
-import type { Category, FeedSuggestions, MediaItemDto, PostDto, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
+import type { ActiveContext, Category, EventType, FeedSuggestions, MediaItemDto, OrgContextType, PostDto, RecipientType, ReportStatus, AuthenticatedUser } from '@votz/shared-types'
 
-export type { PostDto }
+export type { ActiveContext, OrgContextType, PostDto }
 export type User = AuthenticatedUser
+export interface OrgProfile {
+  id: string
+  name: string
+  type: OrgContextType
+  logoUrl: string | null
+  verified: boolean
+  role: string
+  permissions: string[]
+}
+export interface MyProfilesResponse {
+  personal: {
+    id: string
+    name: string
+    type: string
+    avatarUrl: string | null
+  }
+  orgs: OrgProfile[]
+}
+export type SwitchContextResponse =
+  | { requiresMfa: true }
+  | { requiresMfaSetup: true }
+  | { accessToken: string; ctx: ActiveContext | null }
+export interface TimelineAuthor {
+  id: string
+  name: string
+  avatarUrl: string | null
+}
+export interface TimelineEvent {
+  id: string
+  type: EventType | string
+  content: string
+  metadata?: Record<string, unknown> | null
+  createdAt: string
+  author?: TimelineAuthor | null
+}
+export interface ReportFollowersResponse {
+  count: number
+  politicians: { id: string; name: string; office: string; state: string }[]
+  entities: { id: string; legalName: string }[]
+}
 export interface Page<T> {
   data: T[]
   /** "Para você" de quem segue poucas contas: cartão de perfis da cidade (só na página 1). */
@@ -11,13 +51,14 @@ export interface Page<T> {
 }
 export interface Report {
   id: string; title: string; description: string; category: Category; status: ReportStatus
-  city: string | null; state: string | null; anonymous: boolean; media: string[]
+  neighborhood?: string | null; city: string | null; state: string | null; anonymous: boolean; media: string[]
+  recipientType?: RecipientType | string | null; recipientId?: string | null
   /** Só no detalhe: tamanho e moldura das fotos e vídeos (relato aparece inteiro, sem recorte). */
   mediaItems?: MediaItemDto[]
   pressureScore: number; createdAt: string
   author: { id: string; name: string; avatarUrl: string | null } | null
-  _count: { votes: number; comments: number }
-  timeline?: { id: string; content: string; createdAt: string; type: string }[]
+  _count: { votes: number; meTooVotes?: number; comments: number }
+  timeline?: TimelineEvent[]
 }
 export interface SimilarReport {
   id: string; title: string; description: string; category: Category; status: ReportStatus

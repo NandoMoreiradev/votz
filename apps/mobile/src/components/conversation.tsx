@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { FlatList, Keyboard, Pressable, Text, TextInput, View } from 'react-native'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import ArrowUp from 'lucide-react-native/icons/arrow-up'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Send from 'lucide-react-native/icons/send'
 import X from 'lucide-react-native/icons/x'
 import type { PostCommentDto } from '@votz/shared-types'
 import { Screen, Toolbar } from './screen'
 import { PostCard, ReportCard, profileLink } from './content-row'
+import { ReportDetailPanel } from './report-timeline'
 import { Avatar, Button, ErrorText, IconButton, State, styles } from './ui'
-import { useComment, useComments, useDetail, useSupportReport } from '../hooks/use-content'
+import { useComment, useComments, useDetail } from '../hooks/use-content'
 import { patchItem } from '../lib/optimistic'
 import { api, errorMessage, json } from '../lib/api'
 import { formatCount, relativeTime } from '../lib/format'
@@ -66,20 +66,6 @@ function Poll({ post }: { post: PostDto }) {
     <Text style={{ color: colors.muted, fontSize: 12 }}>{formatCount(poll.totalVotes, 'voto', 'votos')}{poll.expired ? ' · Encerrada' : ''}</Text><ErrorText message={vote.isError ? errorMessage(vote.error) : undefined} />
   </View>
 }
-function ReportActions({ report }: { report: Report }) {
-  const { colors, theme } = useAppTheme()
-  const user = useSession((s) => s.user)
-  const votes = useQuery({ queryKey: ['report-votes', report.id, user?.id], queryFn: () => api<{ SUPPORT: boolean; ME_TOO: boolean }>(`/reports/${report.id}/votes/me`), enabled: !!user })
-  const support = useSupportReport(report.id, user?.id)
-  const [memory, setMemory] = useState(false)
-  return <View style={{ padding: 16, gap: 12, backgroundColor: colors.surface, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}><Pressable accessibilityRole="button" accessibilityLabel={votes.data?.SUPPORT ? 'Retirar meu apoio' : 'Apoiar relato'} disabled={!!user && (votes.isPending || votes.isError)} onPress={() => user ? !support.isPending && support.mutate() : router.push('/login')} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, borderRadius: 20, paddingHorizontal: 14, backgroundColor: votes.data?.SUPPORT ? colors.tint : colors.soft }}><ArrowUp size={18} color={colors.action} /><Text style={{ fontFamily: theme.fonts.medium, color: colors.action }}>{votes.data?.SUPPORT ? 'Apoiado' : 'Apoiar'}</Text></Pressable><Text style={{ color: colors.muted, fontSize: 12 }}>{formatCount(report._count.votes, 'apoio', 'apoios')} · {formatCount(report._count.comments, 'comentário', 'comentários')}</Text></View>
-    <ErrorText message={support.isError ? errorMessage(support.error) : undefined} />
-    {votes.isError && <Button secondary title="Consultar meu apoio" onPress={() => { void votes.refetch() }} />}
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded: memory }} onPress={() => setMemory(!memory)} style={{ minHeight: 40, justifyContent: 'center' }}><Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: colors.primary }}>{memory ? 'Ocultar memória do relato −' : 'Ver memória do relato +'}</Text></Pressable>
-    {memory && report.timeline?.map((event) => <View key={event.id} style={{ borderLeftWidth: 2, borderLeftColor: colors.border, paddingLeft: 12, paddingVertical: 6, gap: 3 }}><Text style={[styles.text, { color: colors.text }]}>{event.content}</Text><Text style={{ fontSize: 11, color: colors.muted }}>{new Date(event.createdAt).toLocaleString('pt-BR')}</Text></View>)}
-  </View>
-}
 export function Conversation({ id, kind, focusReply }: { id: string; kind: 'posts' | 'reports'; focusReply?: boolean }) {
   const { colors, theme } = useAppTheme()
   const detail = useDetail<PostDto | Report>(kind, id)
@@ -95,7 +81,7 @@ export function Conversation({ id, kind, focusReply }: { id: string; kind: 'post
   return <Screen><Toolbar title={kind === 'posts' ? 'Publicação' : 'Relato'} back />
     {!detail.data ? <State loading={detail.isPending} title={detail.isPending ? 'Carregando…' : 'Não foi possível abrir'} description={detail.isError ? errorMessage(detail.error) : undefined} retry={() => { void detail.refetch() }} /> : <>
       <FlatList style={{ flex: 1, backgroundColor: colors.background }} data={comments.data || []} keyExtractor={(item) => item.id} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 18 }}
-        ListHeaderComponent={<>{kind === 'posts' ? <><PostCard post={detail.data as PostDto} detail /><Poll post={detail.data as PostDto} /></> : <><ReportCard report={detail.data as Report} detail /><ReportActions report={detail.data as Report} /></>}<Text style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, fontSize: 14, fontFamily: theme.fonts.medium, color: colors.primary }}>Conversa</Text></>}
+        ListHeaderComponent={<>{kind === 'posts' ? <><PostCard post={detail.data as PostDto} detail /><Poll post={detail.data as PostDto} /></> : <><ReportCard report={detail.data as Report} detail /><ReportDetailPanel report={detail.data as Report} /></>}<Text style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, fontSize: 14, fontFamily: theme.fonts.medium, color: colors.primary }}>Conversa</Text></>}
         renderItem={({ item }) => <CommentRow comment={item} onReply={reply} />}
         ListEmptyComponent={<State loading={comments.isPending} title={comments.isPending ? 'Carregando respostas…' : comments.isError ? 'Não foi possível carregar' : 'Comece a conversa'} description={comments.isError ? errorMessage(comments.error) : 'Sua participação faz a diferença.'} retry={comments.isError ? () => { void comments.refetch() } : undefined} />}
       />

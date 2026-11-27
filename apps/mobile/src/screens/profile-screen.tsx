@@ -12,6 +12,7 @@ import Palette from 'lucide-react-native/icons/palette'
 import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
 import ClipboardCheck from 'lucide-react-native/icons/clipboard-check'
+import ArrowLeftRight from 'lucide-react-native/icons/arrow-left-right'
 import LogOut from 'lucide-react-native/icons/log-out'
 import { THEME_PREFERENCE_LABELS, type ThemePreference } from '@votz/shared-types'
 import { Avatar, Button, ErrorText, IconButton, State, TabStrip, styles } from '../components/ui'
@@ -19,11 +20,13 @@ import { Screen, Toolbar } from '../components/screen'
 import { ActionSheet, type SheetItem } from '../components/action-sheet'
 import { ChoiceSheet } from '../components/choice-sheet'
 import { ConfirmModal } from '../components/confirm-modal'
+import { OrgContextSheet } from '../components/org-context-sheet'
 import { PostCard, statusLabels } from '../components/content-row'
 import { FloatingCompose } from '../components/floating-compose'
 import { useDetail, useFollowing, useProfilePosts, useProfileReports, useToggleFollow } from '../hooks/use-content'
 import { useConversationAction, useConversationCapabilities } from '../hooks/use-conversations'
-import { ORG_BY_KIND } from '../hooks/use-page-inbox'
+import { useMyProfiles } from '../hooks/use-org-context'
+import { KIND_BY_ORG, ORG_BY_KIND } from '../hooks/use-page-inbox'
 import { errorMessage } from '../lib/api'
 import { SECTOR_LABELS, formatCount, relativeTime } from '../lib/format'
 import { useSession } from '../lib/session'
@@ -40,11 +43,14 @@ const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
 
 export default function ProfileScreen({ kind, id, tabs = false }: { kind: ProfileKind; id: string; tabs?: boolean }) {
   const user = useSession((s) => s.user)
+  const activeContext = useSession((s) => s.activeContext)
+  const myProfiles = useMyProfiles(!!user && kind === 'users' && user.id === id)
   const contextEnabled = useContextNotesEnabled()
   const surveysEnabled = useSurveysEnabled()
   const { preference: themePref, setPreference: setThemePref, colors, theme } = useAppTheme()
   const [accountSheetOpen, setAccountSheetOpen] = useState(false)
   const [themeSheetOpen, setThemeSheetOpen] = useState(false)
+  const [contextSheetOpen, setContextSheetOpen] = useState(false)
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null)
   const own = kind === 'users' && user?.id === id
   const company = kind === 'companies'
@@ -66,7 +72,19 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
   const data: (PostDto | ReportSummary)[] = tab === 'posts' ? posts.data?.pages.flatMap((page) => page.data) || [] : reports.data?.pages.flatMap((page) => page.data) || []
   const profileData = profile.data
 
+  const hasOrgs = (myProfiles.data?.orgs.length ?? 0) > 0
   const accountItems: SheetItem[] = [
+    ...(hasOrgs
+      ? [
+          {
+            key: 'switch-context',
+            label: 'Atuar como',
+            subtitle: activeContext ? activeContext.name : 'Perfil pessoal (cidadão)',
+            icon: <ArrowLeftRight size={20} color={colors.primary} />,
+            onPress: () => setContextSheetOpen(true),
+          },
+        ]
+      : []),
     { key: 'edit', label: 'Editar perfil', icon: <UserPen size={20} color={colors.primary} />, onPress: () => router.push('/edit-profile') },
     {
       key: 'theme',
@@ -86,11 +104,53 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
   ]
 
   const header = profileData && <>
+    {own && activeContext && (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: colors.tint,
+          borderBottomWidth: 0.5,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() =>
+            router.push({
+              pathname: '/profile/[kind]/[id]',
+              params: { kind: KIND_BY_ORG[activeContext.type], id: activeContext.id },
+            })
+          }
+        >
+          <Text style={{ fontFamily: theme.fonts.body, fontSize: 11, color: colors.muted }}>
+            Atuando como perfil institucional
+          </Text>
+          <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: colors.primary }} numberOfLines={1}>
+            {activeContext.name} →
+          </Text>
+        </Pressable>
+        <Button title="Trocar" secondary onPress={() => setContextSheetOpen(true)} />
+      </View>
+    )}
     {profileData.coverUrl
       ? <Image source={profileData.coverUrl} recyclingKey={profileData.coverUrl} accessibilityLabel="Capa do perfil" style={{ width: '100%', aspectRatio: 3, backgroundColor: colors.badgeBg }} contentFit="cover" />
       : <View style={{ height: 92, backgroundColor: colors.badgeBg, overflow: 'hidden' }}><View style={{ width: '35%', height: 3, backgroundColor: colors.action, position: 'absolute', bottom: 0 }} /><Image source={require('../../assets/votz-foreground.png')} style={{ position: 'absolute', right: 6, top: -30, width: 180, height: 180, opacity: 0.22 }} contentFit="contain" /></View>}
     <View style={{ paddingHorizontal: 16, paddingBottom: 18, backgroundColor: colors.surface }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ marginTop: -36, borderWidth: 4, borderColor: colors.surface, borderRadius: 44, backgroundColor: colors.surface }}><Avatar name={name} uri={profileData.avatarUrl || profileData.logoUrl} size={72} /></View><View style={{ paddingTop: 12, flexDirection: 'row', gap: 8 }}>{canMessagePage && pageOrgType && <Button title="Mensagem" secondary onPress={() => router.push({ pathname: '/conversation/page', params: { orgType: pageOrgType, orgId: id, name } })} />}{kind !== 'users' && <Button title="Relatar" secondary onPress={() => user ? router.push({ pathname: '/compose', params: { kind: 'reports', recipientType: kind === 'politicians' ? 'POLITICIAN' : kind === 'companies' ? 'COMPANY' : 'ENTITY', recipientId: id, recipientName: name } }) : router.push('/login')} />}{canMessage && <Button title="Mensagem" secondary loading={startChat.isPending} onPress={() => startChat.mutate({ path: '/direct', body: { targetUserId: id } }, { onSuccess: (conversation) => router.push({ pathname: '/conversation/[id]', params: { id: conversation.id } }), onError: (error) => setNotice({ title: 'Não foi possível enviar o pedido', message: errorMessage(error) }) })} />}{own ? <Button title="Editar perfil" secondary onPress={() => router.push('/edit-profile')} /> : <Button title={following.data?.following ? 'Seguindo' : 'Seguir'} secondary={!!following.data?.following} loading={toggle.isPending || following.isLoading} disabled={!!user && following.isError} onPress={() => user ? toggle.mutate() : router.push('/login')} />}</View></View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <View style={{ marginTop: -36, borderWidth: 4, borderColor: colors.surface, borderRadius: 44, backgroundColor: colors.surface }}>
+          <Avatar name={name} uri={profileData.avatarUrl || profileData.logoUrl} size={72} />
+        </View>
+        <View style={{ paddingTop: 12, flexShrink: 1, alignItems: 'flex-end' }}>
+          {own
+            ? <Button title="Editar perfil" secondary onPress={() => router.push('/edit-profile')} />
+            : <Button title={following.data?.following ? 'Seguindo' : 'Seguir'} secondary={!!following.data?.following} loading={toggle.isPending || following.isLoading} disabled={!!user && following.isError} onPress={() => user ? toggle.mutate() : router.push('/login')} />}
+        </View>
+      </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}><Text style={{ fontFamily: theme.fonts.heading, fontSize: 22, lineHeight: 28, color: colors.primary, flexShrink: 1 }}>{name}</Text>{profileData.verified && <BadgeCheck size={18} color={colors.action} />}</View>
       {!!profileData.username && <Text style={{ color: colors.muted, fontSize: 13, marginTop: 2 }}>@{profileData.username}</Text>}
       {company && !!profileData.sector && <Text style={{ color: colors.action, fontFamily: theme.fonts.medium, fontSize: 13, marginTop: 6 }}>{SECTOR_LABELS[profileData.sector] ?? profileData.sector}</Text>}
@@ -98,6 +158,35 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
       {!!(profileData.bio || profileData.description) && <Text style={[styles.text, { color: colors.text, marginTop: 10 }]}>{profileData.bio || profileData.description}</Text>}
       {own && !profileData.bio && <Pressable accessibilityRole="button" onPress={() => router.push('/edit-profile')} style={{ paddingVertical: 8 }}><Text style={{ color: colors.muted, fontSize: 13 }}>Conte à comunidade um pouco sobre você.</Text></Pressable>}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 6, marginTop: 10 }}>{!!profileData.city && <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}><MapPin size={13} color={colors.muted} /><Text style={{ color: colors.muted, fontSize: 12 }}>{[profileData.city, profileData.state].filter(Boolean).join(', ')}</Text></View>}{!!profileData.createdAt && <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}><CalendarDays size={13} color={colors.muted} /><Text style={{ color: colors.muted, fontSize: 12 }}>Desde {new Date(profileData.createdAt).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}</Text></View>}</View>
+      {((canMessagePage && pageOrgType) || kind !== 'users' || canMessage) && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+          {canMessagePage && pageOrgType && (
+            <Button
+              title="Mensagem"
+              secondary
+              style={{ flex: 1, minWidth: 130 }}
+              onPress={() => router.push({ pathname: '/conversation/page', params: { orgType: pageOrgType, orgId: id, name } })}
+            />
+          )}
+          {kind !== 'users' && (
+            <Button
+              title="Relatar"
+              secondary
+              style={{ flex: 1, minWidth: 130 }}
+              onPress={() => user ? router.push({ pathname: '/compose', params: { kind: 'reports', recipientType: kind === 'politicians' ? 'POLITICIAN' : kind === 'companies' ? 'COMPANY' : 'ENTITY', recipientId: id, recipientName: name } }) : router.push('/login')}
+            />
+          )}
+          {canMessage && (
+            <Button
+              title="Mensagem"
+              secondary
+              style={{ flex: 1, minWidth: 130 }}
+              loading={startChat.isPending}
+              onPress={() => startChat.mutate({ path: '/direct', body: { targetUserId: id } }, { onSuccess: (conversation) => router.push({ pathname: '/conversation/[id]', params: { id: conversation.id } }), onError: (error) => setNotice({ title: 'Não foi possível enviar o pedido', message: errorMessage(error) }) })}
+            />
+          )}
+        </View>
+      )}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginTop: 14 }}>{[{ count: profileData.followersCount, label: profileData.followersCount === 1 ? 'Seguidor' : 'Seguidores' }, ...(company ? [] : [{ count: posts.data?.pages[0]?.meta.total, label: 'Publicações' }]), { count: reports.data?.pages[0]?.meta.total, label: kind === 'users' ? 'Relatos' : 'Relatos recebidos' }, ...(typeof profileData.votzScore === 'number' ? [{ count: profileData.votzScore, label: 'Votz Score' }] : typeof profileData.reputation === 'number' ? [{ count: profileData.reputation, label: 'Reputação' }] : [])].map((stat) => <View key={stat.label} style={{ gap: 3 }}><Text style={{ fontFamily: theme.fonts.medium, fontSize: 16, color: colors.primary }}>{stat.count?.toLocaleString('pt-BR') ?? '—'}</Text><Text style={{ color: colors.muted, fontSize: 11 }}>{stat.label}</Text></View>)}</View>
       <ErrorText message={toggle.isError ? errorMessage(toggle.error) : logout.isError ? errorMessage(logout.error) : undefined} />
       {following.isError && <Button secondary title="Consultar acompanhamento" onPress={() => { void following.refetch() }} />}
@@ -126,6 +215,7 @@ export default function ProfileScreen({ kind, id, tabs = false }: { kind: Profil
       onChange={setThemePref}
       onClose={() => setThemeSheetOpen(false)}
     />
+    <OrgContextSheet visible={contextSheetOpen} onClose={() => setContextSheetOpen(false)} />
     <ConfirmModal
       visible={!!notice}
       title={notice?.title ?? ''}

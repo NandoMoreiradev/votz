@@ -13,7 +13,7 @@ export function Heading({ children }: PropsWithChildren) {
   const { colors } = useAppTheme()
   return <Text style={[styles.heading, { color: colors.primary }]}>{children}</Text>
 }
-export function Button({ title, onPress, loading, secondary, disabled }: { title: string; onPress: () => void; loading?: boolean; secondary?: boolean; disabled?: boolean }) {
+export function Button({ title, onPress, loading, secondary, disabled, style }: { title: string; onPress: () => void; loading?: boolean; secondary?: boolean; disabled?: boolean; style?: StyleProp<ViewStyle> }) {
   const { colors } = useAppTheme()
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled: disabled || loading, busy: loading }} disabled={disabled || loading} onPress={onPress}
     style={({ pressed }) => [
@@ -21,8 +21,9 @@ export function Button({ title, onPress, loading, secondary, disabled }: { title
       { backgroundColor: secondary ? colors.soft : colors.action },
       secondary && { borderWidth: 0.5, borderColor: colors.border },
       (pressed || disabled || loading) && { opacity: 0.6 },
+      style,
     ]}>
-    {loading ? <ActivityIndicator color={secondary ? colors.primary : colors.onAccent} /> : <Text style={[styles.buttonText, { color: secondary ? colors.primary : colors.onAccent }]}>{title}</Text>}
+    {loading ? <ActivityIndicator color={secondary ? colors.primary : colors.onAccent} /> : <Text numberOfLines={1} style={[styles.buttonText, { color: secondary ? colors.primary : colors.onAccent }]}>{title}</Text>}
   </Pressable>
 }
 export function Field({ label, bare, ...props }: TextInputProps & { label?: string; bare?: boolean }) {
