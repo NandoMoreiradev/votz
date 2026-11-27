@@ -79,3 +79,12 @@
 - `apps/api/Dockerfile`, `apps/ads-server/Dockerfile`, `apps/web/Dockerfile` + `apps/web/Caddyfile`, `infra/synapse`, `infra/minio`: o que já existe do deploy de teste no Railway.
 - `render.yaml`: rascunho antigo (Frankfurt), **não usar**.
 - `.env.example`: lista de variáveis que a API espera.
+
+## Atualização 27/11/2026: desligar com cuidado e migrations à parte (PR 2 da auditoria de várias instâncias)
+
+- `apps/api/docker-start.sh` (novo) é o `CMD` da API: roda `prisma migrate deploy` **a não ser que `RUN_MIGRATIONS=false`** e troca para o Node com `exec`, para o SIGTERM do Cloud Run chegar nele. Railway segue como antes (o padrão é migrar).
+- `apps/api/src/main.ts`: `app.enableShutdownHooks()` (o `ads-server` já tinha) e o adaptador Redis do WebSocket fecha suas conexões ao encerrar. Sem os hooks nenhum `onModuleDestroy` rodava (ex.: exibições de anúncio ainda na memória se perdiam).
+- `apps/ads-server/Dockerfile`: `exec node`.
+- `infra/gcp/deploy.ps1`: para a API, cria/atualiza e roda o Cloud Run Job `votz-migrate` (mesma imagem, segredo `database-url-direct`) **antes** de publicar, e publica a API com `RUN_MIGRATIONS=false`.
+- **Verificado:** teste unitário do adaptador, `tsc` limpo, script de subida com `npx`/`node` de mentira (migra por padrão, pula com `RUN_MIGRATIONS=false`, SIGTERM chega no Node) e um app Nest mínimo (`onModuleDestroy` só roda com os hooks ligados).
+- **NÃO verificado:** o `deploy.ps1` (sem PowerShell nem gcloud logado aqui), o Cloud Run Job de verdade, e o encerramento da API completa com banco e Redis. Conferir na primeira publicação: o job `votz-migrate` terminou com sucesso e `GET /api/v1/health` responde 200.

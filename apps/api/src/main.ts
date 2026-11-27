@@ -42,6 +42,9 @@ async function bootstrap() {
     console.warn(`[Bootstrap] Redis indisponível, continuando sem adapter: ${msg}`)
   }
   app.useWebSocketAdapter(redisIoAdapter)
+  // Cloud Run/Railway mandam SIGTERM ao trocar ou desligar uma instância. Com os hooks ligados o Nest fecha o
+  // servidor, termina os jobs em andamento e roda os `onModuleDestroy` (ex.: descarregar as exibições de anúncio).
+  app.enableShutdownHooks()
   app.use(cookieParser())
 
   app.enableCors({

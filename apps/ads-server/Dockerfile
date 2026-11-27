@@ -35,4 +35,5 @@ RUN DATABASE_URL=postgresql://x:x@localhost:5432/x DIRECT_URL=postgresql://x:x@l
 ENV NODE_ENV=production
 
 # O Railway injeta PORT; o servidor lê ADS_SERVER_PORT e depois PORT.
-CMD ["sh", "-c", "node apps/ads-server/dist/ads-server/src/main.js"]
+# `exec`: o Node vira o processo principal e recebe o SIGTERM (encerramento com cuidado).
+CMD ["sh", "-c", "exec node apps/ads-server/dist/ads-server/src/main.js"]
