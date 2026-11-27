@@ -855,7 +855,7 @@ export declare const AD_VIEWABILITY: {
     readonly MIN_VISIBLE_RATIO: 0.5;
     readonly MIN_VISIBLE_MS: 1000;
 };
-export declare const AD_SURFACES: readonly ["FEED_FOR_YOU", "FEED_RECENT", "FEED_CITY"];
+export declare const AD_SURFACES: readonly ["FEED_FOR_YOU", "FEED_RECENT", "FEED_CITY", "FEED_SIDEBAR"];
 export type AdSurface = (typeof AD_SURFACES)[number];
 /**
  * Evento que o site e o celular mandam (em lote) para `POST /ads/events`. O `eventId` é gerado no aparelho e

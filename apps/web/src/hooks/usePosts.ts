@@ -12,6 +12,7 @@ import {
   PostPollDto,
   PostsResponse,
 } from '../types/api'
+import type { FeedSuggestedProfile } from '@votz/shared-types'
 
 export interface UsePostsParams {
   sort?: FeedSortMode
@@ -424,5 +425,18 @@ export function useAdvocateReport() {
         qc.invalidateQueries({ queryKey: ['posts'] })
       }
     },
+  })
+}
+
+/** Quem acompanhar na lateral do feed: políticos e entidades da região, com quem do seu círculo já segue. */
+export function useWhoToFollow(enabled = true) {
+  const userId = useAuthStore((s) => s.user?.id)
+  const sessionReady = useAuthStore((s) => s.sessionReady)
+  return useQuery({
+    queryKey: ['posts', 'who-to-follow', userId],
+    queryFn: () =>
+      api.get<{ profiles: FeedSuggestedProfile[] }>('/posts/who-to-follow', { params: { limit: 5 } }).then((r) => r.data.profiles),
+    enabled: enabled && sessionReady,
+    staleTime: 5 * 60_000,
   })
 }

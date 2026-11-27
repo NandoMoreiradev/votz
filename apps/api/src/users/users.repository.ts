@@ -140,6 +140,16 @@ export class UsersRepository {
     return { ...user, _count: counts, followersCount: followerUsers }
   }
 
+  /** Números do cartão de perfil do feed: publicações pessoais, seguidores e quem a pessoa segue. */
+  async getSocialSummary(userId: string) {
+    const [postsCount, followersCount, followingCount] = await Promise.all([
+      this.prisma.post.count({ where: { authorUserId: userId, authorOrgType: null } }),
+      this.prisma.userFollow.count({ where: { followingId: userId } }),
+      this.prisma.userFollow.count({ where: { followerId: userId } }),
+    ])
+    return { postsCount, followersCount, followingCount }
+  }
+
   async findMe(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },

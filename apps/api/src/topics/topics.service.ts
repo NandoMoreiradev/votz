@@ -39,6 +39,10 @@ export function extractHashtags(text: string): ParsedTopic[] {
 export class TopicsService {
   constructor(private readonly repo: TopicsRepository) {}
 
+  getFollowed(userId: string, limit = 6) {
+    return this.repo.findFollowedTopics(userId, Math.min(Math.max(limit, 1), 20))
+  }
+
   async syncPostTopics(postId: string, text: string) {
     const parsed = extractHashtags(text)
     const topics = await Promise.all(parsed.map((t) => this.repo.upsertTopic(t.slug, t.displayTag)))

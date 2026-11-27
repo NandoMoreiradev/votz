@@ -340,6 +340,20 @@ export class PostsService {
     }
   }
 
+  /** Quem acompanhar na lateral do feed: políticos e entidades da região, com quem do seu círculo já segue. */
+  async getWhoToFollow(user?: ActingUser | null, limit = 5) {
+    const viewer = await this.repo.getViewerContext(user?.id)
+    const found = await this.repo.findSuggestedProfiles(viewer, 3)
+    const circle = await this.repo.findCircleFollowers(found, viewer)
+    const profiles = found
+      .map((profile, index) => ({ profile: { ...profile, followedBy: circle.get(`${profile.kind}:${profile.id}`) }, index }))
+      // Quem tem gente do círculo seguindo vem primeiro; empate mantém a ordem original (verificados e mais seguidos).
+      .sort((a, b) => (b.profile.followedBy?.total ?? 0) - (a.profile.followedBy?.total ?? 0) || a.index - b.index)
+      .slice(0, Math.min(Math.max(limit, 1), 10))
+      .map(({ profile }) => (profile.followedBy ? profile : { ...profile, followedBy: undefined }))
+    return { profiles }
+  }
+
   async getById(id: string, user?: ActingUser | null) {
     const post = await this.repo.findRawById(id)
     if (!post) throw new NotFoundException('Publicação não encontrada')
