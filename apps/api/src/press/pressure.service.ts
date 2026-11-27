@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { HOUR_MS, windowedJobId } from '../common/queue/job-window'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { ReportStatus, VoteType } from '@votz/shared-types'
@@ -70,7 +71,7 @@ export class PressureService {
       'recalculate-single',
       { reportId },
       {
-        jobId: `single-${reportId}`,
+        deduplication: { id: `single-${reportId}`, keepLastIfActive: true },
         removeOnComplete: 200,
         removeOnFail: 50,
         attempts: 3,
@@ -84,7 +85,7 @@ export class PressureService {
       'recalculate-batch',
       {},
       {
-        jobId: 'batch',
+        jobId: windowedJobId('batch', HOUR_MS),
         removeOnComplete: 10,
         removeOnFail: 10,
         attempts: 2,

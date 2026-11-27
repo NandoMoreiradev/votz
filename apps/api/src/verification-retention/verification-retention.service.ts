@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { DAY_MS, windowedJobId } from '../common/queue/job-window'
 import { Prisma, RegistrationRequestStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
@@ -42,7 +43,7 @@ export class VerificationRetentionService {
     await this.queue.add(
       'purge-expired-documents',
       {},
-      { jobId: 'verification-retention-daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: windowedJobId('verification-retention', DAY_MS), removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

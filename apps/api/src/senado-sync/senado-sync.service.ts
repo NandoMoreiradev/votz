@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { HOUR_MS, windowedJobId } from '../common/queue/job-window'
 import { PoliticianStatus } from '@prisma/client'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -68,7 +69,7 @@ export class SenadoSyncService {
       'full-sync',
       {},
       {
-        jobId: 'senado-full-sync',
+        jobId: windowedJobId('senado-full-sync', HOUR_MS),
         attempts: 3,
         backoff: { type: 'exponential', delay: 10_000 },
         removeOnComplete: 5,

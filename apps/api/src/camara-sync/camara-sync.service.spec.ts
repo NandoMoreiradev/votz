@@ -36,7 +36,7 @@ describe('CamaraSyncService', () => {
     expect(mockQueue.add).toHaveBeenCalledWith(
       'full-sync',
       { legislaturaId: 58 },
-      expect.objectContaining({ jobId: 'camara-full-sync-58' }),
+      expect.objectContaining({ jobId: expect.stringMatching(/^camara-full-sync-58-\d{4}-\d{2}-\d{2}T\d{4}$/) }),
     )
   })
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { DAY_MS, windowedJobId } from '../common/queue/job-window'
 import { MembershipStatus, UserType } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
@@ -40,7 +41,7 @@ export class InactivityService {
     await this.queue.add(
       'process-inactivity',
       {},
-      { jobId: 'inactivity-daily', removeOnComplete: 10, removeOnFail: 10 },
+      { jobId: windowedJobId('inactivity', DAY_MS), removeOnComplete: 10, removeOnFail: 10 },
     )
   }
 

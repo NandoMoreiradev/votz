@@ -53,7 +53,7 @@ describe('AccessLogService', () => {
       expect(mockQueue.add).toHaveBeenCalledWith(
         'purge-expired',
         {},
-        expect.objectContaining({ jobId: 'access-log-daily-purge' }),
+        expect.objectContaining({ jobId: expect.stringMatching(/^access-log-purge-\d{4}-\d{2}-\d{2}T0000$/) }),
       )
     })
   })

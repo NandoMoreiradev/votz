@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
+import { HOUR_MS, windowedJobId } from '../common/queue/job-window'
 import { PoliticianStatus } from '@prisma/client'
 import {
   normalizeOfficeCategory,
@@ -67,7 +68,7 @@ export class CamaraSyncService {
       'full-sync',
       { legislaturaId },
       {
-        jobId: `camara-full-sync${legislaturaId ? `-${legislaturaId}` : ''}`,
+        jobId: windowedJobId(`camara-full-sync${legislaturaId ? `-${legislaturaId}` : ''}`, HOUR_MS),
         attempts: 3,
         backoff: { type: 'exponential', delay: 10_000 },
         removeOnComplete: 5,
