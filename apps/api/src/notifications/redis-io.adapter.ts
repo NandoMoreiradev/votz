@@ -1,10 +1,11 @@
 import { IoAdapter } from '@nestjs/platform-socket.io'
-import { ServerOptions } from 'socket.io'
+import { Server, ServerOptions } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
 import Redis from 'ioredis'
 
 export class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter> | null = null
+  private redisClients: Redis[] = []
 
   async connectToRedis(redisUrl: string): Promise<void> {
     const opts = {
@@ -26,9 +27,21 @@ export class RedisIoAdapter extends IoAdapter {
       await pub.connect()
       await sub.connect()
       this.adapterConstructor = createAdapter(pub, sub)
+      this.redisClients = [pub, sub]
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn(`[Redis WS] conexão falhou, WebSocket sem adapter Redis: ${msg}`)
+    }
+  }
+
+  /** Fecha o servidor de WebSocket e depois as duas conexões Redis do adaptador (chamado no encerramento da API). */
+  async close(server: Server): Promise<void> {
+    try {
+      await super.close(server)
+    } finally {
+      const clients = this.redisClients
+      this.redisClients = []
+      await Promise.all(clients.map((client) => client.quit().catch(() => client.disconnect())))
     }
   }
 

@@ -2,7 +2,9 @@
   Publica o Votz no ambiente de teste do Google Cloud (projeto votz-prod).
   Constrói a imagem com a pasta LOCAL (inclui trabalho sem commit), envia ao Artifact Registry
   (São Paulo) e manda o Cloud Run (us-central1) usar a imagem nova. Variáveis e segredos dos
-  serviços ficam como estão. As migrations do banco rodam sozinhas quando a API sobe.
+  serviços ficam como estão, com uma exceção: a API passa a subir com RUN_MIGRATIONS=false.
+  As migrations do banco rodam UMA vez, num Cloud Run Job (`votz-migrate`), antes de a API nova
+  receber tráfego. Assim várias instâncias subindo juntas não disputam a trava do banco.
 
   Uso (na raiz do repositório):
     powershell -ExecutionPolicy Bypass -File infra\gcp\deploy.ps1               # site e API
@@ -27,6 +29,8 @@ $region = 'us-central1'
 $registry = "southamerica-east1-docker.pkg.dev/$project/votz"
 $apiUrl = 'https://votz-api-742542852298.us-central1.run.app/api/v1'
 $tag = Get-Date -Format 'yyyy-MM-dd-HHmm'
+$migrateJob = 'votz-migrate'
+$dbSecret = 'database-url-direct'   # conexão direta do Neon (sem pooler): a mesma que a API usa em DATABASE_URL/DIRECT_URL
 
 $targets = @{
   api = @{ Dockerfile = 'apps/api/Dockerfile';        Image = 'api';        Service = 'votz-api'; BuildArgs = @() }
@@ -61,8 +65,20 @@ foreach ($app in $order) {
   docker build --push -f $t.Dockerfile @($t.BuildArgs) -t $image .
   if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o build/envio de $app (se for erro de auth, rode: gcloud auth configure-docker southamerica-east1-docker.pkg.dev)" -ForegroundColor Red; exit 1 }
 
-  Write-Host "2/2 publicando no Cloud Run ($($t.Service))"
-  & $gcloud run deploy $t.Service --image $image --region $region --project $project --quiet
+  $deployArgs = @()
+  if ($app -eq 'api') {
+    Write-Host "2/3 rodando as migrations no Cloud Run Job ($migrateJob), uma vez só"
+    & $gcloud run jobs deploy $migrateJob --image $image --region $region --project $project `
+      --command npx --args "prisma,migrate,deploy,--schema=packages/database/prisma/schema.prisma" `
+      --set-secrets "DATABASE_URL=${dbSecret}:latest,DIRECT_URL=${dbSecret}:latest" `
+      --max-retries 0 --task-timeout 600 --execute-now --wait --quiet
+    if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU a migration de $app (a API NÃO foi publicada; veja os logs do job $migrateJob)" -ForegroundColor Red; exit 1 }
+    # A API não roda mais as migrations ao subir (apps/api/docker-start.sh).
+    $deployArgs = @('--update-env-vars', 'RUN_MIGRATIONS=false')
+  }
+
+  Write-Host "$(if ($app -eq 'api') { '3/3' } else { '2/2' }) publicando no Cloud Run ($($t.Service))"
+  & $gcloud run deploy $t.Service --image $image --region $region --project $project @deployArgs --quiet
   if ($LASTEXITCODE -ne 0) { Write-Host "FALHOU o deploy de $app" -ForegroundColor Red; exit 1 }
   Write-Host "$app publicado com a imagem $tag" -ForegroundColor Green
 }

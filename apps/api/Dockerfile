@@ -34,5 +34,6 @@ RUN DATABASE_URL=postgresql://x:x@localhost:5432/x DIRECT_URL=postgresql://x:x@l
 
 ENV NODE_ENV=production
 
-# Roda as migrations e sobe a API. O Railway injeta PORT; main.ts lê API_PORT, então ligamos os dois.
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=packages/database/prisma/schema.prisma && API_PORT=${PORT:-3000} node apps/api/dist/main.js"]
+# Sobe a API: roda as migrations (a não ser que RUN_MIGRATIONS=false) e troca para o Node com `exec`,
+# para o SIGTERM chegar nele. O Railway e o Cloud Run injetam PORT. Ver apps/api/docker-start.sh.
+CMD ["sh", "apps/api/docker-start.sh"]
