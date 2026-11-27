@@ -131,8 +131,25 @@ export function notificationContent(notification: AppNotification): { label: str
   if (type === 'COMMENT_REPLY') return { label: `Alguém respondeu ao seu comentário em ${title}.`, href }
   if (type === 'NEW_REPORT_RECEIVED') return { label: `Novo relato direcionado à sua equipe: ${title}.`, href }
   if (type === 'REPORT_REASSIGNED') return { label: `O relato ${title} foi reatribuído à sua equipe.`, href }
-  if (type === 'REPORT_DISPUTED') return { label: `O autor contestou a resolução de ${title}.`, href }
-  if (type === 'REPORT_UPDATE') return { label: `Nova atualização oficial em ${title}.`, href }
+  const org = typeof metadata?.orgName === 'string' && metadata.orgName.trim() ? metadata.orgName.trim() : null
+  if (type === 'REPORT_DISPUTED') return { label: `Contestaram a resolução de ${title}. Responda com provas no relato.`, href }
+  if (type === 'REPORT_ADVOCATED') return { label: `${org ?? 'Um político ou entidade'} avocou ${title} e assumiu o compromisso de acompanhar.`, href }
+  if (type === 'REPORT_RESOLVED') {
+    return metadata?.newStatus === 'ARCHIVED'
+      ? { label: `${title} foi arquivado. Não concorda? Você pode contestar em até 30 dias.`, href }
+      : { label: `${title} foi marcado como resolvido. Foi mesmo? Confirme ou conteste em até 30 dias.`, href }
+  }
+  if (type === 'DISPUTE_PENDING_REVIEW') return { label: `Nova contestação para decidir em ${title}.`, href: '/admin' }
+  if (type === 'DISPUTE_DECIDED') {
+    return metadata?.decision === 'REOPEN'
+      ? { label: `A moderação aceitou a contestação de ${title}. O relato voltou a andar.`, href }
+      : { label: `A moderação manteve a resolução de ${title}.`, href }
+  }
+  if (type === 'ADVOCACY_DEADLINE_PASSED') return { label: `O prazo prometido para ${title} venceu sem solução.`, href }
+  if (type === 'REPORT_UPDATE') {
+    if (metadata?.confirmed === true) return { label: `Quem fez o relato confirmou que ${title} foi resolvido.`, href }
+    return { label: `Nova atualização ${org ? `de ${org} ` : ''}em ${title}.`, href }
+  }
   if (type === 'STATUS_CHANGED') {
     const status =
       typeof metadata?.newStatus === 'string'

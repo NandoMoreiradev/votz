@@ -72,7 +72,7 @@ export class CommentsService {
 
       if (!isRecipient && !isFollower) {
         throw new ForbiddenException(
-          'Você precisa ser destinatário ou ter avocado o relato para comentar por voz',
+          'Para comentar por voz, você precisa ser quem recebeu o relato ou acompanhá-lo (avocar já inclui acompanhar).',
         )
       }
     } else if (dto.mediaKey !== undefined || dto.mediaUrl !== undefined) {

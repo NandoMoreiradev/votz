@@ -18,6 +18,8 @@ import { UpdatePoliticianDto } from './dto/update-politician.dto'
 import { ListPoliticiansDto } from './dto/list-politicians.dto'
 import { EventType, ReportStatus } from '@votz/shared-types'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
+import { MandatometerService, MandatometerSnapshot } from '../report-lifecycle/mandatometer.service'
 
 @Injectable()
 export class PoliticiansService {
@@ -26,6 +28,8 @@ export class PoliticiansService {
     private readonly prisma: PrismaService,
     private readonly timeline: TimelineService,
     private readonly storage: StorageService,
+    private readonly lifecycle: ReportLifecycleService,
+    private readonly mandatometerService: MandatometerService,
     @Optional() private readonly posts?: PostsService,
   ) {}
 
@@ -56,28 +60,19 @@ export class PoliticiansService {
   }
 
   async findById(id: string) {
-    const [politician, mandatometer, monthlyVolume, followersCount] = await Promise.all([
+    const [politician, monthlyVolume, followersCount] = await Promise.all([
       this.repo.findById(id),
-      this.repo.mandatometerStats(id),
       this.repo.monthlyVolume(id),
       this.repo.countFollowers(id),
     ])
-    if (!politician) throw new NotFoundException('Politician not found')
+    if (!politician) throw new NotFoundException('Político não encontrado.')
 
-    const { total, resolved, open } = mandatometer
-    const disputed = mandatometer.byStatus['DISPUTED'] ?? 0
-
-    const responseRate = total > 0 ? Math.round(((total - open) / total) * 100) : 0
-    const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0
-    const contestationRate = (resolved + disputed) > 0
-      ? Math.round((disputed / (resolved + disputed)) * 100) : 0
-    const trustBadge = responseRate >= 60 && resolutionRate >= 50
-
-    const classification =
-      resolutionRate >= 60 ? 'Político Ativo' :
-      resolutionRate >= 30 ? 'Político Regular' : 'Político Inativo'
-
-    const metrics = { responseRate, resolutionRate, contestationRate, trustBadge, classification }
+    // Mandato encerrado mostra o retrato congelado no encerramento; ativo é calculado na hora.
+    const frozen = politician.status === PoliticianStatus.ENCERRADO
+      ? (politician.mandatometer as unknown as MandatometerSnapshot | null)
+      : null
+    const mandatometer = frozen?.commitments ? frozen : await this.mandatometerService.compute(id)
+    const metrics = this.mandatometerService.metrics(mandatometer)
 
     return { ...politician, mandatometer, monthlyVolume, metrics, followersCount }
   }
@@ -140,84 +135,8 @@ export class PoliticiansService {
     }
   }
 
-  async advocate(politicianId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
-    await requireActingOrg(
-      this.prisma,
-      user,
-      'POLITICIAN',
-      OrgPermission.RESPOND_REPORTS,
-      { expectedOrgId: politicianId },
-    )
-    await this.assertPoliticianAtivo(politicianId)
-    const userId = user.id
-
-    const report = await this.prisma.report.findUnique({
-      where: { id: reportId },
-      select: {
-        id: true,
-        status: true,
-        timeline: {
-          where: { type: EventType.RESPONDED },
-          select: { metadata: true },
-        },
-      },
-    })
-    if (!report) throw new NotFoundException('Report not found')
-
-    const ADVOCATABLE = [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW, ReportStatus.IN_PROGRESS]
-    if (!ADVOCATABLE.includes(report.status as ReportStatus)) {
-      throw new BadRequestException('Report cannot be advocated at this stage')
-    }
-
-    const alreadyAdvocated = report.timeline.some(
-      (e) =>
-        (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-        (e.metadata as Record<string, unknown>)?.politicianId === politicianId,
-    )
-    if (alreadyAdvocated) throw new ConflictException('Você já avocou este relato')
-
-    const isFirstAdvocacy = !report.timeline.some(
-      (e) => (e.metadata as Record<string, unknown>)?.action === 'advocated',
-    )
-
-    if (isFirstAdvocacy && report.status !== ReportStatus.IN_PROGRESS) {
-      await this.prisma.report.update({
-        where: { id: reportId },
-        data: { status: ReportStatus.IN_PROGRESS },
-      })
-    }
-
-    await this.prisma.report.updateMany?.({
-      where: { id: reportId, firstResponseAt: null },
-      data: { firstResponseAt: new Date() },
-    })
-
-    await this.prisma.timelineEvent.create({
-      data: {
-        reportId,
-        type: EventType.RESPONDED,
-        content: 'Político avocou este relato e assumiu o compromisso de acompanhá-lo.',
-        authorId: userId,
-        metadata: { action: 'advocated', politicianId },
-      },
-    })
-
-    const stats = await this.repo.mandatometerStats(politicianId)
-    await this.repo.updateMandatometer(politicianId, stats)
-
-    let postId: string | undefined
-    if (dto?.publishToFeed && this.posts) {
-      const createdPost = await this.posts.createAdvocacyPost({
-        reportId,
-        userId,
-        orgType: 'POLITICIAN',
-        orgId: politicianId,
-        content: dto.postContent,
-        media: dto.media,
-      })
-      postId = createdPost.id
-    }
-
-    return postId ? { advocated: true, postId } : { advocated: true }
+  /** Avocar: regra única em ReportLifecycleService (território, mandato ativo, clique duplo, avisos). */
+  advocate(politicianId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
+    return this.lifecycle.advocate(reportId, user, { orgType: 'POLITICIAN', orgId: politicianId }, dto)
   }
 }

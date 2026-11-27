@@ -27,10 +27,22 @@ import ImagePlus from 'lucide-react-native/icons/image-plus'
 import Building2 from 'lucide-react-native/icons/building-2'
 import Landmark from 'lucide-react-native/icons/landmark'
 import X from 'lucide-react-native/icons/x'
-import { EventType } from '@votz/shared-types'
+import {
+  ADVOCACY_PROMISE_DAYS,
+  ARCHIVE_REASON_LABELS,
+  ArchiveReason,
+  EventType,
+  REPORT_LIFECYCLE_LIMITS as L,
+  ReportStatus,
+  checkDisputeWindow,
+  getReportStatusLabel,
+  recipientStatusOptions,
+  timelineEventLabel,
+} from '@votz/shared-types'
 import { Avatar, Button, ErrorText, IconButton, styles } from './ui'
 import { OrgContextSheet } from './org-context-sheet'
 import { PressContactCard } from './press-contact-card'
+import { AdvocacyCommitments, ChoiceChips, LifecycleNotice, WithdrawAdvocacy, formatDay, openOrgProfile } from './report-lifecycle'
 import {
   useAdvocateReport,
   useDisputeReport,
@@ -46,7 +58,7 @@ import { formatCount } from '../lib/format'
 import { uploadReportMedia } from '../lib/report-upload'
 import { useSession } from '../lib/session'
 import { useAppTheme } from '../theme-context'
-import type { Report, TimelineAuthor, TimelineEvent } from '../lib/types'
+import type { Report, TimelineEvent } from '../lib/types'
 
 const EVENT_COLORS: Record<string, string> = {
   [EventType.CREATED]: '#9CA3AF',
@@ -58,26 +70,6 @@ const EVENT_COLORS: Record<string, string> = {
   [EventType.ARCHIVED]: '#6B7280',
 }
 
-const EVENT_LABELS: Record<string, string> = {
-  [EventType.CREATED]: 'Registrado',
-  [EventType.RESPONDED]: 'Respondido',
-  [EventType.STATUS_CHANGED]: 'Status alterado',
-  [EventType.UPDATE]: 'Atualização',
-  [EventType.DISPUTED]: 'Contestado',
-  [EventType.RESOLVED]: 'Resolvido',
-  [EventType.ARCHIVED]: 'Arquivado',
-}
-
-const UPDATABLE_STATUSES: { value: string; label: string }[] = [
-  { value: '', label: 'Manter status atual' },
-  { value: 'UNDER_REVIEW', label: 'Em análise' },
-  { value: 'IN_PROGRESS', label: 'Em andamento' },
-  { value: 'RESOLVED', label: 'Resolvido' },
-  { value: 'ARCHIVED', label: 'Arquivado' },
-]
-
-const TERMINAL_STATUSES = new Set(['RESOLVED', 'DISPUTED', 'ARCHIVED'])
-
 const isVisualUrl = (url: string) => /\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(url)
 
 function formatTimelineDate(iso: string) {
@@ -86,63 +78,6 @@ function formatTimelineDate(iso: string) {
     month: 'short',
     year: 'numeric',
   })
-}
-
-interface AdvocateEntry {
-  author: TimelineAuthor | null | undefined
-  isEntity: boolean
-}
-
-export function AdvocacyBanner({ advocates }: { advocates: AdvocateEntry[] }) {
-  const { resolvedMode, theme } = useAppTheme()
-  if (advocates.length === 0) return null
-
-  const isDark = resolvedMode === 'dark'
-  const bg = isDark ? 'rgba(30, 64, 175, 0.18)' : '#EFF6FF'
-  const border = isDark ? 'rgba(96, 165, 250, 0.35)' : '#BFDBFE'
-  const fg = isDark ? '#93C5FD' : '#1E40AF'
-
-  return (
-    <View
-      style={{
-        backgroundColor: bg,
-        borderColor: border,
-        borderWidth: 1,
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        gap: 8,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <ShieldCheck size={16} color={fg} />
-        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: fg }}>
-          {advocates.length === 1
-            ? 'Relato avocado oficialmente'
-            : `${advocates.length} atores públicos avocaram este relato`}
-        </Text>
-      </View>
-      {advocates.map((entry, idx) => (
-        <Pressable
-          key={`${entry.author?.id ?? idx}`}
-          disabled={!entry.author?.id}
-          onPress={() =>
-            entry.author?.id &&
-            router.push({ pathname: '/profile/[kind]/[id]', params: { kind: 'users', id: entry.author.id } })
-          }
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-        >
-          <Avatar name={entry.author?.name || (entry.isEntity ? 'Entidade' : 'Político')} uri={entry.author?.avatarUrl} size={26} />
-          <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: fg, flex: 1 }}>
-            <Text style={{ fontFamily: theme.fonts.medium }}>
-              {entry.author?.name || (entry.isEntity ? 'Entidade pública' : 'Político')}
-            </Text>{' '}
-            assumiu o acompanhamento deste problema.
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  )
 }
 
 function TimelineRow({
@@ -156,8 +91,8 @@ function TimelineRow({
 }) {
   const { colors, theme } = useAppTheme()
   const color = EVENT_COLORS[event.type] ?? '#9CA3AF'
-  const label = EVENT_LABELS[event.type] ?? event.type
   const meta = event.metadata as Record<string, unknown> | null | undefined
+  const label = timelineEventLabel(String(event.type), meta)
   const media = Array.isArray(meta?.media)
     ? (meta.media as unknown[]).filter((u): u is string => typeof u === 'string' && u.length > 0)
     : []
@@ -265,7 +200,19 @@ function TimelineRow({
           </ScrollView>
         )}
 
-        {event.author && (
+        {event.actorOrg && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Ver perfil de ${event.actorOrg.name}`}
+            disabled={!event.actorOrg.id}
+            onPress={() => openOrgProfile(event.actorOrg!.type, event.actorOrg!.id)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, alignSelf: 'flex-start' }}
+          >
+            <Avatar name={event.actorOrg.name} uri={event.actorOrg.avatarUrl ?? null} size={20} />
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.muted }}>{event.actorOrg.name}</Text>
+          </Pressable>
+        )}
+        {!event.actorOrg && event.author && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Ver perfil de ${event.author.name}`}
@@ -339,8 +286,7 @@ export function ReportTimeline({ timeline }: { timeline?: TimelineEvent[] }) {
 }
 
 export function ReportDetailPanel({ report }: { report: Report }) {
-  const { colors, theme, resolvedMode } = useAppTheme()
-  const isDark = resolvedMode === 'dark'
+  const { colors, theme } = useAppTheme()
   const user = useSession((s) => s.user)
   const activeContext = useSession((s) => s.activeContext)
   const profiles = useMyProfiles(!!user)
@@ -373,47 +319,56 @@ export function ReportDetailPanel({ report }: { report: Report }) {
   const [advocateText, setAdvocateText] = useState(
     'Avocação oficial: assumi o acompanhamento deste relato para cobrar providências. #Fiscalizacao',
   )
+  const [promisedInDays, setPromisedInDays] = useState('')
 
   // Update status state
   const [showUpdateForm, setShowUpdateForm] = useState(false)
   const [updateStatus, setUpdateStatus] = useState('')
+  const [noEvidence, setNoEvidence] = useState(false)
+  const [archiveReason, setArchiveReason] = useState('')
   const [updateContent, setUpdateContent] = useState('')
   const [uploadedMedia, setUploadedMedia] = useState<string[]>([])
   const [uploadingMedia, setUploadingMedia] = useState(false)
 
-  const advocates: AdvocateEntry[] = (report.timeline ?? [])
-    .filter((e) => e.type === EventType.RESPONDED && e.metadata?.action === 'advocated')
-    .map((e) => ({
-      author: e.author,
-      isEntity: !!e.metadata?.entityId,
-    }))
-
-  const thisActorHasAdvocated = actorId
-    ? (report.timeline ?? []).some(
-        (e) =>
-          e.type === EventType.RESPONDED &&
-          e.metadata?.action === 'advocated' &&
-          (e.metadata?.politicianId === actorId || e.metadata?.entityId === actorId),
-      )
-    : false
+  const myAdvocacy = actorId
+    ? (report.advocacies ?? []).find((a) => a.orgType === activeContext?.type && a.orgId === actorId && !a.closedAt)
+    : undefined
 
   const canAdvocate =
-    isActorType && !!actorId && !TERMINAL_STATUSES.has(report.status) && !thisActorHasAdvocated
+    isActorType &&
+    !!actorId &&
+    !myAdvocacy &&
+    ([ReportStatus.OPEN, ReportStatus.UNDER_REVIEW, ReportStatus.IN_PROGRESS, ReportStatus.DISPUTED] as string[]).includes(report.status)
 
   const isRecipient =
     !!actorId &&
     activeContext?.type === report.recipientType &&
     report.recipientId === actorId
 
-  const canGiveUpdate = !TERMINAL_STATUSES.has(report.status) && (isRecipient || thisActorHasAdvocated)
+  // Quem recebeu ou quem avocou pode publicar; só quem recebeu muda o status (e só para os status permitidos).
+  const canGiveUpdate = isRecipient || !!myAdvocacy
+  const statusOptions = isRecipient ? recipientStatusOptions(report.status) : []
+  const resolving = updateStatus === ReportStatus.RESOLVED
+  const archiving = updateStatus === ReportStatus.ARCHIVED
+  const minUpdate = resolving ? L.RESOLVE_MIN : L.UPDATE_MIN
+  const updateBlocker =
+    updateContent.trim().length < minUpdate
+      ? `Escreva pelo menos ${minUpdate} letras${resolving ? ' explicando o que foi feito' : ''}.`
+      : resolving && uploadedMedia.length === 0 && !noEvidence
+        ? 'Anexe uma foto ou marque “sem foto ou documento”.'
+        : archiving && !archiveReason
+          ? 'Escolha o motivo do arquivamento.'
+          : null
 
-  const alreadyDisputed = (report.timeline ?? []).some((e) => e.type === EventType.DISPUTED)
-  const canDispute =
-    report.status === 'RESOLVED' &&
-    !report.anonymous &&
-    !!user &&
-    user.id === report.author?.id &&
-    !alreadyDisputed
+  const isAuthor = !!user && !report.anonymous && user.id === report.author?.id
+  // Contestar: autor ou quem marcou "Eu também", até 30 dias, uma vez por resolução (a API confere de novo).
+  const disputeWindow = checkDisputeWindow({
+    status: report.status,
+    resolvedAt: report.resolvedAt,
+    archivedAt: report.archivedAt,
+    disputeDates: (report.timeline ?? []).filter((e) => e.type === EventType.DISPUTED).map((e) => e.createdAt),
+  })
+  const canDispute = !!user && (isAuthor || !!votes.data?.ME_TOO) && disputeWindow.ok
 
   // Prompt to switch into org context if user manages the recipient or a politician/entity
   const recipientOrg = report.recipientId
@@ -458,13 +413,19 @@ export function ReportDetailPanel({ report }: { report: Report }) {
   }
 
   const handleSubmitUpdate = () => {
-    if (updateContent.trim().length < 10 || uploadingMedia) return
-    const payload = updateStatus
-      ? { status: updateStatus, content: updateContent.trim(), media: uploadedMedia }
-      : { content: updateContent.trim(), media: uploadedMedia }
+    if (updateBlocker || uploadingMedia) return
+    const payload = {
+      ...(updateStatus ? { status: updateStatus } : {}),
+      content: updateContent.trim(),
+      media: uploadedMedia,
+      ...(resolving && uploadedMedia.length === 0 ? { noEvidence: true } : {}),
+      ...(archiving ? { archiveReason } : {}),
+    }
     updateStatusMut.mutate(payload, {
       onSuccess: () => {
         setUpdateStatus('')
+        setNoEvidence(false)
+        setArchiveReason('')
         setUpdateContent('')
         setUploadedMedia([])
         setShowUpdateForm(false)
@@ -480,6 +441,7 @@ export function ReportDetailPanel({ report }: { report: Report }) {
         actorId,
         publishToFeed,
         postContent: publishToFeed ? advocateText.trim() : undefined,
+        promisedInDays: promisedInDays ? Number(promisedInDays) : undefined,
       },
       {
         onSuccess: () => setAdvocateModalOpen(false),
@@ -571,7 +533,8 @@ export function ReportDetailPanel({ report }: { report: Report }) {
 
         <ErrorText message={voteMut.isError ? errorMessage(voteMut.error) : undefined} />
 
-        {advocates.length > 0 && <AdvocacyBanner advocates={advocates} />}
+        <LifecycleNotice report={report} isAuthor={isAuthor} />
+        <AdvocacyCommitments report={report} />
       </View>
 
       {/* Contato da Imprensa (autor opt-in ou jornalista credenciado) */}
@@ -626,20 +589,41 @@ export function ReportDetailPanel({ report }: { report: Report }) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
-              backgroundColor: '#1E40AF',
+              backgroundColor: colors.primary,
               borderRadius: 22,
               minHeight: 42,
               paddingHorizontal: 16,
             }}
           >
-            <ShieldCheck size={17} color="#FFFFFF" />
-            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: '#FFFFFF' }}>
+            <ShieldCheck size={17} color={colors.onAccent} />
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 15, color: colors.onAccent }}>
               Avocar este relato
             </Text>
           </Pressable>
           <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted, lineHeight: 18 }}>
-            Ao avocar, você assume publicamente o compromisso de acompanhar e cobrar a resolução deste problema.
+            {isRecipient
+              ? 'Este relato é para você. Ao avocar, você assume o problema em público e ele passa para “Em andamento”.'
+              : 'Ao avocar, você assume publicamente o compromisso de cobrar a solução. Quem recebeu continua responsável por resolver.'}
           </Text>
+        </View>
+      )}
+
+      {/* Avocação ativa: desistir com motivo */}
+      {myAdvocacy && (
+        <View
+          style={{
+            padding: 16,
+            gap: 10,
+            backgroundColor: colors.surface,
+            borderTopWidth: 0.5,
+            borderBottomWidth: 0.5,
+            borderColor: colors.border,
+          }}
+        >
+          <Text style={{ fontFamily: theme.fonts.heading, fontSize: 13, color: colors.muted, textTransform: 'uppercase' }}>
+            Sua avocação
+          </Text>
+          <WithdrawAdvocacy report={report} mine={myAdvocacy} />
         </View>
       )}
 
@@ -668,51 +652,46 @@ export function ReportDetailPanel({ report }: { report: Report }) {
 
           {showUpdateForm && (
             <View style={{ gap: 10 }}>
-              {isRecipient ? (
+              {isRecipient && statusOptions.length > 0 ? (
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.muted }}>
                     Novo status (opcional)
                   </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                    {UPDATABLE_STATUSES.filter((s) => s.value !== report.status).map((opt) => {
-                      const active = updateStatus === opt.value
-                      return (
-                        <Pressable
-                          key={opt.value || 'keep'}
-                          onPress={() => setUpdateStatus(opt.value)}
-                          style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 7,
-                            borderRadius: 18,
-                            borderWidth: 1,
-                            borderColor: active ? colors.action : colors.border,
-                            backgroundColor: active ? colors.tint : colors.soft,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontFamily: theme.fonts.medium,
-                              fontSize: 12,
-                              color: active ? colors.action : colors.primary,
-                            }}
-                          >
-                            {opt.label}
-                          </Text>
-                        </Pressable>
-                      )
-                    })}
-                  </ScrollView>
+                  <ChoiceChips
+                    options={[
+                      { value: '', label: `Manter “${getReportStatusLabel(report.status)}”` },
+                      ...statusOptions.map((st) => ({ value: st as string, label: getReportStatusLabel(st) })),
+                    ]}
+                    value={updateStatus}
+                    onChange={setUpdateStatus}
+                  />
+                  {archiving && (
+                    <>
+                      <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.muted }}>
+                        Motivo do arquivamento
+                      </Text>
+                      <ChoiceChips
+                        options={Object.values(ArchiveReason).map((r) => ({ value: r as string, label: ARCHIVE_REASON_LABELS[r] }))}
+                        value={archiveReason}
+                        onChange={setArchiveReason}
+                      />
+                    </>
+                  )}
                 </View>
               ) : (
                 <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted, lineHeight: 18 }}>
-                  Como avocador, você pode publicar atualizações informacionais. A troca de status é exclusiva do destinatário.
+                  {isRecipient
+                    ? report.status === ReportStatus.DISPUTED
+                      ? 'O relato está contestado. Responda com provas: quem decide é a moderação do Votz.'
+                      : 'O relato já foi encerrado. Você ainda pode publicar informações; ele só volta a andar se for contestado.'
+                    : 'Como você avocou, pode publicar atualizações. Só quem recebeu o relato muda o status.'}
                 </Text>
               )}
 
               <TextInput
                 value={updateContent}
                 onChangeText={setUpdateContent}
-                placeholder="Descreva o andamento (mín. 10 caracteres)"
+                placeholder={resolving ? 'O que foi feito para resolver? Quando? Onde?' : 'Conte o que está sendo feito.'}
                 placeholderTextColor={colors.muted}
                 multiline
                 maxLength={500}
@@ -774,12 +753,25 @@ export function ReportDetailPanel({ report }: { report: Report }) {
                 </ScrollView>
               )}
 
+              {resolving && uploadedMedia.length === 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Switch value={noEvidence} onValueChange={setNoEvidence} accessibilityLabel="Resolver sem foto ou documento" />
+                  <Text style={{ flex: 1, fontFamily: theme.fonts.body, fontSize: 12, color: colors.text, lineHeight: 18 }}>
+                    Resolver sem foto ou documento (a explicação aparece para todos, e o cidadão pode contestar).
+                  </Text>
+                </View>
+              )}
+
+              {updateContent.trim().length > 0 && updateBlocker && (
+                <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>{updateBlocker}</Text>
+              )}
+
               <ErrorText message={updateStatusMut.isError ? errorMessage(updateStatusMut.error) : undefined} />
 
               <Button
-                title="Publicar atualização"
+                title={updateStatus ? `Mudar para “${getReportStatusLabel(updateStatus)}”` : 'Publicar atualização'}
                 loading={updateStatusMut.isPending}
-                disabled={updateContent.trim().length < 10 || uploadingMedia}
+                disabled={!!updateBlocker || uploadingMedia}
                 onPress={handleSubmitUpdate}
               />
             </View>
@@ -802,15 +794,19 @@ export function ReportDetailPanel({ report }: { report: Report }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <AlertTriangle size={16} color={colors.action} />
             <Text style={{ fontFamily: theme.fonts.heading, fontSize: 13, color: colors.primary, textTransform: 'uppercase' }}>
-              Contestação
+              Não foi resolvido?
             </Text>
           </View>
           {!showDispute ? (
             <>
               <Text style={{ fontFamily: theme.fonts.body, fontSize: 13, color: colors.muted, lineHeight: 19 }}>
-                Se o problema ainda não foi resolvido, você pode contestar a resolução com uma justificativa.
+                Você pode contestar {report.status === ReportStatus.ARCHIVED ? 'o arquivamento' : 'a resolução'}
+                {disputeWindow.ok ? ` até ${formatDay(disputeWindow.deadline)}` : ''}. A moderação do Votz analisa e decide.
               </Text>
-              <Button title="Contestar resolução" onPress={() => setShowDispute(true)} />
+              <Button
+                title={report.status === ReportStatus.ARCHIVED ? 'Contestar arquivamento' : 'Contestar resolução'}
+                onPress={() => setShowDispute(true)}
+              />
             </>
           ) : (
             <View style={{ gap: 10 }}>
@@ -851,7 +847,7 @@ export function ReportDetailPanel({ report }: { report: Report }) {
                   title="Enviar contestação"
                   style={{ flex: 1 }}
                   loading={disputeMut.isPending}
-                  disabled={disputeReason.trim().length < 20}
+                  disabled={disputeReason.trim().length < L.DISPUTE_MIN}
                   onPress={() =>
                     disputeMut.mutate(
                       { reason: disputeReason.trim() },
@@ -954,7 +950,7 @@ export function ReportDetailPanel({ report }: { report: Report }) {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ShieldCheck size={20} color={isDark ? '#93C5FD' : '#1E40AF'} />
+                <ShieldCheck size={20} color={colors.primary} />
                 <Text style={{ fontFamily: theme.fonts.heading, fontSize: 18, color: colors.primary }}>
                   Avocar relato
                 </Text>
@@ -967,6 +963,23 @@ export function ReportDetailPanel({ report }: { report: Report }) {
             <View style={{ backgroundColor: colors.soft, padding: 12, borderRadius: 10 }}>
               <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: colors.primary }} numberOfLines={2}>
                 {report.title}
+              </Text>
+            </View>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: colors.text }}>
+                Prazo para a solução (opcional)
+              </Text>
+              <ChoiceChips
+                options={[
+                  { value: '', label: 'Sem prazo' },
+                  ...ADVOCACY_PROMISE_DAYS.map((d) => ({ value: String(d), label: `Até ${d} dias` })),
+                ]}
+                value={promisedInDays}
+                onChange={setPromisedInDays}
+              />
+              <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted, lineHeight: 17 }}>
+                O prazo aparece para todos. Se vencer sem solução, você e quem fez o relato recebem um aviso.
               </Text>
             </View>
 

@@ -1,6 +1,8 @@
-import { Category, ReportStatus } from '@prisma/client'
+import { ArchiveReason, Category, ReportStatus } from '@prisma/client'
 import { Transform, Type } from 'class-transformer'
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsIn,
@@ -8,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  IsUrl,
   Matches,
   Max,
   MaxLength,
@@ -79,13 +82,30 @@ export class QuickRespondDto {
   @IsUUID()
   templateId?: string
 
+  /** Só o destinatário muda status, e só para estes valores (as transições valem como na página do relato). */
   @IsOptional()
-  @IsEnum(ReportStatus)
+  @IsIn(['UNDER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'ARCHIVED'])
   newStatus?: ReportStatus
 
+  /** true = avocar junto. Omitido ou false = não avoca. */
   @IsOptional()
   @IsBoolean()
   advocate?: boolean
+
+  @IsOptional()
+  @IsArray()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { each: true })
+  @ArrayMaxSize(4)
+  media?: string[]
+
+  /** Ao resolver sem foto ou documento (a mensagem precisa explicar). */
+  @IsOptional()
+  @IsBoolean()
+  noEvidence?: boolean
+
+  @IsOptional()
+  @IsEnum(ArchiveReason)
+  archiveReason?: ArchiveReason
 }
 
 export class UpdateMandateGoalDto {

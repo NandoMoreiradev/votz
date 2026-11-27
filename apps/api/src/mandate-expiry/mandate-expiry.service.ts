@@ -4,6 +4,7 @@ import { Queue } from 'bullmq'
 import { ConfigService } from '@nestjs/config'
 import Stripe from 'stripe'
 import { PrismaService } from '../prisma/prisma.service'
+import { MandatometerService } from '../report-lifecycle/mandatometer.service'
 import { EventType } from '@votz/shared-types'
 import { PoliticianStatus, ReportStatus as PrismaReportStatus } from '@prisma/client'
 
@@ -24,6 +25,7 @@ export class MandateExpiryService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @InjectQueue(MANDATE_EXPIRY_QUEUE) private readonly queue: Queue,
+    private readonly mandatometer: MandatometerService,
   ) {
     this.stripe = new Stripe(this.config.getOrThrow('STRIPE_SECRET_KEY'))
   }
@@ -77,25 +79,20 @@ export class MandateExpiryService {
           recipientId: politician.id,
           status: { in: OPEN_STATUSES },
         },
-        select: {
-          id: true,
-          status: true,
-          timeline: {
-            where: { type: 'RESPONDED' as const },
-            select: { metadata: true },
-          },
-        },
+        select: { id: true, status: true },
       })
+      // Compromissos (avocações) ainda abertos, em qualquer relato, inclusive de outros destinatários.
+      const activeAdvocacies = await this.prisma.reportAdvocacy.findMany({
+        where: { orgType: 'POLITICIAN', orgId: politician.id, closedAt: null },
+        select: { id: true, reportId: true, report: { select: { status: true } } },
+      })
+      const advocatedReportIds = new Set(activeAdvocacies.map((a) => a.reportId))
+      const meta = { orgType: 'POLITICIAN', orgId: politician.id, politicianId: politician.id, orgName: politician.name }
 
-      // Atomic: timeline events + status reversions + politician ENCERRADO
+      // Atomic: timeline events + status reversions + avocações encerradas + politician ENCERRADO
       await this.prisma.$transaction(async (tx) => {
         for (const report of openReports) {
-          const wasAdvocated = report.timeline.some(
-            (e) =>
-              (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-              (e.metadata as Record<string, unknown>)?.politicianId === politician.id,
-          )
-
+          const wasAdvocated = advocatedReportIds.has(report.id)
           await tx.timelineEvent.create({
             data: {
               reportId: report.id,
@@ -106,18 +103,56 @@ export class MandateExpiryService {
               metadata: {
                 reason: 'MANDATO_ENCERRADO',
                 action: wasAdvocated ? 'mandate_ended_unresolved_commitment' : 'mandate_ended',
-                politicianId: politician.id,
                 at: now.toISOString(),
+                ...meta,
               },
             },
           })
 
-          if (report.status === PrismaReportStatus.IN_PROGRESS) {
-            await tx.report.update({
-              where: { id: report.id },
+          if (report.status !== PrismaReportStatus.OPEN) {
+            const moved = await tx.report.updateMany({
+              where: { id: report.id, status: report.status },
               data: { status: PrismaReportStatus.OPEN },
             })
+            if (moved.count > 0) {
+              await tx.timelineEvent.create({
+                data: {
+                  reportId: report.id,
+                  type: EventType.STATUS_CHANGED,
+                  content: 'Relato voltou para "Aberto" porque o mandato do destinatário terminou.',
+                  metadata: {
+                    action: 'status_changed',
+                    previousStatus: report.status,
+                    newStatus: PrismaReportStatus.OPEN,
+                    reason: 'MANDATO_ENCERRADO',
+                    ...meta,
+                  },
+                },
+              })
+            }
           }
+        }
+
+        // Avocações em relatos de outros destinatários que o mandato deixou sem solução.
+        const openRecipientIds = new Set(openReports.map((r) => r.id))
+        for (const a of activeAdvocacies) {
+          const unresolved = a.report.status !== PrismaReportStatus.RESOLVED
+          if (unresolved && !openRecipientIds.has(a.reportId)) {
+            await tx.timelineEvent.create({
+              data: {
+                reportId: a.reportId,
+                type: EventType.UPDATE,
+                content: `Mandato de ${politician.name} encerrado com o compromisso assumido neste relato ainda sem solução.`,
+                metadata: { action: 'mandate_ended_unresolved_commitment', at: now.toISOString(), ...meta },
+              },
+            })
+          }
+          await tx.reportAdvocacy.update({
+            where: { id: a.id },
+            data: unresolved
+              ? { closedAt: now, closedReason: 'MANDATE_ENDED' }
+              : { closedAt: now, closedReason: null, closedNote: 'Mandato encerrado com o relato resolvido.' },
+          })
         }
 
         await tx.politician.update({
@@ -141,28 +176,7 @@ export class MandateExpiryService {
   }
 
   private async freezeMandatometer(politicianId: string): Promise<void> {
-    const where = { recipientType: 'POLITICIAN' as const, recipientId: politicianId }
-    const [byStatusRaw, byCategoryRaw] = await Promise.all([
-      this.prisma.report.groupBy({ by: ['status'], where, _count: true }),
-      this.prisma.report.groupBy({ by: ['category'], where, _count: true }),
-    ])
-
-    const byStatus = byStatusRaw.reduce((acc, r) => ({ ...acc, [r.status]: r._count }), {} as Record<string, number>)
-    const byCategory = byCategoryRaw
-      .sort((a, b) => b._count - a._count)
-      .map((r) => ({ category: r.category, count: r._count }))
-    const total = byStatusRaw.reduce((s, r) => s + r._count, 0)
-    const resolved = byStatus['RESOLVED'] ?? 0
-    const inProgress = byStatus['IN_PROGRESS'] ?? 0
-    const open = byStatus['OPEN'] ?? 0
-    const disputed = byStatus['DISPUTED'] ?? 0
-
-    await this.prisma.politician.update({
-      where: { id: politicianId },
-      data: {
-        mandatometer: { total, resolved, inProgress, open, disputed, byStatus, byCategory, frozenAt: new Date().toISOString() },
-      },
-    })
+    await this.mandatometer.freeze(politicianId)
   }
 
   private async cancelSubscription(politicianId: string, subscriptionId: string): Promise<void> {

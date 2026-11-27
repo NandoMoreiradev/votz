@@ -215,6 +215,11 @@ enum NotificationType {
   PRESS_CONTACT_ACCEPTED
   PRESS_CONTACT_DECLINED
   CONTEXT_NOTE_SHOWN
+  REPORT_ADVOCATED
+  REPORT_RESOLVED
+  DISPUTE_PENDING_REVIEW
+  DISPUTE_DECIDED
+  ADVOCACY_DEADLINE_PASSED
 }
 
 // Credenciamento de imprensa: tipo do veículo e andamento do pedido.
@@ -771,6 +776,11 @@ model Report {
 
   firstResponseAt  DateTime?      @map("first_response_at")
   resolvedAt       DateTime?      @map("resolved_at")
+  // Ciclo de vida (ver apps/api/src/reports/report-lifecycle.service.ts)
+  archivedAt              DateTime?      @map("archived_at")
+  archiveReason           ArchiveReason? @map("archive_reason")
+  resolutionConfirmedAt   DateTime?      @map("resolution_confirmed_at")
+  resolvedWithoutEvidence Boolean        @default(false) @map("resolved_without_evidence")
 
   // SLA (Brief 4D)
   slaStartedAt       DateTime?    @map("sla_started_at")
@@ -814,6 +824,7 @@ model Report {
   comments         Comment[]
   notifications    Notification[]
   followers        ReportFollower[]
+  advocacies       ReportAdvocacy[]
   pressContactRequests PressContactRequest[]
   orgTags          OrgReportTag[]
   orgNotes         OrgReportNote[]
@@ -1256,6 +1267,44 @@ model ReportFollower {
   @@unique([reportId, actorType, actorId])
   @@index([actorType, actorId])
   @@map("report_followers")
+}
+
+// Motivo obrigatório para arquivar um relato (arquivado também pode ser contestado)
+enum ArchiveReason {
+  DUPLICATE
+  OUT_OF_SCOPE
+  INSUFFICIENT_INFO
+  NOT_A_PUBLIC_PROBLEM
+}
+
+enum AdvocacyCloseReason {
+  WITHDRAWN
+  MANDATE_ENDED
+}
+
+// Avocação: compromisso público de um político ou entidade com um relato (fonte única do selo,
+// do Portal, da prestação de contas e do Mandatômetro). Um registro por relato e organização.
+model ReportAdvocacy {
+  id                 String               @id @default(uuid())
+  reportId           String               @map("report_id")
+  report             Report               @relation(fields: [reportId], references: [id])
+  orgType            FollowerActorType    @map("org_type")
+  orgId              String               @map("org_id")
+  // Quem clicou (auditoria interna; nunca exposto em rota pública). NULL após exclusão de conta (LGPD).
+  userId             String?              @map("user_id")
+  message            String?
+  promisedFor        DateTime?            @map("promised_for")
+  deadlineNotifiedAt DateTime?            @map("deadline_notified_at")
+  closedAt           DateTime?            @map("closed_at")
+  closedReason       AdvocacyCloseReason? @map("closed_reason")
+  closedNote         String?              @map("closed_note")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  @@unique([reportId, orgType, orgId])
+  @@index([orgType, orgId, closedAt])
+  @@index([promisedFor])
+  @@map("report_advocacies")
 }
 
 // API keys — used by the public API (section 3.6 / 10)

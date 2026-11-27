@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MandatometerCommitments } from '../components/report-lifecycle/MandatometerCommitments'
 import styled from 'styled-components'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/layout/Navbar'
@@ -794,6 +795,7 @@ export function PoliticianProfile() {
             </MGrid>
 
             {politician.metrics && <MetricsBar metrics={politician.metrics} />}
+            <MandatometerCommitments m={m} metrics={politician.metrics} />
             <PublicTransparencyCard
               orgType="POLITICIAN"
               orgId={politician.id}

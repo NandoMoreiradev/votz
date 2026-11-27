@@ -1,4 +1,6 @@
 import {
+  ARCHIVE_REASON_LABELS,
+  ArchiveReason,
   Category,
   ReportStatus,
   formatDateBr,
@@ -9,6 +11,7 @@ import {
   getShareCardFormatLabel,
   getWebhookDeliveryStatusLabel,
   getWebhookEventLabel,
+  recipientStatusOptions,
 } from '@votz/shared-types'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
@@ -295,6 +298,9 @@ function ReportInboxCard({
   const [message, setMessage] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [newStatus, setNewStatus] = useState<ReportStatus | ''>('')
+  const [advocate, setAdvocate] = useState(false)
+  const [noEvidence, setNoEvidence] = useState(false)
+  const [archiveReason, setArchiveReason] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [noteInput, setNoteInput] = useState('')
   const [errMsg, setErrMsg] = useState('')
@@ -312,10 +318,16 @@ function ReportInboxCard({
         message: templateId ? undefined : message || undefined,
         templateId: templateId || undefined,
         newStatus: newStatus || undefined,
-        advocate: true,
+        advocate: advocate && !item.advocatedByMe ? true : undefined,
+        noEvidence: newStatus === ReportStatus.RESOLVED ? noEvidence : undefined,
+        archiveReason: newStatus === ReportStatus.ARCHIVED ? archiveReason : undefined,
       })
       setMessage('')
       setTemplateId('')
+      setNewStatus('')
+      setAdvocate(false)
+      setNoEvidence(false)
+      setArchiveReason('')
       setExpanded(false)
     } catch (e: unknown) {
       setErrMsg((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Erro ao responder')
@@ -392,17 +404,58 @@ function ReportInboxCard({
               </Select>
             )}
 
-            <Select
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value as ReportStatus | '')}
-              aria-label="Alterar status"
-            >
-              <option value="">Manter status atual ({getReportStatusLabel(item.status)})</option>
-              <option value={ReportStatus.UNDER_REVIEW}>Em análise</option>
-              <option value={ReportStatus.IN_PROGRESS}>Em andamento</option>
-              <option value={ReportStatus.RESOLVED}>Resolvido</option>
-            </Select>
+            {item.isRecipient && recipientStatusOptions(item.status).length > 0 && (
+              <Select
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value as ReportStatus | '')}
+                aria-label="Alterar status"
+              >
+                <option value="">Manter status atual ({getReportStatusLabel(item.status)})</option>
+                {recipientStatusOptions(item.status).map((s) => (
+                  <option key={s} value={s}>
+                    {getReportStatusLabel(s)}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {newStatus === ReportStatus.ARCHIVED && (
+              <Select
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                aria-label="Motivo do arquivamento"
+              >
+                <option value="">Escolha o motivo do arquivamento</option>
+                {Object.values(ArchiveReason).map((r) => (
+                  <option key={r} value={r}>
+                    {ARCHIVE_REASON_LABELS[r]}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Row>
+
+          {!item.isRecipient && (
+            <MutedNote style={{ marginBottom: 8 }}>
+              Este relato foi enviado para outro órgão. Você pode avocar e publicar atualizações; só quem recebeu muda o
+              status.
+            </MutedNote>
+          )}
+
+          {!item.advocatedByMe && (
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={advocate} onChange={(e) => setAdvocate(e.target.checked)} />
+              Avocar este relato (compromisso público de acompanhar até a solução)
+            </label>
+          )}
+
+          {newStatus === ReportStatus.RESOLVED && (
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={noEvidence} onChange={(e) => setNoEvidence(e.target.checked)} />
+              Resolver sem foto ou documento (explique no texto o que foi feito, com pelo menos 30 letras). Para anexar
+              prova, use a página do relato.
+            </label>
+          )}
 
           {!templateId && (
             <Textarea
@@ -418,7 +471,13 @@ function ReportInboxCard({
               disabled={respondMut.isPending}
               onClick={handleSubmitResponse}
             >
-              {respondMut.isPending ? 'Enviando...' : 'Avocar e enviar andamento'}
+              {respondMut.isPending
+                ? 'Enviando...'
+                : advocate && !item.advocatedByMe
+                  ? 'Avocar e enviar'
+                  : newStatus
+                    ? 'Mudar status e enviar'
+                    : 'Enviar andamento'}
             </Button>
           </Row>
 

@@ -31,6 +31,9 @@ import { REPORTS_QUEUE } from '../reports/jobs/generate-embedding.processor'
 import { ReportsController } from '../reports/reports.controller'
 import { ReportsRepository } from '../reports/reports.repository'
 import { ReportsService } from '../reports/reports.service'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
+import { ReportLifecycleEffects } from '../report-lifecycle/report-lifecycle.effects'
+import { MandatometerService } from '../report-lifecycle/mandatometer.service'
 import { StorageService } from '../storage/storage.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { TranscriptionService } from '../transcription/transcription.service'
@@ -240,6 +243,18 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
           if (r) Object.assign(r, data)
           return r
         }),
+        // Mudança condicional (status atual como condição), como o ciclo de vida faz.
+        updateMany: jest.fn(async ({ where, data }: any) => {
+          const r = reports.get(where.id)
+          if (!r) return { count: 0 }
+          if (where.status !== undefined && r.status !== where.status) return { count: 0 }
+          if ('firstResponseAt' in where && where.firstResponseAt === null && r.firstResponseAt) return { count: 0 }
+          Object.assign(r, data)
+          return { count: 1 }
+        }),
+      },
+      reportAdvocacy: {
+        findUnique: jest.fn(async () => null),
       },
       reportFollower: {
         findUnique: jest.fn(async ({ where }: any) => {
@@ -255,6 +270,7 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
         }),
       },
     }
+    prismaMock.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock))
 
     const reportsRepoMock: any = {
       findById: jest.fn(async (id: string) => reports.get(id) ?? null),
@@ -350,6 +366,19 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
           },
         },
         { provide: getQueueToken(REPORTS_QUEUE), useValue: { add: jest.fn() } },
+        ReportLifecycleService,
+        {
+          provide: ReportLifecycleEffects,
+          useValue: {
+            afterStatusChange: jest.fn(),
+            afterUpdate: jest.fn(),
+            afterAdvocacy: jest.fn(),
+            afterDispute: jest.fn(),
+            afterDisputeDecision: jest.fn(),
+            afterConfirmation: jest.fn(),
+          },
+        },
+        { provide: MandatometerService, useValue: { compute: jest.fn(), metrics: jest.fn() } },
       ],
     }).compile()
 
@@ -462,7 +491,7 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
     // 5) AGENT (RESPOND_REPORTS only) can update report status (200) but CANNOT create proposta (403); VIEWER cannot update status (403)
     const agentPersonal = signUserToken('agent-1')
     const agentEntToken = (await req('POST', '/auth/switch-context', agentPersonal, { contextType: 'entity', contextId: ENT_A_ID, mfaCode: '123456' })).json.accessToken
-    expect((await req('PATCH', `/reports/${REP_ENT_A_ID}/status`, agentEntToken, { status: 'RESOLVED', content: 'Atendente concluiu o atendimento.' })).status).toBe(200)
+    expect((await req('PATCH', `/reports/${REP_ENT_A_ID}/status`, agentEntToken, { status: 'RESOLVED', content: 'Atendente concluiu o atendimento.', noEvidence: true })).status).toBe(200)
 
     const agentPolToken = (await req('POST', '/auth/switch-context', agentPersonal, { contextType: 'politician', contextId: POL_ID, mfaCode: '123456' })).json.accessToken
     expect((await req('POST', '/propostas', agentPolToken, { titulo: 'Agente tentando propor', descricao: 'Atendente nao tem MANAGE_PROFILE na organizacao.', categorias: ['HEALTH'] })).status).toBe(403)
@@ -472,6 +501,6 @@ describe('T1 Full HTTP Journey: institutional actions authorized by active MFA c
 
     // 6) MODERATOR and ADMIN still update status without institutional ctx (200)
     expect((await req('PATCH', `/reports/${REP_ENT_A_ID}/status`, signUserToken('mod-1'), { status: 'UNDER_REVIEW', content: 'Moderador analisando relato sem contexto.' })).status).toBe(200)
-    expect((await req('PATCH', `/reports/${REP_ENT_B_ID}/status`, signUserToken('admin-1'), { status: 'RESOLVED', content: 'Admin resolvendo relato sem contexto.' })).status).toBe(200)
+    expect((await req('PATCH', `/reports/${REP_ENT_B_ID}/status`, signUserToken('admin-1'), { status: 'RESOLVED', content: 'Admin resolvendo relato sem contexto.', noEvidence: true })).status).toBe(200)
   })
 })

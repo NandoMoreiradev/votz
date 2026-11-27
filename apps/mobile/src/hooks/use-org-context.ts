@@ -64,7 +64,7 @@ export function useDisputeReport(reportId: string) {
 export function useUpdateReportStatus(reportId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (body: { status?: string; content: string; media?: string[] }) =>
+    mutationFn: (body: { status?: string; content: string; media?: string[]; noEvidence?: boolean; archiveReason?: string }) =>
       api(`/reports/${reportId}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['reports', reportId] })
@@ -82,6 +82,8 @@ export function useAdvocateReport(reportId: string) {
       actorId: string
       publishToFeed?: boolean
       postContent?: string
+      /** Prazo prometido para a solução, em dias. */
+      promisedInDays?: number
     }) => {
       const base = vars.actorType === 'POLITICIAN' ? 'politicians' : 'entities'
       return api<{ advocated: boolean; postId?: string }>(
@@ -89,6 +91,7 @@ export function useAdvocateReport(reportId: string) {
         json({
           publishToFeed: vars.publishToFeed,
           postContent: vars.postContent,
+          promisedInDays: vars.promisedInDays,
         }),
       )
     },
@@ -98,6 +101,30 @@ export function useAdvocateReport(reportId: string) {
       if (vars.publishToFeed) {
         void client.invalidateQueries({ queryKey: ['posts'] })
       }
+    },
+  })
+}
+
+/** Autor confirma que o problema foi resolvido (pesa no Mandatômetro). */
+export function useConfirmResolution(reportId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api(`/reports/${reportId}/confirm-resolution`, { method: 'POST' }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['reports', reportId] })
+    },
+  })
+}
+
+/** Desistir da avocação: público, com motivo. */
+export function useWithdrawAdvocacy(reportId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (reason: string) => api(`/reports/${reportId}/advocacy/withdraw`, json({ reason })),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['reports', reportId] })
+      void client.invalidateQueries({ queryKey: ['reports'] })
+      void client.invalidateQueries({ queryKey: ['report-followers', reportId] })
     },
   })
 }

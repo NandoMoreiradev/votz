@@ -237,14 +237,6 @@ export class AccountabilityService {
       })
       roleOrTypeLabel = pol?.office ?? 'Mandato'
       territoryLabel = pol?.city ? `${pol.city}/${pol.state}` : state
-      advocatedCount = await this.prisma.timelineEvent.count({
-        where: {
-          type: EventType.RESPONDED,
-          createdAt: { gte: start, lte: end },
-          metadata: { path: ['action'], equals: 'advocated' },
-          AND: [{ metadata: { path: ['politicianId'], equals: orgId } }],
-        },
-      })
     } else {
       const ent = await this.prisma.entity.findUnique({
         where: { id: orgId },
@@ -253,6 +245,14 @@ export class AccountabilityService {
       roleOrTypeLabel = ent?.type ?? 'Entidade'
       territoryLabel = ent?.city ? `${ent.city}/${ent.state}` : state
     }
+    // Avocações (de qualquer origem: página do relato ou Portal) feitas no período.
+    advocatedCount = await this.prisma.reportAdvocacy.count({
+      where: {
+        orgType: orgType === OrgType.POLITICIAN ? 'POLITICIAN' : 'ENTITY',
+        orgId,
+        createdAt: { gte: start, lte: end },
+      },
+    })
 
     // Relatos resolvidos de maior apoio no recorte (somente título, categoria, data e contagem — zero PII)
     const resolvedRows = await this.prisma.report.findMany({

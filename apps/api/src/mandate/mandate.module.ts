@@ -4,6 +4,7 @@ import { AnalyticsModule } from '../analytics/analytics.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { ShareCardsModule } from '../share-cards/share-cards.module'
 import { WebhooksModule } from '../webhooks/webhooks.module'
+import { ReportLifecycleModule } from '../report-lifecycle/report-lifecycle.module'
 import { MandateTemplatesService } from './mandate-templates.service'
 import { MandateController } from './mandate.controller'
 import { MandateService } from './mandate.service'
@@ -17,6 +18,7 @@ import { WEEKLY_DIGEST_QUEUE, WeeklyDigestService } from './weekly-digest.servic
     NotificationsModule,
     WebhooksModule,
     ShareCardsModule,
+    ReportLifecycleModule,
     BullModule.registerQueue({ name: WEEKLY_DIGEST_QUEUE }),
   ],
   controllers: [MandateController],

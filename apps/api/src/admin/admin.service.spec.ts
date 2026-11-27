@@ -393,6 +393,12 @@ describe('AdminRepository.deleteReport (FK dependency cleanup)', () => {
           return { count: 1 }
         }),
       },
+      reportAdvocacy: {
+        deleteMany: jest.fn(async () => {
+          order.push('reportAdvocacy.deleteMany')
+          return { count: 0 }
+        }),
+      },
       timelineEvent: {
         deleteMany: jest.fn(async () => {
           order.push('timelineEvent.deleteMany')
@@ -420,6 +426,7 @@ describe('AdminRepository.deleteReport (FK dependency cleanup)', () => {
       'comment.unlinkReplies',
       'comment.deleteMany',
       'reportFollower.deleteMany',
+      'reportAdvocacy.deleteMany',
       'timelineEvent.deleteMany',
       'report.delete',
       'moderationAction.create',

@@ -5,9 +5,10 @@ import { PoliticiansRepository } from './politicians.repository'
 import { PlanGuard } from '../auth/guards/plan.guard'
 import { TimelineModule } from '../timeline/timeline.module'
 import { PostsModule } from '../posts/posts.module'
+import { ReportLifecycleModule } from '../report-lifecycle/report-lifecycle.module'
 
 @Module({
-  imports: [TimelineModule, PostsModule],
+  imports: [TimelineModule, PostsModule, ReportLifecycleModule],
   controllers: [PoliticiansController],
   providers: [PoliticiansService, PoliticiansRepository, PlanGuard],
   exports: [PoliticiansService],
