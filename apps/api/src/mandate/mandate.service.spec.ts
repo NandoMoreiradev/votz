@@ -134,6 +134,7 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
   it('MandateService gates advanced inbox filters on BASICO and executes quickRespond + onboarding cleanly', async () => {
     let plan: 'BASICO' | 'MANDATO_PRO' = 'BASICO'
     const timelineCreates: Array<Record<string, unknown>> = []
+    const recipient = { type: 'POLITICIAN', id: 'pol-1' }
 
     const prisma = {
       orgMembership: {
@@ -203,6 +204,9 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
             createdAt: new Date('2026-11-10T10:00:00Z'),
             updatedAt: new Date('2026-11-10T10:00:00Z'),
             _count: { votes: 14, comments: 2 },
+            recipientType: 'POLITICIAN',
+            recipientId: 'pol-1',
+            advocacies: [],
             timeline: [],
           },
         ]),
@@ -218,6 +222,9 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
           firstResponseAt: null,
           resolvedAt: null,
           authorId: 'citizen-hidden',
+          recipientType: recipient.type,
+          recipientId: recipient.id,
+          advocacies: [],
           timeline: [],
         })),
         update: jest.fn(async () => ({})),
@@ -245,10 +252,17 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
     const webhooks = { enqueueEvent: jest.fn(async () => 1) } as any
     const shareCards = { invalidateOnMetricChange: jest.fn(async () => undefined) } as any
 
+    const lifecycle = {
+      advocate: jest.fn(async () => ({ advocated: true })),
+      changeStatus: jest.fn(async (_id: string, _u: unknown, dto: { status: string }) => ({ status: dto.status })),
+      postUpdate: jest.fn(async () => ({ status: ReportStatus.OPEN })),
+    } as any
+
     const service = new MandateService(
       prisma,
       templatesSvc,
       digestSvc,
+      lifecycle,
       notifications,
       webhooks,
       shareCards,
@@ -265,19 +279,38 @@ describe('MandateModule (Inbox, Templates, Notes/Tags, Weekly Digest & Onboardin
     expect((inboxBasic.items[0] as any).authorId).toBeUndefined()
     expect(inboxBasic.kpis.monthlyGoal).toBe(15)
 
-    // No MANDATO_PRO permite responder com modelo + atualizar status + disparar eventos
+    // No MANDATO_PRO permite responder com modelo + avocar + mudar status (a regra mora no ciclo de vida)
     plan = 'MANDATO_PRO'
-    const res = await service.quickRespond(
-      user,
-      'rep-11111111-1111-4111-8111-111111111111',
-      { templateId: 'tpl-1', newStatus: ReportStatus.IN_PROGRESS, advocate: true },
-    )
+    const reportId = 'rep-11111111-1111-4111-8111-111111111111'
+    const res = await service.quickRespond(user, reportId, {
+      templateId: 'tpl-1',
+      newStatus: ReportStatus.IN_PROGRESS,
+      advocate: true,
+    })
     expect(res.advocated).toBe(true)
     expect(res.responded).toBe(true)
     expect(res.status).toBe(ReportStatus.IN_PROGRESS)
-    expect(timelineCreates.length).toBeGreaterThanOrEqual(2)
-    expect(webhooks.enqueueEvent).toHaveBeenCalled()
-    expect(shareCards.invalidateOnMetricChange).toHaveBeenCalledWith('pol-1')
+    expect(lifecycle.advocate).toHaveBeenCalledWith(reportId, user, { orgType: 'POLITICIAN', orgId: 'pol-1' })
+    expect(lifecycle.changeStatus).toHaveBeenCalledWith(
+      reportId,
+      user,
+      expect.objectContaining({ status: ReportStatus.IN_PROGRESS, content: expect.stringContaining('REP-1111') }),
+    )
+    // Sem marcar "Avocar", responder não avoca sozinho
+    lifecycle.advocate.mockClear()
+    await service.quickRespond(user, reportId, { message: 'Recebemos e vamos verificar no local.' })
+    expect(lifecycle.advocate).not.toHaveBeenCalled()
+    expect(lifecycle.postUpdate).toHaveBeenCalledWith(reportId, user, expect.objectContaining({ content: 'Recebemos e vamos verificar no local.' }))
+    // Status com mensagem vazia é recusado
+    await expect(service.quickRespond(user, reportId, { newStatus: ReportStatus.RESOLVED })).rejects.toThrow(BadRequestException)
+
+    // Quem não é o destinatário não muda status e precisa avocar antes de publicar
+    recipient.id = 'outro-orgao'
+    await expect(
+      service.quickRespond(user, reportId, { message: 'Já resolvemos tudo por aqui.', newStatus: ReportStatus.RESOLVED }),
+    ).rejects.toThrow(ForbiddenException)
+    await expect(service.quickRespond(user, reportId, { message: 'Vamos cobrar a secretaria.' })).rejects.toThrow(ForbiddenException)
+    recipient.id = 'pol-1'
 
     const onboarding = await service.getOnboarding(user)
     expect(onboarding.completedCount).toBe(5)

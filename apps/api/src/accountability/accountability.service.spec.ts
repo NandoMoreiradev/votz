@@ -313,6 +313,7 @@ describe('ReportRendererService & AccountabilityService', () => {
     const prisma: any = {
       politician: { findUnique: jest.fn(async () => ({ office: 'Vereador', city: 'Recife', state: 'PE' })) },
       timelineEvent: { count: jest.fn(async () => 3) },
+      reportAdvocacy: { count: jest.fn(async () => 3) },
       report: {
         findMany: jest.fn(async ({ select }: { select: Record<string, unknown> }) => {
           expect(select.authorId).toBeUndefined()

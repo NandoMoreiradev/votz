@@ -291,6 +291,7 @@ export class UsersService {
       // Anonymize optional user references (civic record preserved)
       await tx.report.updateMany({ where: { authorId: userId }, data: { authorId: null, anonymous: true } })
       await tx.timelineEvent.updateMany({ where: { authorId: userId }, data: { authorId: null } })
+      await tx.reportAdvocacy.updateMany({ where: { userId }, data: { userId: null } })
       await tx.propostaTimeline.updateMany({ where: { autorId: userId }, data: { autorId: null } })
       await tx.registrationRequest.updateMany({ where: { reviewerId: userId }, data: { reviewerId: null } })
       await tx.contentFlag.updateMany({ where: { reporterId: userId }, data: { reporterId: null } })

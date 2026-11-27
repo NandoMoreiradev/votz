@@ -19,11 +19,18 @@ import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
 import { UpdateRecipientDto } from './dto/update-recipient.dto'
 import { DisputeDto } from './dto/dispute.dto'
-import { DisputeResolution, ResolveDisputeDto } from './dto/resolve-dispute.dto'
+import { ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { Category, EventType, RecipientType, ReportStatus, UserType, normalizeLocationKey } from '@votz/shared-types'
 import { FollowerActorType, OrgPermission, OrgType, PoliticianStatus, WebhookEventType } from '@prisma/client'
 import { REPORTS_QUEUE, GenerateEmbeddingJob } from './jobs/generate-embedding.processor'
 import { ActingUser, requireActingOrg, resolveOptionalActingOrg } from '../auth/acting-org'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
+
+interface OrgCard {
+  name: string
+  avatarUrl: string | null
+  subtitle: string | null
+}
 
 @Injectable()
 export class ReportsService {
@@ -38,6 +45,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     @InjectQueue(REPORTS_QUEUE) private readonly reportsQueue: Queue,
+    private readonly lifecycle: ReportLifecycleService,
     @Optional() private readonly alertRules?: AlertRulesService,
     @Optional() private readonly webhooks?: WebhooksService,
     @Optional() private readonly topics?: TopicsService,
@@ -239,10 +247,142 @@ export class ReportsService {
 
   async findById(id: string) {
     const report = await this.repository.findById(id)
-    if (!report) throw new NotFoundException('Report not found')
+    // Relato oculto pela moderação não aparece para o público, nem pelo link direto.
+    if (!report || report.moderationStatus === 'HIDDEN') throw new NotFoundException('Relato não encontrado.')
     // Tamanho e moldura de cada foto e vídeo (o relato aparece inteiro, sem recorte: é prova).
     const mediaItems = this.reportMedia ? await this.reportMedia.itemsFor(report.media) : []
-    return { ...report, mediaItems }
+    const { moderationStatus: _moderation, advocacies, timeline, ...rest } = report
+    const orgs = await this.loadOrgCards(report, advocacies, timeline)
+    return {
+      ...rest,
+      mediaItems,
+      advocacies: advocacies.map((a) => {
+        const card = orgs.get(`${a.orgType}:${a.orgId}`)
+        return {
+          orgType: a.orgType,
+          orgId: a.orgId,
+          name: card?.name ?? (a.orgType === 'POLITICIAN' ? 'Político' : 'Entidade'),
+          avatarUrl: card?.avatarUrl ?? null,
+          subtitle: card?.subtitle ?? null,
+          message: a.message,
+          promisedFor: a.promisedFor,
+          createdAt: a.createdAt,
+          closedAt: a.closedAt,
+          closedReason: a.closedReason,
+        }
+      }),
+      timeline: await this.publicTimeline(report, timeline, orgs),
+    }
+  }
+
+  /**
+   * Na Memória pública quem fala é a instituição: o nome da pessoa da equipe (ou do moderador) fica só
+   * no registro interno. Eventos antigos sem a organização gravada são atribuídos ao destinatário quando
+   * quem escreveu é membro dele.
+   */
+  private async publicTimeline(
+    report: { id: string; anonymous: boolean; recipientType: string | null; recipientId: string | null; author: { id: string } | null },
+    timeline: Array<{ id: string; type: string; content: string; metadata: unknown; createdAt: Date; author: { id: string; name: string; avatarUrl: string | null } | null }>,
+    orgs: Map<string, OrgCard>,
+  ) {
+    const legacyAuthors = new Set<string>()
+    for (const e of timeline) {
+      const meta = (e.metadata ?? {}) as Record<string, unknown>
+      if (!e.author || meta.orgType || meta.politicianId || meta.entityId || meta.actorRole || meta.decision) continue
+      if (e.type === 'CREATED' || e.type === 'DISPUTED') continue
+      if (report.author && e.author.id === report.author.id) continue
+      legacyAuthors.add(e.author.id)
+    }
+    let recipientMembers = new Set<string>()
+    if (legacyAuthors.size > 0 && report.recipientId && (report.recipientType === 'POLITICIAN' || report.recipientType === 'ENTITY')) {
+      const rows = await this.prisma.orgMembership.findMany({
+        where: { orgType: report.recipientType as OrgType, orgId: report.recipientId, userId: { in: [...legacyAuthors] } },
+        select: { userId: true },
+      })
+      recipientMembers = new Set(rows.map((r) => r.userId))
+    }
+    const recipientCard = report.recipientId ? orgs.get(`${report.recipientType}:${report.recipientId}`) : undefined
+
+    return timeline.map((e) => {
+      const { disputerUserId: _hidden, ...meta } = (e.metadata ?? {}) as Record<string, unknown>
+      const orgKey = meta.orgType && meta.orgId
+        ? `${meta.orgType}:${meta.orgId}`
+        : meta.politicianId
+          ? `POLITICIAN:${meta.politicianId}`
+          : meta.entityId
+            ? `ENTITY:${meta.entityId}`
+            : null
+      let actorOrg: { type: 'POLITICIAN' | 'ENTITY' | 'MODERATION'; id: string | null; name: string; avatarUrl?: string | null } | null = null
+      if (meta.actorRole === 'MODERATION' || meta.action === 'dispute_decided' || meta.decision) {
+        actorOrg = { type: 'MODERATION', id: null, name: 'Moderação do Votz', avatarUrl: null }
+      } else if (orgKey) {
+        const card = orgs.get(orgKey)
+        const [type, id] = orgKey.split(':') as ['POLITICIAN' | 'ENTITY', string]
+        actorOrg = { type, id, name: card?.name ?? (typeof meta.orgName === 'string' ? meta.orgName : 'Instituição'), avatarUrl: card?.avatarUrl ?? null }
+      } else if (e.author && recipientMembers.has(e.author.id) && recipientCard && report.recipientId) {
+        actorOrg = {
+          type: report.recipientType as 'POLITICIAN' | 'ENTITY',
+          id: report.recipientId,
+          name: recipientCard.name,
+          avatarUrl: recipientCard.avatarUrl,
+        }
+      }
+      // Em relato anônimo, a contestação não mostra quem contestou.
+      const hideAuthor = !!actorOrg || (e.type === 'DISPUTED' && report.anonymous)
+      return { ...e, metadata: meta, author: hideAuthor ? null : e.author, actorOrg }
+    })
+  }
+
+  private async loadOrgCards(
+    report: { recipientType: string | null; recipientId: string | null },
+    advocacies: Array<{ orgType: string; orgId: string }>,
+    timeline: Array<{ metadata: unknown }>,
+  ): Promise<Map<string, OrgCard>> {
+    const politicianIds = new Set<string>()
+    const entityIds = new Set<string>()
+    const add = (type: unknown, id: unknown) => {
+      if (typeof id !== 'string' || !id) return
+      if (type === 'POLITICIAN') politicianIds.add(id)
+      else if (type === 'ENTITY') entityIds.add(id)
+    }
+    add(report.recipientType, report.recipientId)
+    advocacies.forEach((a) => add(a.orgType, a.orgId))
+    for (const e of timeline) {
+      const m = (e.metadata ?? {}) as Record<string, unknown>
+      add(m.orgType, m.orgId)
+      add('POLITICIAN', m.politicianId)
+      add('ENTITY', m.entityId)
+    }
+    const [politicians, entities] = await Promise.all([
+      politicianIds.size
+        ? this.prisma.politician.findMany({
+            where: { id: { in: [...politicianIds] } },
+            select: { id: true, name: true, avatarUrl: true, office: true, state: true, city: true },
+          })
+        : Promise.resolve([]),
+      entityIds.size
+        ? this.prisma.entity.findMany({
+            where: { id: { in: [...entityIds] } },
+            select: { id: true, legalName: true, logoUrl: true, city: true, state: true },
+          })
+        : Promise.resolve([]),
+    ])
+    const map = new Map<string, OrgCard>()
+    for (const p of politicians) {
+      map.set(`POLITICIAN:${p.id}`, {
+        name: p.name,
+        avatarUrl: p.avatarUrl,
+        subtitle: [p.office, p.city ?? p.state].filter(Boolean).join(' · ') || null,
+      })
+    }
+    for (const e of entities) {
+      map.set(`ENTITY:${e.id}`, {
+        name: e.legalName,
+        avatarUrl: e.logoUrl,
+        subtitle: [e.city, e.state].filter(Boolean).join('/') || null,
+      })
+    }
+    return map
   }
 
   async findAll(filters: {
@@ -255,10 +395,24 @@ export class ReportsService {
     limit: number
   }) {
     const { reports, total } = await this.repository.findAll(filters)
-    const data = reports.map(({ timeline, ...r }) => ({
-      ...r,
-      advocacy: timeline[0] ?? null,
-    }))
+    const firstAdvocacies = reports.map((r) => r.advocacies[0]).filter(Boolean)
+    const orgs = await this.loadOrgCards({ recipientType: null, recipientId: null }, firstAdvocacies, [])
+    const data = reports.map(({ advocacies, ...r }) => {
+      const a = advocacies[0]
+      const card = a ? orgs.get(`${a.orgType}:${a.orgId}`) : undefined
+      return {
+        ...r,
+        // Selo "avocado por": a instituição que avocou primeiro (formato antigo mantido: author + createdAt).
+        advocacy: a
+          ? {
+              orgType: a.orgType,
+              orgId: a.orgId,
+              createdAt: a.createdAt,
+              author: { id: a.orgId, name: card?.name ?? 'Instituição', avatarUrl: card?.avatarUrl ?? null },
+            }
+          : null,
+      }
+    })
     return {
       data,
       meta: {
@@ -270,169 +424,9 @@ export class ReportsService {
     }
   }
 
-  async updateStatus(
-    reportId: string,
-    dto: UpdateStatusDto,
-    user: ActingUser,
-  ) {
-    this.storage.assertOwnStorageUrls(dto.media, 'reports')
-    await this.reportMedia?.attach(dto.media, user.id)
-    const report = await this.repository.findById(reportId)
-    if (!report) throw new NotFoundException('Report not found')
-
-    const userType = user.type as UserType
-    const isModAdmin = userType === UserType.MODERATOR || userType === UserType.ADMIN
-
-    let isRecipient = false
-    let actorId: string | null = null
-    let actingOrgType: 'ENTITY' | 'POLITICIAN' | null = null
-
-    if (!isModAdmin) {
-      const acting = await requireActingOrg(
-        this.prisma,
-        user,
-        ['ENTITY', 'POLITICIAN'],
-        OrgPermission.RESPOND_REPORTS,
-      )
-      actorId = acting.orgId
-      actingOrgType = acting.orgType as 'ENTITY' | 'POLITICIAN'
-
-      if (acting.orgType === 'ENTITY') {
-        isRecipient = report.recipientType === RecipientType.ENTITY && report.recipientId === acting.orgId
-      } else {
-        const politician = await this.prisma.politician.findUnique({
-          where: { id: acting.orgId },
-          select: { id: true, status: true },
-        })
-        if (!politician) throw new ForbiddenException('Perfil de político ativo não encontrado')
-        if (politician.status !== PoliticianStatus.ATIVO) {
-          throw new ForbiddenException('Este político não possui mandato ativo')
-        }
-        isRecipient = report.recipientType === RecipientType.POLITICIAN && report.recipientId === politician.id
-      }
-    }
-
-    const hasAdvocated = actorId
-      ? report.timeline?.some(
-          (e) =>
-            e.type === EventType.RESPONDED &&
-            (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-            (actingOrgType === 'POLITICIAN'
-              ? (e.metadata as Record<string, unknown>)?.politicianId === actorId
-              : (e.metadata as Record<string, unknown>)?.entityId === actorId),
-        ) ?? false
-      : false
-
-    if (!isRecipient && !hasAdvocated && !isModAdmin) {
-      throw new ForbiddenException('Você não é destinatário nem avocou este relato')
-    }
-
-    // Apenas o destinatário (ou mod/admin) pode trocar o status
-    if (dto.status !== undefined && !isRecipient && !isModAdmin) {
-      throw new ForbiddenException('Apenas o destinatário pode alterar o status do relato')
-    }
-
-    const sanitizedContent = DOMPurify.sanitize(dto.content)
-
-    if (!isModAdmin) {
-      await this.repository.markFirstResponseIfUnset?.(reportId)
-    }
-
-    if (dto.status !== undefined) {
-      await this.repository.updateStatus(reportId, dto.status as unknown as ReportStatus)
-      await this.timeline.record({
-        reportId,
-        type: EventType.STATUS_CHANGED,
-        content: sanitizedContent,
-        authorId: user.id,
-        metadata: { previousStatus: report.status, newStatus: dto.status, media: dto.media ?? [] },
-      })
-      // Notificar sobre mudança de status
-      if (
-        (report.recipientType === RecipientType.POLITICIAN ||
-          report.recipientType === RecipientType.ENTITY) &&
-        report.recipientId
-      ) {
-        this.webhooks
-          ?.enqueueEvent(
-            report.recipientType === RecipientType.POLITICIAN ? OrgType.POLITICIAN : OrgType.ENTITY,
-            report.recipientId,
-            WebhookEventType.REPORT_STATUS_CHANGED,
-            `report.status:${reportId}:${dto.status}:${Date.now()}`,
-            {
-              reportId,
-              previousStatus: report.status,
-              newStatus: dto.status,
-              category: report.category,
-            },
-          )
-          .catch(() => null)
-      }
-      const statusMeta = {
-        previousStatus: report.status,
-        newStatus: dto.status,
-        reportTitle: report.title,
-      }
-      if (report.author?.id && report.author.id !== user.id) {
-        this.notifications.notify({
-          userId: report.author.id,
-          type: 'STATUS_CHANGED',
-          reportId,
-          metadata: statusMeta,
-        }).catch(() => null)
-      }
-      this.repository.getFollowerUserIds(reportId).then(userIds => {
-        const targets = userIds.filter((uid) => uid !== user.id && uid !== report.author?.id)
-        if (targets.length === 0) return
-        if (this.notifications.notifyMany) {
-          this.notifications.notifyMany({
-            userIds: targets,
-            type: 'STATUS_CHANGED',
-            reportId,
-            metadata: statusMeta,
-          }).catch(() => null)
-        } else {
-          for (const userId of targets) {
-            this.notifications.notify({
-              userId,
-              type: 'STATUS_CHANGED',
-              reportId,
-              metadata: statusMeta,
-            }).catch(() => null)
-          }
-        }
-      }).catch(() => null)
-      return await this.repository.findById(reportId)
-    }
-
-    // Atualização informacional sem troca de status
-    await this.timeline.record({
-      reportId,
-      type: EventType.UPDATE,
-      content: sanitizedContent,
-      authorId: user.id,
-      metadata: { media: dto.media ?? [] },
-    })
-    const updateMeta = { reportTitle: report.title }
-    if (report.author?.id && report.author.id !== user.id) {
-      this.notifications.notify({
-        userId: report.author.id,
-        type: 'REPORT_UPDATE',
-        reportId,
-        metadata: updateMeta,
-      }).catch(() => null)
-    }
-    this.repository.getFollowerUserIds(reportId).then((userIds) => {
-      const targets = userIds.filter((uid) => uid !== user.id && uid !== report.author?.id)
-      if (targets.length === 0) return
-      this.notifications.notifyMany?.({
-        userIds: targets,
-        type: 'REPORT_UPDATE',
-        reportId,
-        metadata: updateMeta,
-      })?.catch(() => null)
-    }).catch(() => null)
-    return { id: reportId, status: report.status }
+  /** Mudar status ou publicar atualização: regra única em ReportLifecycleService. */
+  updateStatus(reportId: string, dto: UpdateStatusDto, user: ActingUser) {
+    return this.lifecycle.updateFromReportPage(reportId, dto, user)
   }
 
   async updateRecipient(reportId: string, dto: UpdateRecipientDto, userId: string) {
@@ -510,8 +504,14 @@ export class ReportsService {
       ['POLITICIAN', 'ENTITY'],
       OrgPermission.RESPOND_REPORTS,
     )
-    const report = await this.repository.findById(reportId)
-    if (!report) throw new NotFoundException('Relato não encontrado')
+    const report = await this.prisma.report.findUnique({ where: { id: reportId }, select: { id: true, moderationStatus: true } })
+    if (!report || report.moderationStatus === 'HIDDEN') throw new NotFoundException('Relato não encontrado.')
+    if (acting.orgType === 'POLITICIAN') {
+      const politician = await this.prisma.politician.findUnique({ where: { id: acting.orgId }, select: { status: true } })
+      if (politician?.status !== PoliticianStatus.ATIVO) {
+        throw new ForbiddenException('Este político não tem mandato ativo e não pode acompanhar relatos.')
+      }
+    }
 
     await this.repository.addFollower(reportId, acting.orgType as FollowerActorType, acting.orgId)
     return { following: true, actorType: acting.orgType, actorId: acting.orgId }
@@ -543,108 +543,23 @@ export class ReportsService {
     return this.repository.getFollowers(reportId)
   }
 
-  async dispute(reportId: string, dto: DisputeDto, userId: string) {
-    this.storage.assertOwnStorageUrls(dto.evidence, 'reports')
-    await this.reportMedia?.attach(dto.evidence, userId)
-    const report = await this.repository.findById(reportId)
-    if (!report) throw new NotFoundException('Report not found')
-
-    if (report.status !== ReportStatus.RESOLVED) {
-      throw new BadRequestException('Only resolved reports can be disputed')
-    }
-
-    if (report.anonymous) {
-      throw new BadRequestException('Anonymous reports cannot be disputed')
-    }
-
-    const authorId = await this.repository.findAuthorId(reportId)
-    if (authorId !== userId) {
-      throw new ForbiddenException('Only the report author can dispute it')
-    }
-
-    const alreadyDisputed = report.timeline?.some((e) => e.type === EventType.DISPUTED)
-    if (alreadyDisputed) {
-      throw new BadRequestException('This report has already been disputed')
-    }
-
-    const sanitizedReason = DOMPurify.sanitize(dto.reason)
-    await this.repository.setDisputed(reportId)
-
-    await this.timeline.record({
-      reportId,
-      type: EventType.DISPUTED,
-      content: sanitizedReason,
-      authorId: userId,
-      metadata: { evidence: dto.evidence ?? [] },
-    })
-
-    if (report.recipientType && report.recipientId) {
-      this.notifications
-        .notifyRecipient?.(report.recipientType, report.recipientId, {
-          type: 'REPORT_DISPUTED',
-          reportId,
-          metadata: { reportTitle: report.title },
-          excludeUserIds: [userId],
-        })
-        ?.catch(() => null)
-    }
-
-    return { id: reportId, status: ReportStatus.DISPUTED }
+  dispute(reportId: string, dto: DisputeDto, userId: string) {
+    return this.lifecycle.dispute(reportId, dto, userId)
   }
 
-  async resolveDispute(reportId: string, dto: ResolveDisputeDto, user: { id: string; type: string }) {
-    const allowedTypes = [UserType.MODERATOR, UserType.ADMIN]
-    if (!allowedTypes.includes(user.type as UserType)) {
-      throw new ForbiddenException('Only moderators and admins can resolve disputes')
-    }
+  resolveDispute(reportId: string, dto: ResolveDisputeDto, user: { id: string; type: string }) {
+    return this.lifecycle.resolveDispute(reportId, dto, user)
+  }
 
-    const report = await this.repository.findById(reportId)
-    if (!report) throw new NotFoundException('Report not found')
+  confirmResolution(reportId: string, userId: string) {
+    return this.lifecycle.confirmResolution(reportId, userId)
+  }
 
-    if (report.status !== ReportStatus.DISPUTED) {
-      throw new BadRequestException('Report is not in disputed status')
-    }
+  withdrawAdvocacy(reportId: string, user: ActingUser, reason: string) {
+    return this.lifecycle.withdrawAdvocacy(reportId, user, reason)
+  }
 
-    const newStatus =
-      dto.decision === DisputeResolution.REOPEN ? ReportStatus.OPEN : ReportStatus.RESOLVED
-
-    const sanitizedJustification = DOMPurify.sanitize(dto.justification)
-    const updated = await this.repository.resolveDispute(reportId, newStatus)
-
-    await this.timeline.record({
-      reportId,
-      type: EventType.STATUS_CHANGED,
-      content: sanitizedJustification,
-      authorId: user.id,
-      metadata: { decision: dto.decision, previousStatus: ReportStatus.DISPUTED, newStatus },
-    })
-
-    const authorId = await this.repository.findAuthorId(reportId)
-    const disputeMeta = {
-      decision: dto.decision,
-      previousStatus: ReportStatus.DISPUTED,
-      newStatus,
-      reportTitle: report.title,
-    }
-    if (authorId) {
-      this.notifications.notify({
-        userId: authorId,
-        type: 'STATUS_CHANGED',
-        reportId,
-        metadata: disputeMeta,
-      }).catch(() => null)
-    }
-    if (report.recipientType && report.recipientId) {
-      this.notifications
-        .notifyRecipient?.(report.recipientType, report.recipientId, {
-          type: 'STATUS_CHANGED',
-          reportId,
-          metadata: disputeMeta,
-          excludeUserIds: [user.id, ...(authorId ? [authorId] : [])],
-        })
-        ?.catch(() => null)
-    }
-
-    return updated
+  disputeQueue(user: { type: string }, page?: number, limit?: number) {
+    return this.lifecycle.disputeQueue(user, page, limit)
   }
 }

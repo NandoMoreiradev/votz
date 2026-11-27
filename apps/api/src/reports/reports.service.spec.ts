@@ -20,16 +20,13 @@ import { REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { ReportStatus, EventType } from '@votz/shared-types'
 import { OrgPermission } from '@prisma/client'
 import { DisputeResolution } from './dto/resolve-dispute.dto'
-import { UpdatableStatus } from './dto/update-status.dto'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
 
 const mockRepo = {
   create: jest.fn(),
   findById: jest.fn(),
   findAll: jest.fn(),
-  updateStatus: jest.fn(),
   findAuthorId: jest.fn(),
-  setDisputed: jest.fn(),
-  resolveDispute: jest.fn(),
   getFollowerUserIds: jest.fn().mockResolvedValue([]),
   addFollower: jest.fn(),
   removeFollower: jest.fn(),
@@ -44,10 +41,18 @@ const mockNotifications = { notify: jest.fn() }
 const mockAlerts = { enqueueCheck: jest.fn().mockResolvedValue(undefined) }
 const mockEmbedding = { embed: jest.fn().mockResolvedValue([]) }
 const mockPrisma = {
-  politician: { findUnique: jest.fn() },
+  politician: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   follower: { findMany: jest.fn().mockResolvedValue([]) },
   entity: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-  orgMembership: { findUnique: jest.fn() },
+  orgMembership: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+}
+const mockLifecycle = {
+  updateFromReportPage: jest.fn().mockResolvedValue({}),
+  dispute: jest.fn().mockResolvedValue({}),
+  resolveDispute: jest.fn().mockResolvedValue({}),
+  confirmResolution: jest.fn().mockResolvedValue({}),
+  withdrawAdvocacy: jest.fn().mockResolvedValue({}),
+  disputeQueue: jest.fn().mockResolvedValue({ data: [] }),
 }
 const mockReportsQueue = { add: jest.fn().mockResolvedValue({}) }
 const mockReportMedia = { attach: jest.fn().mockResolvedValue(undefined), itemsFor: jest.fn().mockResolvedValue([]) }
@@ -91,6 +96,7 @@ describe('ReportsService', () => {
         { provide: StorageService, useValue: mockStorage },
         { provide: getQueueToken(REPORTS_QUEUE), useValue: mockReportsQueue },
         { provide: ReportMediaService, useValue: mockReportMedia },
+        { provide: ReportLifecycleService, useValue: mockLifecycle },
       ],
     }).compile()
 
@@ -102,6 +108,10 @@ describe('ReportsService', () => {
     mockReportsQueue.add.mockResolvedValue({})
     mockReportMedia.attach.mockResolvedValue(undefined)
     mockPrisma.follower.findMany.mockResolvedValue([])
+    mockPrisma.politician.findMany.mockResolvedValue([])
+    mockPrisma.entity.findMany.mockResolvedValue([])
+    mockPrisma.orgMembership.findMany.mockResolvedValue([])
+    mockReportMedia.itemsFor.mockResolvedValue([])
     mockPrisma.orgMembership.findUnique.mockResolvedValue({
       status: 'ACTIVE',
       role: { permissions: [OrgPermission.RESPOND_REPORTS, OrgPermission.MANAGE_PROFILE] },
@@ -194,387 +204,189 @@ describe('ReportsService', () => {
   // ──────────────────────────────────────────────
 
   describe('findById', () => {
+    const fullReport = (overrides: Partial<Record<string, unknown>> = {}) =>
+      makeReport({
+        moderationStatus: 'VISIBLE',
+        recipientType: 'ENTITY',
+        recipientId: 'entity-1',
+        media: [],
+        advocacies: [],
+        ...overrides,
+      })
+
     it('throws NotFoundException when report does not exist', async () => {
       mockRepo.findById.mockResolvedValue(null)
       await expect(service.findById('unknown')).rejects.toThrow(NotFoundException)
     })
 
-    it('returns the report when found', async () => {
-      const report = makeReport()
-      mockRepo.findById.mockResolvedValue(report)
-      // O detalhe acrescenta o tamanho e a moldura das fotos (`mediaItems`).
-      await expect(service.findById('report-1')).resolves.toEqual({ ...report, mediaItems: [] })
+    it('relato oculto pela moderação não abre nem pelo link direto', async () => {
+      mockRepo.findById.mockResolvedValue(fullReport({ moderationStatus: 'HIDDEN' }))
+      await expect(service.findById('report-1')).rejects.toThrow(NotFoundException)
+    })
+
+    it('returns the report when found, with media sizes and without the moderation flag', async () => {
+      mockRepo.findById.mockResolvedValue(fullReport())
+      const result = await service.findById('report-1')
+      expect(result).toEqual(expect.objectContaining({ id: 'report-1', mediaItems: [], advocacies: [], timeline: [] }))
+      expect(result).not.toHaveProperty('moderationStatus')
       expect(mockReportMedia.itemsFor).toHaveBeenCalled()
     })
-  })
 
-  // ──────────────────────────────────────────────
-  // updateStatus()
-  // ──────────────────────────────────────────────
-
-  describe('updateStatus', () => {
-    const dto = { status: UpdatableStatus.IN_PROGRESS, content: 'Equipe a caminho.' }
-
-    it('throws NotFoundException when report does not exist', async () => {
-      mockRepo.findById.mockResolvedValue(null)
-      await expect(
-        service.updateStatus('r1', dto, { id: 'u1', type: 'ADMIN' }),
-      ).rejects.toThrow(NotFoundException)
-    })
-
-    it('throws ForbiddenException for CITIZEN', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport())
-      await expect(
-        service.updateStatus('r1', dto, { id: 'u1', type: 'CITIZEN' }),
-      ).rejects.toThrow(ForbiddenException)
-    })
-
-    it('throws ForbiddenException when user has no active context even if User.type is ENTITY', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
-      await expect(
-        service.updateStatus('r1', dto, { id: 'u1', type: 'ENTITY', ctx: null }),
-      ).rejects.toThrow(ForbiddenException)
-    })
-
-    it('allows CITIZEN with active ENTITY ctx (MFA switched) to update status', async () => {
-      mockRepo.findById
-        .mockResolvedValueOnce(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
-        .mockResolvedValueOnce(makeReport({ id: 'r1', status: ReportStatus.IN_PROGRESS }))
-      mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
-
-      const result = await service.updateStatus('r1', dto, {
-        id: 'u1',
-        type: 'CITIZEN',
-        ctx: {
-          type: 'ENTITY',
-          id: 'entity-1',
-          name: 'Ent 1',
-          logoUrl: null,
-          permissions: [OrgPermission.RESPOND_REPORTS],
-        },
-      })
-
-      expect(result!.status).toBe(ReportStatus.IN_PROGRESS)
-      expect(mockTimeline.record).toHaveBeenCalledWith(
-        expect.objectContaining({ type: EventType.STATUS_CHANGED }),
+    it('na Memória pública quem fala é a instituição, não a pessoa da equipe', async () => {
+      mockPrisma.entity.findMany.mockResolvedValue([
+        { id: 'entity-1', legalName: 'Prefeitura de Teste', logoUrl: 'logo.png', city: 'Teste', state: 'SP' },
+      ])
+      mockRepo.findById.mockResolvedValue(
+        fullReport({
+          timeline: [
+            {
+              id: 't1',
+              type: EventType.RESPONDED,
+              content: 'Equipe vai ao local amanhã.',
+              metadata: { orgType: 'ENTITY', orgId: 'entity-1', orgName: 'Prefeitura de Teste' },
+              createdAt: new Date(),
+              author: { id: 'staff-1', name: 'Fulano da Silva', avatarUrl: null },
+            },
+          ],
+        }),
       )
+      const result = await service.findById('report-1')
+      expect(result.timeline[0].author).toBeNull()
+      expect(result.timeline[0].actorOrg).toEqual({ type: 'ENTITY', id: 'entity-1', name: 'Prefeitura de Teste', avatarUrl: 'logo.png' })
     })
 
-    it.each(['MODERATOR', 'ADMIN'])(
-      'allows %s to update status without ctx',
-      async (type) => {
-        mockRepo.findById
-          .mockResolvedValueOnce(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
-          .mockResolvedValueOnce(makeReport({ id: 'r1', status: ReportStatus.IN_PROGRESS }))
-        mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
-
-        const result = await service.updateStatus('r1', dto, { id: 'u1', type })
-
-        expect(result!.status).toBe(ReportStatus.IN_PROGRESS)
-        expect(mockTimeline.record).toHaveBeenCalledWith(
-          expect.objectContaining({ type: EventType.STATUS_CHANGED }),
-        )
-      },
-    )
-
-    it('notifies author when updater is different from author', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport())
-      mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
-
-      await service.updateStatus('r1', dto, { id: 'another-user', type: 'ADMIN' })
-
-      expect(mockNotifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'author-1', type: 'STATUS_CHANGED' }),
+    it('decisão da moderação aparece como "Moderação do Votz"', async () => {
+      mockRepo.findById.mockResolvedValue(
+        fullReport({
+          timeline: [
+            {
+              id: 't1',
+              type: EventType.STATUS_CHANGED,
+              content: 'Contestação aceita.',
+              metadata: { action: 'dispute_decided', decision: 'REOPEN', actorRole: 'MODERATION' },
+              createdAt: new Date(),
+              author: { id: 'mod-1', name: 'Moderadora', avatarUrl: null },
+            },
+          ],
+        }),
       )
+      const result = await service.findById('report-1')
+      expect(result.timeline[0].author).toBeNull()
+      expect(result.timeline[0].actorOrg).toEqual(expect.objectContaining({ type: 'MODERATION', name: 'Moderação do Votz' }))
     })
 
-    it('does not notify when author updates their own report', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ recipientType: 'ENTITY', recipientId: 'entity-1' }))
-      mockRepo.updateStatus.mockResolvedValue({ id: 'r1', status: ReportStatus.IN_PROGRESS })
+    it('em relato anônimo, a contestação não mostra quem contestou e o id interno não sai', async () => {
+      mockRepo.findById.mockResolvedValue(
+        fullReport({
+          anonymous: true,
+          author: null,
+          timeline: [
+            {
+              id: 't1',
+              type: EventType.DISPUTED,
+              content: 'Continua igual.',
+              metadata: { disputerUserId: 'u-secret', disputedBy: 'AUTHOR' },
+              createdAt: new Date(),
+              author: { id: 'u-secret', name: 'Quem contestou', avatarUrl: null },
+            },
+          ],
+        }),
+      )
+      const result = await service.findById('report-1')
+      expect(result.timeline[0].author).toBeNull()
+      expect(result.timeline[0].metadata).not.toHaveProperty('disputerUserId')
+    })
 
-      await service.updateStatus('r1', dto, {
-        id: 'author-1',
-        type: 'CITIZEN',
-        ctx: {
-          type: 'ENTITY',
-          id: 'entity-1',
-          name: 'Ent 1',
-          logoUrl: null,
-          permissions: [OrgPermission.RESPOND_REPORTS],
-        },
-      })
-
-      expect(mockNotifications.notify).not.toHaveBeenCalled()
+    it('evento antigo sem instituição gravada é atribuído ao destinatário quando quem escreveu é da equipe', async () => {
+      mockPrisma.entity.findMany.mockResolvedValue([
+        { id: 'entity-1', legalName: 'Prefeitura de Teste', logoUrl: null, city: 'Teste', state: 'SP' },
+      ])
+      mockPrisma.orgMembership.findMany.mockResolvedValue([{ userId: 'staff-1' }])
+      mockRepo.findById.mockResolvedValue(
+        fullReport({
+          timeline: [
+            {
+              id: 't1',
+              type: EventType.UPDATE,
+              content: 'Atualização antiga.',
+              metadata: null,
+              createdAt: new Date(),
+              author: { id: 'staff-1', name: 'Fulano', avatarUrl: null },
+            },
+          ],
+        }),
+      )
+      const result = await service.findById('report-1')
+      expect(result.timeline[0].author).toBeNull()
+      expect(result.timeline[0].actorOrg).toEqual(expect.objectContaining({ type: 'ENTITY', id: 'entity-1' }))
     })
   })
 
   // ──────────────────────────────────────────────
-  // dispute()
+  // Ciclo de vida: a regra mora em ReportLifecycleService
   // ──────────────────────────────────────────────
 
-  describe('dispute', () => {
-    const dto = { reason: 'O problema continua exatamente igual ao antes do suposto reparo.' }
+  describe('ciclo de vida (delegação)', () => {
+    it('updateStatus, dispute, resolveDispute, confirmResolution, withdrawAdvocacy e disputeQueue passam para o ciclo de vida', async () => {
+      const user = { id: 'u1', type: 'CITIZEN' }
+      await service.updateStatus('r1', { content: 'Equipe enviada.' }, user)
+      expect(mockLifecycle.updateFromReportPage).toHaveBeenCalledWith('r1', { content: 'Equipe enviada.' }, user)
 
-    it('throws NotFoundException when report does not exist', async () => {
-      mockRepo.findById.mockResolvedValue(null)
-      await expect(service.dispute('r1', dto, 'u1')).rejects.toThrow(NotFoundException)
-    })
+      await service.dispute('r1', { reason: 'Continua igual ao que era antes.' }, 'u1')
+      expect(mockLifecycle.dispute).toHaveBeenCalledWith('r1', { reason: 'Continua igual ao que era antes.' }, 'u1')
 
-    it('throws BadRequestException when report is not RESOLVED', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.OPEN }))
-      await expect(service.dispute('r1', dto, 'u1')).rejects.toThrow(BadRequestException)
-    })
-
-    it('throws BadRequestException for anonymous reports', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED, anonymous: true }))
-      await expect(service.dispute('r1', dto, 'u1')).rejects.toThrow(BadRequestException)
-    })
-
-    it('throws ForbiddenException when user is not the report author', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED }))
-      mockRepo.findAuthorId.mockResolvedValue('another-author')
-      await expect(service.dispute('r1', dto, 'u1')).rejects.toThrow(ForbiddenException)
-    })
-
-    it('throws BadRequestException when report was already disputed', async () => {
-      const report = makeReport({
-        status: ReportStatus.RESOLVED,
-        timeline: [{ id: 't1', type: EventType.DISPUTED, content: 'já contestado', createdAt: new Date() }],
-      })
-      mockRepo.findById.mockResolvedValue(report)
-      mockRepo.findAuthorId.mockResolvedValue('u1')
-      await expect(service.dispute('r1', dto, 'u1')).rejects.toThrow(BadRequestException)
-    })
-
-    it('sets status to DISPUTED and records DISPUTED timeline event', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED }))
-      mockRepo.findAuthorId.mockResolvedValue('u1')
-      mockRepo.setDisputed.mockResolvedValue({ id: 'r1', status: ReportStatus.DISPUTED })
-
-      const result = await service.dispute('r1', dto, 'u1')
-
-      expect(mockRepo.setDisputed).toHaveBeenCalledWith('r1')
-      expect(mockTimeline.record).toHaveBeenCalledWith(
-        expect.objectContaining({ type: EventType.DISPUTED, authorId: 'u1' }),
-      )
-      expect(result).toEqual({ id: 'r1', status: ReportStatus.DISPUTED })
-    })
-  })
-
-  // ──────────────────────────────────────────────
-  // resolveDispute()
-  // ──────────────────────────────────────────────
-
-  describe('resolveDispute', () => {
-    const justification = 'Evidências comprovam que o problema foi de fato resolvido.'
-    const moderator = { id: 'mod-1', type: 'MODERATOR' }
-
-    it('throws ForbiddenException for CITIZEN', async () => {
-      await expect(
-        service.resolveDispute('r1', { decision: DisputeResolution.UPHOLD, justification }, { id: 'u1', type: 'CITIZEN' }),
-      ).rejects.toThrow(ForbiddenException)
-    })
-
-    it('throws ForbiddenException for ENTITY', async () => {
-      await expect(
-        service.resolveDispute('r1', { decision: DisputeResolution.UPHOLD, justification }, { id: 'u1', type: 'ENTITY' }),
-      ).rejects.toThrow(ForbiddenException)
-    })
-
-    it('throws NotFoundException when report does not exist', async () => {
-      mockRepo.findById.mockResolvedValue(null)
-      await expect(
-        service.resolveDispute('r1', { decision: DisputeResolution.UPHOLD, justification }, moderator),
-      ).rejects.toThrow(NotFoundException)
-    })
-
-    it('throws BadRequestException when report is not DISPUTED', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED }))
-      await expect(
-        service.resolveDispute('r1', { decision: DisputeResolution.UPHOLD, justification }, moderator),
-      ).rejects.toThrow(BadRequestException)
-    })
-
-    it('UPHOLD → resolves back to RESOLVED', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.DISPUTED }))
-      mockRepo.resolveDispute.mockResolvedValue({ id: 'r1', status: ReportStatus.RESOLVED })
-      mockRepo.findAuthorId.mockResolvedValue('author-1')
-
-      await service.resolveDispute(
+      const mod = { id: 'mod-1', type: 'MODERATOR' }
+      await service.resolveDispute('r1', { decision: DisputeResolution.REOPEN, justification: 'Fotos mostram o buraco aberto.' }, mod)
+      expect(mockLifecycle.resolveDispute).toHaveBeenCalledWith(
         'r1',
-        { decision: DisputeResolution.UPHOLD, justification },
-        moderator,
+        { decision: DisputeResolution.REOPEN, justification: 'Fotos mostram o buraco aberto.' },
+        mod,
       )
 
-      expect(mockRepo.resolveDispute).toHaveBeenCalledWith('r1', ReportStatus.RESOLVED)
-    })
+      await service.confirmResolution('r1', 'u1')
+      expect(mockLifecycle.confirmResolution).toHaveBeenCalledWith('r1', 'u1')
 
-    it('REOPEN → reopens to OPEN', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.DISPUTED }))
-      mockRepo.resolveDispute.mockResolvedValue({ id: 'r1', status: ReportStatus.OPEN })
-      mockRepo.findAuthorId.mockResolvedValue('author-1')
+      await service.withdrawAdvocacy('r1', user, 'Outro órgão assumiu.')
+      expect(mockLifecycle.withdrawAdvocacy).toHaveBeenCalledWith('r1', user, 'Outro órgão assumiu.')
 
-      await service.resolveDispute(
-        'r1',
-        { decision: DisputeResolution.REOPEN, justification },
-        moderator,
-      )
-
-      expect(mockRepo.resolveDispute).toHaveBeenCalledWith('r1', ReportStatus.OPEN)
-    })
-
-    it('notifies the report author after resolution', async () => {
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.DISPUTED }))
-      mockRepo.resolveDispute.mockResolvedValue({ id: 'r1', status: ReportStatus.RESOLVED })
-      mockRepo.findAuthorId.mockResolvedValue('author-1')
-
-      await service.resolveDispute(
-        'r1',
-        { decision: DisputeResolution.UPHOLD, justification },
-        moderator,
-      )
-
-      expect(mockNotifications.notify).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'author-1', type: 'STATUS_CHANGED' }),
-      )
+      await service.disputeQueue(mod, 2, 10)
+      expect(mockLifecycle.disputeQueue).toHaveBeenCalledWith(mod, 2, 10)
     })
   })
 
-  describe('media & evidence storage ownership (A4)', () => {
+  describe('media storage ownership on create (A4)', () => {
     const validMedia = [`${STORAGE_BASE}/reports/11111111-1111-4111-8111-111111111111.jpg`]
+    const base = {
+      title: 'Buraco grande na via',
+      description: 'Buraco atrapalhando trânsito.',
+      category: 'INFRASTRUCTURE' as any,
+      latitude: -23.5,
+      longitude: -46.6,
+    }
+    const citizen = { id: 'u1', type: 'CITIZEN', emailVerified: true }
 
-    it('rejects external and wrong-folder URLs on report create, updateStatus, and dispute', async () => {
-      await expect(
-        service.create(
-          {
-            title: 'Buraco grande na via',
-            description: 'Buraco atrapalhando trânsito.',
-            category: 'INFRASTRUCTURE' as any,
-            latitude: -23.5,
-            longitude: -46.6,
-            media: ['https://evil.example/track.jpg'],
-          } as any,
-          { id: 'u1', type: 'CITIZEN', emailVerified: true },
-        ),
-      ).rejects.toThrow(BadRequestException)
-
-      await expect(
-        service.create(
-          {
-            title: 'Buraco grande na via',
-            description: 'Buraco atrapalhando trânsito.',
-            category: 'INFRASTRUCTURE' as any,
-            latitude: -23.5,
-            longitude: -46.6,
-            media: [`${STORAGE_BASE}/avatars/wrong.jpg`],
-          } as any,
-          { id: 'u1', type: 'CITIZEN', emailVerified: true },
-        ),
-      ).rejects.toThrow(BadRequestException)
+    it('rejects external and wrong-folder URLs', async () => {
+      await expect(service.create({ ...base, media: ['https://evil.example/track.jpg'] } as any, citizen)).rejects.toThrow(BadRequestException)
+      await expect(service.create({ ...base, media: [`${STORAGE_BASE}/avatars/wrong.jpg`] } as any, citizen)).rejects.toThrow(BadRequestException)
       expect(mockReportMedia.attach).not.toHaveBeenCalled()
-
-      await expect(
-        service.updateStatus(
-          'r1',
-          { content: 'Atualização com imagem externa', media: ['https://evil.example/a.png'] } as any,
-          { id: 'admin-1', type: 'ADMIN' },
-        ),
-      ).rejects.toThrow(BadRequestException)
-
-      await expect(
-        service.dispute(
-          'r1',
-          { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: [`${STORAGE_BASE}/entities/logo.png`] },
-          'u1',
-        ),
-      ).rejects.toThrow(BadRequestException)
     })
 
-    it('accepts valid reports/ storage URLs on create, updateStatus, and dispute', async () => {
+    it('accepts valid reports/ storage URLs and marks them as used', async () => {
       mockRepo.create.mockResolvedValue({ id: 'r1', category: 'INFRASTRUCTURE' })
-      await service.create(
-        {
-          title: 'Buraco grande na via',
-          description: 'Buraco atrapalhando trânsito.',
-          category: 'INFRASTRUCTURE' as any,
-          latitude: -23.5,
-          longitude: -46.6,
-          media: validMedia,
-        } as any,
-        { id: 'u1', type: 'CITIZEN', emailVerified: true },
-      )
+      await service.create({ ...base, media: validMedia } as any, citizen)
       expect(mockRepo.create).toHaveBeenCalled()
-
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.OPEN }))
-      await service.updateStatus(
-        'r1',
-        { content: 'Equipe enviada ao local hoje.', media: validMedia },
-        { id: 'admin-1', type: 'ADMIN' },
-      )
-      expect(mockTimeline.record).toHaveBeenCalled()
-
-      mockRepo.findById.mockResolvedValue(makeReport({ status: ReportStatus.RESOLVED, anonymous: false }))
-      mockRepo.findAuthorId.mockResolvedValue('u1')
-      await service.dispute(
-        'r1',
-        { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: validMedia },
-        'u1',
-      )
-      expect(mockRepo.setDisputed).toHaveBeenCalledWith('r1')
-
-      // Criar, atualizar e contestar marcam os arquivos como usados (a limpeza de órfãos só olha o que nunca foi marcado).
-      expect(mockReportMedia.attach).toHaveBeenCalledTimes(3)
-      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(1, validMedia, 'u1')
-      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(2, validMedia, 'admin-1')
-      expect(mockReportMedia.attach).toHaveBeenNthCalledWith(3, validMedia, 'u1')
+      expect(mockReportMedia.attach).toHaveBeenCalledWith(validMedia, 'u1')
     })
 
-    it('arquivo de outra pessoa barra o relato, a atualização e a contestação ANTES de gravar qualquer coisa', async () => {
-      const notYours = () => mockReportMedia.attach.mockRejectedValueOnce(new ForbiddenException('Você só pode anexar arquivos que você mesmo enviou.'))
-
-      notYours()
-      await expect(
-        service.create(
-          {
-            title: 'Buraco grande na via',
-            description: 'Buraco atrapalhando trânsito.',
-            category: 'INFRASTRUCTURE' as any,
-            latitude: -23.5,
-            longitude: -46.6,
-            media: validMedia,
-          } as any,
-          { id: 'u1', type: 'CITIZEN', emailVerified: true },
-        ),
-      ).rejects.toBeInstanceOf(ForbiddenException)
+    it('arquivo de outra pessoa barra o relato ANTES de gravar', async () => {
+      mockReportMedia.attach.mockRejectedValueOnce(new ForbiddenException('Você só pode anexar arquivos que você mesmo enviou.'))
+      await expect(service.create({ ...base, media: validMedia } as any, citizen)).rejects.toBeInstanceOf(ForbiddenException)
       expect(mockRepo.create).not.toHaveBeenCalled()
-
-      notYours()
-      await expect(
-        service.updateStatus('r1', { content: 'Equipe enviada ao local hoje.', media: validMedia }, { id: 'admin-1', type: 'ADMIN' }),
-      ).rejects.toBeInstanceOf(ForbiddenException)
-      expect(mockRepo.findById).not.toHaveBeenCalled()
-      expect(mockTimeline.record).not.toHaveBeenCalled()
-
-      notYours()
-      await expect(
-        service.dispute('r1', { reason: 'Problema voltou a ocorrer no mesmo ponto.', evidence: validMedia }, 'u1'),
-      ).rejects.toBeInstanceOf(ForbiddenException)
-      expect(mockRepo.findById).not.toHaveBeenCalled()
-      expect(mockRepo.setDisputed).not.toHaveBeenCalled()
     })
 
     it('sem mídia, não consulta nem recusa nada', async () => {
       mockRepo.create.mockResolvedValue({ id: 'r1', category: 'INFRASTRUCTURE' })
-      await service.create(
-        {
-          title: 'Buraco grande na via',
-          description: 'Buraco atrapalhando trânsito.',
-          category: 'INFRASTRUCTURE' as any,
-          latitude: -23.5,
-          longitude: -46.6,
-        } as any,
-        { id: 'u1', type: 'CITIZEN', emailVerified: true },
-      )
+      await service.create(base as any, citizen)
       expect(mockReportMedia.attach).toHaveBeenCalledWith(undefined, 'u1')
       expect(mockRepo.create).toHaveBeenCalled()
     })

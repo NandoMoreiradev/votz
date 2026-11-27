@@ -12,6 +12,7 @@ import { CryptoModule } from './crypto/crypto.module'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { ReportsModule } from './reports/reports.module'
+import { ReportLifecycleModule } from './report-lifecycle/report-lifecycle.module'
 import { TimelineModule } from './timeline/timeline.module'
 import { EntitiesModule } from './entities/entities.module'
 import { PoliticiansModule } from './politicians/politicians.module'
@@ -134,6 +135,7 @@ import { SecurityModule } from './common/security/security.module'
     AuthModule,
     UsersModule,
     ReportsModule,
+    ReportLifecycleModule,
     TimelineModule,
     EntitiesModule,
     PoliticiansModule,

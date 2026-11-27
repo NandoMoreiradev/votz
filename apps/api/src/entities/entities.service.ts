@@ -19,12 +19,14 @@ import { EventType, ReportStatus, hasFeature } from '@votz/shared-types'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
 import { planRequiredException } from '../auth/plan-errors'
 
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
 @Injectable()
 export class EntitiesService {
   constructor(
     private readonly repo: EntitiesRepository,
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly lifecycle: ReportLifecycleService,
     @Optional() private readonly posts?: PostsService,
   ) {}
 
@@ -113,81 +115,9 @@ export class EntitiesService {
     return this.repo.update(id, dto as object)
   }
 
-  async advocate(entityId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
-    await requireActingOrg(
-      this.prisma,
-      user,
-      'ENTITY',
-      OrgPermission.RESPOND_REPORTS,
-      { expectedOrgId: entityId },
-    )
-    const userId = user.id
-
-    const report = await this.prisma.report.findUnique({
-      where: { id: reportId },
-      select: {
-        id: true,
-        status: true,
-        timeline: {
-          where: { type: EventType.RESPONDED },
-          select: { metadata: true },
-        },
-      },
-    })
-    if (!report) throw new NotFoundException('Report not found')
-
-    const ADVOCATABLE = [ReportStatus.OPEN, ReportStatus.UNDER_REVIEW, ReportStatus.IN_PROGRESS]
-    if (!ADVOCATABLE.includes(report.status as ReportStatus)) {
-      throw new BadRequestException('Report cannot be advocated at this stage')
-    }
-
-    const alreadyAdvocated = report.timeline.some(
-      (e) =>
-        (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-        (e.metadata as Record<string, unknown>)?.entityId === entityId,
-    )
-    if (alreadyAdvocated) throw new ConflictException('Esta entidade já avocou este relato')
-
-    const isFirstAdvocacy = !report.timeline.some(
-      (e) => (e.metadata as Record<string, unknown>)?.action === 'advocated',
-    )
-
-    if (isFirstAdvocacy && report.status !== ReportStatus.IN_PROGRESS) {
-      await this.prisma.report.update({
-        where: { id: reportId },
-        data: { status: ReportStatus.IN_PROGRESS },
-      })
-    }
-
-    await this.prisma.report.updateMany?.({
-      where: { id: reportId, firstResponseAt: null },
-      data: { firstResponseAt: new Date() },
-    })
-
-    await this.prisma.timelineEvent.create({
-      data: {
-        reportId,
-        type: EventType.RESPONDED,
-        content: 'Entidade avocou este relato e assumiu o compromisso de acompanhá-lo.',
-        authorId: userId,
-        metadata: { action: 'advocated', entityId },
-      },
-    })
-
-    let postId: string | undefined
-    if (dto?.publishToFeed && this.posts) {
-      const createdPost = await this.posts.createAdvocacyPost({
-        reportId,
-        userId,
-        orgType: 'ENTITY',
-        orgId: entityId,
-        content: dto.postContent,
-        media: dto.media,
-      })
-      postId = createdPost.id
-    }
-
-    return postId ? { advocated: true, postId } : { advocated: true }
+  /** Avocar: regra única em ReportLifecycleService. */
+  advocate(entityId: string, reportId: string, user: ActingUser, dto?: AdvocateReportDto) {
+    return this.lifecycle.advocate(reportId, user, { orgType: 'ENTITY', orgId: entityId }, dto)
   }
 
   async followToggle(entityId: string, userId: string) {

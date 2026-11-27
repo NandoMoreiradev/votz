@@ -14,7 +14,7 @@ import {
   ReportStatus,
   WebhookEventType,
 } from '@prisma/client'
-import { hasFeature } from '@votz/shared-types'
+import { ArchiveReason as SharedArchiveReason, hasFeature } from '@votz/shared-types'
 import { toSaoPauloDateString } from '../analytics/analytics.constants'
 import { resolvePoliticianTerritory } from '../analytics/analytics.scope'
 import { ActingUser, requireActingOrg } from '../auth/acting-org'
@@ -32,6 +32,8 @@ import {
 } from './dto/mandate.dto'
 import { MandateTemplatesService } from './mandate-templates.service'
 import { WeeklyDigestService } from './weekly-digest.service'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
+import { UpdatableStatus } from '../reports/dto/update-status.dto'
 
 const OPEN_STATUSES: ReportStatus[] = [
   ReportStatus.OPEN,
@@ -45,6 +47,7 @@ export class MandateService {
     private readonly prisma: PrismaService,
     private readonly templates: MandateTemplatesService,
     private readonly digest: WeeklyDigestService,
+    private readonly lifecycle: ReportLifecycleService,
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly webhooks?: WebhooksService,
     @Optional() private readonly shareCards?: ShareCardsService,
@@ -118,6 +121,8 @@ export class MandateService {
   ): Prisma.ReportWhereInput {
     const where: Prisma.ReportWhereInput = {
       state: territory.state,
+      // Relato oculto pela moderação não entra na caixa nem recebe ações.
+      moderationStatus: { not: 'HIDDEN' },
     }
     if (territory.cityKey) {
       where.cityKey = territory.cityKey
@@ -169,15 +174,8 @@ export class MandateService {
       where.firstResponseAt = null
       where.status = query.status ?? { in: OPEN_STATUSES }
     }
-    if (query.onlyAdvocated && ctx.orgType === OrgType.POLITICIAN) {
-      where.timeline = {
-        some: {
-          metadata: {
-            path: ['politicianId'],
-            equals: ctx.orgId,
-          },
-        },
-      }
+    if (query.onlyAdvocated) {
+      where.advocacies = { some: { orgType: ctx.orgType, orgId: ctx.orgId, closedAt: null } }
     }
 
     const page = query.page ?? 1
@@ -224,8 +222,14 @@ export class MandateService {
           resolvedAt: true,
           createdAt: true,
           updatedAt: true,
+          recipientType: true,
+          recipientId: true,
           // NUNCA expor authorId / author / PII de cidadão
-          _count: { select: { votes: true, comments: true } },
+          _count: { select: { votes: { where: { type: 'SUPPORT' } }, comments: true } },
+          advocacies: {
+            where: { orgType: ctx.orgType, orgId: ctx.orgId, closedAt: null },
+            select: { id: true },
+          },
           timeline: {
             where: {
               type: { in: [EventType.RESPONDED, EventType.STATUS_CHANGED, EventType.RESOLVED, EventType.UPDATE] },
@@ -250,24 +254,11 @@ export class MandateService {
         },
       }),
       this.prisma.report.count({
-        where:
-          ctx.orgType === OrgType.POLITICIAN
-            ? {
-                ...baseTerritoryWhere,
-                status: { in: OPEN_STATUSES },
-                timeline: {
-                  some: {
-                    metadata: {
-                      path: ['politicianId'],
-                      equals: ctx.orgId,
-                    },
-                  },
-                },
-              }
-            : {
-                ...baseTerritoryWhere,
-                status: ReportStatus.IN_PROGRESS,
-              },
+        where: {
+          ...baseTerritoryWhere,
+          status: { in: [...OPEN_STATUSES, ReportStatus.DISPUTED] },
+          advocacies: { some: { orgType: ctx.orgType, orgId: ctx.orgId, closedAt: null } },
+        },
       }),
       this.prisma.report.count({
         where: {
@@ -308,13 +299,8 @@ export class MandateService {
     }
 
     const items = reports.map((r) => {
-      const advocatedByMe =
-        ctx.orgType === OrgType.POLITICIAN &&
-        r.timeline.some(
-          (e) =>
-            (e.metadata as Record<string, unknown> | null)?.action === 'advocated' &&
-            (e.metadata as Record<string, unknown> | null)?.politicianId === ctx.orgId,
-        )
+      const advocatedByMe = r.advocacies.length > 0
+      const isRecipient = r.recipientType === ctx.orgType && r.recipientId === ctx.orgId
 
       return {
         id: r.id,
@@ -335,6 +321,7 @@ export class MandateService {
         supportCount: r._count.votes,
         commentsCount: r._count.comments,
         advocatedByMe,
+        isRecipient,
         internalTags: tagsByReport.get(r.id) ?? [],
         internalNotes: notesByReport.get(r.id) ?? [],
         recentTimeline: r.timeline,
@@ -368,6 +355,10 @@ export class MandateService {
     }
   }
 
+  /**
+   * Ação rápida na caixa do mandato. Usa as MESMAS regras da página do relato (ReportLifecycleService):
+   * só o destinatário muda status; quem não é destinatário precisa avocar para publicar.
+   */
   async quickRespond(user: ActingUser, reportId: string, dto: QuickRespondDto) {
     const ctx = await this.resolveMandateContext(user, OrgPermission.RESPOND_REPORTS)
 
@@ -375,28 +366,28 @@ export class MandateService {
       where: { id: reportId },
       select: {
         id: true,
-        title: true,
         category: true,
         status: true,
         state: true,
-        city: true,
         cityKey: true,
         neighborhood: true,
-        firstResponseAt: true,
-        resolvedAt: true,
-        authorId: true, // uso interno apenas para disparar Notification; nunca exposto no retorno
-        timeline: {
-          select: { id: true, metadata: true },
+        city: true,
+        moderationStatus: true,
+        recipientType: true,
+        recipientId: true,
+        advocacies: {
+          where: { orgType: ctx.orgType, orgId: ctx.orgId, closedAt: null },
+          select: { id: true },
         },
       },
     })
 
-    if (!report) throw new NotFoundException('Relato não encontrado')
+    if (!report || report.moderationStatus === 'HIDDEN') throw new NotFoundException('Relato não encontrado.')
     if (report.state !== ctx.territory.state) {
-      throw new ForbiddenException('Relato fora do território deste mandato')
+      throw new ForbiddenException('Relato fora do território deste mandato.')
     }
     if (ctx.territory.cityKey && report.cityKey !== ctx.territory.cityKey) {
-      throw new ForbiddenException('Relato fora do município deste mandato')
+      throw new ForbiddenException('Relato fora do município deste mandato.')
     }
 
     let renderedMessage = dto.message?.trim() ?? ''
@@ -408,13 +399,13 @@ export class MandateService {
         where: { id: dto.templateId, orgType: ctx.orgType, orgId: ctx.orgId },
       })
       if (!template) {
-        throw new NotFoundException('Modelo de resposta não encontrado')
+        throw new NotFoundException('Modelo de resposta não encontrado.')
       }
       renderedMessage = this.templates.renderTemplateBody(template.body, {
         protocolo: report.id.slice(0, 8).toUpperCase(),
         bairro: report.neighborhood ?? report.city ?? report.state ?? 'Território',
         categoria: report.category,
-        prazo: '7 dias úteis',
+        prazo: 'os próximos dias',
       })
       await this.prisma.replyTemplate.update({
         where: { id: template.id },
@@ -426,154 +417,52 @@ export class MandateService {
       renderedMessage = this.templates.sanitizePlainText(renderedMessage, 'Mensagem')
     }
 
-    const shouldAdvocate =
-      dto.advocate !== false && ctx.orgType === OrgType.POLITICIAN
-    const alreadyAdvocatedByMe = report.timeline.some(
-      (e) =>
-        (e.metadata as Record<string, unknown> | null)?.action === 'advocated' &&
-        (e.metadata as Record<string, unknown> | null)?.politicianId === ctx.orgId,
-    )
+    const isRecipient = report.recipientType === ctx.orgType && report.recipientId === ctx.orgId
+    const alreadyAdvocated = report.advocacies.length > 0
+    const shouldAdvocate = dto.advocate === true && !alreadyAdvocated
 
-    if (!renderedMessage && !dto.newStatus && (!shouldAdvocate || alreadyAdvocatedByMe)) {
-      throw new BadRequestException(
-        'Informe uma mensagem, selecione um modelo, altere o status ou avoque o relato.',
+    if (!renderedMessage && !dto.newStatus && !shouldAdvocate) {
+      throw new BadRequestException('Escreva uma mensagem, escolha um modelo, mude o status ou avoque o relato.')
+    }
+    if (dto.newStatus && !isRecipient) {
+      throw new ForbiddenException(
+        'Só quem recebeu o relato pode mudar o status. Você pode avocar e publicar atualizações.',
       )
     }
-
-    const now = new Date()
-    let updatedStatus = report.status
-
-    await this.prisma.$transaction(async (tx) => {
-      if (shouldAdvocate && !alreadyAdvocatedByMe) {
-        await tx.timelineEvent.create({
-          data: {
-            reportId: report.id,
-            type: EventType.UPDATE,
-            content: `${ctx.orgName} avocou este relato para acompanhamento do mandato.`,
-            authorId: user.id,
-            metadata: { action: 'advocated', politicianId: ctx.orgId },
-          },
-        })
-        if (updatedStatus === ReportStatus.OPEN) {
-          updatedStatus = ReportStatus.IN_PROGRESS
-          await tx.report.update({
-            where: { id: report.id },
-            data: { status: ReportStatus.IN_PROGRESS },
-          })
-        }
-        if (ctx.orgType === OrgType.POLITICIAN) {
-          const prev = ctx.mandatometer
-          await tx.politician.update({
-            where: { id: ctx.orgId },
-            data: {
-              mandatometer: {
-                ...prev,
-                advocated: Number(prev.advocated ?? 0) + 1,
-              },
-            },
-          })
-        }
-      }
-
-      if (renderedMessage) {
-        await tx.timelineEvent.create({
-          data: {
-            reportId: report.id,
-            type: EventType.RESPONDED,
-            content: renderedMessage,
-            authorId: user.id,
-            metadata: {
-              action: 'responded',
-              orgType: ctx.orgType,
-              orgId: ctx.orgId,
-              politicianId: ctx.orgType === OrgType.POLITICIAN ? ctx.orgId : undefined,
-              templateId: dto.templateId ?? undefined,
-            },
-          },
-        })
-        if (!report.firstResponseAt) {
-          await tx.report.update({
-            where: { id: report.id },
-            data: { firstResponseAt: now },
-          })
-        }
-      }
-
-      if (dto.newStatus && dto.newStatus !== updatedStatus) {
-        const isResolved = dto.newStatus === ReportStatus.RESOLVED
-        updatedStatus = dto.newStatus
-        await tx.report.update({
-          where: { id: report.id },
-          data: {
-            status: dto.newStatus,
-            ...(isResolved && !report.resolvedAt ? { resolvedAt: now } : {}),
-          },
-        })
-        await tx.timelineEvent.create({
-          data: {
-            reportId: report.id,
-            type: isResolved ? EventType.RESOLVED : EventType.STATUS_CHANGED,
-            content: isResolved
-              ? `Relato marcado como resolvido por ${ctx.orgName}.`
-              : `Status atualizado para ${dto.newStatus} por ${ctx.orgName}.`,
-            authorId: user.id,
-            metadata: {
-              action: 'status_changed',
-              status: dto.newStatus,
-              orgType: ctx.orgType,
-              orgId: ctx.orgId,
-            },
-          },
-        })
-      }
-    })
-
-    if (this.notifications) {
-      const notifMetadata = {
-        orgName: ctx.orgName,
-        reportTitle: report.title,
-        status: updatedStatus,
-        newStatus: updatedStatus,
-      }
-      if (report.authorId && report.authorId !== user.id) {
-        try {
-          await this.notifications.notify({
-            userId: report.authorId,
-            type: NotificationType.STATUS_CHANGED,
-            reportId: report.id,
-            metadata: notifMetadata,
-          })
-        } catch {
-          // Notificação é best-effort e nunca bloqueia a resposta oficial
-        }
-      }
+    if (dto.newStatus && !renderedMessage) {
+      throw new BadRequestException('Escreva uma mensagem explicando a mudança de status.')
+    }
+    if (renderedMessage && !isRecipient && !alreadyAdvocated && !shouldAdvocate) {
+      throw new ForbiddenException('Para publicar no relato, avoque-o antes (marque "Avocar este relato").')
     }
 
-    if (this.webhooks) {
-      await this.webhooks.enqueueEvent(
-        ctx.orgType,
-        ctx.orgId,
-        WebhookEventType.REPORT_STATUS_CHANGED,
-        `mandate-respond-${report.id}-${now.getTime()}`,
-        {
-          reportId: report.id,
-          status: updatedStatus,
-          category: report.category,
-          state: report.state,
-          city: report.city,
-          neighborhood: report.neighborhood,
-        },
-      )
+    let advocated = alreadyAdvocated
+    if (shouldAdvocate) {
+      await this.lifecycle.advocate(report.id, user, { orgType: ctx.orgType as 'POLITICIAN' | 'ENTITY', orgId: ctx.orgId })
+      advocated = true
     }
 
-    if (ctx.orgType === OrgType.POLITICIAN && this.shareCards) {
-      await this.shareCards.invalidateOnMetricChange(ctx.orgId)
+    let status: string = report.status
+    if (dto.newStatus) {
+      const res = await this.lifecycle.changeStatus(report.id, user, {
+        status: dto.newStatus as unknown as UpdatableStatus,
+        content: renderedMessage,
+        media: dto.media,
+        noEvidence: dto.noEvidence,
+        archiveReason: dto.archiveReason as unknown as SharedArchiveReason | undefined,
+      })
+      status = res.status
+    } else if (renderedMessage) {
+      const res = await this.lifecycle.postUpdate(report.id, user, { content: renderedMessage, media: dto.media })
+      status = res.status
+    } else if (shouldAdvocate) {
+      status = (await this.prisma.report.findUnique({ where: { id: report.id }, select: { status: true } }))?.status ?? status
     }
 
     return {
       reportId: report.id,
-      status: updatedStatus,
-      advocated: shouldAdvocate || alreadyAdvocatedByMe,
+      status,
+      advocated,
       responded: Boolean(renderedMessage),
     }
   }

@@ -18,4 +18,5 @@ export * from './ads';
 export * from './press';
 export * from './context-notes';
 export * from './surveys';
+export * from './report-lifecycle';
 //# sourceMappingURL=index.d.ts.map
