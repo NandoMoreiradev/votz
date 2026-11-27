@@ -155,3 +155,10 @@ describe('mixForYouFeed', () => {
     expect(out[0].reason).toBeNull()
   })
 })
+
+it('não trata cidades com o mesmo nome em estados diferentes como conteúdo local', () => {
+  const user = viewer({ cityKey: 'bom jesus', state: 'PI' })
+  const sameName = post({ cityKey: 'bom jesus', state: 'RS', authorTrusted: false })
+  const local = post({ cityKey: 'bom jesus', state: 'PI', authorTrusted: false })
+  expect(mixForYouFeed([sameName, local], user).map(({ post }) => post.id)).toEqual([local.id])
+})

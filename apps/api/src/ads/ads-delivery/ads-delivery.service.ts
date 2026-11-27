@@ -279,16 +279,19 @@ export class AdsDeliveryService {
       : null
     const spent = pacingView ? spentFromView(pacingView) : await this.within(this.repo.spentTodayByAdSet(adSetIds, day), deadlineAt)
 
+    const affordableBids = new Map<string, number>()
     const eligible = pool.filter((ad) => {
-      const { objective } = ad.adSet.campaign
-      const account = ad.adSet.campaign.account
-      // A consulta já filtra, mas conferimos de novo: nunca vai para o feed vídeo que ainda está sendo preparado.
-      if (!creativeMediaReady(ad.creative.media)) return false
-      // Saldo disponível: o que a conta tem menos o gasto que ainda não foi lançado.
-      if (account.balanceCents * 1000 - account.pendingSpendMillicents <= 0) return false
-      if (!matchesTargeting(ad.adSet, viewer)) return false
-      const remaining = ad.adSet.dailyBudgetCents * 1000 - (spent.get(ad.adSetId) ?? 0)
-      return remaining >= adChargeMillicents(objective, adFloorCents(objective))
+      const { objective, account } = ad.adSet.campaign
+      if (!creativeMediaReady(ad.creative.media) || !matchesTargeting(ad.adSet, viewer)) return false
+
+      const availableBalance = account.balanceCents * 1000 - account.pendingSpendMillicents
+      const remainingBudget = ad.adSet.dailyBudgetCents * 1000 - (spent.get(ad.adSetId) ?? 0)
+      const affordable = Math.floor(Math.min(availableBalance, remainingBudget) / adChargeMillicents(objective, 1))
+      const floor = adFloorCents(objective)
+      const bid = Math.min(ad.adSet.bidCapCents ?? floor, affordable)
+      if (affordable < floor) return false
+      affordableBids.set(ad.id, bid)
+      return true
     })
 
     if (!eligible.length) {
@@ -301,12 +304,17 @@ export class AdsDeliveryService {
 
     // Ritmo: conjunto que gastou mais do que a curva do dia permite sai deste leilão, para o orçamento render o dia todo.
     const elapsed = dayElapsedFraction(now)
+    const pacedAdSets = new Map<string, boolean>()
     const paced = eligible.filter((ad) => {
+      const previous = pacedAdSets.get(ad.adSetId)
+      if (previous !== undefined) return previous
       const view = pacingView?.get(ad.adSetId)
       const chance = view
         ? view.throttle
         : pacingChance({ spentMillicents: spent.get(ad.adSetId) ?? 0, dailyBudgetMillicents: ad.adSet.dailyBudgetCents * 1000, elapsedFraction: elapsed })
-      return random() < chance
+      const entered = random() < chance
+      pacedAdSets.set(ad.adSetId, entered)
+      return entered
     })
     if (!paced.length) return none(() => `${eligible.length} anúncio(s) serviriam, mas o freio de ritmo do orçamento segurou todos neste pedido (o orçamento do dia está sendo gasto mais rápido que a curva)`)
 
@@ -343,7 +351,7 @@ export class AdsDeliveryService {
       const candidates: PoolCandidate[] = base.map((item) => ({
         adId: item.record.id,
         objective: item.record.adSet.campaign.objective,
-        bidCapCents: item.record.adSet.bidCapCents,
+        bidCapCents: affordableBids.get(item.record.id) ?? item.record.adSet.bidCapCents,
         quality: qualityFactor(item.seen.hides, item.seen.impressions, {
           reports: item.seen.reports,
           priorRate: item.priorRate,
@@ -693,7 +701,9 @@ function ineligibleReason(ad: AdCandidateRecord, viewer: Viewer, spent: Map<stri
   if (mismatch) return `público não bate: ${mismatch}`
   const { objective } = ad.adSet.campaign
   const remaining = ad.adSet.dailyBudgetCents * 1000 - (spent.get(ad.adSetId) ?? 0)
-  if (remaining < adChargeMillicents(objective, adFloorCents(objective))) return 'o orçamento do dia acabou'
+  const minimumCharge = adChargeMillicents(objective, adFloorCents(objective))
+  if (remaining < minimumCharge) return 'o orçamento do dia acabou'
+  if (account.balanceCents * 1000 - account.pendingSpendMillicents < minimumCharge) return 'o saldo da conta não cobre o preço mínimo'
   return null
 }
 

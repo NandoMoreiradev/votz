@@ -1,4 +1,5 @@
 import {
+  isSameFeedCity,
   rerankCandidatesForViewer,
   type RankableCandidate,
   type ViewerRankingContext,
@@ -58,12 +59,8 @@ function isCircle(post: RankableCandidate, viewer: ViewerRankingContext): boolea
   return post.topicIds.some((id) => viewer.followedTopicIds.has(id))
 }
 
-function sameCity(post: RankableCandidate, viewer: ViewerRankingContext): boolean {
-  return !!viewer.cityKey && !!post.cityKey && viewer.cityKey === post.cityKey
-}
-
 function isLocal(post: RankableCandidate, viewer: ViewerRankingContext): boolean {
-  return sameCity(post, viewer) || (!!viewer.state && !!post.state && viewer.state === post.state)
+  return isSameFeedCity(post, viewer) || (!!viewer.state && !!post.state && viewer.state === post.state)
 }
 
 /** Ordem das vagas de um bloco: descoberta espalhada (nunca duas coladas), o resto alternando círculo e local. */
@@ -101,7 +98,7 @@ export function mixForYouFeed<T extends MixCandidate>(candidates: T[], viewer: V
     local: ranked.filter((post) => !isCircle(post, viewer) && isLocal(post, viewer)),
     discovery: candidates
       .filter((post) => !isCircle(post, viewer) && post.authorTrusted)
-      .sort((a, b) => b.hotScore - a.hotScore || b.createdAt.getTime() - a.createdAt.getTime()),
+      .sort((a, b) => b.hotScore - a.hotScore || b.createdAt.getTime() - a.createdAt.getTime() || a.id.localeCompare(b.id)),
   }
   const used = new Set<string>()
   const out: MixedItem<T>[] = []
@@ -119,7 +116,7 @@ export function mixForYouFeed<T extends MixCandidate>(candidates: T[], viewer: V
     const post = pools[slot].find((p) => !used.has(p.id) && (relaxAuthor || authorCount(authorKeyOf(p)) < FOR_YOU_MIX.MAX_PER_AUTHOR_IN_WINDOW))
     if (!post) return null
     used.add(post.id)
-    return { post, reason: slot === 'discovery' ? (sameCity(post, viewer) ? FOR_YOU_MIX.REASON_CITY : FOR_YOU_MIX.REASON_SUGGESTED) : null }
+    return { post, reason: slot === 'discovery' ? (isSameFeedCity(post, viewer) ? FOR_YOU_MIX.REASON_CITY : FOR_YOU_MIX.REASON_SUGGESTED) : null }
   }
 
   const total = new Set(candidates.map((c) => c.id)).size

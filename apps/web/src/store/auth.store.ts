@@ -56,3 +56,11 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 )
+
+/** Identidade das respostas que carregam estado individual ou permissões do contexto ativo. */
+export function useViewerCacheScope() {
+  const userId = useAuthStore((s) => s.user?.id ?? null)
+  const contextType = useAuthStore((s) => s.activeContext?.type ?? null)
+  const contextId = useAuthStore((s) => s.activeContext?.id ?? null)
+  return [userId, contextType, contextId] as const
+}

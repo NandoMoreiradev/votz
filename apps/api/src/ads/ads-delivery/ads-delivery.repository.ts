@@ -55,6 +55,9 @@ export interface AdvertiserStats {
   reports: number
 }
 
+type DailyEventCounter = 'invalidEvents' | 'viewableImpressions' | 'clicks' | 'reports' | 'hides' | 'spendMillicents'
+type IncrementDailyCounter = (field: DailyEventCounter, amount?: number) => Promise<unknown>
+
 export interface EventEffect {
   eventId: string
   impressionId: string
@@ -275,11 +278,11 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
   applyEvent(effect: EventEffect): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       const day = dayAsDate(effect.day)
-      const stat = (data: Prisma.AdDailyStatUpdateInput) =>
+      const stat: IncrementDailyCounter = (field, amount = 1) =>
         tx.adDailyStat.upsert({
           where: { adId_day: { adId: effect.adId, day } },
-          create: { adId: effect.adId, adSetId: effect.adSetId, day },
-          update: data,
+          create: { adId: effect.adId, adSetId: effect.adSetId, day, [field]: amount },
+          update: { [field]: { increment: amount } },
         })
 
       const stored = await tx.adEvent.createMany({
@@ -289,7 +292,7 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
       if (stored.count === 0) return false
 
       if (effect.status === 'INVALID') {
-        await stat({ invalidEvents: { increment: 1 } })
+        await stat('invalidEvents')
         return true
       }
 
@@ -299,11 +302,11 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
       }
 
       if (effect.type === 'VIEWABLE_IMPRESSION' && (await stamp('viewableAt'))) {
-        await stat({ viewableImpressions: { increment: 1 } })
+        await stat('viewableImpressions')
         const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
         if (impression.chargeOn === 'VIEWABLE_IMPRESSION') await this.charge(tx, effect, impression.chargeMillicents, stat)
       } else if (effect.type === 'CLICK' && (await stamp('clickedAt'))) {
-        await stat({ clicks: { increment: 1 } })
+        await stat('clicks')
         const impression = await tx.adImpression.findUniqueOrThrow({ where: { id: effect.impressionId }, select: { chargeOn: true, chargeMillicents: true } })
         if (impression.chargeOn === 'CLICK') await this.charge(tx, effect, impression.chargeMillicents, stat)
       } else if (effect.type === 'REPORT') {
@@ -315,10 +318,10 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
             tx.adImpression.count({ where: { userId: effect.userId, adId: effect.adId, reportedAt: { gte: dayAgo } } }),
             tx.adImpression.count({ where: { id: effect.impressionId, viewableAt: { not: null } } }),
           ])
-          if (mine === 1 && seen === 1) await stat({ reports: { increment: 1 } })
+          if (mine === 1 && seen === 1) await stat('reports')
         }
       } else if (effect.type === 'HIDE' || effect.type === 'HIDE_ADVERTISER') {
-        if (await stamp('hiddenAt')) await stat({ hides: { increment: 1 } })
+        if (await stamp('hiddenAt')) await stat('hides')
         // "Esconder todos desta empresa" vale mesmo se a pessoa já tinha escondido só este anúncio.
         if (effect.type === 'HIDE_ADVERTISER') {
           await tx.adHiddenAdvertiser.upsert({
@@ -333,8 +336,8 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
   }
 
   /** Soma o gasto na conta e fecha no livro-caixa quando juntar R$ 1,00. Sem saldo, as campanhas da conta pausam. */
-  private async charge(tx: Prisma.TransactionClient, effect: EventEffect, millicents: number, stat: (data: Prisma.AdDailyStatUpdateInput) => Promise<unknown>) {
-    await stat({ spendMillicents: { increment: millicents } })
+  private async charge(tx: Prisma.TransactionClient, effect: EventEffect, millicents: number, stat: IncrementDailyCounter) {
+    await stat('spendMillicents', millicents)
     const account = await tx.adAccount.update({
       where: { id: effect.accountId },
       data: { pendingSpendMillicents: { increment: millicents } },
@@ -344,13 +347,13 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
     else await this.pauseIfBroke(tx, account.id)
   }
 
-  /** Passa o gasto acumulado (só centavos inteiros) para o livro-caixa. O que passar do saldo é absorvido pelo Votz. */
+  /** Com a conta já bloqueada nesta transação, passa o gasto acumulado (só centavos inteiros) para o livro-caixa. O que passar do saldo é absorvido pelo Votz. */
   private async settleSpend(tx: Prisma.TransactionClient, accountId: string) {
     const account = await tx.adAccount.findUniqueOrThrow({ where: { id: accountId }, select: { balanceCents: true, pendingSpendMillicents: true } })
     const { cents, remainderMillicents } = splitSpend(account.pendingSpendMillicents)
     if (cents <= 0) return this.pauseIfBroke(tx, accountId)
     const debit = Math.min(cents, Math.max(account.balanceCents, 0))
-    if (debit > 0) await this.billing.postLedger(tx, { adAccountId: accountId, type: 'SPEND', description: 'Gasto com anúncios', lines: spendLines(debit) })
+    if (debit > 0) await this.billing.postLedger(tx, { adAccountId: accountId, type: 'SPEND', description: 'Gasto com anúncios', lines: spendLines(debit), minBalanceBeforeCents: debit })
     await tx.adAccount.update({ where: { id: accountId }, data: { pendingSpendMillicents: remainderMillicents } })
     await this.pauseIfBroke(tx, accountId)
   }
@@ -371,7 +374,12 @@ export class AdsDeliveryRepository implements OnModuleDestroy {
   }
 
   closeSpend(accountId: string) {
-    return this.prisma.$transaction((tx) => this.settleSpend(tx, accountId))
+    return this.prisma.$transaction(async (tx) => {
+      // A cobrança já bloqueia a conta ao incrementar o pendente. O cron
+      // precisa adquirir o mesmo bloqueio antes de ler saldo e pendente.
+      const accounts = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM ad_accounts WHERE id = ${accountId} FOR UPDATE`
+      if (accounts.length > 0) await this.settleSpend(tx, accountId)
+    })
   }
 
   // ── Relatório ────────────────────────────────────────────────────────────────────────────────

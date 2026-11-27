@@ -7,8 +7,9 @@ import { PrismaService } from '../prisma/prisma.service'
 export const FEED_RANKING_QUEUE = 'feed-ranking'
 
 const GRAVITY = 1.65
-const WINDOW_DAYS = 30
+export const FEED_TRENDING_WINDOW_DAYS = 30
 const BATCH_TX_CHUNK = 100
+export const FEED_RANKING_INTERVAL_MINUTES = 10
 
 export interface PostRankingSignals {
   kind: PostKind
@@ -88,6 +89,10 @@ export function computePostScores(signals: PostRankingSignals, nowMs = Date.now(
   }
 }
 
+export function isSameFeedCity(post: RankableCandidate, viewer: ViewerRankingContext): boolean {
+  return !!viewer.cityKey && !!viewer.state && post.cityKey === viewer.cityKey && post.state === viewer.state
+}
+
 /**
  * Re-ranker personalizado em tempo de leitura:
  * aplica afinidade social, proximidade geográfica, pautas seguidas e
@@ -112,7 +117,7 @@ export function rerankCandidatesForViewer<T extends RankableCandidate>(
     if (post.topicIds.some((tid) => viewer.followedTopicIds.has(tid))) {
       personalBoost += 2.0
     }
-    if (viewer.cityKey && post.cityKey && viewer.cityKey === post.cityKey) {
+    if (isSameFeedCity(post, viewer)) {
       personalBoost += 3.0
     } else if (viewer.state && post.state && viewer.state === post.state) {
       personalBoost += 1.2
@@ -125,7 +130,7 @@ export function rerankCandidatesForViewer<T extends RankableCandidate>(
   // Ordenação inicial por relevância combinada, depois aplica diversity cap por autor
   scored.sort((a, b) => {
     if (b.baseScore !== a.baseScore) return b.baseScore - a.baseScore
-    return b.post.createdAt.getTime() - a.post.createdAt.getTime()
+    return b.post.createdAt.getTime() - a.post.createdAt.getTime() || a.post.id.localeCompare(b.post.id)
   })
 
   const authorSeenCount = new Map<string, number>()
@@ -146,7 +151,7 @@ export function rerankCandidatesForViewer<T extends RankableCandidate>(
 
   diversified.sort((a, b) => {
     if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore
-    return b.post.createdAt.getTime() - a.post.createdAt.getTime()
+    return b.post.createdAt.getTime() - a.post.createdAt.getTime() || a.post.id.localeCompare(b.post.id)
   })
 
   return diversified.map((d) => d.post)
@@ -168,14 +173,14 @@ export class FeedRankingService {
         'recalculate-post',
         { postId },
         {
-          jobId: `post-${postId}`,
+          deduplication: { id: `post-${postId}`, keepLastIfActive: true },
           removeOnComplete: 200,
           removeOnFail: 50,
           attempts: 3,
           backoff: { type: 'exponential', delay: 2_000 },
         },
       )
-      .catch(() => null)
+      .catch((error: Error) => this.logger.warn(`Não foi possível agendar o recálculo do feed: ${error.message}`))
   }
 
   async enqueueBatch(): Promise<void> {
@@ -185,14 +190,15 @@ export class FeedRankingService {
         'recalculate-batch',
         {},
         {
-          jobId: 'feed-batch',
+          jobId: `feed-batch-${Math.floor(Date.now() / (FEED_RANKING_INTERVAL_MINUTES * 60_000))}`,
+          deduplication: { id: 'feed-batch', keepLastIfActive: true },
           removeOnComplete: 10,
           removeOnFail: 10,
           attempts: 2,
           backoff: { type: 'fixed', delay: 30_000 },
         },
       )
-      .catch(() => null)
+      .catch((error: Error) => this.logger.warn(`Não foi possível agendar o recálculo do feed: ${error.message}`))
   }
 
   async recalculateOne(postId: string): Promise<void> {
@@ -254,7 +260,7 @@ export class FeedRankingService {
   }
 
   async recalculateBatch(): Promise<{ updated: number }> {
-    const cutoff = new Date(Date.now() - WINDOW_DAYS * 86_400_000)
+    const cutoff = new Date(Date.now() - FEED_TRENDING_WINDOW_DAYS * 86_400_000)
     const posts = await this.prisma.post.findMany({
       where: { createdAt: { gte: cutoff } },
       select: {

@@ -29,6 +29,7 @@ import type {
   UpdateAdSetInput,
 } from '@votz/shared-types'
 import { api } from '../lib/api'
+import { useViewerCacheScope } from '../store/auth.store'
 import { uploadAdMedia } from '../lib/post-media-upload'
 
 /** Foto ou vídeo do anúncio como a API recebe (arquivo enviado antes, formato e enquadramento). */
@@ -300,13 +301,14 @@ export interface SponsoredAdParams {
  * navega (`staleTime` infinito), para não pedir de novo e contar outra exibição.
  */
 export function useSponsoredAd({ surface, position, state, city, nearPostIds, enabled }: SponsoredAdParams) {
+  const scope = useViewerCacheScope()
   const near = nearPostIds?.length ? nearPostIds.join(',') : ''
   return useQuery({
     // Os vizinhos entram na chave: se o que está em volta do espaço mudar, o anúncio é conferido de novo.
-    queryKey: ['ads', 'next', surface, position, state ?? '', city ?? '', near],
-    queryFn: () =>
+    queryKey: ['ads', 'next', scope, surface, position, state ?? '', city ?? '', near],
+    queryFn: ({ signal }) =>
       api
-        .get<{ ad: SponsoredAdView | null }>('/ads/next', { params: { surface, position, state: state || undefined, city: city || undefined, nearPostIds: near || undefined } })
+        .get<{ ad: SponsoredAdView | null }>('/ads/next', { params: { surface, position, state: state || undefined, city: city || undefined, nearPostIds: near || undefined }, signal })
         .then((r) => r.data.ad),
     enabled,
     staleTime: Infinity,

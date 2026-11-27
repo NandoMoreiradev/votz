@@ -1,6 +1,7 @@
 import { PostKind } from '@prisma/client'
 import {
   computePostScores,
+  FeedRankingService,
   rerankCandidatesForViewer,
   ViewerRankingContext,
 } from './feed-ranking.service'
@@ -147,5 +148,36 @@ describe('FeedRankingService algorithm', () => {
     expect(ranked[0].id).toBe('local-followed')
     expect(ranked[1].id).toBe('spam-1')
     expect(ranked[2].id).toBe('spam-2')
+  })
+})
+
+describe('FeedRankingService scheduling', () => {
+  it('deduplica o lote entre instâncias na mesma janela sem bloquear a próxima', async () => {
+    jest.useFakeTimers()
+    try {
+      const add = jest.fn().mockResolvedValue(undefined)
+      const service = new FeedRankingService({} as never, { add } as never)
+      jest.setSystemTime(new Date('2026-11-27T15:00:00Z'))
+      await service.enqueueBatch()
+      await service.enqueueBatch()
+      jest.setSystemTime(new Date('2026-11-27T15:10:00Z'))
+      await service.enqueueBatch()
+
+      const options = add.mock.calls.map((call) => call[2])
+      expect(options[0].jobId).toBe(options[1].jobId)
+      expect(options[2].jobId).not.toBe(options[0].jobId)
+      expect(options[2].deduplication).toEqual({ id: 'feed-batch', keepLastIfActive: true })
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('mantém o último recálculo individual sem reutilizar o ID de um job encerrado', async () => {
+    const add = jest.fn().mockResolvedValue(undefined)
+    const service = new FeedRankingService({} as never, { add } as never)
+    await service.enqueuePost('post')
+    const options = add.mock.calls[0][2]
+    expect(options).not.toHaveProperty('jobId')
+    expect(options.deduplication).toEqual({ id: 'post-post', keepLastIfActive: true })
   })
 })

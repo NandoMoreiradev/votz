@@ -12,7 +12,7 @@ import { FeedSuggestedProfile, PostAuthorInfo, PostCommentDto, PostDto, PostRepo
 import { PrismaService } from '../prisma/prisma.service'
 import { MediaAssetsService } from '../media/media-assets.service'
 import { legacyItemsFromUrls } from '../media/media-items'
-import { ViewerRankingContext } from './feed-ranking.service'
+import { FEED_TRENDING_WINDOW_DAYS, type ViewerRankingContext } from './feed-ranking.service'
 import { buildFeedTimeline, FeedTimelineParams } from './feed-timeline'
 
 const FOR_YOU_EXTRA_CANDIDATES = 60
@@ -236,32 +236,46 @@ export class PostsRepository {
       if (viewer?.followedUserIds.size) circleOr.push({ authorUserId: { in: [...viewer.followedUserIds] } })
       if (viewer?.followedPoliticianIds.size) circleOr.push({ authorOrgType: OrgType.POLITICIAN, authorOrgId: { in: [...viewer.followedPoliticianIds] } })
       if (viewer?.followedEntityIds.size) circleOr.push({ authorOrgType: OrgType.ENTITY, authorOrgId: { in: [...viewer.followedEntityIds] } })
-      const localOr: Prisma.PostWhereInput[] = []
-      if (viewer?.cityKey) localOr.push({ cityKey: viewer.cityKey })
-      else if (viewer?.state) localOr.push({ state: viewer.state })
-      const extra = (or: Prisma.PostWhereInput[]) => or.length
-        ? this.prisma.post.findMany({ where: { AND: [where, { OR: or }] }, include: POST_INCLUDE, orderBy: [{ createdAt: 'desc' }], take: FOR_YOU_EXTRA_CANDIDATES })
-        : Promise.resolve([])
-      const [hot, circle, local, total] = await Promise.all([
+      if (viewer?.userId) circleOr.push({ authorUserId: viewer.userId })
+      if (viewer?.followedTopicIds.size) circleOr.push({ topics: { some: { topicId: { in: [...viewer.followedTopicIds] } } } })
+
+      const extra = (filter: Prisma.PostWhereInput, take = FOR_YOU_EXTRA_CANDIDATES) =>
+        this.prisma.post.findMany({ where: { AND: [where, filter] }, include: POST_INCLUDE, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take })
+
+      const localCandidates = async () => {
+        if (!viewer?.state) return []
+        if (!viewer.cityKey) return extra({ state: viewer.state })
+
+        const city = { cityKey: viewer.cityKey, state: viewer.state }
+        const cityPosts = await extra(city)
+        const remaining = FOR_YOU_EXTRA_CANDIDATES - cityPosts.length
+        if (remaining <= 0) return cityPosts
+
+        const statePosts = await extra({ state: viewer.state, OR: [{ cityKey: null }, { cityKey: { not: viewer.cityKey } }] }, remaining)
+        return [...cityPosts, ...statePosts]
+      }
+      const [hot, circle, local] = await Promise.all([
         this.prisma.post.findMany({
           where,
           include: POST_INCLUDE,
-          orderBy: [{ hotScore: 'desc' }, { createdAt: 'desc' }],
+          orderBy: [{ hotScore: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
           take: 150,
         }),
-        extra(circleOr),
-        extra(localOr),
-        this.prisma.post.count({ where }),
+        circleOr.length ? extra({ OR: circleOr }) : [],
+        localCandidates(),
       ])
       const byId = new Map([...hot, ...circle, ...local].map((post) => [post.id, post]))
-      return { posts: [...byId.values()], total }
+      return { posts: [...byId.values()], total: byId.size }
     }
 
+    if (params.sort === 'trending') {
+      where.createdAt = { gte: new Date(Date.now() - FEED_TRENDING_WINDOW_DAYS * 86_400_000) }
+    }
     const skip = (params.page - 1) * params.limit
     const orderBy: Prisma.PostOrderByWithRelationInput[] =
       params.sort === 'trending'
-        ? [{ hotScore: 'desc' }, { createdAt: 'desc' }]
-        : [{ createdAt: 'desc' }]
+        ? [{ hotScore: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }]
+        : [{ createdAt: 'desc' }, { id: 'desc' }]
 
     const [posts, total] = await Promise.all([
       this.prisma.post.findMany({

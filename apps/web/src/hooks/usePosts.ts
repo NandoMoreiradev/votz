@@ -3,7 +3,7 @@ import { PostCommentMediaType, PostKind, UserType, type MediaCrop, type MediaFor
 import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { uploadPostMedia } from '../lib/post-media-upload'
-import { useAuthStore } from '../store/auth.store'
+import { useAuthStore, useViewerCacheScope } from '../store/auth.store'
 import {
   FeedSortMode,
   GifSearchResponse,
@@ -34,16 +34,16 @@ export interface UsePostsParams {
  * Atualização otimista dos posts: muda o item em todas as listas e na tela do post antes de o servidor
  * responder e devolve a função que desfaz, caso o servidor recuse.
  */
-function patchPost(qc: QueryClient, postId: string, change: (post: PostDto) => PostDto): () => void {
-  const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })
-  const single = qc.getQueryData<PostDto>(['post', postId])
-  qc.setQueriesData<PostsResponse>({ queryKey: ['posts'] }, (old) =>
+function patchPost(qc: QueryClient, scope: ReturnType<typeof useViewerCacheScope>, postId: string, change: (post: PostDto) => PostDto): () => void {
+  const lists = qc.getQueriesData<PostsResponse>({ queryKey: ['posts', scope] })
+  const single = qc.getQueryData<PostDto>(['post', postId, scope])
+  qc.setQueriesData<PostsResponse>({ queryKey: ['posts', scope] }, (old) =>
     old && Array.isArray(old.data) ? { ...old, data: old.data.map((p) => (p.id === postId ? change(p) : p)) } : old,
   )
-  qc.setQueryData<PostDto>(['post', postId], (old) => (old ? change(old) : old))
+  qc.setQueryData<PostDto>(['post', postId, scope], (old) => (old ? change(old) : old))
   return () => {
     lists.forEach(([key, data]) => qc.setQueryData(key, data))
-    qc.setQueryData(['post', postId], single)
+    qc.setQueryData(['post', postId, scope], single)
   }
 }
 
@@ -62,12 +62,13 @@ function feedAccepts(filters: Record<string, unknown>, post: PostDto): boolean {
 
 export function usePostsFeed(params: UsePostsParams = {}) {
   const sessionReady = useAuthStore((s) => s.sessionReady)
+  const scope = useViewerCacheScope()
   const { enabled = true, ...query } = params
   return useQuery({
-    queryKey: ['posts', query],
-    queryFn: () =>
+    queryKey: ['posts', scope, query],
+    queryFn: ({ signal }) =>
       api
-        .get<PostsResponse>('/posts', { params: { ...query, limit: query.limit ?? 20 } })
+        .get<PostsResponse>('/posts', { params: { ...query, limit: query.limit ?? 20 }, signal })
         .then((r) => r.data),
     enabled: enabled && sessionReady,
     staleTime: 20_000,
@@ -76,9 +77,10 @@ export function usePostsFeed(params: UsePostsParams = {}) {
 
 export function usePost(id: string) {
   const sessionReady = useAuthStore((s) => s.sessionReady)
+  const scope = useViewerCacheScope()
   return useQuery({
-    queryKey: ['post', id],
-    queryFn: () => api.get<PostDto>(`/posts/${id}`).then((r) => r.data),
+    queryKey: ['post', id, scope],
+    queryFn: ({ signal }) => api.get<PostDto>(`/posts/${id}`, { signal }).then((r) => r.data),
     enabled: !!id && sessionReady,
   })
 }
@@ -105,13 +107,16 @@ export interface CreatePostPayload {
 
 export function useCreatePost() {
   const qc = useQueryClient()
+  const scope = useViewerCacheScope()
   return useMutation({
     mutationFn: (payload: CreatePostPayload) =>
       api.post<PostDto>('/posts', payload).then((r) => r.data),
-    onSuccess: (created) => {
-      qc.setQueryData<PostDto>(['post', created.id], created)
-      for (const [key, old] of qc.getQueriesData<PostsResponse>({ queryKey: ['posts'] })) {
-        const filters = key[1]
+    onMutate: () => ({ scope }),
+    onSuccess: (created, _payload, context) => {
+      if (!context) return
+      qc.setQueryData<PostDto>(['post', created.id, context.scope], created)
+      for (const [key, old] of qc.getQueriesData<PostsResponse>({ queryKey: ['posts', context.scope] })) {
+        const filters = key[2]
         if (!old || !Array.isArray(old.data) || !filters || typeof filters !== 'object' || !feedAccepts(filters as Record<string, unknown>, created)) continue
         if (old.data.some((p) => p.id === created.id)) continue
         qc.setQueryData<PostsResponse>(key, { ...old, data: [created, ...old.data], meta: { ...old.meta, total: old.meta.total + 1 } })
@@ -147,44 +152,48 @@ export function useDeletePost() {
 
 export function useTogglePostLike() {
   const qc = useQueryClient()
+  const scope = useViewerCacheScope()
   return useMutation({
     mutationFn: (postId: string) =>
       api.post<{ liked: boolean; likesCount: number }>(`/posts/${postId}/like`).then((r) => r.data),
     onMutate: async (postId) => {
-      await qc.cancelQueries({ queryKey: ['posts'] })
-      const rollback = patchPost(qc, postId, (p) => ({
+      await qc.cancelQueries({ queryKey: ['posts', scope] })
+      const rollback = patchPost(qc, scope, postId, (p) => ({
         ...p,
         likedByMe: !p.likedByMe,
         likesCount: Math.max(0, p.likesCount + (p.likedByMe ? -1 : 1)),
       }))
-      return { rollback }
+      return { rollback, scope }
     },
     onError: (_error, _postId, context) => context?.rollback(),
-    onSuccess: (res, postId) => {
-      patchPost(qc, postId, (p) => ({ ...p, likedByMe: res.liked, likesCount: res.likesCount }))
+    onSuccess: (res, postId, context) => {
+      if (!context) return
+      patchPost(qc, context.scope, postId, (p) => ({ ...p, likedByMe: res.liked, likesCount: res.likesCount }))
     },
   })
 }
 
 export function useTogglePostRepost() {
   const qc = useQueryClient()
+  const scope = useViewerCacheScope()
   return useMutation({
     mutationFn: (postId: string) =>
       api
         .post<{ reposted: boolean; repostsCount: number }>(`/posts/${postId}/repost`)
         .then((r) => r.data),
     onMutate: async (postId) => {
-      await qc.cancelQueries({ queryKey: ['posts'] })
-      const rollback = patchPost(qc, postId, (p) => ({
+      await qc.cancelQueries({ queryKey: ['posts', scope] })
+      const rollback = patchPost(qc, scope, postId, (p) => ({
         ...p,
         repostedByMe: !p.repostedByMe,
         repostsCount: Math.max(0, p.repostsCount + (p.repostedByMe ? -1 : 1)),
       }))
-      return { rollback }
+      return { rollback, scope }
     },
     onError: (_error, _postId, context) => context?.rollback(),
-    onSuccess: (res, postId) => {
-      patchPost(qc, postId, (p) => ({ ...p, repostedByMe: res.reposted, repostsCount: res.repostsCount }))
+    onSuccess: (res, postId, context) => {
+      if (!context) return
+      patchPost(qc, context.scope, postId, (p) => ({ ...p, repostedByMe: res.reposted, repostsCount: res.repostsCount }))
       void qc.invalidateQueries({ queryKey: ['posts'] })
     },
   })
@@ -192,13 +201,14 @@ export function useTogglePostRepost() {
 
 export function useVotePostPoll(postId: string) {
   const qc = useQueryClient()
+  const scope = useViewerCacheScope()
   return useMutation({
     mutationFn: (optionId: string) =>
       api.post<PostPollDto>(`/posts/${postId}/poll/vote`, { optionId }).then((r) => r.data),
     // O voto aparece na hora; a apuração do servidor só confirma.
     onMutate: async (optionId) => {
-      await qc.cancelQueries({ queryKey: ['posts'] })
-      const rollback = patchPost(qc, postId, (p) =>
+      await qc.cancelQueries({ queryKey: ['posts', scope] })
+      const rollback = patchPost(qc, scope, postId, (p) =>
         p.poll
           ? {
               ...p,
@@ -211,11 +221,12 @@ export function useVotePostPoll(postId: string) {
             }
           : p,
       )
-      return { rollback }
+      return { rollback, scope }
     },
     onError: (_error, _optionId, context) => context?.rollback(),
-    onSuccess: (poll) => {
-      patchPost(qc, postId, (p) => ({ ...p, poll }))
+    onSuccess: (poll, _optionId, context) => {
+      if (!context) return
+      patchPost(qc, context.scope, postId, (p) => ({ ...p, poll }))
     },
   })
 }
@@ -275,6 +286,7 @@ export interface CreatePostCommentPayload {
 
 export function useCreatePostComment(postId: string) {
   const qc = useQueryClient()
+  const scope = useViewerCacheScope()
   const user = useAuthStore((s) => s.user)
   const activeContext = useAuthStore((s) => s.activeContext)
   const key = ['post-comments', postId]
@@ -319,7 +331,7 @@ export function useCreatePostComment(postId: string) {
           ? old.map((c) => (c.id === draft.parentId ? { ...c, replies: [...(c.replies ?? []), draft] } : c))
           : [...old, draft],
       )
-      const rollbackCount = patchPost(qc, postId, (p) => ({ ...p, commentsCount: p.commentsCount + 1 }))
+      const rollbackCount = patchPost(qc, scope, postId, (p) => ({ ...p, commentsCount: p.commentsCount + 1 }))
       return { previous, rollbackCount }
     },
     onError: (_error, _payload, context) => {

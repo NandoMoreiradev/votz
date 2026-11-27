@@ -296,6 +296,7 @@ export class PostsService {
     })
 
     let ordered = posts
+    let eligibleTotal = total
     const reasons = new Map<string, string>()
     let suggestions: { title: string; profiles: FeedSuggestedProfile[] } | null = null
     if (sort === 'for_you' && viewerContext) {
@@ -311,6 +312,7 @@ export class PostsService {
           rankable.map((p) => ({ ...p, authorTrusted: (p.authorUser.verified || p.authorUser.emailVerified) && !flagged.has(p.id) })),
           viewerContext,
         )
+        eligibleTotal = mixed.length
         ordered = mixed.slice(skip, skip + limit).map((item) => {
           if (item.reason) reasons.set(item.post.id, item.reason)
           return item.post
@@ -334,8 +336,8 @@ export class PostsService {
       meta: {
         page,
         limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
+        total: eligibleTotal,
+        totalPages: Math.max(1, Math.ceil(eligibleTotal / limit)),
       },
     }
   }

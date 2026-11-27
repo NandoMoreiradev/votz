@@ -120,3 +120,35 @@ describe('entrega: ritmo do orçamento', () => {
     expect(await service(meio).next(USER, query, NOW, () => 0.1)).not.toBeNull()
   })
 })
+
+describe('entrega: limite do lance e ritmo compartilhado', () => {
+  it('reduz o lance ao orçamento restante antes do leilão', async () => {
+    const winner = ad('a', 2000, 'AWARENESS')
+    const runnerUp = ad('b', 900, 'AWARENESS')
+    const repo = makeRepo([winner, runnerUp])
+    repo.spentTodayByAdSet.mockResolvedValue(new Map([['set-a', 999_200]]))
+
+    const pacing = {
+      view: async () => new Map([
+        ['set-a', { throttle: 1, estimatedSpentMillicents: 999_200 }],
+        ['set-b', { throttle: 1, estimatedSpentMillicents: 0 }],
+      ]),
+      commit: jest.fn(),
+    }
+    const delivery = new AdsDeliveryService(repo as never, storage as never, links as never, adjacency as never, pacing as never)
+    expect((await delivery.next(USER, query, NOW, middle))?.adId).toBe('b')
+    expect(repo.createImpression).toHaveBeenCalledWith(expect.objectContaining({ chargeMillicents: 800 }))
+  })
+
+  it('sortear o ritmo de um criativo decide o ritmo do conjunto inteiro', async () => {
+    const first = ad('a', null, 'AWARENESS')
+    const second = { ...ad('b', null, 'AWARENESS'), adSetId: first.adSetId }
+    const repo = makeRepo([first, second])
+    repo.spentTodayByAdSet.mockResolvedValue(new Map([['set-a', 550_000]]))
+    const random = jest.fn().mockReturnValueOnce(0.9).mockReturnValue(0.1)
+
+    expect(await service(repo).next(USER, query, NOW, random)).toBeNull()
+    expect(random).toHaveBeenCalledTimes(1)
+    expect(repo.createImpression).not.toHaveBeenCalled()
+  })
+})

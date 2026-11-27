@@ -223,6 +223,24 @@ describe('PostsService', () => {
     expect(result.meta.total).toBe(1)
   })
 
+  it('conta somente candidatos elegíveis nas páginas do Para você', async () => {
+    const ready = { id: 'a', authorUserId: 'other', authorUser: { emailVerified: true }, topics: [], hotScore: 1, createdAt: new Date() }
+    const { service } = makeService({ repo: {
+      findFeedCandidates: jest.fn().mockResolvedValue({ posts: [ready, { ...ready, id: 'flagged' }], total: 2 }),
+      getViewerContext: jest.fn().mockResolvedValue({
+        userId: 'reader', followedUserIds: new Set(), followedPoliticianIds: new Set(),
+        followedEntityIds: new Set(), followedTopicIds: new Set(),
+      }),
+      findPostIdsWithOpenFlags: jest.fn().mockResolvedValue(new Set(['flagged'])),
+      findSuggestedProfiles: jest.fn().mockResolvedValue([]),
+      hydratePosts: jest.fn().mockImplementation(async (posts) => posts),
+    } })
+
+    const page = await service.listFeed({ sort: 'for_you', limit: 1 })
+    expect(page.data.map((post) => post.id)).toEqual(['a'])
+    expect(page.meta).toMatchObject({ total: 1, totalPages: 1 })
+  })
+
   it('does not fabricate a reposter for ordinary authored posts', async () => {
     const { service } = makeService({ repo: {
       findFeedCandidates: jest.fn().mockResolvedValue({ posts: [{ id: 'p1' }], total: 1 }),
