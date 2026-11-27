@@ -3,7 +3,7 @@ import styled from 'styled-components'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { ArrowUp, UsersThree, Flag, LinkSimple, FileText } from '@phosphor-icons/react'
 import { OptionsMenu, copyLink } from '../components/ui/OptionsMenu'
-import { VoteType, EventType, ReportStatus, RecipientType, UserType, FlagTargetType, legacyMediaItems } from '@votz/shared-types'
+import { VoteType, EventType, RecipientType, UserType, FlagTargetType, legacyMediaItems, timelineEventLabel } from '@votz/shared-types'
 import { MediaCarousel } from '../components/media/MediaCarousel'
 import { Navbar } from '../components/layout/Navbar'
 import { CategoryBadge, StatusBadge } from '../components/ui/Badge'
@@ -14,19 +14,23 @@ import { FlagContentModal } from '../components/moderation/FlagContentModal'
 import { ContextNoteCard } from '../components/context-notes/ContextNoteCard'
 import { ContextNoteMenuScope } from '../components/context-notes/useContextNoteMenu'
 import { ContextNoteTargetType } from '@votz/shared-types'
-import { AdvocateConfirmModal } from '../components/posts/AdvocateConfirmModal'
 import { useMediaViewer } from '../components/ui/MediaViewer'
-import { AdvocacyBanner, ShieldCheckIcon, type AdvocateEntry } from '../components/ui/AdvocacyBanner'
+import {
+  AdvocacyActionsCard,
+  AdvocacyCommitments,
+  DisputeCard,
+  LifecycleNotice,
+  ProgressCard,
+  orgProfilePath,
+} from '../components/report-lifecycle/ReportLifecycle'
 import { OrgContextPrompt } from '../components/ui/OrgContextPrompt'
 import { PressContactCard } from '../components/press/PressContactCard'
 import { useReport, useFollowers, useFollowStatus, useFollowReport } from '../hooks/useReport'
 import { useVote, useMyVotes } from '../hooks/useVote'
-import { useDisputeReport, useUpdateReportStatus } from '../hooks/useReports'
 import { useMyProfiles } from '../hooks/useAuth'
 import { useAuthStore } from '../store/auth.store'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { uploadReportMedia } from '../lib/report-upload'
 import { TimelineEvent } from '../types/api'
 import { usePolitician, usePoliticians } from '../hooks/usePoliticians'
 import { useEntities } from '../hooks/useEntities'
@@ -86,27 +90,6 @@ const Badges = styled.div`
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
-`
-
-const FlagReportBtn = styled.button`
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: ${({ theme }) => theme.radii.md};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  background: transparent;
-  color: ${({ theme }) => theme.colors.muted};
-  font-size: ${({ theme }) => theme.fontSizes.xs};
-  font-weight: ${({ theme }) => theme.fontWeights.medium};
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    color: ${({ theme }) => theme.colors.action};
-    border-color: ${({ theme }) => theme.colors.action};
-  }
 `
 
 const Title = styled.h1`
@@ -280,33 +263,6 @@ const VoteBtn = styled(Button)<{ $active?: boolean }>`
   ${({ $active, theme }) => $active && `border-color: ${theme.colors.action}; background: ${theme.colors.action}18;`}
 `
 
-const AuthorCard = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-`
-
-const AuthorAvatar = styled.div<{ $src: string | null }>`
-  width: 40px;
-  height: 40px;
-  border-radius: ${({ theme }) => theme.radii.full};
-  background: ${({ $src, theme }) => ($src ? `url(${$src}) center/cover` : theme.colors.border)};
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  color: ${({ theme }) => theme.colors.muted};
-`
-
-const AuthorLink = styled(Link)`
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  color: ${({ theme }) => theme.colors.text};
-  font-size: 0.9375rem;
-  &:hover { color: ${({ theme }) => theme.colors.primary}; }
-`
-
 const TimelineList = styled.div`
   display: flex;
   flex-direction: column;
@@ -400,6 +356,12 @@ const TimelineActor = styled(Link)`
   &:hover span { color: ${({ theme }) => theme.colors.primary}; }
 `
 
+const TimelineOrgPlain = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+`
+
 const TimelineActorAvatar = styled.div<{ $src: string | null }>`
   width: 20px;
   height: 20px;
@@ -423,13 +385,6 @@ const TimelineActorName = styled.span`
   text-overflow: ellipsis;
 `
 
-const AuthorAnonymous = styled.span`
-  font-size: 0.9375rem;
-  font-weight: ${({ theme }) => theme.fontWeights.semibold};
-  color: ${({ theme }) => theme.colors.muted};
-  font-style: italic;
-`
-
 const Skeleton = styled.div`
   background: ${({ theme }) => theme.colors.white};
   border: 1px solid ${({ theme }) => theme.colors.border};
@@ -444,18 +399,6 @@ const Skeleton = styled.div`
 `
 
 
-const AvocBtn = styled(Button)`
-  width: 100%;
-  background: #1E40AF;
-  color: #fff;
-  border-color: #1E40AF;
-  font-size: 0.9375rem;
-  margin-top: 4px;
-
-  &:hover:not(:disabled) { background: #1e3a8a; border-color: #1e3a8a; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
-`
-
 const DisputeBtn = styled(Button)`
   width: 100%;
   background: ${({ theme }) => theme.colors.action};
@@ -465,37 +408,6 @@ const DisputeBtn = styled(Button)`
 
   &:hover:not(:disabled) { background: #c1121f; border-color: #c1121f; }
   &:disabled { opacity: 0.6; cursor: not-allowed; }
-`
-
-const DisputeTextarea = styled.textarea`
-  width: 100%;
-  min-height: 100px;
-  padding: 10px 12px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-family: ${({ theme }) => theme.fonts.body};
-  color: ${({ theme }) => theme.colors.text};
-  resize: vertical;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.15s;
-
-  &:focus { border-color: ${({ theme }) => theme.colors.action}; }
-`
-
-const CharCount = styled.span<{ $over: boolean }>`
-  display: block;
-  text-align: right;
-  font-size: 0.75rem;
-  color: ${({ $over, theme }) => ($over ? theme.colors.action : theme.colors.muted)};
-  margin-top: 4px;
-`
-
-const DisputeActions = styled.div`
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
 `
 
 const FollowBtn = styled(Button)<{ $following?: boolean }>`
@@ -545,126 +457,6 @@ const FollowerRole = styled.span`
   font-size: 0.75rem;
 `
 
-const UpdateSelect = styled.select`
-  width: 100%;
-  padding: 9px 12px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-family: ${({ theme }) => theme.fonts.body};
-  color: ${({ theme }) => theme.colors.text};
-  background: ${({ theme }) => theme.colors.white};
-  outline: none;
-  margin-bottom: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-
-  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
-`
-
-const UpdateTextarea = styled.textarea`
-  width: 100%;
-  min-height: 90px;
-  padding: 10px 12px;
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.875rem;
-  font-family: ${({ theme }) => theme.fonts.body};
-  color: ${({ theme }) => theme.colors.text};
-  resize: vertical;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.15s;
-
-  &:focus { border-color: ${({ theme }) => theme.colors.primary}; }
-`
-
-const MediaUploadLabel = styled.label`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 8px;
-  margin-top: 10px;
-  border: 1.5px dashed ${({ theme }) => theme.colors.border};
-  border-radius: ${({ theme }) => theme.radii.md};
-  font-size: 0.8125rem;
-  color: ${({ theme }) => theme.colors.muted};
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-  box-sizing: border-box;
-
-  &:hover { border-color: ${({ theme }) => theme.colors.primary}; color: ${({ theme }) => theme.colors.primary}; }
-`
-
-const MediaPreviewGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-top: 10px;
-`
-
-const MediaThumb = styled.div<{ $error?: boolean }>`
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: ${({ theme }) => theme.radii.md};
-  overflow: hidden;
-  background: ${({ $error, theme }) => ($error ? '#FEE2E2' : theme.colors.border)};
-  border: 1px solid ${({ $error }) => ($error ? '#FCA5A5' : 'transparent')};
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-`
-
-const MediaThumbOverlay = styled.div`
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  color: #fff;
-`
-
-const MediaThumbRemove = styled.button`
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  font-size: 0.625rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  padding: 0;
-
-  &:hover { background: rgba(220,38,38,0.9); }
-`
-
-const UpdateSubmitBtn = styled(Button)`
-  width: 100%;
-  margin-top: 12px;
-  background: ${({ theme }) => theme.colors.primary};
-  color: #fff;
-  border-color: ${({ theme }) => theme.colors.primary};
-  font-size: 0.9375rem;
-
-  &:hover:not(:disabled) { background: #0f0f1a; border-color: #0f0f1a; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
-`
-
 const TimelineMediaGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -692,24 +484,6 @@ const TimelineMediaItem = styled.div`
   }
 `
 
-interface UploadMediaItem {
-  id: string
-  previewUrl: string
-  mimeType: string
-  url: string | null
-  uploading: boolean
-  error: boolean
-}
-
-const UPDATABLE_STATUSES: Record<string, string> = {
-  UNDER_REVIEW: 'Em análise',
-  IN_PROGRESS:  'Em andamento',
-  RESOLVED:     'Resolvido',
-  ARCHIVED:     'Arquivado',
-}
-
-const TERMINAL_STATUSES = new Set(['RESOLVED', 'DISPUTED', 'ARCHIVED'])
-
 const EVENT_COLORS: Record<EventType, string> = {
   [EventType.CREATED]:       '#9CA3AF',
   [EventType.RESPONDED]:     '#3B82F6',
@@ -718,16 +492,6 @@ const EVENT_COLORS: Record<EventType, string> = {
   [EventType.DISPUTED]:      '#F97316',
   [EventType.RESOLVED]:      '#2DC653',
   [EventType.ARCHIVED]:      '#6B7280',
-}
-
-const EVENT_LABELS: Record<EventType, string> = {
-  [EventType.CREATED]:       'Registrado',
-  [EventType.RESPONDED]:     'Respondido',
-  [EventType.STATUS_CHANGED]:'Status alterado',
-  [EventType.UPDATE]:        'Atualização',
-  [EventType.DISPUTED]:      'Contestado',
-  [EventType.RESOLVED]:      'Resolvido',
-  [EventType.ARCHIVED]:      'Arquivado',
 }
 
 function formatDate(iso: string) {
@@ -754,7 +518,7 @@ function TimelineRow({
       <TimelineContent>
         <TimelineHeader>
           <TimelineTypeBadge $color={EVENT_COLORS[event.type]}>
-            {EVENT_LABELS[event.type]}
+            {timelineEventLabel(event.type, meta)}
           </TimelineTypeBadge>
           <TimelineDate>{formatDate(event.createdAt)}</TimelineDate>
         </TimelineHeader>
@@ -774,7 +538,24 @@ function TimelineRow({
             ))}
           </TimelineMediaGrid>
         )}
-        {event.author && (
+        {event.actorOrg && (
+          <TimelineAuthorRow>
+            {(() => {
+              const org = event.actorOrg
+              const path = orgProfilePath(org.type, org.id)
+              const inner = (
+                <>
+                  <TimelineActorAvatar $src={org.avatarUrl ?? null}>
+                    {!org.avatarUrl && org.name.charAt(0).toUpperCase()}
+                  </TimelineActorAvatar>
+                  <TimelineActorName>{org.name}</TimelineActorName>
+                </>
+              )
+              return path ? <TimelineActor to={path}>{inner}</TimelineActor> : <TimelineOrgPlain>{inner}</TimelineOrgPlain>
+            })()}
+          </TimelineAuthorRow>
+        )}
+        {!event.actorOrg && event.author && (
           <TimelineAuthorRow>
             <TimelineActor to={`/perfil/${event.author.id}`}>
               <TimelineActorAvatar $src={event.author.avatarUrl}>
@@ -799,11 +580,8 @@ export function ReportDetail() {
   const qc = useQueryClient()
   const { open: openMedia } = useMediaViewer()
 
-  const [showDisputeForm, setShowDisputeForm] = useState(false)
-  const [disputeReason, setDisputeReason] = useState('')
   const [flagOpen, setFlagOpen] = useState(false)
   const navigate = useNavigate()
-  const disputeMutation = useDisputeReport(id!)
 
   const isActorType = activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY'
   const actorId = activeContext?.id
@@ -813,14 +591,6 @@ export function ReportDetail() {
   const { data: followStatus, isLoading: followStatusLoading } = useFollowStatus(id!, canFollow)
   const { follow: followMut, unfollow: unfollowMut } = useFollowReport(id!)
 
-  // Update status form state
-  const [updateStatus, setUpdateStatus] = useState('')
-  const [updateContent, setUpdateContent] = useState('')
-  const [mediaItems, setMediaItems] = useState<UploadMediaItem[]>([])
-  const updateStatusMut = useUpdateReportStatus(id!)
-
-  const [advocateModalOpen, setAdvocateModalOpen] = useState(false)
-  const [advocateActor, setAdvocateActor] = useState<{ actorType: 'POLITICIAN' | 'ENTITY'; actorId: string } | null>(null)
 
   const [showReatribuir, setShowReatribuir] = useState(false)
   const [reatribuirSearch, setReatribuirSearch] = useState('')
@@ -876,62 +646,12 @@ export function ReportDetail() {
     vote(type)
   }
 
-  async function handleMediaFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    e.target.value = ''
-    const slots = 4 - mediaItems.length
-    const toProcess = files.slice(0, slots).filter((f) => {
-      if (f.type === 'application/pdf' && f.size > 50 * 1024 * 1024) return false
-      if (f.type.startsWith('image/') && f.size > 10 * 1024 * 1024) return false
-      if (f.type.startsWith('video/') && f.size > 100 * 1024 * 1024) return false
-      return true
-    })
-
-    const newItems: UploadMediaItem[] = toProcess.map((f) => ({
-      id: Math.random().toString(36).slice(2),
-      previewUrl: URL.createObjectURL(f),
-      mimeType: f.type,
-      url: null,
-      uploading: true,
-      error: false,
-    }))
-    setMediaItems((prev) => [...prev, ...newItems])
-
-    await Promise.all(
-      toProcess.map(async (file, i) => {
-        const localId = newItems[i].id
-        try {
-          const { url } = await uploadReportMedia(file)
-          setMediaItems((prev) =>
-            prev.map((it) => (it.id === localId ? { ...it, url, uploading: false } : it)),
-          )
-        } catch {
-          setMediaItems((prev) =>
-            prev.map((it) => (it.id === localId ? { ...it, uploading: false, error: true } : it)),
-          )
-        }
-      }),
-    )
-  }
-
-  function handleStatusSubmit() {
-    if (updateContent.trim().length < 10) return
-    if (mediaItems.some((m) => m.uploading)) return
-    const uploadedUrls = mediaItems.filter((m) => m.url).map((m) => m.url!)
-    const payload = updateStatus
-      ? { status: updateStatus, content: updateContent.trim(), media: uploadedUrls }
-      : { content: updateContent.trim(), media: uploadedUrls }
-    updateStatusMut.mutate(payload, {
-      onSuccess: () => {
-        setMediaItems((prev) => {
-          prev.forEach((m) => URL.revokeObjectURL(m.previewUrl))
-          return []
-        })
-        setUpdateStatus('')
-        setUpdateContent('')
-      },
-    })
-  }
+  const isAuthor = !!user && !report.anonymous && report.author?.id === user.id
+  // Quem pode contestar: o autor ou quem marcou "Eu também" (a API confere de novo).
+  const canDispute = !!user && (isAuthor || !!myVotes?.ME_TOO)
+  const isRecipient = !!actorId && activeContext?.type === report.recipientType && report.recipientId === actorId
+  const hasActiveAdvocacy =
+    !!actorId && (report.advocacies ?? []).some((a) => a.orgType === activeContext?.type && a.orgId === actorId && !a.closedAt)
 
   return (
     <Page>
@@ -1026,20 +746,8 @@ export function ReportDetail() {
 
               <ContextNoteCard type={ContextNoteTargetType.REPORT} id={report.id} />
 
-              {(() => {
-                const advocates: AdvocateEntry[] = (report.timeline ?? [])
-                  .filter(
-                    (e) =>
-                      e.type === EventType.RESPONDED &&
-                      (e.metadata as Record<string, unknown>)?.action === 'advocated',
-                  )
-                  .map((e) => ({
-                    author: e.author,
-                    isEntity: !!(e.metadata as Record<string, unknown>)?.entityId,
-                  }))
-                if (advocates.length === 0) return null
-                return <AdvocacyBanner advocates={advocates} />
-              })()}
+              <LifecycleNotice report={report} isAuthor={isAuthor} />
+              <AdvocacyCommitments report={report} />
 
               {report.media && report.media.length > 0 && (() => {
                 // Foto de relato é prova: aparece inteira na moldura padrão (fundo desfocado), nunca recortada.
@@ -1227,242 +935,13 @@ export function ReportDetail() {
               )
             })()}
 
-            {(() => {
-              const actorType = activeContext?.type as 'POLITICIAN' | 'ENTITY' | undefined
-              if (actorType !== 'POLITICIAN' && actorType !== 'ENTITY') return null
+            {(activeContext?.type === 'POLITICIAN' || activeContext?.type === 'ENTITY') && actorId && (
+              <AdvocacyActionsCard report={report} actorType={activeContext.type} actorId={actorId} />
+            )}
 
-              const TERMINAL = new Set(['RESOLVED', 'DISPUTED', 'ARCHIVED'])
-              if (TERMINAL.has(report.status)) return null
+            <DisputeCard report={report} canDispute={canDispute} />
 
-              const thisActorHasAdvocated = actorId
-                ? report.timeline?.some(
-                    (e) =>
-                      e.type === EventType.RESPONDED &&
-                      (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-                      ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
-                        (e.metadata as Record<string, unknown>)?.entityId === actorId),
-                  )
-                : false
-
-              if (thisActorHasAdvocated) return null
-
-              const sectionTitle = actorType === 'POLITICIAN' ? 'Ação política' : 'Ação da entidade'
-
-              return (
-                <SideCard>
-                  <SideTitle>{sectionTitle}</SideTitle>
-                  <AvocBtn
-                    onClick={() => {
-                      setAdvocateActor({ actorType, actorId: actorId! })
-                      setAdvocateModalOpen(true)
-                    }}
-                  >
-                    <ShieldCheckIcon size={14} style={{ marginRight: 6 }} />Avocar este relato
-                  </AvocBtn>
-                  <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: 8, lineHeight: 1.5 }}>
-                    Ao avocar, você assume publicamente o compromisso de acompanhar e pressionar pela resolução deste problema — e pode publicar no feed.
-                  </p>
-                  {advocateActor && (
-                    <AdvocateConfirmModal
-                      isOpen={advocateModalOpen}
-                      reportId={report.id}
-                      reportTitle={report.title}
-                      actorType={advocateActor.actorType}
-                      actorId={advocateActor.actorId}
-                      onClose={() => setAdvocateModalOpen(false)}
-                    />
-                  )}
-                </SideCard>
-              )
-            })()}
-
-            {(() => {
-              const alreadyDisputed = report.timeline?.some((e) => e.type === EventType.DISPUTED)
-              const canDispute =
-                report.status === ReportStatus.RESOLVED &&
-                !report.anonymous &&
-                user?.id === report.author?.id &&
-                !alreadyDisputed
-
-              if (!canDispute) return null
-
-              function handleDisputeSubmit() {
-                if (disputeReason.trim().length < 20) return
-                disputeMutation.mutate(
-                  { reason: disputeReason.trim() },
-                  {
-                    onSuccess: () => {
-                      setShowDisputeForm(false)
-                      setDisputeReason('')
-                    },
-                  },
-                )
-              }
-
-              return (
-                <SideCard>
-                  <SideTitle>Contestação</SideTitle>
-                  {!showDisputeForm ? (
-                    <>
-                      <p style={{ fontSize: '0.8125rem', color: '#6B7280', lineHeight: 1.5, marginBottom: 12 }}>
-                        Se o problema ainda não foi resolvido, você pode contestar a resolução com justificativa.
-                      </p>
-                      <DisputeBtn onClick={() => setShowDisputeForm(true)}>
-                        ⚡ Contestar resolução
-                      </DisputeBtn>
-                    </>
-                  ) : (
-                    <>
-                      <DisputeTextarea
-                        placeholder="Descreva por que o problema ainda não foi resolvido… (mín. 20 caracteres)"
-                        value={disputeReason}
-                        onChange={(e) => setDisputeReason(e.target.value)}
-                        maxLength={500}
-                      />
-                      <CharCount $over={disputeReason.length > 500}>
-                        {disputeReason.length}/500
-                      </CharCount>
-                      {disputeMutation.isError && (
-                        <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 6 }}>
-                          Não foi possível contestar. Tente novamente.
-                        </p>
-                      )}
-                      <DisputeActions>
-                        <DisputeBtn
-                          disabled={disputeReason.trim().length < 20 || disputeMutation.isPending}
-                          onClick={handleDisputeSubmit}
-                          style={{ flex: 1 }}
-                        >
-                          {disputeMutation.isPending ? 'Enviando…' : 'Enviar contestação'}
-                        </DisputeBtn>
-                        <Button
-                          variant="outline"
-                          onClick={() => { setShowDisputeForm(false); setDisputeReason('') }}
-                          disabled={disputeMutation.isPending}
-                        >
-                          Cancelar
-                        </Button>
-                      </DisputeActions>
-                    </>
-                  )}
-                </SideCard>
-              )
-            })()}
-
-            {(() => {
-              if (TERMINAL_STATUSES.has(report.status)) return null
-
-              const isRecipient =
-                !!actorId &&
-                activeContext?.type === report.recipientType &&
-                report.recipientId === actorId
-              const hasAdvocatedUpdate = actorId
-                ? report.timeline?.some(
-                    (e) =>
-                      e.type === EventType.RESPONDED &&
-                      (e.metadata as Record<string, unknown>)?.action === 'advocated' &&
-                      ((e.metadata as Record<string, unknown>)?.politicianId === actorId ||
-                        (e.metadata as Record<string, unknown>)?.entityId === actorId),
-                  )
-                : false
-
-              if (!isRecipient && !hasAdvocatedUpdate) return null
-
-              const uploadingCount = mediaItems.filter((m) => m.uploading).length
-              const canSubmit =
-                updateContent.trim().length >= 10 &&
-                uploadingCount === 0 &&
-                !updateStatusMut.isPending
-
-              return (
-                <SideCard>
-                  <SideTitle>Dar andamento</SideTitle>
-
-                  {isRecipient && (
-                    <UpdateSelect
-                      value={updateStatus}
-                      onChange={(e) => setUpdateStatus(e.target.value)}
-                    >
-                      <option value="">Manter status atual</option>
-                      {Object.entries(UPDATABLE_STATUSES)
-                        .filter(([key]) => key !== report.status)
-                        .map(([key, label]) => (
-                          <option key={key} value={key}>{label}</option>
-                        ))}
-                    </UpdateSelect>
-                  )}
-
-                  {!isRecipient && (
-                    <p style={{ fontSize: '0.8125rem', color: '#6B7280', marginBottom: 10, lineHeight: 1.5 }}>
-                      Como avocador, você pode postar atualizações informacionais. A troca de status é exclusiva do destinatário.
-                    </p>
-                  )}
-
-                  <UpdateTextarea
-                    placeholder="Descreva o andamento (mín. 10 caracteres)"
-                    value={updateContent}
-                    onChange={(e) => setUpdateContent(e.target.value)}
-                    maxLength={500}
-                  />
-                  <CharCount $over={updateContent.length > 480}>
-                    {updateContent.length}/500
-                  </CharCount>
-
-                  {mediaItems.length < 4 && (
-                    <MediaUploadLabel>
-                      📎 Anexar fotos, vídeos ou PDFs ({mediaItems.length}/4)
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,application/pdf"
-                        multiple
-                        style={{ display: 'none' }}
-                        onChange={handleMediaFiles}
-                      />
-                    </MediaUploadLabel>
-                  )}
-
-                  {mediaItems.length > 0 && (
-                    <MediaPreviewGrid>
-                      {mediaItems.map((item) => (
-                        <MediaThumb key={item.id} $error={item.error}>
-                          {item.mimeType === 'application/pdf' ? (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>📄</div>
-                          ) : (
-                            <img src={item.previewUrl} alt="" />
-                          )}
-                          {item.uploading && <MediaThumbOverlay>…</MediaThumbOverlay>}
-                          {item.error && <MediaThumbOverlay>✕</MediaThumbOverlay>}
-                          {!item.uploading && (
-                            <MediaThumbRemove
-                              onClick={() => {
-                                URL.revokeObjectURL(item.previewUrl)
-                                setMediaItems((prev) => prev.filter((m) => m.id !== item.id))
-                              }}
-                            >
-                              ✕
-                            </MediaThumbRemove>
-                          )}
-                        </MediaThumb>
-                      ))}
-                    </MediaPreviewGrid>
-                  )}
-
-                  {updateStatusMut.isError && (
-                    <p style={{ fontSize: '0.8125rem', color: '#E63946', marginTop: 8 }}>
-                      Não foi possível publicar a atualização. Tente novamente.
-                    </p>
-                  )}
-
-                  <UpdateSubmitBtn disabled={!canSubmit} onClick={handleStatusSubmit}>
-                    {updateStatusMut.isPending
-                      ? 'Enviando…'
-                      : uploadingCount > 0
-                        ? `Aguardando ${uploadingCount} foto(s)…`
-                        : 'Publicar atualização'}
-                  </UpdateSubmitBtn>
-                </SideCard>
-              )
-            })()}
+            {(isRecipient || hasActiveAdvocacy) && <ProgressCard report={report} isRecipient={isRecipient} />}
 
             {(() => {
               const recipientOrg = report.recipientId

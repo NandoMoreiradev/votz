@@ -34,4 +34,5 @@ __exportStar(require("./ads"), exports);
 __exportStar(require("./press"), exports);
 __exportStar(require("./context-notes"), exports);
 __exportStar(require("./surveys"), exports);
+__exportStar(require("./report-lifecycle"), exports);
 //# sourceMappingURL=index.js.map

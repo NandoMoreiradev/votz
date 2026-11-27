@@ -47,18 +47,44 @@ export interface AdvocacyAuthor {
   avatarUrl: string | null
 }
 
+/** Quem fala na Memória pública: a instituição (ou a moderação), nunca a pessoa da equipe. */
+export interface TimelineActorOrg {
+  type: 'POLITICIAN' | 'ENTITY' | 'MODERATION'
+  id: string | null
+  name: string
+  avatarUrl?: string | null
+}
+
 export interface TimelineEvent {
   id: string
   type: EventType
   content: string
   metadata: unknown
   createdAt: string
+  /** Cidadão que escreveu. Vem vazio quando quem fala é uma instituição ou a moderação. */
   author: AdvocacyAuthor | null
+  actorOrg?: TimelineActorOrg | null
 }
 
 export interface ReportAdvocacy {
+  orgType?: 'POLITICIAN' | 'ENTITY'
+  orgId?: string
   author: AdvocacyAuthor | null
   createdAt: string
+}
+
+/** Compromisso público de um político ou entidade (avocação), no detalhe do relato. */
+export interface ReportAdvocacyCard {
+  orgType: 'POLITICIAN' | 'ENTITY'
+  orgId: string
+  name: string
+  avatarUrl: string | null
+  subtitle: string | null
+  message: string | null
+  promisedFor: string | null
+  createdAt: string
+  closedAt: string | null
+  closedReason: 'WITHDRAWN' | 'MANDATE_ENDED' | null
 }
 
 export interface Report {
@@ -86,6 +112,14 @@ export interface Report {
   author: Author | null
   timeline?: TimelineEvent[]
   advocacy?: ReportAdvocacy | null
+  // Só no detalhe: ciclo de vida
+  advocacies?: ReportAdvocacyCard[]
+  firstResponseAt?: string | null
+  resolvedAt?: string | null
+  archivedAt?: string | null
+  archiveReason?: string | null
+  resolutionConfirmedAt?: string | null
+  resolvedWithoutEvidence?: boolean
 }
 
 export interface ReportsResponse {
@@ -194,6 +228,10 @@ export interface ProfileMetrics {
   responseRate: number
   resolutionRate: number
   contestationRate: number
+  /** Só no político: contestações que a moderação aceitou, cidadãos que confirmaram e compromissos cumpridos. */
+  disputesUpheldRate?: number
+  confirmedRate?: number
+  commitmentRate?: number
   trustBadge: boolean
   classification: string
 }
@@ -236,14 +274,30 @@ export interface EntitiesResponse {
   meta: { page: number; limit: number; total: number; totalPages: number }
 }
 
+/** Avocações: o que o político ASSUMIU (separado do que ele recebeu). */
+export interface MandatometerCommitments {
+  total: number
+  fulfilled: number
+  inProgress: number
+  overdue: number
+  withdrawn: number
+  abandoned: number
+}
+
 export interface Mandatometer {
   total: number
   resolved: number
   inProgress: number
   open: number
   disputed: number
+  archived?: number
+  responded?: number
+  confirmed?: number
+  disputesUpheld?: number
   byStatus: Record<string, number>
   byCategory: CategoryStat[]
+  commitments?: MandatometerCommitments
+  frozenAt?: string
 }
 
 export interface PoliticianParty {

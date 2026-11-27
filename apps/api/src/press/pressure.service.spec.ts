@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service'
 
 const mockQueue = { add: jest.fn() }
 const mockPrisma = {
-  report: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), update: jest.fn() },
+  report: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   vote: { groupBy: jest.fn() },
   $executeRaw: jest.fn(),
 }
@@ -42,9 +42,30 @@ describe('PressureService', () => {
     await service.recalculateOne('missing')
     expect(mockPrisma.report.update).not.toHaveBeenCalled()
 
+    // Encerrado sai da disputa por atenção: a pressão zera (e não é recalculada)
     mockPrisma.report.findUnique.mockResolvedValueOnce({ id: 'r1', status: ReportStatus.RESOLVED })
     await service.recalculateOne('r1')
     expect(mockPrisma.report.update).not.toHaveBeenCalled()
+    expect(mockPrisma.report.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r1', pressureScore: { not: 0 } },
+      data: { pressureScore: 0 },
+    })
+  })
+
+  it('relato contestado continua ativo e segue somando pressão', async () => {
+    mockPrisma.report.findUnique.mockResolvedValueOnce({
+      id: 'r1',
+      status: ReportStatus.DISPUTED,
+      category: 'HEALTH',
+      createdAt: new Date(),
+      groupId: null,
+      surtoId: null,
+      _count: { comments: 0 },
+      firstResponseAt: new Date(),
+    })
+    mockPrisma.vote.groupBy.mockResolvedValue([{ type: VoteType.SUPPORT, _count: { _all: 2 } }])
+    await service.recalculateOne('r1')
+    expect(mockPrisma.report.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { pressureScore: 3 } })
   })
 
   it('computes weighted pressureScore with surto similarity and no response penalty', async () => {
@@ -57,7 +78,7 @@ describe('PressureService', () => {
       groupId: null,
       surtoId: 'surto-1',
       _count: { comments: 3 },
-      timeline: [], // sem resposta -> +2 dias * 2 = 4
+      firstResponseAt: null, // quem recebeu não respondeu -> +2 dias * 2 = 4
     })
     mockPrisma.vote.groupBy.mockResolvedValue([
       { type: VoteType.SUPPORT, _count: { _all: 4 } }, // 4 * 1.5 = 6
@@ -89,7 +110,7 @@ describe('PressureService', () => {
         groupId: 'g1',
         surtoId: null,
         _count: { comments: 1 },
-        timeline: [{ id: 't1' }],
+        firstResponseAt: new Date(),
       },
     ])
     mockPrisma.vote.groupBy.mockResolvedValue([

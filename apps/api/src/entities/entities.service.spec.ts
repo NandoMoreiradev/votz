@@ -1,14 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common'
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { OrgPermission } from '@prisma/client'
-import { EventType, ReportStatus } from '@votz/shared-types'
 
 jest.mock('isomorphic-dompurify', () => ({
   sanitize: (s: string) => s,
@@ -19,6 +13,7 @@ import { EntitiesRepository } from './entities.repository'
 import { CreateEntityDto } from './dto/create-entity.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { StorageService } from '../storage/storage.service'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
 
 const STORAGE_BASE = 'https://cdn.votz.app'
 
@@ -52,6 +47,8 @@ const entityActingUser = {
   },
 }
 
+const mockLifecycle = { advocate: jest.fn().mockResolvedValue({ advocated: true }) }
+
 const mockStorage = {
   assertOwnStorageUrl: jest.fn((url: string, folder?: string) => {
     if (!url.startsWith(`${STORAGE_BASE}/${folder ? `${folder}/` : ''}`)) {
@@ -70,6 +67,7 @@ describe('EntitiesService', () => {
         { provide: EntitiesRepository, useValue: mockRepo },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: StorageService, useValue: mockStorage },
+        { provide: ReportLifecycleService, useValue: mockLifecycle },
       ],
     }).compile()
 
@@ -131,45 +129,10 @@ describe('EntitiesService', () => {
     expect(mockRepo.update).toHaveBeenCalled()
   })
 
-  it('handles advocate validations and transitions report to IN_PROGRESS', async () => {
-    await expect(service.advocate('e1', 'r1', { id: 'u1', type: 'ENTITY', ctx: null })).rejects.toThrow(
-      ForbiddenException,
-    )
-
-    mockPrisma.orgMembership.findUnique.mockResolvedValue({
-      status: 'ACTIVE',
-      role: { permissions: [OrgPermission.RESPOND_REPORTS] },
-    })
-    mockPrisma.report.findUnique.mockResolvedValueOnce({
-      id: 'r1',
-      status: ReportStatus.RESOLVED,
-      timeline: [],
-    })
-    await expect(service.advocate('e1', 'r1', entityActingUser)).rejects.toThrow(BadRequestException)
-
-    mockPrisma.report.findUnique.mockResolvedValueOnce({
-      id: 'r1',
-      status: ReportStatus.IN_PROGRESS,
-      timeline: [{ metadata: { action: 'advocated', entityId: 'e1' } }],
-    })
-    await expect(service.advocate('e1', 'r1', entityActingUser)).rejects.toThrow(ConflictException)
-
-    mockPrisma.report.findUnique.mockResolvedValueOnce({
-      id: 'r1',
-      status: ReportStatus.OPEN,
-      timeline: [],
-    })
-    const res = await service.advocate('e1', 'r1', entityActingUser)
-    expect(res).toEqual({ advocated: true })
-    expect(mockPrisma.report.update).toHaveBeenCalledWith({
-      where: { id: 'r1' },
-      data: { status: ReportStatus.IN_PROGRESS },
-    })
-    expect(mockPrisma.timelineEvent.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ type: EventType.RESPONDED }),
-      }),
-    )
+  it('avocar passa para o ciclo de vida do relato com a entidade certa', async () => {
+    const dto = { message: 'Vamos cuidar disso.', promisedInDays: 15 }
+    await service.advocate('e1', 'r1', entityActingUser, dto as any)
+    expect(mockLifecycle.advocate).toHaveBeenCalledWith('r1', entityActingUser, { orgType: 'ENTITY', orgId: 'e1' }, dto)
   })
 
   it('rejects external or wrong-folder logoUrl and ftp:// website on entity', async () => {

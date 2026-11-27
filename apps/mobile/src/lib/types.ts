@@ -29,13 +29,35 @@ export interface TimelineAuthor {
   name: string
   avatarUrl: string | null
 }
+/** Quem fala na Memória pública: a instituição (ou a moderação), nunca a pessoa da equipe. */
+export interface TimelineActorOrg {
+  type: 'POLITICIAN' | 'ENTITY' | 'MODERATION'
+  id: string | null
+  name: string
+  avatarUrl?: string | null
+}
 export interface TimelineEvent {
   id: string
   type: EventType | string
   content: string
   metadata?: Record<string, unknown> | null
   createdAt: string
+  /** Cidadão que escreveu. Vem vazio quando quem fala é uma instituição ou a moderação. */
   author?: TimelineAuthor | null
+  actorOrg?: TimelineActorOrg | null
+}
+/** Compromisso público de um político ou entidade (avocação), no detalhe do relato. */
+export interface ReportAdvocacyCard {
+  orgType: 'POLITICIAN' | 'ENTITY'
+  orgId: string
+  name: string
+  avatarUrl: string | null
+  subtitle: string | null
+  message: string | null
+  promisedFor: string | null
+  createdAt: string
+  closedAt: string | null
+  closedReason: 'WITHDRAWN' | 'MANDATE_ENDED' | null
 }
 export interface ReportFollowersResponse {
   count: number
@@ -59,6 +81,13 @@ export interface Report {
   author: { id: string; name: string; avatarUrl: string | null } | null
   _count: { votes: number; meTooVotes?: number; comments: number }
   timeline?: TimelineEvent[]
+  // Só no detalhe: ciclo de vida
+  advocacies?: ReportAdvocacyCard[]
+  resolvedAt?: string | null
+  archivedAt?: string | null
+  archiveReason?: string | null
+  resolutionConfirmedAt?: string | null
+  resolvedWithoutEvidence?: boolean
 }
 export interface SimilarReport {
   id: string; title: string; description: string; category: Category; status: ReportStatus

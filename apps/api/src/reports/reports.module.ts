@@ -9,6 +9,7 @@ import { AlertsModule } from '../alerts/alerts.module'
 import { EmbeddingModule } from '../embedding/embedding.module'
 import { WebhooksModule } from '../webhooks/webhooks.module'
 import { TopicsModule } from '../topics/topics.module'
+import { ReportLifecycleModule } from '../report-lifecycle/report-lifecycle.module'
 import { GenerateEmbeddingProcessor, REPORTS_QUEUE } from './jobs/generate-embedding.processor'
 import { EmbeddingBackfillCron } from './jobs/embedding-backfill.cron'
 
@@ -20,6 +21,7 @@ import { EmbeddingBackfillCron } from './jobs/embedding-backfill.cron'
     EmbeddingModule,
     WebhooksModule,
     TopicsModule,
+    ReportLifecycleModule,
     BullModule.registerQueue({ name: REPORTS_QUEUE }),
   ],
   controllers: [ReportsController],

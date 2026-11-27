@@ -129,6 +129,7 @@ export class AdminRepository {
       await tx.comment.updateMany({ where: { reportId: id }, data: { parentId: null } })
       await tx.comment.deleteMany({ where: { reportId: id } })
       await tx.reportFollower.deleteMany({ where: { reportId: id } })
+      await tx.reportAdvocacy.deleteMany({ where: { reportId: id } })
       await tx.timelineEvent.deleteMany({ where: { reportId: id } })
       await tx.report.delete({ where: { id } })
 

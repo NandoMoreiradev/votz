@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
+import { syncReportSlaState } from '../report-lifecycle/sla-sync'
 import { CreateReportDto } from './dto/create-report.dto'
 import {
   Category,
@@ -39,12 +40,10 @@ const ACTOR_SELECT = {
   avatarUrl: true,
 } as const
 
+// Primeira avocação ativa (selo "avocado por" no feed).
 const ADVOCACY_SELECT = {
-  where: { type: 'RESPONDED' as const },
-  select: {
-    author: { select: ACTOR_SELECT },
-    createdAt: true,
-  },
+  where: { closedAt: null },
+  select: { orgType: true, orgId: true, createdAt: true },
   take: 1,
   orderBy: { createdAt: 'asc' as const },
 } as const
@@ -165,6 +164,25 @@ export class ReportsRepository {
       where: { id },
       select: {
         ...PUBLIC_REPORT_SELECT,
+        moderationStatus: true,
+        firstResponseAt: true,
+        resolvedAt: true,
+        archivedAt: true,
+        archiveReason: true,
+        resolutionConfirmedAt: true,
+        resolvedWithoutEvidence: true,
+        advocacies: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            orgType: true,
+            orgId: true,
+            message: true,
+            promisedFor: true,
+            createdAt: true,
+            closedAt: true,
+            closedReason: true,
+          },
+        },
         timeline: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -212,7 +230,7 @@ export class ReportsRepository {
         where,
         select: {
           ...PUBLIC_REPORT_SELECT,
-          timeline: ADVOCACY_SELECT,
+          advocacies: ADVOCACY_SELECT,
         },
         orderBy: [{ pressureScore: 'desc' }, { createdAt: 'desc' }],
         skip: (filters.page - 1) * filters.limit,
@@ -225,103 +243,8 @@ export class ReportsRepository {
     return { reports, total }
   }
 
-  async updateStatus(id: string, status: ReportStatus) {
-    const now = new Date()
-    if (status === ReportStatus.RESOLVED) {
-      await this.prisma.report.updateMany({
-        where: { id, resolvedAt: null },
-        data: { resolvedAt: now },
-      })
-    }
-    const updated = await this.prisma.report.update({
-      where: { id },
-      data: { status },
-      select: { id: true, status: true },
-    })
-    await this.syncSlaState(id, now)
-    return updated
-  }
-
-  async markFirstResponseIfUnset(id: string) {
-    const now = new Date()
-    const res = await this.prisma.report.updateMany({
-      where: { id, firstResponseAt: null },
-      data: { firstResponseAt: now },
-    })
-    await this.syncSlaState(id, now)
-    return res
-  }
-
-  async syncSlaState(id: string, now = new Date()) {
-    const row = await this.prisma.report.findUnique({
-      where: { id },
-      select: {
-        category: true,
-        status: true,
-        recipientType: true,
-        recipientId: true,
-        createdAt: true,
-        firstResponseAt: true,
-        resolvedAt: true,
-        slaStartedAt: true,
-        slaDueAt: true,
-        slaState: true,
-        resolutionSlaDueAt: true,
-      },
-    })
-    if (!row || row.recipientType !== RecipientType.ENTITY || !row.recipientId) return
-
-    const entity = await this.prisma.entity.findUnique({
-      where: { id: row.recipientId },
-      select: { slaHours: true, resolutionSlaHours: true, slaEscalationHours: true },
-    })
-
-    const policy = {
-      slaHours: row.slaDueAt && row.slaStartedAt
-        ? {
-            [row.category]: Math.max(
-              1,
-              Math.round((row.slaDueAt.getTime() - row.slaStartedAt.getTime()) / 3_600_000),
-            ),
-          }
-        : ((entity?.slaHours as Record<string, number> | null) ?? null),
-      resolutionSlaHours: row.resolutionSlaDueAt && row.slaStartedAt
-        ? {
-            [row.category]: Math.max(
-              1,
-              Math.round((row.resolutionSlaDueAt.getTime() - row.slaStartedAt.getTime()) / 3_600_000),
-            ),
-          }
-        : ((entity?.resolutionSlaHours as Record<string, number> | null) ?? null),
-      escalationHours: entity?.slaEscalationHours ?? 24,
-    }
-
-    const computed = computeSla(
-      {
-        category: row.category as Category,
-        status: row.status as ReportStatus,
-        createdAt: row.createdAt,
-        firstResponseAt: row.firstResponseAt,
-        resolvedAt: row.resolvedAt,
-        slaStartedAt: row.slaStartedAt ?? row.createdAt,
-        slaState: (row.slaState as any) ?? null,
-      },
-      policy,
-      now,
-    )
-
-    await this.prisma.report.update({
-      where: { id },
-      data: {
-        slaStartedAt: computed.slaStartedAt,
-        slaDueAt: computed.slaDueAt,
-        slaState: (computed.slaState as SlaState | null) ?? null,
-        slaMetAt: computed.slaMetAt,
-        resolutionSlaDueAt: computed.resolution?.dueAt ?? null,
-        resolutionSlaState: (computed.resolution?.state as SlaState | null) ?? null,
-        resolutionSlaMetAt: computed.resolution?.metAt ?? null,
-      },
-    })
+  syncSlaState(id: string, now = new Date()) {
+    return syncReportSlaState(this.prisma, id, now)
   }
 
   async findAuthorId(id: string): Promise<string | null> {
@@ -330,33 +253,6 @@ export class ReportsRepository {
       select: { authorId: true },
     })
     return report?.authorId ?? null
-  }
-
-  async setDisputed(id: string) {
-    const updated = await this.prisma.report.update({
-      where: { id },
-      data: { status: ReportStatus.DISPUTED },
-      select: { id: true, status: true },
-    })
-    await this.syncSlaState(id)
-    return updated
-  }
-
-  async resolveDispute(id: string, status: ReportStatus.OPEN | ReportStatus.RESOLVED) {
-    const now = new Date()
-    if (status === ReportStatus.RESOLVED) {
-      await this.prisma.report.updateMany({
-        where: { id, resolvedAt: null },
-        data: { resolvedAt: now },
-      })
-    }
-    const updated = await this.prisma.report.update({
-      where: { id },
-      data: { status },
-      select: { id: true, status: true },
-    })
-    await this.syncSlaState(id, now)
-    return updated
   }
 
   async updateRecipient(reportId: string, recipientType: string, recipientId: string) {
@@ -386,7 +282,7 @@ export class ReportsRepository {
             category: existing.category as Category,
             status: existing.status as ReportStatus,
             createdAt: now,
-            firstResponseAt: existing.firstResponseAt,
+            firstResponseAt: null,
             resolvedAt: existing.resolvedAt,
             slaStartedAt: now,
           },
@@ -411,7 +307,8 @@ export class ReportsRepository {
 
     return this.prisma.report.update({
       where: { id: reportId },
-      data: { recipientType: recipientType as any, recipientId, ...extraSla },
+      // Novo destinatário começa do zero: a resposta do anterior não conta como resposta dele.
+      data: { recipientType: recipientType as any, recipientId, firstResponseAt: null, ...extraSla },
       select: { id: true, recipientType: true, recipientId: true },
     })
   }

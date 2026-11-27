@@ -23,6 +23,7 @@ import { AdReviewQueue } from '../components/ads/AdReviewQueue'
 import { PressCredentialQueue } from '../components/press/PressCredentialQueue'
 import { ContextNotesAdminTab } from '../components/context-notes/ContextNotesAdminTab'
 import { SurveysAdminTab } from '../components/surveys/SurveysAdminTab'
+import { DisputesAdminTab } from '../components/report-lifecycle/DisputesAdminTab'
 import { useAdReviewQueue } from '../hooks/useAds'
 import { SkeletonRows } from '../components/ui/Skeleton'
 
@@ -1284,7 +1285,7 @@ function SuggestionsTab() {
   )
 }
 
-type TabId = 'context' | 'surveys' | 'ads' | 'press' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'companies' | 'requests' | 'suggestions'
+type TabId = 'disputes' | 'context' | 'surveys' | 'ads' | 'press' | 'users' | 'reports' | 'flags' | 'entities' | 'politicians' | 'companies' | 'requests' | 'suggestions'
 
 export function Admin() {
   const user = useAuthStore((s) => s.user)
@@ -1349,6 +1350,7 @@ export function Admin() {
             Anúncios
             {(pendingAds?.meta.pendingCount ?? 0) > 0 && <TabCount>{pendingAds?.meta.pendingCount}</TabCount>}
           </Tab>
+          <Tab $active={tab === 'disputes'} onClick={() => setTab('disputes')}>Contestações</Tab>
           <Tab $active={tab === 'context'} onClick={() => setTab('context')}>Contexto</Tab>
           {isAdmin && <Tab $active={tab === 'surveys'} onClick={() => setTab('surveys')}>Pesquisas</Tab>}
           <Tab $active={tab === 'press'} onClick={() => setTab('press')}>Imprensa</Tab>
@@ -1364,6 +1366,7 @@ export function Admin() {
         {tab === 'flags'       && <FlagsTab />}
         {tab === 'ads'         && <AdReviewQueue />}
         {tab === 'press'       && <PressCredentialQueue />}
+        {tab === 'disputes'    && <DisputesAdminTab />}
         {tab === 'context'     && <ContextNotesAdminTab />}
         {tab === 'surveys'     && isAdmin && <SurveysAdminTab />}
         {tab === 'entities'    && <EntitiesTab />}

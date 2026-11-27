@@ -231,6 +231,7 @@ describe('UsersService', () => {
         },
         report: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
         timelineEvent: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        reportAdvocacy: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         propostaTimeline: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         registrationRequest: {
           updateMany: jest.fn().mockResolvedValue({ count: 0 }),

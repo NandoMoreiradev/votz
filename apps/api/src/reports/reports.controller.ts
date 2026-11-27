@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { ReportsService } from './reports.service'
 import { CreateReportDto } from './dto/create-report.dto'
 import { UpdateStatusDto } from './dto/update-status.dto'
@@ -8,6 +9,8 @@ import { DisputeDto } from './dto/dispute.dto'
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto'
 import { ListReportsQueryDto } from './dto/list-reports-query.dto'
 import { SimilarReportsQueryDto } from './dto/similar-reports-query.dto'
+import { WithdrawAdvocacyDto } from '../report-lifecycle/dto/withdraw-advocacy.dto'
+import { DisputeQueueQueryDto } from '../report-lifecycle/dto/dispute-queue-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser } from '../auth/decorators/current-user.decorator'
 import { Public } from '../auth/decorators/public.decorator'
@@ -38,6 +41,14 @@ export class ReportsController {
       state: query.state,
       city: query.city,
     })
+  }
+
+  @Get('moderation/disputes')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Fila de contestações para a moderação (mais antigas primeiro)' })
+  disputeQueue(@Query() query: DisputeQueueQueryDto, @CurrentUser() user: { id: string; type: string }) {
+    return this.reportsService.disputeQueue(user, query.page ?? 1, query.limit ?? 20)
   }
 
   @Public()
@@ -76,8 +87,9 @@ export class ReportsController {
 
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update report status (entity/moderator/admin only)' })
+  @ApiOperation({ summary: 'Mudar status (só o destinatário, seguindo as transições permitidas) ou, sem status, publicar atualização (destinatário ou quem avocou)' })
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateStatusDto,
@@ -88,8 +100,9 @@ export class ReportsController {
 
   @Post(':id/dispute')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Dispute a resolved report — only the original author can dispute' })
+  @ApiOperation({ summary: 'Contestar resolução ou arquivamento (autor ou quem marcou "Eu também", até 30 dias, uma vez por resolução)' })
   dispute(
     @Param('id') id: string,
     @Body() dto: DisputeDto,
@@ -101,13 +114,35 @@ export class ReportsController {
   @Post(':id/dispute/resolve')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Resolve a disputed report (moderator/admin only)' })
+  @ApiOperation({ summary: 'Decidir contestação (só moderação): UPHOLD mantém a resolução, REOPEN reabre' })
   resolveDispute(
     @Param('id') id: string,
     @Body() dto: ResolveDisputeDto,
     @CurrentUser() user: { id: string; type: string },
   ) {
     return this.reportsService.resolveDispute(id, dto, user)
+  }
+
+  @Post(':id/confirm-resolution')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Autor confirma que o problema foi resolvido' })
+  confirmResolution(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.reportsService.confirmResolution(id, user.id)
+  }
+
+  @Post(':id/advocacy/withdraw')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Desistir da avocação (público, com motivo; conta no Mandatômetro)' })
+  withdrawAdvocacy(
+    @Param('id') id: string,
+    @Body() dto: WithdrawAdvocacyDto,
+    @CurrentUser() user: ActingUser,
+  ) {
+    return this.reportsService.withdrawAdvocacy(id, user, dto.reason)
   }
 
   @Public()

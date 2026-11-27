@@ -26,7 +26,11 @@ type EventPreferenceKey =
 
 const EVENT_PREF_MAP: Partial<Record<NotificationType, EventPreferenceKey>> = {
   STATUS_CHANGED: 'reportUpdates',
+  REPORT_RESOLVED: 'reportUpdates',
+  DISPUTE_DECIDED: 'reportUpdates',
+  ADVOCACY_DEADLINE_PASSED: 'reportUpdates',
   REPORT_UPDATE: 'officialResponses',
+  REPORT_ADVOCATED: 'officialResponses',
   NEW_COMMENT: 'reportComments',
   COMMENT_REPLY: 'reportComments',
   SURTO_DETECTED: 'localSurges',
@@ -122,6 +126,32 @@ export function buildPushPayload(
       return { title: 'Nova atualização oficial', body: `Há uma nova atualização em ${reportTitle}.`, data }
     case NotificationType.STATUS_CHANGED:
       return { title: 'Status atualizado', body: `O status de ${reportTitle} foi atualizado.`, data }
+    case NotificationType.REPORT_RESOLVED: {
+      const archived = metadata?.newStatus === 'ARCHIVED'
+      return {
+        title: archived ? 'Relato arquivado' : 'Relato marcado como resolvido',
+        body: archived
+          ? `${reportTitle} foi arquivado. Não concorda? Você tem 30 dias para contestar.`
+          : `${reportTitle} foi marcado como resolvido. Foi resolvido mesmo? Confirme ou conteste em até 30 dias.`,
+        data,
+      }
+    }
+    case NotificationType.REPORT_ADVOCATED: {
+      const org = typeof metadata?.orgName === 'string' && metadata.orgName.trim() ? metadata.orgName.trim() : 'Um representante'
+      return { title: 'Relato avocado', body: `${org} assumiu o compromisso de acompanhar ${reportTitle}.`, data }
+    }
+    case NotificationType.DISPUTE_PENDING_REVIEW:
+      return { title: 'Contestação para decidir', body: `${reportTitle} foi contestado e espera a decisão da moderação.`, data }
+    case NotificationType.DISPUTE_DECIDED:
+      return {
+        title: 'Contestação decidida',
+        body: metadata?.decision === 'REOPEN'
+          ? `A contestação de ${reportTitle} foi aceita: o relato voltou a ficar aberto.`
+          : `A contestação de ${reportTitle} foi negada: a resolução continua valendo.`,
+        data,
+      }
+    case NotificationType.ADVOCACY_DEADLINE_PASSED:
+      return { title: 'Prazo prometido venceu', body: `O prazo prometido na avocação de ${reportTitle} passou sem solução.`, data }
     case NotificationType.NEW_COMMENT:
       return { title: 'Novo comentário', body: `Novo comentário em ${reportTitle}.`, data }
     case NotificationType.COMMENT_REPLY:

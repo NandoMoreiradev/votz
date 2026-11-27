@@ -1,14 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common'
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { OrgPermission, PoliticianStatus } from '@prisma/client'
-import { EventType, ReportStatus } from '@votz/shared-types'
 
 jest.mock('isomorphic-dompurify', () => ({
   sanitize: (s: string) => s,
@@ -20,6 +14,8 @@ import { UpdatePoliticianDto } from './dto/update-politician.dto'
 import { PrismaService } from '../prisma/prisma.service'
 import { TimelineService } from '../timeline/timeline.service'
 import { StorageService } from '../storage/storage.service'
+import { ReportLifecycleService } from '../report-lifecycle/report-lifecycle.service'
+import { MandatometerService, MandatometerSnapshot } from '../report-lifecycle/mandatometer.service'
 
 const STORAGE_BASE = 'https://cdn.votz.app'
 
@@ -57,6 +53,19 @@ const polActingUser = {
 }
 
 const mockTimeline = { record: jest.fn() }
+const mockLifecycle = { advocate: jest.fn().mockResolvedValue({ advocated: true }) }
+const realMandatometer = new MandatometerService(null as any)
+const mockMandatometer = {
+  compute: jest.fn(),
+  metrics: (s: MandatometerSnapshot) => realMandatometer.metrics(s),
+}
+const snapshot = (o: Partial<MandatometerSnapshot>): MandatometerSnapshot => ({
+  total: 0, open: 0, inProgress: 0, resolved: 0, disputed: 0, archived: 0, responded: 0, confirmed: 0,
+  everDisputed: 0, disputesUpheld: 0, closedEver: 0, byStatus: {}, byCategory: [],
+  commitments: { total: 0, fulfilled: 0, inProgress: 0, overdue: 0, withdrawn: 0, abandoned: 0 },
+  advocated: 0, computedAt: new Date().toISOString(),
+  ...o,
+})
 const mockStorage = {
   assertOwnStorageUrl: jest.fn(
     (url: string, folder?: string, opts?: { allowExternalImageHosts?: boolean }) => {
@@ -78,6 +87,8 @@ describe('PoliticiansService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: TimelineService, useValue: mockTimeline },
         { provide: StorageService, useValue: mockStorage },
+        { provide: ReportLifecycleService, useValue: mockLifecycle },
+        { provide: MandatometerService, useValue: mockMandatometer },
       ],
     }).compile()
 
@@ -88,32 +99,36 @@ describe('PoliticiansService', () => {
   describe('findById', () => {
     it('throws NotFoundException when politician does not exist', async () => {
       mockRepo.findById.mockResolvedValue(null)
-      mockRepo.mandatometerStats.mockResolvedValue({ total: 0, resolved: 0, open: 0, byStatus: {} })
       mockRepo.monthlyVolume.mockResolvedValue([])
       await expect(service.findById('missing')).rejects.toThrow(NotFoundException)
     })
 
-    it('calculates trustBadge and classification metrics', async () => {
-      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana' })
-      mockRepo.mandatometerStats.mockResolvedValue({
-        total: 10,
-        resolved: 6,
-        open: 2,
-        byStatus: { DISPUTED: 1 },
-      })
+    it('calculates trustBadge and classification metrics from the live Mandatômetro', async () => {
+      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana', status: PoliticianStatus.ATIVO })
       mockRepo.monthlyVolume.mockResolvedValue([])
+      mockMandatometer.compute.mockResolvedValue(snapshot({ total: 10, responded: 8, resolved: 6, everDisputed: 1, closedEver: 7 }))
 
       const res = await service.findById('p1')
+      expect(mockMandatometer.compute).toHaveBeenCalledWith('p1')
       expect(res.metrics.responseRate).toBe(80)
       expect(res.metrics.resolutionRate).toBe(60)
       expect(res.metrics.trustBadge).toBe(true)
       expect(res.metrics.classification).toBe('Político Ativo')
     })
 
-    it('inclui o número de seguidores do político', async () => {
-      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana' })
-      mockRepo.mandatometerStats.mockResolvedValue({ total: 0, resolved: 0, open: 0, byStatus: {} })
+    it('mandato encerrado mostra o retrato congelado, sem recalcular', async () => {
+      const frozen = { ...snapshot({ total: 4, resolved: 1 }), frozenAt: '2026-01-01T00:00:00.000Z' }
+      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana', status: PoliticianStatus.ENCERRADO, mandatometer: frozen })
       mockRepo.monthlyVolume.mockResolvedValue([])
+      const res = await service.findById('p1')
+      expect(mockMandatometer.compute).not.toHaveBeenCalled()
+      expect(res.mandatometer).toEqual(frozen)
+    })
+
+    it('inclui o número de seguidores do político', async () => {
+      mockRepo.findById.mockResolvedValue({ id: 'p1', name: 'Ana', status: PoliticianStatus.ATIVO })
+      mockRepo.monthlyVolume.mockResolvedValue([])
+      mockMandatometer.compute.mockResolvedValue(snapshot({}))
       mockRepo.countFollowers.mockResolvedValueOnce(7)
       await expect(service.findById('p1')).resolves.toMatchObject({ followersCount: 7 })
     })
@@ -147,74 +162,10 @@ describe('PoliticiansService', () => {
   })
 
   describe('advocate', () => {
-    it('rejects advocacy without active context', async () => {
-      await expect(
-        service.advocate('p1', 'r1', { id: 'u1', type: 'POLITICIAN', ctx: null }),
-      ).rejects.toThrow(ForbiddenException)
-    })
-
-    it('rejects advocacy when politician mandate is ENCERRADO', async () => {
-      mockPrisma.orgMembership.findUnique.mockResolvedValue({
-        status: 'ACTIVE',
-        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
-      })
-      mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ENCERRADO })
-      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(ForbiddenException)
-    })
-
-    it('rejects already resolved reports', async () => {
-      mockPrisma.orgMembership.findUnique.mockResolvedValue({
-        status: 'ACTIVE',
-        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
-      })
-      mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.report.findUnique.mockResolvedValue({
-        id: 'r1',
-        status: ReportStatus.RESOLVED,
-        timeline: [],
-      })
-      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(BadRequestException)
-    })
-
-    it('rejects duplicate advocacy by the same politician', async () => {
-      mockPrisma.orgMembership.findUnique.mockResolvedValue({
-        status: 'ACTIVE',
-        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
-      })
-      mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.report.findUnique.mockResolvedValue({
-        id: 'r1',
-        status: ReportStatus.IN_PROGRESS,
-        timeline: [{ metadata: { action: 'advocated', politicianId: 'p1' } }],
-      })
-      await expect(service.advocate('p1', 'r1', polActingUser)).rejects.toThrow(ConflictException)
-    })
-
-    it('advocates report, moves status to IN_PROGRESS and updates mandatometer', async () => {
-      mockPrisma.orgMembership.findUnique.mockResolvedValue({
-        status: 'ACTIVE',
-        role: { permissions: [OrgPermission.RESPOND_REPORTS] },
-      })
-      mockPrisma.politician.findUnique.mockResolvedValue({ status: PoliticianStatus.ATIVO })
-      mockPrisma.report.findUnique.mockResolvedValue({
-        id: 'r1',
-        status: ReportStatus.OPEN,
-        timeline: [],
-      })
-      mockRepo.mandatometerStats.mockResolvedValue({ total: 1 })
-
-      const res = await service.advocate('p1', 'r1', polActingUser)
-      expect(res).toEqual({ advocated: true })
-      expect(mockPrisma.report.update).toHaveBeenCalledWith({
-        where: { id: 'r1' },
-        data: { status: ReportStatus.IN_PROGRESS },
-      })
-      expect(mockPrisma.timelineEvent.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ type: EventType.RESPONDED }),
-        }),
-      )
-      expect(mockRepo.updateMandatometer).toHaveBeenCalledWith('p1', { total: 1 })
+    it('passa para o ciclo de vida do relato com o político certo', async () => {
+      const dto = { message: 'Vou cobrar a prefeitura.', promisedInDays: 30 }
+      await service.advocate('p1', 'r1', polActingUser, dto as any)
+      expect(mockLifecycle.advocate).toHaveBeenCalledWith('r1', polActingUser, { orgType: 'POLITICIAN', orgId: 'p1' }, dto)
     })
   })
 

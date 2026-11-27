@@ -7,10 +7,12 @@ import { ReportStatus, VoteType } from '@votz/shared-types'
 
 export const PRESSURE_QUEUE = 'pressure'
 
+// Contestado continua acumulando pressão: o problema voltou a estar em aberto até a moderação decidir.
 const ACTIVE_STATUSES: ReportStatus[] = [
   ReportStatus.OPEN,
   ReportStatus.UNDER_REVIEW,
   ReportStatus.IN_PROGRESS,
+  ReportStatus.DISPUTED,
 ]
 
 // Seção 8.3 — pesos calibrados por tipo de sinal
@@ -106,16 +108,18 @@ export class PressureService {
         groupId: true,
         surtoId: true,
         _count: { select: { comments: true } },
-        timeline: {
-          where: { type: 'RESPONDED' },
-          select: { id: true },
-          take: 1,
-        },
+        // "Dias sem resposta" para quando QUEM RECEBEU responde. Avocação ou atualização de terceiros
+        // não alivia a pressão sobre o destinatário.
+        firstResponseAt: true,
       },
     })
 
     if (!report) return
-    if (!ACTIVE_STATUSES.includes(report.status as ReportStatus)) return
+    if (!ACTIVE_STATUSES.includes(report.status as ReportStatus)) {
+      // Encerrado (resolvido ou arquivado) sai da disputa por atenção: pressão zera.
+      await this.prisma.report.updateMany({ where: { id: reportId, pressureScore: { not: 0 } }, data: { pressureScore: 0 } })
+      return
+    }
 
     const [voteGroups, similarCount] = await Promise.all([
       this.prisma.vote.groupBy({
@@ -145,7 +149,7 @@ export class PressureService {
       meTooVotes: voteMap[VoteType.ME_TOO] ?? 0,
       comments: report._count.comments,
       daysSinceCreation: Math.floor((Date.now() - report.createdAt.getTime()) / 86_400_000),
-      hasResponse: report.timeline.length > 0,
+      hasResponse: report.firstResponseAt !== null,
       similarCount,
     })
 
@@ -160,6 +164,12 @@ export class PressureService {
   async recalculateBatch(): Promise<{ updated: number }> {
     this.logger.log('Batch pressure recalculation started')
 
+    // Relatos encerrados não ficam no topo das listas com a pressão antiga.
+    await this.prisma.report.updateMany({
+      where: { status: { notIn: ACTIVE_STATUSES }, pressureScore: { not: 0 } },
+      data: { pressureScore: 0 },
+    })
+
     const reports = await this.prisma.report.findMany({
       where: { status: { in: ACTIVE_STATUSES } },
       select: {
@@ -169,11 +179,9 @@ export class PressureService {
         groupId: true,
         surtoId: true,
         _count: { select: { comments: true } },
-        timeline: {
-          where: { type: 'RESPONDED' },
-          select: { id: true },
-          take: 1,
-        },
+        // "Dias sem resposta" para quando QUEM RECEBEU responde. Avocação ou atualização de terceiros
+        // não alivia a pressão sobre o destinatário.
+        firstResponseAt: true,
       },
     })
 
@@ -223,7 +231,7 @@ export class PressureService {
           meTooVotes: votes.ME_TOO,
           comments: r._count.comments,
           daysSinceCreation: Math.floor((now - r.createdAt.getTime()) / 86_400_000),
-          hasResponse: r.timeline.length > 0,
+          hasResponse: r.firstResponseAt !== null,
           similarCount,
         }),
       }

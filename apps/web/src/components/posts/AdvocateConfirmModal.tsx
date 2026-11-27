@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Image as ImageIcon, ShieldCheck, X } from '@phosphor-icons/react'
+import { ADVOCACY_PROMISE_DAYS } from '@votz/shared-types'
 import { useAdvocateReport, useUploadPostMedia } from '../../hooks/usePosts'
+import { apiErrorMessage } from '../../lib/api-error'
 
 interface AdvocateConfirmModalProps {
   isOpen: boolean
@@ -145,6 +147,33 @@ const Btn = styled.button<{ $primary?: boolean }>`
   }
 `
 
+const PromiseField = styled.label`
+  display: block;
+  margin-bottom: 14px;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-weight: ${({ theme }) => theme.fontWeights.semibold};
+  color: ${({ theme }) => theme.colors.text};
+
+  select {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px 12px;
+    border: 1px solid ${({ theme }) => theme.colors.border};
+    border-radius: ${({ theme }) => theme.radii.md};
+    background: ${({ theme }) => theme.colors.white};
+    color: ${({ theme }) => theme.colors.text};
+    font-size: ${({ theme }) => theme.fontSizes.sm};
+  }
+
+  small {
+    display: block;
+    margin-top: 4px;
+    font-weight: ${({ theme }) => theme.fontWeights.regular};
+    color: ${({ theme }) => theme.colors.muted};
+  }
+`
+
 const ErrorText = styled.p`
   margin: 8px 0 0;
   font-size: ${({ theme }) => theme.fontSizes.xs};
@@ -165,6 +194,7 @@ export function AdvocateConfirmModal({
     `Avocação oficial: assumi o acompanhamento deste relato para cobrar providências. #Fiscalizacao`,
   )
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
+  const [promisedInDays, setPromisedInDays] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const uploadMedia = useUploadPostMedia()
   const advocate = useAdvocateReport()
@@ -185,6 +215,7 @@ export function AdvocateConfirmModal({
         actorId,
         reportId,
         publishToFeed,
+        promisedInDays: promisedInDays ? Number(promisedInDays) : undefined,
         postContent: publishToFeed ? postContent.trim() : undefined,
         media: publishToFeed && mediaUrls.length > 0 ? mediaUrls : undefined,
       },
@@ -216,6 +247,19 @@ export function AdvocateConfirmModal({
         </Header>
 
         <ReportRef>{reportTitle}</ReportRef>
+
+        <PromiseField>
+          Prazo para a solução (opcional)
+          <select value={promisedInDays} onChange={(e) => setPromisedInDays(e.target.value)}>
+            <option value="">Sem prazo definido</option>
+            {ADVOCACY_PROMISE_DAYS.map((d) => (
+              <option key={d} value={d}>
+                Até {d} dias
+              </option>
+            ))}
+          </select>
+          <small>O prazo aparece para todos. Se vencer sem solução, você e quem fez o relato recebem um aviso.</small>
+        </PromiseField>
 
         <CheckRow>
           <input
@@ -267,7 +311,7 @@ export function AdvocateConfirmModal({
         )}
 
         {advocate.isError && (
-          <ErrorText>Não foi possível concluir a avocação. Tente novamente.</ErrorText>
+          <ErrorText>{apiErrorMessage(advocate.error, 'Não foi possível concluir a avocação. Tente novamente.')}</ErrorText>
         )}
 
         <Footer>

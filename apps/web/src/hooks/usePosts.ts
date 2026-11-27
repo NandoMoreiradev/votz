@@ -405,6 +405,8 @@ export function useAdvocateReport() {
       publishToFeed?: boolean
       postContent?: string
       media?: string[]
+      /** Prazo prometido para a solução, em dias. */
+      promisedInDays?: number
     }) => {
       const base = vars.actorType === 'POLITICIAN' ? 'politicians' : 'entities'
       return api
@@ -414,6 +416,7 @@ export function useAdvocateReport() {
             publishToFeed: vars.publishToFeed,
             postContent: vars.postContent,
             media: vars.media,
+            promisedInDays: vars.promisedInDays,
           },
         )
         .then((r) => r.data)
@@ -421,6 +424,7 @@ export function useAdvocateReport() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['reports'] })
       qc.invalidateQueries({ queryKey: ['report', vars.reportId] })
+      qc.invalidateQueries({ queryKey: ['report-followers', vars.reportId] })
       if (vars.publishToFeed) {
         qc.invalidateQueries({ queryKey: ['posts'] })
       }
