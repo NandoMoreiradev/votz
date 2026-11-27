@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  ResearchInstituteView,
   SurveyDetailView,
   SurveyInvitationView,
   SurveyKind,
@@ -85,5 +86,29 @@ export function useMySurveyInvitations() {
     queryFn: ({ signal }) => api<SurveyInvitationView[]>('/surveys/my-invitations', { signal }),
     enabled: enabled && !!userId,
     staleTime: 60_000,
+  })
+}
+
+export function useDeclineSurveyInvitation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      api(`/surveys/invitations/${invitationId}/decline`, json({})),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['surveys', 'my-invitations'] })
+    },
+  })
+}
+
+export function useInstituteProfile(slug: string | undefined) {
+  return useQuery({
+    queryKey: ['surveys', 'institute', slug],
+    queryFn: ({ signal }) =>
+      api<{ institute: ResearchInstituteView; surveys: SurveySummaryView[] }>(
+        `/surveys/institutes/${encodeURIComponent(slug!)}`,
+        { signal },
+      ),
+    enabled: !!slug,
+    staleTime: 2 * 60_000,
   })
 }

@@ -1,6 +1,6 @@
 import { useState, type PropsWithChildren } from 'react'
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, type Href } from 'expo-router'
 import ArrowLeft from 'lucide-react-native/icons/arrow-left'
 import Ban from 'lucide-react-native/icons/ban'
 import ChevronRight from 'lucide-react-native/icons/chevron-right'
@@ -28,15 +28,24 @@ import {
   ConversationPersonRow,
 } from '../../components/conversation-ui'
 import { Screen, Toolbar } from '../../components/screen'
-import { Button, ErrorText, IconButton, State } from '../../components/ui'
+import { Button, ErrorText, IconButton, State, TabStrip } from '../../components/ui'
+import { OrgContextSheet } from '../../components/org-context-sheet'
 import {
   useConversationAction,
   useConversationCapabilities,
   useConversationList,
   useConversationScope,
 } from '../../hooks/use-conversations'
-import { useMyPageConversationList, type MyPageConversationRow } from '../../hooks/use-page-inbox'
+import {
+  useMyPageConversationList,
+  useStaffConversations,
+  type MyPageConversationRow,
+  type OrgType,
+  type PageStatus,
+  type StaffConversationRow,
+} from '../../hooks/use-page-inbox'
 import { errorMessage } from '../../lib/api'
+import { useSession } from '../../lib/session'
 import { theme } from '../../theme'
 import { useAppTheme } from '../../theme-context'
 
@@ -370,13 +379,126 @@ function InboxMenu() {
   )
 }
 
+const STAFF_STATUS_TABS: readonly { value: 'OPEN' | 'RESOLVED' | 'ALL'; label: string }[] = [
+  { value: 'OPEN', label: 'Abertas' },
+  { value: 'RESOLVED', label: 'Resolvidas' },
+  { value: 'ALL', label: 'Todas' },
+]
+
+function StaffInbox({ orgType, orgId, orgName, onSwitchContext }: { orgType: OrgType; orgId: string; orgName: string; onSwitchContext: () => void }) {
+  const { colors, theme: appTheme } = useAppTheme()
+  const [filter, setFilter] = useState<'OPEN' | 'RESOLVED' | 'ALL'>('OPEN')
+  const statusParam: PageStatus | undefined = filter === 'ALL' ? undefined : filter
+  const query = useStaffConversations(orgType, orgId, statusParam)
+  const items: StaffConversationRow[] = query.data?.items ?? []
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: colors.tint,
+          borderBottomWidth: 0.5,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: appTheme.fonts.body, fontSize: 11, color: colors.muted }}>
+            Caixa da página (equipe)
+          </Text>
+          <Text style={{ fontFamily: appTheme.fonts.medium, fontSize: 14, color: colors.primary }} numberOfLines={1}>
+            {orgName}
+          </Text>
+        </View>
+        <Button title="Trocar" secondary onPress={onSwitchContext} />
+      </View>
+
+      <TabStrip tabs={STAFF_STATUS_TABS} value={filter} onChange={setFilter} />
+
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 48 }}
+        refreshing={query.isRefetching}
+        onRefresh={() => {
+          void query.refetch()
+        }}
+        renderItem={({ item }) => (
+          <ConversationPersonRow
+            person={{
+              id: item.citizen.id,
+              name: item.citizen.name,
+              username: item.citizen.username,
+              avatarUrl: item.citizen.avatarUrl,
+              verified: false,
+            }}
+            title={item.citizen.name}
+            subtitle={`${item.lastFrom === 'STAFF' ? 'Equipe: ' : ''}${item.lastText}`}
+            meta={conversationTime(item.lastMessageAt)}
+            unread={item.unread}
+            onPress={() =>
+              router.push({
+                pathname: '/conversation/staff' as Href & string,
+                params: {
+                  id: item.id,
+                  orgType,
+                  orgId,
+                  citizenName: item.citizen.name,
+                },
+              } as Href)
+            }
+          />
+        )}
+        ListEmptyComponent={
+          <State
+            loading={query.isPending}
+            title={
+              query.isPending
+                ? 'Carregando mensagens…'
+                : query.isError
+                  ? 'Não foi possível carregar'
+                  : filter === 'OPEN'
+                    ? 'Nenhuma conversa aberta'
+                    : 'Nenhuma conversa por aqui'
+            }
+            description={
+              query.isError
+                ? errorMessage(query.error)
+                : 'Quando cidadãos enviarem mensagens para sua página, elas aparecerão aqui.'
+            }
+            retry={query.isError ? () => { void query.refetch() } : undefined}
+          />
+        }
+      />
+    </View>
+  )
+}
+
 export default function ConversationsScreen() {
+  const activeContext = useSession((s) => s.activeContext)
+  const [contextSheetOpen, setContextSheetOpen] = useState(false)
+
   return (
     <Screen tabs>
-      <Toolbar title="Conversas" right={<InboxMenu />} />
+      <Toolbar title={activeContext ? 'Mensagens da página' : 'Conversas'} right={<InboxMenu />} />
       <ConversationGate allowWithoutChat>
-        <Inbox />
+        {activeContext ? (
+          <StaffInbox
+            orgType={activeContext.type}
+            orgId={activeContext.id}
+            orgName={activeContext.name}
+            onSwitchContext={() => setContextSheetOpen(true)}
+          />
+        ) : (
+          <Inbox />
+        )}
       </ConversationGate>
+      <OrgContextSheet visible={contextSheetOpen} onClose={() => setContextSheetOpen(false)} />
     </Screen>
   )
 }

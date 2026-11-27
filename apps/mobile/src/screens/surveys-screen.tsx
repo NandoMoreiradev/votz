@@ -12,7 +12,7 @@ import {
 } from '@votz/shared-types'
 import { Screen, Toolbar } from '../components/screen'
 import { Card, State, TabStrip } from '../components/ui'
-import { useMySurveyInvitations, usePublicSurveys, useSurveysEnabled } from '../hooks/use-surveys'
+import { useDeclineSurveyInvitation, useMySurveyInvitations, usePublicSurveys, useSurveysEnabled } from '../hooks/use-surveys'
 import { useAppTheme } from '../theme-context'
 
 const STATUS_TABS: readonly { value: SurveyStatus; label: string }[] = [
@@ -71,6 +71,21 @@ function SurveyRow({ survey }: { survey: SurveySummaryView }) {
           </Text>
         ) : null}
 
+        {survey.partnerName && survey.instituteSlug ? (
+          <Pressable
+            accessibilityRole="link"
+            onPress={(e) => {
+              e.stopPropagation()
+              router.push(`/pesquisas/institutos/${survey.instituteSlug}` as Href)
+            }}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.action }}>
+              Instituto: {survey.partnerName} →
+            </Text>
+          </Pressable>
+        ) : null}
+
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
           <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
             {survey.verificationLevel === 'VERIFIED_CPF' ? 'Exige CPF verificado' : 'Conta verificada'}
@@ -90,6 +105,7 @@ export default function SurveysScreen() {
   const [status, setStatus] = useState<SurveyStatus>('OPEN')
   const query = usePublicSurveys(status)
   const invitations = useMySurveyInvitations()
+  const declineInv = useDeclineSurveyInvitation()
 
   return (
     <Screen>
@@ -121,18 +137,46 @@ export default function SurveysScreen() {
                     Convites exclusivos ({invitations.data.length})
                   </Text>
                   {invitations.data.map((inv) => (
-                    <Pressable
+                    <View
                       key={inv.invitationId}
-                      onPress={() => router.push(`/pesquisas/${inv.survey.slug}` as Href)}
-                      style={{ paddingVertical: 6 }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        paddingVertical: 6,
+                      }}
                     >
-                      <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: colors.primary }}>
-                        {inv.survey.title} →
-                      </Text>
-                      <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
-                        Amostra sorteada independente · Voto 100% anônimo
-                      </Text>
-                    </Pressable>
+                      <Pressable
+                        onPress={() => router.push(`/pesquisas/${inv.survey.slug}` as Href)}
+                        style={{ flex: 1 }}
+                      >
+                        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 14, color: colors.primary }}>
+                          {inv.survey.title} →
+                        </Text>
+                        <Text style={{ fontFamily: theme.fonts.body, fontSize: 12, color: colors.muted }}>
+                          Amostra sorteada independente · Voto 100% anônimo
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={declineInv.isPending}
+                        onPress={() => declineInv.mutate(inv.invitationId)}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          borderWidth: 0.5,
+                          borderColor: colors.border,
+                          backgroundColor: colors.soft,
+                          opacity: declineInv.isPending ? 0.5 : 1,
+                        }}
+                      >
+                        <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.muted }}>
+                          Recusar
+                        </Text>
+                      </Pressable>
+                    </View>
                   ))}
                 </Card>
               )}

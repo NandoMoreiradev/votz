@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, type Href } from 'expo-router'
 import CheckCircle2 from 'lucide-react-native/icons/check-circle-2'
 import Lock from 'lucide-react-native/icons/lock'
 import ShieldCheck from 'lucide-react-native/icons/shield-check'
@@ -294,6 +294,17 @@ export default function SurveyDetailScreen({ slug }: { slug: string }) {
           <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.text }}>
             Metodologia: {SURVEY_METHODOLOGY_LABELS[survey.methodologyType]}
           </Text>
+          {survey.partnerName && survey.instituteSlug ? (
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.push(`/pesquisas/institutos/${survey.instituteSlug}` as Href)}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              <Text style={{ fontFamily: theme.fonts.medium, fontSize: 13, color: colors.action }}>
+                Instituto responsável: {survey.partnerName} →
+              </Text>
+            </Pressable>
+          ) : null}
           {survey.tseRegistrationCode ? (
             <Text style={{ fontFamily: theme.fonts.medium, fontSize: 12, color: colors.text }}>
               Registro TSE: {survey.tseRegistrationCode}

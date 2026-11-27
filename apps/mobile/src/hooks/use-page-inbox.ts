@@ -36,8 +36,35 @@ export interface PageMessageView {
   from: 'CITIZEN' | 'STAFF'
   text: string
   createdAt: string
+  staffName?: string
   replyTo?: PageReplyView
   attachment?: PageAttachmentView
+}
+export interface CitizenSummary {
+  id: string
+  name: string
+  username: string | null
+  avatarUrl: string | null
+}
+export interface StaffConversationRow {
+  id: string
+  citizen: CitizenSummary
+  status: PageStatus
+  startedBy: 'CITIZEN' | 'STAFF'
+  accepted: boolean
+  unread: number
+  lastMessageAt: string
+  lastText: string
+  lastFrom: 'CITIZEN' | 'STAFF'
+}
+export interface StaffConversationView {
+  id: string
+  citizen: CitizenSummary
+  status: PageStatus
+  startedBy: 'CITIZEN' | 'STAFF'
+  accepted: boolean
+  messages: PageMessageView[]
+  readers: { userId: string; name: string; lastReadAt: string }[]
 }
 export interface MyPageConversationRow {
   id: string; page: PageSummary; status: PageStatus; unread: number
@@ -168,4 +195,102 @@ export function useDeleteMyPageConversation() {
     mutationFn: (id: string) => api<{ deleted: boolean }>(`/page-inbox/mine/${id}`, { method: 'DELETE' }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox'] }),
   })
+}
+
+// ── Equipe da página (Político, Entidade, Empresa) ───────────────────────────
+
+export function useStaffConversations(orgType: OrgType | undefined, orgId: string | undefined, status?: PageStatus) {
+  return useQuery({
+    queryKey: ['page-inbox', 'staff', orgType, orgId, 'list', status ?? 'ALL'],
+    queryFn: ({ signal }) => {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+      return api<{ items: StaffConversationRow[]; total: number; page: number; limit: number }>(
+        `/page-inbox/${orgType}/${orgId}/conversations${qs}`,
+        { signal },
+      )
+    },
+    enabled: !!orgType && !!orgId,
+    refetchInterval: 20_000,
+    retry: false,
+  })
+}
+
+export function useStaffConversation(orgType: OrgType | undefined, orgId: string | undefined, id: string | undefined) {
+  const client = useQueryClient()
+  return useQuery({
+    queryKey: ['page-inbox', 'staff', orgType, orgId, 'open', id],
+    queryFn: async ({ signal }) => {
+      const data = await api<StaffConversationView>(`/page-inbox/${orgType}/${orgId}/conversations/${id}`, { signal })
+      void client.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId, 'list'] })
+      return data
+    },
+    enabled: !!orgType && !!orgId && !!id,
+    refetchInterval: 15_000,
+    retry: false,
+  })
+}
+
+export function useReplyAsStaff(orgType: OrgType | undefined, orgId: string | undefined, id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ text, replyToId }: { text: string; replyToId?: string }) =>
+      api<PageMessageView>(`/page-inbox/${orgType}/${orgId}/conversations/${id}/replies`, {
+        method: 'POST',
+        body: JSON.stringify({ text, ...(replyToId ? { replyToId } : {}) }),
+      }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
+  })
+}
+
+export function useReplyPageMedia(orgType: OrgType | undefined, orgId: string | undefined, id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MobilePageMediaInput) =>
+      uploadFile<PageMessageView>(
+        `/page-inbox/${orgType}/${orgId}/conversations/${id}/media`,
+        { uri: input.uri, mimeType: input.mimeType },
+        {
+          timeoutMs: 5 * 60_000,
+          signal: input.signal,
+          parameters: {
+            ...(input.caption ? { caption: input.caption } : {}),
+            ...(input.replyToId ? { replyToId: input.replyToId } : {}),
+            ...(input.width ? { width: String(input.width) } : {}),
+            ...(input.height ? { height: String(input.height) } : {}),
+            ...(input.durationMs ? { durationMs: String(input.durationMs) } : {}),
+            ...(input.thumbnail ? { thumbnail: input.thumbnail } : {}),
+          },
+        },
+      ),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
+  })
+}
+
+export function useSetStaffConversationStatus(orgType: OrgType | undefined, orgId: string | undefined, id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (status: PageStatus) =>
+      api(`/page-inbox/${orgType}/${orgId}/conversations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['page-inbox', 'staff', orgType, orgId] }),
+  })
+}
+
+export async function downloadStaffPageMediaFile(
+  orgType: OrgType,
+  orgId: string,
+  conversationId: string,
+  attachmentId: string,
+): Promise<string> {
+  const token = await conversationSocketToken()
+  const dest = `${FileSystem.cacheDirectory}staff-page-media-${attachmentId}`
+  const res = await FileSystem.downloadAsync(
+    `${API_URL}/page-inbox/${orgType}/${orgId}/conversations/${conversationId}/media/${attachmentId}`,
+    dest,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (res.status < 200 || res.status >= 300) throw new Error('Não foi possível baixar o arquivo.')
+  return res.uri
 }
