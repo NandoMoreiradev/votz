@@ -24,7 +24,7 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     if (readString(config, 'CHAT_MATRIX_JWT_SECRET') === readString(config, 'JWT_SECRET')) issues.push('Matrix login secret must be independent of the Votz access token secret')
     if (!readString(config, 'CHAT_MATRIX_SERVER_NAME')) issues.push('CHAT_MATRIX_SERVER_NAME is required')
     const matrixUrl = readString(config, 'CHAT_MATRIX_URL')
-    if (readString(config, 'NODE_ENV') === 'production' && !matrixUrl.startsWith('https://') && !isPrivateNetworkMatrixUrl(matrixUrl)) issues.push('CHAT_MATRIX_URL must use HTTPS in production (or a http://*.railway.internal private network address)')
+    if (readString(config, 'NODE_ENV') === 'production' && !matrixUrl.startsWith('https://') && !isPrivateNetworkMatrixUrl(matrixUrl)) issues.push('CHAT_MATRIX_URL must use HTTPS in production (or a http private network address: *.railway.internal or 10.x.x.x with a port)')
   }
 
   const jwtSecret = readString(config, 'JWT_SECRET')
