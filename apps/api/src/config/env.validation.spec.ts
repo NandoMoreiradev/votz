@@ -67,6 +67,27 @@ describe('validateEnv', () => {
       expect(() => validateEnv(chatConfig('http://synapse.railway.internal:8008'))).not.toThrow()
     })
 
+    it('accepts a Google Cloud private address (10.0.0.0/8) over http with a port', () => {
+      expect(() => validateEnv(chatConfig('http://10.128.0.5:8008'))).not.toThrow()
+      expect(() => validateEnv(chatConfig('http://10.0.0.1:8008/'))).not.toThrow()
+    })
+
+    it('rejects public, other private ranges, missing port and malformed 10.x addresses over http', () => {
+      for (const url of [
+        'http://10.128.0.5',
+        'http://10.128.0.256:8008',
+        'http://10.128.0.5.evil.com:8008',
+        'http://10.128.0.5:8008@evil.com',
+        'http://110.128.0.5:8008',
+        'http://192.168.0.5:8008',
+        'http://172.16.0.5:8008',
+        'http://8.8.8.8:8008',
+        'http://10.128.0.5:8008/path',
+      ]) {
+        expect(() => validateEnv(chatConfig(url))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
+      }
+    })
+
     it('rejects any other http address', () => {
       expect(() => validateEnv(chatConfig('http://matrix.example.com:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
       expect(() => validateEnv(chatConfig('http://127.0.0.1:8008'))).toThrow(/CHAT_MATRIX_URL must use HTTPS/)
